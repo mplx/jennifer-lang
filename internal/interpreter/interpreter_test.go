@@ -206,6 +206,32 @@ func app() {}`)
 	}
 }
 
+func TestUserMethodCannotShadowStdlibBuiltin(t *testing.T) {
+	// With `use stdlib;`, defining `func printf()` is a shadowing error.
+	_, err := run(t, `
+use stdlib;
+func printf() {}
+printf();
+`)
+	if err == nil || !strings.Contains(err.Error(), "shadows a builtin") {
+		t.Errorf("expected shadowing error, got %v", err)
+	}
+}
+
+func TestUserMethodCanReuseBuiltinNameWithoutStdlib(t *testing.T) {
+	// Without `use stdlib;`, the name is free - the user's printf is the only one.
+	out, err := run(t, `
+func printf() {}
+printf();
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "" {
+		t.Errorf("got %q, want empty (user printf is a no-op)", out)
+	}
+}
+
 // ---- M2 tests ----
 
 func TestM2FloatArithmetic(t *testing.T) {

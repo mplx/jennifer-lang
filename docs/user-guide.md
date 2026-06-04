@@ -197,6 +197,17 @@ body). Method bodies inherit the global scope, so top-level variables are
 visible inside methods (subject to the no-shadowing rule). Parameters,
 return values, and recursion arrive in M3.
 
+**Methods cannot shadow imported builtins.** If you write `use stdlib;` and
+then `func printf() { ... }`, the program is rejected:
+
+```
+runtime error at 2:1: method "printf" shadows a builtin from `stdlib`;
+rename it or remove `use stdlib;`
+```
+
+Without the `use stdlib;`, the name is yours to define. This is the same
+no-shadowing discipline Jennifer applies to variables.
+
 ### Imports
 
 Two keywords, two mechanisms:

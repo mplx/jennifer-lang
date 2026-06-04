@@ -72,6 +72,17 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 			line, col := m.Pos()
 			return &runtimeError{Msg: fmt.Sprintf("method %q is defined more than once", m.Name), Line: line, Col: col}
 		}
+		// No-shadowing rule for methods: a user method may not share a name
+		// with a builtin from a library the program has imported. This mirrors
+		// the variable no-shadowing rule. Without `use stdlib;` the name is
+		// free - define your own `printf` to your heart's content.
+		if _, isBuiltin := i.Builtins[m.Name]; isBuiltin && i.imported["stdlib"] {
+			line, col := m.Pos()
+			return &runtimeError{
+				Msg:  fmt.Sprintf("method %q shadows a builtin from `stdlib`; rename it or remove `use stdlib;`", m.Name),
+				Line: line, Col: col,
+			}
+		}
 		i.methods[m.Name] = m
 	}
 	i.global = NewEnvironment(nil)

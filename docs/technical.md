@@ -304,7 +304,10 @@ without escaping it.
 
 1. `Interpreter.Run(prog)` records `Imports` into `i.imported`.
 2. Collects every `MethodDef` into `i.methods` (methods are hoisted: callable
-   regardless of source order).
+   regardless of source order). During collection it enforces two rules:
+   no duplicate method names, and no method name that collides with a
+   registered builtin whose owning library has been imported (the no-shadowing
+   rule extended to builtins - see `evalCall` below).
 3. Creates the global `Environment` (`i.global`) and executes `prog.TopLevel`
    statements in source order in that global scope.
 4. Method calls execute the body in a fresh call frame whose parent is
