@@ -185,6 +185,22 @@ func TestTokenizeM2Keywords(t *testing.T) {
 	}
 }
 
+func TestTokenizeLogicalKeywords(t *testing.T) {
+	toks, err := Tokenize("and or not")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	want := []TokenType{TOKEN_AND, TOKEN_OR, TOKEN_NOT, TOKEN_EOF}
+	if len(toks) != len(want) {
+		t.Fatalf("got %d tokens, want %d", len(toks), len(want))
+	}
+	for i, w := range want {
+		if toks[i].Type != w {
+			t.Errorf("tok %d: got %s, want %s", i, toks[i].Type, w)
+		}
+	}
+}
+
 func TestTokenizeDefAndFuncKeywords(t *testing.T) {
 	// `def` introduces a variable/constant; `func` introduces a method.
 	// `define` is no longer a keyword - it lexes as a plain identifier.

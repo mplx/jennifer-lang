@@ -360,6 +360,8 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 		return b.Value, nil
 	case *parser.BinaryExpr:
 		return i.evalBinary(ex, env)
+	case *parser.UnaryExpr:
+		return i.evalUnary(ex, env)
 	case *parser.CallExpr:
 		return i.evalCall(ex, env)
 	}
@@ -368,6 +370,11 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 }
 
 func (i *Interpreter) evalBinary(b *parser.BinaryExpr, env *Environment) (Value, error) {
+	// Logical and/or evaluate the left operand first and short-circuit before
+	// touching the right - important when the right has side effects (calls).
+	if b.Op.IsLogical() {
+		return i.evalLogical(b, env)
+	}
 	lv, err := i.evalExpr(b.Left, env)
 	if err != nil {
 		return Value{}, err
@@ -377,11 +384,75 @@ func (i *Interpreter) evalBinary(b *parser.BinaryExpr, env *Environment) (Value,
 		return Value{}, err
 	}
 	line, col := b.Pos()
-
 	if b.Op.IsComparison() {
 		return i.evalComparison(b.Op, lv, rv, line, col)
 	}
 	return i.evalArithmetic(b.Op, lv, rv, line, col)
+}
+
+// evalLogical implements short-circuit `and`/`or`. Both operands must be bool;
+// the right operand is only evaluated when the left doesn't already decide.
+func (i *Interpreter) evalLogical(b *parser.BinaryExpr, env *Environment) (Value, error) {
+	lv, err := i.evalExpr(b.Left, env)
+	if err != nil {
+		return Value{}, err
+	}
+	if lv.Kind != KindBool {
+		line, col := b.Left.Pos()
+		return Value{}, &runtimeError{
+			Msg:  fmt.Sprintf("left operand of `%s` must be bool, got %s", b.Op, lv.Kind),
+			Line: line, Col: col,
+		}
+	}
+	// Short-circuit
+	if b.Op == parser.OpAnd && !lv.Bool {
+		return BoolVal(false), nil
+	}
+	if b.Op == parser.OpOr && lv.Bool {
+		return BoolVal(true), nil
+	}
+	rv, err := i.evalExpr(b.Right, env)
+	if err != nil {
+		return Value{}, err
+	}
+	if rv.Kind != KindBool {
+		line, col := b.Right.Pos()
+		return Value{}, &runtimeError{
+			Msg:  fmt.Sprintf("right operand of `%s` must be bool, got %s", b.Op, rv.Kind),
+			Line: line, Col: col,
+		}
+	}
+	return BoolVal(rv.Bool), nil
+}
+
+func (i *Interpreter) evalUnary(u *parser.UnaryExpr, env *Environment) (Value, error) {
+	v, err := i.evalExpr(u.Operand, env)
+	if err != nil {
+		return Value{}, err
+	}
+	line, col := u.Pos()
+	switch u.Op {
+	case parser.OpNeg:
+		switch v.Kind {
+		case KindInt:
+			return IntVal(-v.Int), nil
+		case KindFloat:
+			return FloatVal(-v.Float), nil
+		}
+		return Value{}, &runtimeError{
+			Msg:  fmt.Sprintf("unary `-` requires int or float, got %s", v.Kind),
+			Line: line, Col: col,
+		}
+	case parser.OpNot:
+		if v.Kind != KindBool {
+			return Value{}, &runtimeError{
+				Msg:  fmt.Sprintf("unary `not` requires bool, got %s", v.Kind),
+				Line: line, Col: col,
+			}
+		}
+		return BoolVal(!v.Bool), nil
+	}
+	return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown unary operator %s", u.Op), Line: line, Col: col}
 }
 
 func (i *Interpreter) evalComparison(op parser.BinaryOp, lv, rv Value, line, col int) (Value, error) {

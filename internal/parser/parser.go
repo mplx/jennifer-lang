@@ -514,6 +514,56 @@ func isUpperOnly(s string) bool {
 }
 
 func (p *parser) parseExpr() (Expr, error) {
+	return p.parseOr()
+}
+
+// Precedence (lowest to highest):
+//   or, and, not, comparison, addition, multiplication, unary -, primary.
+// `not` is right-associative (so `not not x` works). Unary `-` is also
+// right-associative.
+
+func (p *parser) parseOr() (Expr, error) {
+	left, err := p.parseAnd()
+	if err != nil {
+		return nil, err
+	}
+	for p.check(lexer.TOKEN_OR) {
+		p.advance()
+		right, err := p.parseAnd()
+		if err != nil {
+			return nil, err
+		}
+		l, c := left.Pos()
+		left = &BinaryExpr{pos: pos{Line: l, Col: c}, Op: OpOr, Left: left, Right: right}
+	}
+	return left, nil
+}
+
+func (p *parser) parseAnd() (Expr, error) {
+	left, err := p.parseNot()
+	if err != nil {
+		return nil, err
+	}
+	for p.check(lexer.TOKEN_AND) {
+		p.advance()
+		right, err := p.parseNot()
+		if err != nil {
+			return nil, err
+		}
+		l, c := left.Pos()
+		left = &BinaryExpr{pos: pos{Line: l, Col: c}, Op: OpAnd, Left: left, Right: right}
+	}
+	return left, nil
+}
+
+func (p *parser) parseNot() (Expr, error) {
+	if t, ok := p.match(lexer.TOKEN_NOT); ok {
+		operand, err := p.parseNot()
+		if err != nil {
+			return nil, err
+		}
+		return &UnaryExpr{pos: pos{Line: t.Line, Col: t.Col}, Op: OpNot, Operand: operand}, nil
+	}
 	return p.parseComparison()
 }
 
@@ -579,7 +629,7 @@ func (p *parser) parseAdd() (Expr, error) {
 }
 
 func (p *parser) parseMul() (Expr, error) {
-	left, err := p.parsePrimary()
+	left, err := p.parseUnaryMinus()
 	if err != nil {
 		return nil, err
 	}
@@ -597,13 +647,27 @@ func (p *parser) parseMul() (Expr, error) {
 			return left, nil
 		}
 		p.advance()
-		right, err := p.parsePrimary()
+		right, err := p.parseUnaryMinus()
 		if err != nil {
 			return nil, err
 		}
 		l, c := left.Pos()
 		left = &BinaryExpr{pos: pos{Line: l, Col: c}, Op: op, Left: left, Right: right}
 	}
+}
+
+// parseUnaryMinus handles the `-EXPR` prefix form. It sits between
+// multiplicative and primary so that `-x * 2` parses as `(-x) * 2`.
+// Right-associative: `--x` is `-(-x)`.
+func (p *parser) parseUnaryMinus() (Expr, error) {
+	if t, ok := p.match(lexer.TOKEN_MINUS); ok {
+		operand, err := p.parseUnaryMinus()
+		if err != nil {
+			return nil, err
+		}
+		return &UnaryExpr{pos: pos{Line: t.Line, Col: t.Col}, Op: OpNeg, Operand: operand}, nil
+	}
+	return p.parsePrimary()
 }
 
 func (p *parser) parsePrimary() (Expr, error) {

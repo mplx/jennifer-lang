@@ -249,6 +249,8 @@ const (
 	OpLe
 	OpGe
 	OpEq
+	OpAnd
+	OpOr
 )
 
 func (o BinaryOp) String() string {
@@ -273,6 +275,10 @@ func (o BinaryOp) String() string {
 		return ">="
 	case OpEq:
 		return "=="
+	case OpAnd:
+		return "and"
+	case OpOr:
+		return "or"
 	}
 	return "?"
 }
@@ -285,6 +291,38 @@ func (o BinaryOp) IsComparison() bool {
 	}
 	return false
 }
+
+// IsLogical reports whether the op is a short-circuit logical operator.
+func (o BinaryOp) IsLogical() bool {
+	return o == OpAnd || o == OpOr
+}
+
+// UnaryOp identifies a prefix-unary operator.
+type UnaryOp int
+
+const (
+	OpNeg UnaryOp = iota // -x  (numeric)
+	OpNot                // not x  (bool)
+)
+
+func (o UnaryOp) String() string {
+	switch o {
+	case OpNeg:
+		return "-"
+	case OpNot:
+		return "not"
+	}
+	return "?"
+}
+
+// UnaryExpr is a prefix-unary expression: `-EXPR` or `not EXPR`.
+type UnaryExpr struct {
+	pos
+	Op      UnaryOp
+	Operand Expr
+}
+
+func (*UnaryExpr) exprNode() {}
 
 type BinaryExpr struct {
 	pos
@@ -399,6 +437,8 @@ func Sprint(n Node) string {
 		return s + ")"
 	case *BinaryExpr:
 		return fmt.Sprintf("(%s %s %s)", Sprint(v.Left), v.Op, Sprint(v.Right))
+	case *UnaryExpr:
+		return fmt.Sprintf("(%s %s)", v.Op, Sprint(v.Operand))
 	}
 	return fmt.Sprintf("<unknown %T>", n)
 }

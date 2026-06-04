@@ -554,6 +554,158 @@ func app() {
 	}
 }
 
+// ---- M4 logical operators + unary minus ----
+
+func TestLogicalNotAndOr(t *testing.T) {
+	cases := []struct {
+		expr string
+		want string
+	}{
+		{"not true", "false"},
+		{"not false", "true"},
+		{"not (1 == 2)", "true"},
+		{"true and true", "true"},
+		{"true and false", "false"},
+		{"false and true", "false"},
+		{"false or true", "true"},
+		{"true or false", "true"},
+		{"false or false", "false"},
+		{"not not true", "true"},
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+def r as bool init `+c.expr+`;
+printf("%t", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: err %v", c.expr, err)
+			continue
+		}
+		if out != c.want {
+			t.Errorf("%s: got %q, want %q", c.expr, out, c.want)
+		}
+	}
+}
+
+func TestLogicalPrecedence(t *testing.T) {
+	// `not` binds less tightly than comparison.
+	// `and` binds tighter than `or`.
+	cases := []struct {
+		expr string
+		want string
+	}{
+		// not (1 == 2) -> not false -> true
+		{"not 1 == 2", "true"},
+		// (1 > 0) and (2 > 1) -> true and true -> true
+		{"1 > 0 and 2 > 1", "true"},
+		// (true and false) or true -> false or true -> true
+		{"true and false or true", "true"},
+		// true or (false and false) -> true or false -> true
+		{"true or false and false", "true"},
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+def r as bool init `+c.expr+`;
+printf("%t", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: err %v", c.expr, err)
+			continue
+		}
+		if out != c.want {
+			t.Errorf("%s: got %q, want %q", c.expr, out, c.want)
+		}
+	}
+}
+
+func TestLogicalShortCircuit(t *testing.T) {
+	// rhs of `and` is not evaluated when lhs is false; rhs of `or` is not
+	// evaluated when lhs is true. We prove it by having the rhs call a method
+	// that prints a side effect.
+	out, err := run(t, `
+use io;
+func boom() {
+    printf("BOOM");
+    return true;
+}
+def a as bool init false and boom();
+def b as bool init true or boom();
+printf("|%t|%t", $a, $b);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "|false|true" {
+		t.Errorf("got %q, want %q", out, "|false|true")
+	}
+}
+
+func TestLogicalTypeErrors(t *testing.T) {
+	cases := []struct {
+		expr string
+		want string // substring of error
+	}{
+		{"not 1", "`not` requires bool"},
+		{"true and 1", "`and`"},
+		{"1 or false", "`or`"},
+	}
+	for _, c := range cases {
+		_, err := run(t, `
+use io;
+def r as bool init `+c.expr+`;
+`)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: got %v, want substring %q", c.expr, err, c.want)
+		}
+	}
+}
+
+func TestUnaryMinus(t *testing.T) {
+	out, err := run(t, `
+use io;
+def i as int init -5;
+def f as float init -0.25;
+def doubleNeg as int init - -7;
+def x as int init 10;
+def neg as int init -$x;
+printf("%d|%f|%d|%d", $i, $f, $doubleNeg, $neg);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "-5|-0.25|7|-10" {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestUnaryMinusPrecedence(t *testing.T) {
+	// -3 + 10 -> (-3) + 10 -> 7
+	// -3 * 2 -> (-3) * 2 -> -6
+	out, err := run(t, `
+use io;
+printf("%d|%d", -3 + 10, -3 * 2);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "7|-6" {
+		t.Errorf("got %q, want %q", out, "7|-6")
+	}
+}
+
+func TestUnaryMinusTypeError(t *testing.T) {
+	_, err := run(t, `
+use io;
+def s as string init "x";
+def r as int init -$s;
+`)
+	if err == nil || !strings.Contains(err.Error(), "`-` requires int or float") {
+		t.Errorf("got %v, want type-error mentioning unary -", err)
+	}
+}
+
 func TestM2Comparisons(t *testing.T) {
 	cases := []struct {
 		expr string

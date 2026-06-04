@@ -124,12 +124,19 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
 
 ## M4 - Polish & ergonomics
 
-**Status:** not started.
+**Status:** in progress.
+
+**done**
+
+- **Logical operators (done):** `and`, `or`, `not` (word-based) with standard 
+  precedence and short-circuit `and`/`or`.
+- **Unary Minus**
+
+**open**
 
 - **Better errors:** line/column on every error, source snippet with caret
 - **REPL:** `jennifer repl` reusing the existing lexer/parser/interpreter
 - **Formatter:** `jennifer fmt` - re-emit the AST as canonical source
-- **Logical operators:** `and`, `or`, `not` - only if their absence becomes painful
 - **Type-conversion functions:** new `convert` library with `string(v)`,
   `int(v)`, `float(v)`, `bool(v)`. (Originally planned under `stdlib`, but
   that omnibus library was retired in favor of topic-based libraries.)

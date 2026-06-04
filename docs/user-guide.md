@@ -281,16 +281,37 @@ Notes:
 
 ### Operators
 
-| Operator         | Meaning                                                  |
-|------------------|----------------------------------------------------------|
-| `+`              | addition (`int`/`float`); also concatenation on `string` |
-| `-`, `*`, `/`    | subtraction, multiplication, division (`int`/`float`)    |
-| `%`              | modulo (`int` only)                                      |
-| `<`, `>`, `<=`, `>=` | numeric comparison; result is `bool`                 |
-| `==`             | equality; same-kind comparison plus `int`/`float` promotion; result is `bool` |
+| Operator             | Meaning                                                  |
+|----------------------|----------------------------------------------------------|
+| `+`                  | addition (`int`/`float`); also concatenation on `string` |
+| `-`, `*`, `/`        | subtraction, multiplication, division (`int`/`float`)    |
+| `%`                  | modulo (`int` only)                                      |
+| unary `-`            | numeric negation (`int`/`float`)                         |
+| `<`, `>`, `<=`, `>=` | numeric comparison; result is `bool`                     |
+| `==`                 | equality; same-kind plus `int`/`float` promotion; `bool` |
+| `and`, `or`          | logical; both operands `bool`; short-circuit             |
+| `not`                | unary logical negation; operand `bool`                   |
 
-Precedence (low to high): comparison, then additive (`+`, `-`), then
-multiplicative (`*`, `/`, `%`). Use parentheses to override: `(1 + 2) * 3`.
+Precedence (low to high): `or`, `and`, `not`, comparison, additive (`+`, `-`),
+multiplicative (`*`, `/`, `%`), unary `-`. Use parentheses to override:
+`(1 + 2) * 3`. Examples that follow the rules:
+
+```jennifer
+not 1 == 2                  // not (1 == 2) -> true
+1 > 0 and 2 > 1             // true
+true or false and false     // true or (false and false) -> true
+-3 + 10                     // (-3) + 10 -> 7
+-3 * 2                      // (-3) * 2 -> -6
+```
+
+**`and` and `or` short-circuit.** The right operand is only evaluated when
+the left doesn't already decide the result. That matters when the right side
+has side effects:
+
+```jennifer
+def gate as bool init false;
+def result as bool init $gate and expensive();   // expensive() not called
+```
 
 Mixed `int`/`float` arithmetic promotes the int to float and the result is a
 float (`3 + 0.5` -> `3.5`). `int / int` is integer division; if either

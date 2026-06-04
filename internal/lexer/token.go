@@ -35,6 +35,9 @@ const (
 	TOKEN_TRUE
 	TOKEN_FALSE
 	TOKEN_NULL
+	TOKEN_AND
+	TOKEN_OR
+	TOKEN_NOT
 	TOKEN_INT_TYPE    // the word "int" used as a type
 	TOKEN_FLOAT_TYPE  // the word "float" used as a type
 	TOKEN_STRING_TYPE // the word "string" used as a type
@@ -89,6 +92,9 @@ var tokenNames = map[TokenType]string{
 	TOKEN_TRUE:        "TRUE",
 	TOKEN_FALSE:       "FALSE",
 	TOKEN_NULL:        "NULL",
+	TOKEN_AND:         "AND",
+	TOKEN_OR:          "OR",
+	TOKEN_NOT:         "NOT",
 	TOKEN_INT_TYPE:    "INT_TYPE",
 	TOKEN_FLOAT_TYPE:  "FLOAT_TYPE",
 	TOKEN_STRING_TYPE: "STRING_TYPE",
@@ -157,6 +163,9 @@ var keywords = map[string]TokenType{
 	"true":   TOKEN_TRUE,
 	"false":  TOKEN_FALSE,
 	"null":   TOKEN_NULL,
+	"and":    TOKEN_AND,
+	"or":     TOKEN_OR,
+	"not":    TOKEN_NOT,
 	"int":    TOKEN_INT_TYPE,
 	"float":  TOKEN_FLOAT_TYPE,
 	"string": TOKEN_STRING_TYPE,

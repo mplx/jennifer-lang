@@ -58,6 +58,9 @@ ILLEGAL   FLOAT        FUNC          RBRACE  MINUS   GT
                        TRUE
                        FALSE
                        NULL
+                       AND
+                       OR
+                       NOT
                        INT_TYPE
                        FLOAT_TYPE
                        STRING_TYPE
@@ -85,9 +88,9 @@ Every token records `Line` and `Col` (both 1-based). The `advance()` helper bump
 ### Keywords
 
 The lexer's keyword map covers: `def func as init const import use return if
-elseif else while for true false null int float string bool`. Anything else
-lexed as a word stays a `TOKEN_IDENT`. `define` is **not** a keyword and lexes
-as a plain identifier.
+elseif else while for true false null and or not int float string bool`.
+Anything else lexed as a word stays a `TOKEN_IDENT`. `define` is **not** a
+keyword and lexes as a plain identifier.
 
 ### Comments
 
@@ -152,10 +155,14 @@ exprStmt    = expr ";" ;
 
 type        = "int" | "float" | "string" | "bool" | "null" ;
 
-expr        = compExpr ;
+expr        = orExpr ;
+orExpr      = andExpr { "or" andExpr } ;
+andExpr     = notExpr { "and" notExpr } ;
+notExpr     = "not" notExpr | compExpr ;
 compExpr    = addExpr { ("<" | ">" | "<=" | ">=" | "==") addExpr } ;
 addExpr     = mulExpr { ("+" | "-") mulExpr } ;
-mulExpr     = primary { ("*" | "/" | "%") primary } ;
+mulExpr     = unaryExpr { ("*" | "/" | "%") unaryExpr } ;
+unaryExpr   = "-" unaryExpr | primary ;
 primary     = INT | FLOAT | STRING | "true" | "false" | "null"
             | VARREF | call | constRef | "(" expr ")" ;
 call        = IDENT "(" [ expr { "," expr } ] ")" ;
@@ -172,8 +179,13 @@ constRef    = IDENT ;                  (* bare-IDENT: constant reference; the
 - The name in `defineStmt` is a bare `IDENT`. Writing `def $x as int`
   produces a parse error with a hint to drop the `$` (it's reserved for
   use-site references).
-- Operator precedence (lowest to highest): comparison `< > <= >= ==`, then
-  additive `+ -`, then multiplicative `* / %`. All are left-associative.
+- Operator precedence (lowest to highest): `or`, `and`, unary `not`,
+  comparison `< > <= >= ==`, additive `+ -`, multiplicative `* / %`, unary
+  `-`. Binary operators are left-associative; `not` and unary `-` are
+  right-associative (`not not x` and `--x` are both valid).
+- `and` and `or` **short-circuit**: the right operand is not evaluated when
+  the left already decides the result. Both operands must be `bool`.
+- Unary `not` requires `bool`; unary `-` requires `int` or `float`.
 - Comparison operators produce `bool`; `if`/`while`/`for` conditions **must**
   be `bool` (no implicit truthiness).
 - Mixed `int`/`float` arithmetic promotes `int` to `float`; the result is
@@ -191,8 +203,6 @@ constRef    = IDENT ;                  (* bare-IDENT: constant reference; the
   so they can be called regardless of textual order.
 - Method bodies inherit the global scope as their outer scope, so top-level
   variables are visible inside methods (subject to the no-shadowing rule).
-- Unary minus is not yet in the grammar - negative literals require a
-  workaround (e.g. `0 - 5`).
 - Method parameters use bare `IDENT` (no `$`), same as variable definitions.
   Writing `func f($x as int)` errors with "parameter name has no `$`".
 - Call sites type-check arguments against the declared parameter types at
@@ -236,7 +246,8 @@ the parser implements is the one in [Grammar (M3)](#grammar-m3---ebnf) above.
 | `VarExpr`     | expr  | `Name` (no `$`) - mutable-variable reference  |
 | `ConstRefExpr`| expr  | `Name` - bare-IDENT reference; interpreter expects it to resolve to a constant |
 | `CallExpr`    | expr  | `Callee`, `Args []Expr`                      |
-| `BinaryExpr`  | expr  | `Op BinaryOp`, `Left`, `Right` (comparison ops return bool) |
+| `BinaryExpr`  | expr  | `Op BinaryOp`, `Left`, `Right` (comparison/logical ops return bool; `and`/`or` short-circuit at eval time) |
+| `UnaryExpr`   | expr  | `Op UnaryOp` (`OpNeg`/`OpNot`), `Operand` |
 
 Every node embeds a `pos{Line, Col}` for error reporting and exposes it via
 `Node.Pos()`.
