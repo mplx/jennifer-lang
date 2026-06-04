@@ -1,9 +1,7 @@
 # Jennifer - User Guide
 
 Jennifer is a small, experimental, interpreted programming language. This guide
-covers everything you can do in Jennifer **today** (Milestone 1). Features
-planned but not yet implemented are listed under [Coming next](#coming-next);
-for the full roadmap see [milestones.md](milestones.md).
+covers everything you can do in Jennifer today ([Milestone 2](milestones.md)).
 
 ---
 
@@ -19,6 +17,18 @@ tinygo build -o jennifer ./cmd/jennifer
 # Run a Jennifer source file (must have .j extension)
 ./jennifer run examples/hello.j
 ```
+
+You can also pipe source in on stdin by passing `-` as the filename:
+
+```sh
+echo 'import stdlib; printf("hi\n");' | ./jennifer run -
+./jennifer run - < program.j
+cat program.j | ./jennifer run -
+```
+
+When reading from stdin, error messages identify the source as `<stdin>` and
+file imports (`import name.j;`) resolve relative to the current working
+directory.
 
 For local development you can also use the Go toolchain directly:
 
@@ -37,10 +47,8 @@ Save the following as `hello.j`:
 // hello.j
 import stdlib;
 
-def app() {
-    define $x as int init 21;
-    printf($x + $x);
-}
+def x as int init 21;
+printf($x + $x);
 ```
 
 Run it:
@@ -55,17 +63,19 @@ You should see `42`.
 
 1. `import stdlib;` makes Jennifer's standard library functions (only `printf`
    today) available.
-2. `def app() { ... }` defines the entry method. Every Jennifer program needs an
-   `app()`.
-3. `define $x as int init 21;` declares an integer variable named `x` and
+2. `def x as int init 21;` declares an integer variable named `x` and
    initializes it to `21`. Notice that **using** a variable requires the `$`
    prefix.
-4. `printf($x + $x)` calls the standard library function with the result of
+3. `printf($x + $x)` calls the standard library function with the result of
    `21 + 21`.
+
+Top-level statements run in source order - there is no required entry-point
+method. You can still group reusable code into methods (`def`) and call them
+explicitly.
 
 ---
 
-## Language reference (M1)
+## Language reference (M2)
 
 ### Tokens and whitespace
 
@@ -87,17 +97,15 @@ terminated by `;`.
 - **Variable references** use a leading `$`: define `name`, refer to it as
   `$name`.
 
-### Types (M1)
+### Types
 
-Only two of Jennifer's planned types are usable in Milestone 1:
-
-| Type     | Example literals               | Notes                      |
-|----------|--------------------------------|----------------------------|
-| `int`    | `0`, `42`, `9001`              | 64-bit signed              |
-| `string` | `"hello"`, `'single quotes'`   | Supports escape sequences  |
-
-Coming in M2: `float`, `null`, `bool` (added by request - extends the original
-spec).
+| Type     | Example literals                | Notes                                     |
+|----------|---------------------------------|-------------------------------------------|
+| `int`    | `0`, `42`, `9001`               | 64-bit signed                             |
+| `float`  | `3.14`, `0.5`                   | 64-bit; promoted from int in mixed math   |
+| `string` | `"hello"`, `'single quotes'`    | Supports escape sequences                 |
+| `bool`   | `true`, `false`                 | Produced by comparison operators          |
+| `null`   | `null`                          | A type with a single value (the unit)     |
 
 #### String escape sequences
 
@@ -114,48 +122,80 @@ are recognized:
 | `\'`   | single quote       |
 | `\0`   | null character     |
 
-### Variables
+### Variables and constants
 
 ```jennifer
-define $name as int init 5;        // declare and initialize
+def name as int init 5;            // declare and initialize
+def count as int;                  // declare with the zero value of int (0)
+def const MAX as int init 100;     // constant: uppercase name, init required
 ```
 
-In M1 the `init` clause is **required**. Defining a variable without an
-initializer arrives in M2.
+Uninitialized variables get the **zero value** of their declared type:
+`0`, `0.0`, `""`, `false`, or `null`.
 
-#### Scoping rules (full rules apply once blocks/methods land in M2/M3)
+**At the def site, names are bare identifiers (no `$`).** The `$` sigil is
+reserved for use-site references that read or assign a variable. So:
 
-- A variable is visible from the point of `define` to the end of the enclosing
-  block.
-- Inner scopes can read outer variables but **cannot redefine** a name that is
-  already in scope (no shadowing). This is enforced by the interpreter.
-- Constants (`define const NAME as TYPE init VALUE;`) arrive in M2.
+```jennifer
+def x as int init 5;     // def site - bare name
+printf($x);              // use site - $ prefix
+$x = 42;                 // assignment - $ prefix
+
+def $x as int init 5;    // ERROR: drop the $ here
+```
+
+Constants don't use `$` anywhere (they're not mutable, so the sigil would have
+no meaning):
+
+```jennifer
+def const MAX as int init 100;
+printf(MAX);             // use site - bare name
+MAX = 200;               // ERROR: cannot assign to constant
+```
+
+Assignment uses `=`:
+
+```jennifer
+def x as int init 0;
+$x = 42;          // ok
+$x = "string";    // error: cannot assign string to int variable
+```
+
+#### Scoping
+
+- Each `{...}` block introduces a new scope.
+- A binding is visible from its `def` to the end of the enclosing block, and
+  is inherited by inner blocks.
+- Inner scopes can **read** outer bindings but **cannot redefine** a name
+  already in scope (no shadowing). The interpreter rejects shadowing at
+  runtime.
+- A `for` loop opens a private scope wrapping `init`/`cond`/`step`/body, so
+  the loop variable does not leak out.
 
 ### Methods
 
 ```jennifer
-def app() {
-    // body
+func greet() {
+    printf("hello\n");
 }
+
+greet();   // call it from top level
 ```
 
-`def` and `define` are **synonyms** - you can use either keyword for both
-variable definitions and method definitions:
+Two keywords, two jobs:
 
-```jennifer
-def app() {              // method using `def`
-    def $x as int init 1; // variable using `def`
-    define $y as int init 2; // variable using `define`
-}
-define helper() {}       // method using `define`
-```
+- `def [const] NAME ...` introduces a **binding** (variable or constant).
+- `func NAME() { ... }` introduces a **method**.
 
-M1 only supports zero-argument methods, and methods can only be defined at the
-top level (not inside another method's body). Parameters, return values, and
-calling methods from other methods arrive in M3.
+Methods are **hoisted**: all `func NAME() { ... }` declarations are collected
+before any top-level statement runs, so a method can be called from anywhere
+in the file regardless of where it's defined. There is no required entry
+point - top-level statements execute in source order.
 
-`app()` is the entry point: the interpreter calls it after collecting all
-top-level method declarations.
+Methods can only be defined at the top level (not inside another method's
+body). Method bodies inherit the global scope, so top-level variables are
+visible inside methods (subject to the no-shadowing rule). Parameters,
+return values, and recursion arrive in M3.
 
 ### Imports
 
@@ -175,10 +215,9 @@ the file containing the import. File imports may appear anywhere a statement is
 allowed, including inside a block:
 
 ```jennifer
-def app() {
-    import helpers.j;   // ← spliced here; whatever helpers.j contains lands here
-    printf($helper_value);
-}
+import stdlib;
+import helpers.j;       // ← spliced here; whatever helpers.j contains lands here
+printf($helper_value);
 ```
 
 Circular imports (file A imports file B, B imports A) are detected and
@@ -193,20 +232,43 @@ Notes:
 
 ### Operators
 
-All M1 operators work on `int` operands and produce an `int` result.
+| Operator         | Meaning                                                  |
+|------------------|----------------------------------------------------------|
+| `+`              | addition (`int`/`float`); also concatenation on `string` |
+| `-`, `*`, `/`    | subtraction, multiplication, division (`int`/`float`)    |
+| `%`              | modulo (`int` only)                                      |
+| `<`, `>`, `<=`, `>=` | numeric comparison; result is `bool`                 |
+| `==`             | equality; same-kind comparison plus `int`/`float` promotion; result is `bool` |
 
-| Operator | Meaning           |
-|----------|-------------------|
-| `+`      | addition          |
-| `-`      | subtraction       |
-| `*`      | multiplication    |
-| `/`      | integer division  |
-| `%`      | modulo            |
+Precedence (low to high): comparison, then additive (`+`, `-`), then
+multiplicative (`*`, `/`, `%`). Use parentheses to override: `(1 + 2) * 3`.
 
-Precedence: `*`, `/`, `%` bind tighter than `+`, `-`. Use parentheses to
-override: `(1 + 2) * 3`.
+Mixed `int`/`float` arithmetic promotes the int to float and the result is a
+float (`3 + 0.5` -> `3.5`). `int / int` is integer division; if either
+operand is a float, division is float division.
 
-Comparison operators (`< > <= >= ==`) and `if`/`while`/`for` arrive in M2.
+### Control flow
+
+```jennifer
+if ($n == 0) {
+    printf("zero");
+} elseif ($n < 10) {
+    printf("small");
+} else {
+    printf("large");
+}
+
+while ($i < 5) {
+    $i = $i + 1;
+}
+
+for (def i as int init 0; $i < 10; $i = $i + 1) {
+    printf($i);
+}
+```
+
+Conditions in `if`, `elseif`, `while`, and `for` **must be `bool`** - there
+is no implicit truthiness. Use a comparison (`$x == 0`) to get a bool.
 
 ### Standard library
 
@@ -217,22 +279,38 @@ alongside multi-argument calls.
 
 ---
 
-## Worked example: strings
+## Example: strings
 
 ```jennifer
 // greeting.j
 import stdlib;
 
-def app() {
-    define $name as string init "Jennifer";
-    printf("hello, ");
-    printf($name);
-    printf("!\n");
-}
+def name as string init "Jennifer";
+printf("hello, " + $name + "!\n");
 ```
 
 Output:
 
 ```
 hello, Jennifer!
+```
+
+## Example: FizzBuzz
+
+```jennifer
+// fizzbuzz.j
+import stdlib;
+
+for (def i as int init 1; $i <= 15; $i = $i + 1) {
+    if ($i % 15 == 0) {
+        printf("FizzBuzz\n");
+    } elseif ($i % 3 == 0) {
+        printf("Fizz\n");
+    } elseif ($i % 5 == 0) {
+        printf("Buzz\n");
+    } else {
+        printf($i);
+        printf("\n");
+    }
+}
 ```

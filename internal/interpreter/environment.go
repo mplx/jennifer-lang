@@ -3,7 +3,19 @@
 
 package interpreter
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/mplx/jennifer-lang/internal/parser"
+)
+
+// Binding is one entry in an Environment frame: the current value plus the
+// declared static type and whether it's a constant.
+type Binding struct {
+	Value    Value
+	DeclType parser.Type
+	IsConst  bool
+}
 
 // Environment is a lexically-scoped symbol table.
 // Parent chains form the scope stack; Define adds to the current frame only.
@@ -11,41 +23,41 @@ import "fmt"
 // if any visible parent already binds the name.
 type Environment struct {
 	parent *Environment
-	vars   map[string]Value
-	consts map[string]bool // names in this frame that are constants
+	vars   map[string]Binding
 }
 
 func NewEnvironment(parent *Environment) *Environment {
 	return &Environment{
 		parent: parent,
-		vars:   make(map[string]Value),
-		consts: make(map[string]bool),
+		vars:   make(map[string]Binding),
 	}
 }
 
 // Define introduces a new binding in the current frame.
-// Returns an error if the name already exists in this frame or any enclosing scope
-// (spec: lower scopes may not overwrite existing bindings).
-func (e *Environment) Define(name string, val Value, isConst bool) error {
+// Returns an error if the name already exists in this frame or any enclosing
+// scope (spec: lower scopes may not overwrite existing bindings).
+func (e *Environment) Define(name string, val Value, declType parser.Type, isConst bool) error {
 	if e.existsInChain(name) {
 		return fmt.Errorf("name %q is already defined in an enclosing scope", name)
 	}
-	e.vars[name] = val
-	if isConst {
-		e.consts[name] = true
-	}
+	e.vars[name] = Binding{Value: val, DeclType: declType, IsConst: isConst}
 	return nil
 }
 
 // Assign updates an existing binding, walking up the parent chain to find it.
-// Errors if the name is undefined or refers to a constant.
+// Errors if the name is undefined, refers to a constant, or the new value's
+// kind doesn't match the declared type.
 func (e *Environment) Assign(name string, val Value) error {
 	for cur := e; cur != nil; cur = cur.parent {
-		if _, ok := cur.vars[name]; ok {
-			if cur.consts[name] {
+		if b, ok := cur.vars[name]; ok {
+			if b.IsConst {
 				return fmt.Errorf("cannot assign to constant %q", name)
 			}
-			cur.vars[name] = val
+			if !val.MatchesDeclared(b.DeclType) {
+				return fmt.Errorf("cannot assign %s to %s variable %q", val.Kind, b.DeclType, name)
+			}
+			b.Value = val
+			cur.vars[name] = b
 			return nil
 		}
 	}
@@ -55,8 +67,8 @@ func (e *Environment) Assign(name string, val Value) error {
 // Get looks up a name, walking outward.
 func (e *Environment) Get(name string) (Value, error) {
 	for cur := e; cur != nil; cur = cur.parent {
-		if v, ok := cur.vars[name]; ok {
-			return v, nil
+		if b, ok := cur.vars[name]; ok {
+			return b.Value, nil
 		}
 	}
 	return Value{}, fmt.Errorf("undefined variable %q", name)

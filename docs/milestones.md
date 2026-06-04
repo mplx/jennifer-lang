@@ -3,15 +3,11 @@
 Development is split into milestones. Each milestone produces a *working*
 interpreter that runs a strictly larger subset of the language.
 
-Status legend:
-
-- ✅ done
-- 🚧 in progress
-- ⬜ not started
-
 ---
 
-## M1 - End-to-end MVP ✅
+## M1 - End-to-end MVP
+
+**Status:** done.
 
 The smallest possible vertical slice that proves the pipeline:
 source → tokens → preprocessed tokens → AST → result.
@@ -19,16 +15,24 @@ source → tokens → preprocessed tokens → AST → result.
 **Language subset:**
 
 - Types: `int`, `string` only
-- `define $x as int init 5;` (the `init` clause is required in M1)
+- `def x as int init 5;` (the `init` clause is required in M1)
 - `$var` references
 - Arithmetic: `+ - * /` and `%` on ints; parenthesised grouping
 - `printf("text")` and `printf($var)` - single argument, no format specifiers
 - `import stdlib;` (library import)
 - `import file.j;` (file import - textual splice; works anywhere, including
   inside a block; circular-import detection)
-- `def app() { ... }` (zero-arg, top-level only)
-- `def` and `define` are synonyms (one `TOKEN_DEFINE`; parser disambiguates)
+- Method definitions (zero-arg, top-level only)
 - Comments: `//` and `/* */`
+
+**Post-M1/M2 syntax adjustments (kept here for historical clarity):**
+
+- The `app()` entry-method requirement was dropped: top-level statements run
+  in source order, methods are just hoisted callables.
+- `define` was originally a synonym for `def`. It has been removed; only
+  `def` remains, and methods use a new `func` keyword.
+- At the def site, names are bare identifiers (no `$` sigil). The `$` is
+  reserved for use-site references to mutable variables.
 
 **What lands beyond the bare MVP:**
 
@@ -41,7 +45,12 @@ source → tokens → preprocessed tokens → AST → result.
 
 ---
 
-## M2 - Types, constants, scoping, control flow ⬜
+## M2 - Types, constants, scoping, control flow
+
+**Status:** done.
+
+**Decision (resolved at start of M2):** uninitialized `def x as T;` gives
+`$x` the zero value of `T` (`0`, `0.0`, `""`, `false`, `null`).
 
 Rounds out the "ordinary" feature set the spec calls for.
 
@@ -53,8 +62,8 @@ Rounds out the "ordinary" feature set the spec calls for.
 
 **Variable system:**
 
-- `define $x as int;` (uninitialized → zero value of the type)
-- `define const NAME as TYPE init VALUE;` - constants; assignment-after-init
+- `def x as int;` (uninitialized → zero value of the type)
+- `def const NAME as TYPE init VALUE;` - constants; assignment-after-init
   is an error
 - Name-rule enforcement: variable names `[A-Za-z]{1,64}`, constant names
   `[A-Z]{1,64}`
@@ -78,19 +87,19 @@ Rounds out the "ordinary" feature set the spec calls for.
 **New AST nodes:** `FloatLit`, `NullLit`, `BoolLit`, `ConstDefineStmt`,
 `AssignStmt`, `IfStmt`, `WhileStmt`, `ForStmt`, `CompareExpr`.
 
-**Decision required at start of M2:** semantics of uninitialized `define`
+**Decision required at start of M2:** semantics of uninitialized `def`
 (recommend: zero value of the declared type - `0`, `0.0`, `""`, `false`).
 
 **New tests:** scope tests (inner reads outer; inner cannot re-declare; const
 cannot be reassigned), full arithmetic/comparison matrices, programs like
 `fizzbuzz.j` and `fib.j`.
 
-**Docs to update:** full grammar in `technical.md`, full type table and
-scoping rules in `user-guide.md`.
-
 ---
 
-## M3 - Methods with parameters and return values ⬜
+## M3 - Methods with parameters and return values
+
+**Status:** not started.
+
 
 - `def name(a as int, b as string) { ... }` - parameter parsing
 - Argument passing - by value for scalars
@@ -104,22 +113,29 @@ scoping rules in `user-guide.md`.
 **New tests:** recursion (`fib`, `fact`), wrong-arity and wrong-type call
 errors, `sprintf` output.
 
-**Docs:** methods chapter in `user-guide.md`; calling convention + stack model
-in `technical.md`.
-
 ---
 
-## M4 - Polish & ergonomics ⬜
+## M4 - Polish & ergonomics
+
+**Status:** not started.
+
 
 - **Better errors:** line/column on every error, source snippet with caret
 - **REPL:** `jennifer repl` reusing the existing lexer/parser/interpreter
 - **Formatter:** `jennifer fmt` - re-emit the AST as canonical source
 - **Logical operators:** `and`, `or`, `not` - only if their absence becomes painful
+- **Type-conversion functions:** stdlib builtins `string(v)`, `int(v)`, `float(v)`, `bool(v)`.
+  Explicit casts only - no implicit coercion in `+` or comparisons. Each errors on
+  impossible conversions (e.g. `int("abc")`). Roughly:
+  - `string(any)` -> `string` (uses `Value.Display()`)
+  - `int(int|float|string|bool)` -> `int` (truncate float; parse string; true=1/false=0)
+  - `float(int|float|string)` -> `float`
+  - `bool(bool|int)` -> `bool` (nonzero int is true) - or restrict to bool to stay strict
 - **Arrays:** the original spec teased them; significant lift, essentially its own milestone
 
 ---
 
-## Future directions (post-M4) ⬜
+## Future directions (post-M4)
 
 Long-term goals - not committed to a milestone yet, but the code should not
 foreclose them.

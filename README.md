@@ -25,10 +25,8 @@ A first program:
 ```jennifer
 import stdlib;
 
-def app() {
-    define $x as int init 21;
-    printf($x + $x);
-}
+def x as int init 21;
+printf($x + $x);
 ```
 
 ## Documentation

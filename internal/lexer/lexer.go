@@ -100,7 +100,25 @@ func (l *Lexer) Next() (Token, error) {
 		return Token{Type: TOKEN_COMMA, Lexeme: ",", Line: startLine, Col: startCol}, nil
 	case ch == '=':
 		l.advance()
+		if next, ok := l.peek(0); ok && next == '=' {
+			l.advance()
+			return Token{Type: TOKEN_EQ, Lexeme: "==", Line: startLine, Col: startCol}, nil
+		}
 		return Token{Type: TOKEN_ASSIGN, Lexeme: "=", Line: startLine, Col: startCol}, nil
+	case ch == '<':
+		l.advance()
+		if next, ok := l.peek(0); ok && next == '=' {
+			l.advance()
+			return Token{Type: TOKEN_LE, Lexeme: "<=", Line: startLine, Col: startCol}, nil
+		}
+		return Token{Type: TOKEN_LT, Lexeme: "<", Line: startLine, Col: startCol}, nil
+	case ch == '>':
+		l.advance()
+		if next, ok := l.peek(0); ok && next == '=' {
+			l.advance()
+			return Token{Type: TOKEN_GE, Lexeme: ">=", Line: startLine, Col: startCol}, nil
+		}
+		return Token{Type: TOKEN_GT, Lexeme: ">", Line: startLine, Col: startCol}, nil
 	case ch == '+':
 		l.advance()
 		return Token{Type: TOKEN_PLUS, Lexeme: "+", Line: startLine, Col: startCol}, nil
@@ -259,6 +277,18 @@ func (l *Lexer) readNumber(startLine, startCol int) (Token, error) {
 	for l.pos < len(l.src) && unicode.IsDigit(l.src[l.pos]) {
 		b.WriteRune(l.src[l.pos])
 		l.advance()
+	}
+	// Float? Require a digit after `.` so that `3.j` (file-import-ish) still
+	// lexes as INT(3) DOT IDENT(j). A trailing dot with no digit is also left
+	// to the caller's interpretation.
+	if l.pos+1 < len(l.src) && l.src[l.pos] == '.' && unicode.IsDigit(l.src[l.pos+1]) {
+		b.WriteRune('.')
+		l.advance()
+		for l.pos < len(l.src) && unicode.IsDigit(l.src[l.pos]) {
+			b.WriteRune(l.src[l.pos])
+			l.advance()
+		}
+		return Token{Type: TOKEN_FLOAT, Lexeme: b.String(), Line: startLine, Col: startCol}, nil
 	}
 	return Token{Type: TOKEN_INT, Lexeme: b.String(), Line: startLine, Col: startCol}, nil
 }

@@ -102,35 +102,21 @@ func (p *parser) parseProgram() (*Program, error) {
 				return nil, err
 			}
 			prog.Imports = append(prog.Imports, imp)
-		case lexer.TOKEN_DEFINE:
-			// `define`/`def` introduces either a method (followed by IDENT)
-			// or a variable (followed by VARREF). Variable defines aren't
-			// allowed at the top level in M1 - that's global state and we
-			// don't have an evaluation strategy for it yet.
-			next := p.peekN(1)
-			if next.Type == lexer.TOKEN_IDENT {
-				m, err := p.parseMethodDef()
-				if err != nil {
-					return nil, err
-				}
-				prog.Methods = append(prog.Methods, m)
-				continue
+		case lexer.TOKEN_FUNC:
+			// `func NAME() { ... }` - methods are hoisted so they can be
+			// called regardless of textual order.
+			m, err := p.parseMethodDef()
+			if err != nil {
+				return nil, err
 			}
-			if next.Type == lexer.TOKEN_VARREF {
-				return nil, &ParseError{
-					Msg:  "variable definitions are not allowed at the top level (M1)",
-					Line: t.Line, Col: t.Col,
-				}
-			}
-			return nil, &ParseError{
-				Msg:  fmt.Sprintf("expected method name or variable reference after `%s`, got %s (%q)", t.Lexeme, next.Type, next.Lexeme),
-				Line: next.Line, Col: next.Col,
-			}
+			prog.Methods = append(prog.Methods, m)
 		default:
-			return nil, &ParseError{
-				Msg:  fmt.Sprintf("expected `import`, `def`, or `define` at top level, got %s (%q)", t.Type, t.Lexeme),
-				Line: t.Line, Col: t.Col,
+			// Any other top-level statement: def / assign / if / while / for / expr.
+			st, err := p.parseStatement()
+			if err != nil {
+				return nil, err
 			}
+			prog.TopLevel = append(prog.TopLevel, st)
 		}
 	}
 }
@@ -148,8 +134,8 @@ func (p *parser) parseImport() (*ImportStmt, error) {
 }
 
 func (p *parser) parseMethodDef() (*MethodDef, error) {
-	def, _ := p.match(lexer.TOKEN_DEFINE)
-	name, err := p.expect(lexer.TOKEN_IDENT, "after `def`/`define`")
+	def, _ := p.match(lexer.TOKEN_FUNC)
+	name, err := p.expect(lexer.TOKEN_IDENT, "after `func`")
 	if err != nil {
 		return nil, err
 	}
@@ -187,24 +173,24 @@ func (p *parser) parseBlock() (*Block, error) {
 }
 
 func (p *parser) parseStatement() (Stmt, error) {
-	if p.check(lexer.TOKEN_DEFINE) {
-		// Disambiguate variable vs. method definition.
-		// M1 only allows variable definitions inside blocks.
-		next := p.peekN(1)
-		if next.Type == lexer.TOKEN_VARREF {
-			return p.parseDefine()
-		}
-		if next.Type == lexer.TOKEN_IDENT {
-			t := p.peek()
-			return nil, &ParseError{
-				Msg:  "methods can only be defined at the top level (M1)",
-				Line: t.Line, Col: t.Col,
-			}
-		}
+	switch p.peek().Type {
+	case lexer.TOKEN_DEFINE:
+		return p.parseDefineLike()
+	case lexer.TOKEN_FUNC:
 		t := p.peek()
-		return nil, &ParseError{
-			Msg:  fmt.Sprintf("expected variable reference after `%s`, got %s (%q)", t.Lexeme, next.Type, next.Lexeme),
-			Line: next.Line, Col: next.Col,
+		return nil, &ParseError{Msg: "methods can only be defined at the top level", Line: t.Line, Col: t.Col}
+	case lexer.TOKEN_IF:
+		return p.parseIf()
+	case lexer.TOKEN_WHILE:
+		return p.parseWhile()
+	case lexer.TOKEN_FOR:
+		return p.parseFor()
+	case lexer.TOKEN_VARREF:
+		// `$x = expr ;` is an assignment; anything else starting with $x
+		// is an expression statement (rare, but possible if VARREF is used
+		// in a call - which it currently isn't - kept open for safety).
+		if p.peekN(1).Type == lexer.TOKEN_ASSIGN {
+			return p.parseAssign(true)
 		}
 	}
 	// expression statement
@@ -219,9 +205,62 @@ func (p *parser) parseStatement() (Stmt, error) {
 	return &ExprStmt{pos: pos{Line: start.Line, Col: start.Col}, Expr: expr}, nil
 }
 
-func (p *parser) parseDefine() (Stmt, error) {
+// parseDefineLike handles `def` statements:
+//   def NAME as T;
+//   def NAME as T init EXPR;
+//   def const NAME as T init EXPR;
+// Methods use `func` and are handled by parseMethodDef.
+func (p *parser) parseDefineLike() (Stmt, error) {
 	def, _ := p.match(lexer.TOKEN_DEFINE)
-	vref, err := p.expect(lexer.TOKEN_VARREF, "after `define`")
+	isConst := false
+	if _, ok := p.match(lexer.TOKEN_CONST); ok {
+		isConst = true
+	}
+	// The name is a bare IDENT. The `$` sigil is reserved for use-site
+	// references to mutable variables. Catch the old-style `def $x ...`
+	// here and produce a helpful error.
+	if v := p.peek(); v.Type == lexer.TOKEN_VARREF {
+		return nil, &ParseError{
+			Msg:  fmt.Sprintf("drop the `$` here: write `def %s` (the `$` is only for use-site references)", v.Lexeme),
+			Line: v.Line, Col: v.Col,
+		}
+	}
+	if isConst {
+		// constant: name is an IDENT, must be uppercase [A-Z]+
+		name, err := p.expect(lexer.TOKEN_IDENT, "after `const`")
+		if err != nil {
+			return nil, err
+		}
+		if !isUpperOnly(name.Lexeme) {
+			return nil, &ParseError{Msg: fmt.Sprintf("constant name %q must use [A-Z] only", name.Lexeme), Line: name.Line, Col: name.Col}
+		}
+		if _, err := p.expect(lexer.TOKEN_AS, "after constant name"); err != nil {
+			return nil, err
+		}
+		tt, err := p.parseType()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(lexer.TOKEN_INIT, "(constants require an `init` initializer)"); err != nil {
+			return nil, err
+		}
+		initExpr, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate constant define"); err != nil {
+			return nil, err
+		}
+		return &DefineStmt{
+			pos:      pos{Line: def.Line, Col: def.Col},
+			IsConst:  true,
+			VarName:  name.Lexeme,
+			VarType:  tt,
+			InitExpr: initExpr,
+		}, nil
+	}
+	// variable - name is a bare IDENT
+	name, err := p.expect(lexer.TOKEN_IDENT, "after `def`")
 	if err != nil {
 		return nil, err
 	}
@@ -232,22 +271,162 @@ func (p *parser) parseDefine() (Stmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := p.expect(lexer.TOKEN_INIT, "(M1 requires `init` initializer)"); err != nil {
-		return nil, err
-	}
-	initExpr, err := p.parseExpr()
-	if err != nil {
-		return nil, err
+	var initExpr Expr
+	if _, ok := p.match(lexer.TOKEN_INIT); ok {
+		initExpr, err = p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
 	}
 	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate define"); err != nil {
 		return nil, err
 	}
 	return &DefineStmt{
 		pos:      pos{Line: def.Line, Col: def.Col},
-		VarName:  vref.Lexeme,
+		VarName:  name.Lexeme,
 		VarType:  tt,
 		InitExpr: initExpr,
 	}, nil
+}
+
+// parseAssign parses `$x = expr;`. If consumeSemi is false (e.g. inside a
+// for-loop step), the trailing `;` is not consumed.
+func (p *parser) parseAssign(consumeSemi bool) (Stmt, error) {
+	vref, _ := p.match(lexer.TOKEN_VARREF)
+	if _, err := p.expect(lexer.TOKEN_ASSIGN, "in assignment"); err != nil {
+		return nil, err
+	}
+	val, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	if consumeSemi {
+		if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate assignment"); err != nil {
+			return nil, err
+		}
+	}
+	return &AssignStmt{pos: pos{Line: vref.Line, Col: vref.Col}, VarName: vref.Lexeme, Value: val}, nil
+}
+
+func (p *parser) parseIf() (Stmt, error) {
+	ift, _ := p.match(lexer.TOKEN_IF)
+	cond, err := p.parseParenCond("if")
+	if err != nil {
+		return nil, err
+	}
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	stmt := &IfStmt{pos: pos{Line: ift.Line, Col: ift.Col}, Cond: cond, Then: body}
+	for p.check(lexer.TOKEN_ELSEIF) {
+		p.advance()
+		c, err := p.parseParenCond("elseif")
+		if err != nil {
+			return nil, err
+		}
+		b, err := p.parseBlock()
+		if err != nil {
+			return nil, err
+		}
+		stmt.ElseIfs = append(stmt.ElseIfs, c)
+		stmt.ElseIfBodies = append(stmt.ElseIfBodies, b)
+	}
+	if p.check(lexer.TOKEN_ELSE) {
+		p.advance()
+		b, err := p.parseBlock()
+		if err != nil {
+			return nil, err
+		}
+		stmt.Else = b
+	}
+	return stmt, nil
+}
+
+func (p *parser) parseWhile() (Stmt, error) {
+	wt, _ := p.match(lexer.TOKEN_WHILE)
+	cond, err := p.parseParenCond("while")
+	if err != nil {
+		return nil, err
+	}
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	return &WhileStmt{pos: pos{Line: wt.Line, Col: wt.Col}, Cond: cond, Body: body}, nil
+}
+
+func (p *parser) parseFor() (Stmt, error) {
+	ft, _ := p.match(lexer.TOKEN_FOR)
+	if _, err := p.expect(lexer.TOKEN_LPAREN, "after `for`"); err != nil {
+		return nil, err
+	}
+	// init: define-stmt | assign | empty
+	var initStmt Stmt
+	if p.check(lexer.TOKEN_DEFINE) {
+		s, err := p.parseDefineLike() // consumes its own `;`
+		if err != nil {
+			return nil, err
+		}
+		initStmt = s
+	} else if p.check(lexer.TOKEN_VARREF) && p.peekN(1).Type == lexer.TOKEN_ASSIGN {
+		s, err := p.parseAssign(true) // consumes `;`
+		if err != nil {
+			return nil, err
+		}
+		initStmt = s
+	} else if !p.check(lexer.TOKEN_SEMI) {
+		t := p.peek()
+		return nil, &ParseError{Msg: fmt.Sprintf("expected for-init (define or assignment), got %s (%q)", t.Type, t.Lexeme), Line: t.Line, Col: t.Col}
+	} else {
+		p.advance() // consume `;` for empty init
+	}
+	// cond: expr | empty
+	var cond Expr
+	if !p.check(lexer.TOKEN_SEMI) {
+		c, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		cond = c
+	}
+	if _, err := p.expect(lexer.TOKEN_SEMI, "after for-condition"); err != nil {
+		return nil, err
+	}
+	// step: assign | empty   (no trailing `;`, the `)` terminates it)
+	var step Stmt
+	if p.check(lexer.TOKEN_VARREF) && p.peekN(1).Type == lexer.TOKEN_ASSIGN {
+		s, err := p.parseAssign(false)
+		if err != nil {
+			return nil, err
+		}
+		step = s
+	} else if !p.check(lexer.TOKEN_RPAREN) {
+		t := p.peek()
+		return nil, &ParseError{Msg: fmt.Sprintf("expected for-step (assignment) or `)`, got %s (%q)", t.Type, t.Lexeme), Line: t.Line, Col: t.Col}
+	}
+	if _, err := p.expect(lexer.TOKEN_RPAREN, "to close for-header"); err != nil {
+		return nil, err
+	}
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	return &ForStmt{pos: pos{Line: ft.Line, Col: ft.Col}, Init: initStmt, Cond: cond, Step: step, Body: body}, nil
+}
+
+func (p *parser) parseParenCond(ctx string) (Expr, error) {
+	if _, err := p.expect(lexer.TOKEN_LPAREN, "after `"+ctx+"`"); err != nil {
+		return nil, err
+	}
+	c, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TOKEN_RPAREN, "to close `"+ctx+"` condition"); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 func (p *parser) parseType() (Type, error) {
@@ -256,15 +435,71 @@ func (p *parser) parseType() (Type, error) {
 	case lexer.TOKEN_INT_TYPE:
 		p.advance()
 		return TypeInt, nil
+	case lexer.TOKEN_FLOAT_TYPE:
+		p.advance()
+		return TypeFloat, nil
 	case lexer.TOKEN_STRING_TYPE:
 		p.advance()
 		return TypeString, nil
+	case lexer.TOKEN_BOOL_TYPE:
+		p.advance()
+		return TypeBool, nil
+	case lexer.TOKEN_NULL:
+		p.advance()
+		return TypeNull, nil
 	}
 	return TypeInvalid, &ParseError{Msg: fmt.Sprintf("expected type, got %s (%q)", t.Type, t.Lexeme), Line: t.Line, Col: t.Col}
 }
 
+func isUpperOnly(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
 func (p *parser) parseExpr() (Expr, error) {
-	return p.parseAdd()
+	return p.parseComparison()
+}
+
+// Comparison is lower-precedence than additive, non-associative-ish: we accept
+// a chain (`a < b == c`) syntactically but it's almost certainly a bug; for
+// now we parse left-associatively and let semantics reject mixed-kind ops.
+func (p *parser) parseComparison() (Expr, error) {
+	left, err := p.parseAdd()
+	if err != nil {
+		return nil, err
+	}
+	for {
+		var op BinaryOp
+		t := p.peek()
+		switch t.Type {
+		case lexer.TOKEN_LT:
+			op = OpLt
+		case lexer.TOKEN_GT:
+			op = OpGt
+		case lexer.TOKEN_LE:
+			op = OpLe
+		case lexer.TOKEN_GE:
+			op = OpGe
+		case lexer.TOKEN_EQ:
+			op = OpEq
+		default:
+			return left, nil
+		}
+		p.advance()
+		right, err := p.parseAdd()
+		if err != nil {
+			return nil, err
+		}
+		l, c := left.Pos()
+		left = &BinaryExpr{pos: pos{Line: l, Col: c}, Op: op, Left: left, Right: right}
+	}
 }
 
 func (p *parser) parseAdd() (Expr, error) {
@@ -331,9 +566,25 @@ func (p *parser) parsePrimary() (Expr, error) {
 			return nil, &ParseError{Msg: fmt.Sprintf("invalid int literal %q: %v", t.Lexeme, err), Line: t.Line, Col: t.Col}
 		}
 		return &IntLit{pos: pos{Line: t.Line, Col: t.Col}, Value: n}, nil
+	case lexer.TOKEN_FLOAT:
+		p.advance()
+		f, err := strconv.ParseFloat(t.Lexeme, 64)
+		if err != nil {
+			return nil, &ParseError{Msg: fmt.Sprintf("invalid float literal %q: %v", t.Lexeme, err), Line: t.Line, Col: t.Col}
+		}
+		return &FloatLit{pos: pos{Line: t.Line, Col: t.Col}, Value: f}, nil
 	case lexer.TOKEN_STRING:
 		p.advance()
 		return &StringLit{pos: pos{Line: t.Line, Col: t.Col}, Value: t.Lexeme}, nil
+	case lexer.TOKEN_TRUE:
+		p.advance()
+		return &BoolLit{pos: pos{Line: t.Line, Col: t.Col}, Value: true}, nil
+	case lexer.TOKEN_FALSE:
+		p.advance()
+		return &BoolLit{pos: pos{Line: t.Line, Col: t.Col}, Value: false}, nil
+	case lexer.TOKEN_NULL:
+		p.advance()
+		return &NullLit{pos: pos{Line: t.Line, Col: t.Col}}, nil
 	case lexer.TOKEN_VARREF:
 		p.advance()
 		return &VarExpr{pos: pos{Line: t.Line, Col: t.Col}, Name: t.Lexeme}, nil

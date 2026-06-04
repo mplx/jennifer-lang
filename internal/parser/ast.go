@@ -36,15 +36,24 @@ type Type int
 const (
 	TypeInvalid Type = iota
 	TypeInt
+	TypeFloat
 	TypeString
+	TypeBool
+	TypeNull
 )
 
 func (t Type) String() string {
 	switch t {
 	case TypeInt:
 		return "int"
+	case TypeFloat:
+		return "float"
 	case TypeString:
 		return "string"
+	case TypeBool:
+		return "bool"
+	case TypeNull:
+		return "null"
 	default:
 		return "<invalid>"
 	}
@@ -54,8 +63,9 @@ func (t Type) String() string {
 
 type Program struct {
 	pos
-	Imports []*ImportStmt
-	Methods []*MethodDef
+	Imports  []*ImportStmt
+	Methods  []*MethodDef
+	TopLevel []Stmt // top-level statements executed in source order after method hoisting
 }
 
 // ---- Statements ----
@@ -82,16 +92,62 @@ type Block struct {
 
 func (*Block) stmtNode() {}
 
-// DefineStmt: `define $x as int init <expr>;`
-// M1 requires `init`; later milestones will allow defining without an initializer.
+// DefineStmt: `define $x as int [init <expr>];` or `define const NAME as int init <expr>;`
+// InitExpr is nil for uninitialized variables (interpreter uses ZeroFor in that case).
+// Constants always have InitExpr != nil (the parser enforces this).
 type DefineStmt struct {
 	pos
-	VarName  string
+	IsConst  bool
+	VarName  string // for variables: the $-name; for constants: the UPPERCASE name
 	VarType  Type
-	InitExpr Expr // never nil in M1
+	InitExpr Expr // may be nil for uninitialized variables; never nil for constants
 }
 
 func (*DefineStmt) stmtNode() {}
+
+// AssignStmt: `$x = <expr>;`
+type AssignStmt struct {
+	pos
+	VarName string
+	Value   Expr
+}
+
+func (*AssignStmt) stmtNode() {}
+
+// IfStmt: `if (cond) { body } [elseif (cond) { body }]* [else { body }]?`
+// ElseIfs is parallel to ElseIfBodies. Else may be nil.
+type IfStmt struct {
+	pos
+	Cond         Expr
+	Then         *Block
+	ElseIfs      []Expr
+	ElseIfBodies []*Block
+	Else         *Block // nil if absent
+}
+
+func (*IfStmt) stmtNode() {}
+
+// WhileStmt: `while (cond) { body }`
+type WhileStmt struct {
+	pos
+	Cond Expr
+	Body *Block
+}
+
+func (*WhileStmt) stmtNode() {}
+
+// ForStmt: `for (init; cond; step) { body }`
+// Init may be a DefineStmt or an AssignStmt; Step is an AssignStmt.
+// Any field may be nil (e.g. `for (; cond ;) { ... }` would mean empty init/step).
+type ForStmt struct {
+	pos
+	Init Stmt // *DefineStmt or *AssignStmt, or nil
+	Cond Expr // must produce bool; nil means "true forever"
+	Step Stmt // *AssignStmt or nil
+	Body *Block
+}
+
+func (*ForStmt) stmtNode() {}
 
 // ExprStmt: a bare expression terminated by `;` (used for calls like `printf(...)`).
 type ExprStmt struct {
@@ -110,12 +166,32 @@ type IntLit struct {
 
 func (*IntLit) exprNode() {}
 
+type FloatLit struct {
+	pos
+	Value float64
+}
+
+func (*FloatLit) exprNode() {}
+
 type StringLit struct {
 	pos
 	Value string
 }
 
 func (*StringLit) exprNode() {}
+
+type BoolLit struct {
+	pos
+	Value bool
+}
+
+func (*BoolLit) exprNode() {}
+
+type NullLit struct {
+	pos
+}
+
+func (*NullLit) exprNode() {}
 
 type VarExpr struct {
 	pos
@@ -140,6 +216,11 @@ const (
 	OpMul
 	OpDiv
 	OpMod
+	OpLt
+	OpGt
+	OpLe
+	OpGe
+	OpEq
 )
 
 func (o BinaryOp) String() string {
@@ -154,8 +235,27 @@ func (o BinaryOp) String() string {
 		return "/"
 	case OpMod:
 		return "%"
+	case OpLt:
+		return "<"
+	case OpGt:
+		return ">"
+	case OpLe:
+		return "<="
+	case OpGe:
+		return ">="
+	case OpEq:
+		return "=="
 	}
 	return "?"
+}
+
+// IsComparison reports whether the op is a comparison (result type is bool).
+func (o BinaryOp) IsComparison() bool {
+	switch o {
+	case OpLt, OpGt, OpLe, OpGe, OpEq:
+		return true
+	}
+	return false
 }
 
 type BinaryExpr struct {
@@ -178,6 +278,9 @@ func Sprint(n Node) string {
 		for _, m := range v.Methods {
 			s += Sprint(m) + " "
 		}
+		for _, st := range v.TopLevel {
+			s += Sprint(st) + " "
+		}
 		return s + "}"
 	case *ImportStmt:
 		return fmt.Sprintf("Import(%s)", v.Name)
@@ -193,13 +296,57 @@ func Sprint(n Node) string {
 		}
 		return s + "]"
 	case *DefineStmt:
-		return fmt.Sprintf("Define($%s as %s = %s)", v.VarName, v.VarType, Sprint(v.InitExpr))
+		kind := "Define"
+		if v.IsConst {
+			kind = "Const"
+		}
+		name := "$" + v.VarName
+		if v.IsConst {
+			name = v.VarName
+		}
+		if v.InitExpr == nil {
+			return fmt.Sprintf("%s(%s as %s)", kind, name, v.VarType)
+		}
+		return fmt.Sprintf("%s(%s as %s = %s)", kind, name, v.VarType, Sprint(v.InitExpr))
+	case *AssignStmt:
+		return fmt.Sprintf("Assign($%s = %s)", v.VarName, Sprint(v.Value))
+	case *IfStmt:
+		s := fmt.Sprintf("If(%s, %s", Sprint(v.Cond), Sprint(v.Then))
+		for i, c := range v.ElseIfs {
+			s += fmt.Sprintf(", ElseIf(%s, %s)", Sprint(c), Sprint(v.ElseIfBodies[i]))
+		}
+		if v.Else != nil {
+			s += fmt.Sprintf(", Else(%s)", Sprint(v.Else))
+		}
+		return s + ")"
+	case *WhileStmt:
+		return fmt.Sprintf("While(%s, %s)", Sprint(v.Cond), Sprint(v.Body))
+	case *ForStmt:
+		initS := "<nil>"
+		if v.Init != nil {
+			initS = Sprint(v.Init)
+		}
+		condS := "<nil>"
+		if v.Cond != nil {
+			condS = Sprint(v.Cond)
+		}
+		stepS := "<nil>"
+		if v.Step != nil {
+			stepS = Sprint(v.Step)
+		}
+		return fmt.Sprintf("For(%s; %s; %s, %s)", initS, condS, stepS, Sprint(v.Body))
 	case *ExprStmt:
 		return fmt.Sprintf("ExprStmt(%s)", Sprint(v.Expr))
 	case *IntLit:
 		return fmt.Sprintf("Int(%d)", v.Value)
+	case *FloatLit:
+		return fmt.Sprintf("Float(%g)", v.Value)
 	case *StringLit:
 		return fmt.Sprintf("Str(%q)", v.Value)
+	case *BoolLit:
+		return fmt.Sprintf("Bool(%t)", v.Value)
+	case *NullLit:
+		return "Null"
 	case *VarExpr:
 		return fmt.Sprintf("Var($%s)", v.Name)
 	case *CallExpr:

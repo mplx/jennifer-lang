@@ -4,9 +4,7 @@
 // greeting.j - strings, escape sequences, multiple printf calls.
 import stdlib;
 
-def app() {
-    define $name as string init "Jennifer";
-    printf("hello, ");
-    printf($name);
-    printf("!\n");
-}
+def name as string init "Jennifer";
+printf("hello, ");
+printf($name);
+printf("!\n");

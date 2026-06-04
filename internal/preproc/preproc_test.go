@@ -62,8 +62,8 @@ func TestPassesThroughLibraryImports(t *testing.T) {
 
 func TestFileImportSplices(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
-		"helpers.j": `define $bonus as int init 7;`,
-		"main.j":    `def app() { import helpers.j; printf($bonus); }`,
+		"helpers.j": `def bonus as int init 7;`,
+		"main.j":    `func app() { import helpers.j; printf($bonus); }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -81,10 +81,10 @@ func TestFileImportSplices(t *testing.T) {
 			t.Errorf("DOT token survived preprocessing: %v", tk)
 		}
 	}
-	// We expect: def app ( ) { define $bonus as int init 7 ; printf ( $bonus ) ; } EOF
+	// We expect: def app ( ) { def bonus as int init 7 ; printf ( $bonus ) ; } EOF
 	wantTypes := []lexer.TokenType{
-		lexer.TOKEN_DEFINE, lexer.TOKEN_IDENT, lexer.TOKEN_LPAREN, lexer.TOKEN_RPAREN, lexer.TOKEN_LBRACE,
-		lexer.TOKEN_DEFINE, lexer.TOKEN_VARREF, lexer.TOKEN_AS, lexer.TOKEN_INT_TYPE, lexer.TOKEN_INIT, lexer.TOKEN_INT, lexer.TOKEN_SEMI,
+		lexer.TOKEN_FUNC, lexer.TOKEN_IDENT, lexer.TOKEN_LPAREN, lexer.TOKEN_RPAREN, lexer.TOKEN_LBRACE,
+		lexer.TOKEN_DEFINE, lexer.TOKEN_IDENT, lexer.TOKEN_AS, lexer.TOKEN_INT_TYPE, lexer.TOKEN_INIT, lexer.TOKEN_INT, lexer.TOKEN_SEMI,
 		lexer.TOKEN_IDENT, lexer.TOKEN_LPAREN, lexer.TOKEN_VARREF, lexer.TOKEN_RPAREN, lexer.TOKEN_SEMI,
 		lexer.TOKEN_RBRACE, lexer.TOKEN_EOF,
 	}
@@ -95,9 +95,9 @@ func TestFileImportSplices(t *testing.T) {
 
 func TestNestedFileImports(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
-		"a.j":    `define $a as int init 1;`,
-		"b.j":    `import a.j; define $b as int init 2;`,
-		"main.j": `def app() { import b.j; printf($a + $b); }`,
+		"a.j":    `def a as int init 1;`,
+		"b.j":    `import a.j; def b as int init 2;`,
+		"main.j": `func app() { import b.j; printf($a + $b); }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -106,23 +106,28 @@ func TestNestedFileImports(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preproc: %v", err)
 	}
-	// Should have two `define` statements for $a and $b spliced in.
+	// Two DEFINE tokens (one each from a.j and b.j) and one FUNC (for app).
 	defineCount := 0
+	funcCount := 0
 	varrefs := []string{}
 	for _, tk := range out {
-		if tk.Type == lexer.TOKEN_DEFINE {
+		switch tk.Type {
+		case lexer.TOKEN_DEFINE:
 			defineCount++
-		}
-		if tk.Type == lexer.TOKEN_VARREF {
+		case lexer.TOKEN_FUNC:
+			funcCount++
+		case lexer.TOKEN_VARREF:
 			varrefs = append(varrefs, tk.Lexeme)
 		}
 	}
-	// 3 defines: app (method), $a, $b
-	if defineCount != 3 {
-		t.Errorf("got %d DEFINE tokens, want 3", defineCount)
+	if defineCount != 2 {
+		t.Errorf("got %d DEFINE tokens, want 2", defineCount)
 	}
-	// varrefs should contain a, b, a, b (define $a, define $b, $a, $b)
-	wantVarrefs := []string{"a", "b", "a", "b"}
+	if funcCount != 1 {
+		t.Errorf("got %d FUNC tokens, want 1", funcCount)
+	}
+	// Only the use sites carry $; defs use bare IDENT.
+	wantVarrefs := []string{"a", "b"}
 	if len(varrefs) != len(wantVarrefs) {
 		t.Fatalf("got varrefs %v, want %v", varrefs, wantVarrefs)
 	}
@@ -135,9 +140,9 @@ func TestNestedFileImports(t *testing.T) {
 
 func TestDetectsCircularImport(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
-		"a.j":    `import b.j; define $a as int init 1;`,
-		"b.j":    `import a.j; define $b as int init 2;`,
-		"main.j": `def app() { import a.j; }`,
+		"a.j":    `import b.j; def a as int init 1;`,
+		"b.j":    `import a.j; def b as int init 2;`,
+		"main.j": `func app() { import a.j; }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -152,7 +157,7 @@ func TestDetectsCircularImport(t *testing.T) {
 }
 
 func TestRejectsNonJExtension(t *testing.T) {
-	src := `def app() { import foo.go; }`
+	src := `func app() { import foo.go; }`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, ".", "")
 	if err == nil {
@@ -165,7 +170,7 @@ func TestRejectsNonJExtension(t *testing.T) {
 
 func TestMissingFile(t *testing.T) {
 	dir := t.TempDir()
-	src := `def app() { import nope.j; }`
+	src := `func app() { import nope.j; }`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, dir, "")
 	if err == nil {

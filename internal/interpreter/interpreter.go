@@ -22,6 +22,7 @@ type Interpreter struct {
 	Builtins map[string]Builtin
 	imported map[string]bool // libraries the program has `import`ed
 	methods  map[string]*parser.MethodDef
+	global   *Environment // global scope where top-level statements live
 }
 
 func New() *Interpreter {
@@ -52,7 +53,11 @@ func RuntimeError(err error) bool {
 	return ok
 }
 
-// Run executes the program. It collects `def`s, verifies `app()` exists, and calls it.
+// Run executes the program. It records imports, hoists method definitions so
+// they can be called in any order, then runs the program's top-level
+// statements in source order in a global environment. Methods see this
+// global env as their outer scope (so top-level vars are visible inside
+// methods, subject to the no-shadowing rule).
 func (i *Interpreter) Run(prog *parser.Program) error {
 	if i.Out == nil {
 		i.Out = os.Stdout
@@ -69,12 +74,8 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 		}
 		i.methods[m.Name] = m
 	}
-	app, ok := i.methods["app"]
-	if !ok {
-		return &runtimeError{Msg: "program has no `app()` method"}
-	}
-	global := NewEnvironment(nil)
-	_, err := i.execBlock(app.Body, global)
+	i.global = NewEnvironment(nil)
+	_, err := i.execStmts(prog.TopLevel, i.global)
 	return err
 }
 
@@ -85,8 +86,16 @@ type blockResult struct {
 	value     Value
 }
 
-func (i *Interpreter) execBlock(b *parser.Block, env *Environment) (blockResult, error) {
-	for _, st := range b.Stmts {
+// execBlock runs every statement of a block in a *new* child env so that
+// vars declared inside the block don't leak out. The caller passes the
+// enclosing env; nested blocks inherit through the parent chain.
+func (i *Interpreter) execBlock(b *parser.Block, parent *Environment) (blockResult, error) {
+	env := NewEnvironment(parent)
+	return i.execStmts(b.Stmts, env)
+}
+
+func (i *Interpreter) execStmts(stmts []parser.Stmt, env *Environment) (blockResult, error) {
+	for _, st := range stmts {
 		if res, err := i.execStmt(st, env); err != nil {
 			return blockResult{}, err
 		} else if res.hasReturn {
@@ -99,22 +108,15 @@ func (i *Interpreter) execBlock(b *parser.Block, env *Environment) (blockResult,
 func (i *Interpreter) execStmt(s parser.Stmt, env *Environment) (blockResult, error) {
 	switch st := s.(type) {
 	case *parser.DefineStmt:
-		val, err := i.evalExpr(st.InitExpr, env)
-		if err != nil {
-			return blockResult{}, err
-		}
-		if !val.MatchesDeclared(st.VarType) {
-			line, col := st.Pos()
-			return blockResult{}, &runtimeError{
-				Msg:  fmt.Sprintf("cannot initialize %s variable %q with value of type %s", st.VarType, st.VarName, val.Kind),
-				Line: line, Col: col,
-			}
-		}
-		if err := env.Define(st.VarName, val, false); err != nil {
-			line, col := st.Pos()
-			return blockResult{}, &runtimeError{Msg: err.Error(), Line: line, Col: col}
-		}
-		return blockResult{}, nil
+		return blockResult{}, i.execDefine(st, env)
+	case *parser.AssignStmt:
+		return blockResult{}, i.execAssign(st, env)
+	case *parser.IfStmt:
+		return i.execIf(st, env)
+	case *parser.WhileStmt:
+		return i.execWhile(st, env)
+	case *parser.ForStmt:
+		return i.execFor(st, env)
 	case *parser.ExprStmt:
 		if _, err := i.evalExpr(st.Expr, env); err != nil {
 			return blockResult{}, err
@@ -125,12 +127,153 @@ func (i *Interpreter) execStmt(s parser.Stmt, env *Environment) (blockResult, er
 	return blockResult{}, &runtimeError{Msg: fmt.Sprintf("unsupported statement type %T", s), Line: line, Col: col}
 }
 
+func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error {
+	var val Value
+	if st.InitExpr != nil {
+		v, err := i.evalExpr(st.InitExpr, env)
+		if err != nil {
+			return err
+		}
+		if !v.MatchesDeclared(st.VarType) {
+			line, col := st.Pos()
+			noun := "variable"
+			if st.IsConst {
+				noun = "constant"
+			}
+			return &runtimeError{Msg: fmt.Sprintf("cannot initialize %s %s %q with value of type %s", st.VarType, noun, st.VarName, v.Kind), Line: line, Col: col}
+		}
+		val = v
+	} else {
+		// Spec / M2 decision: uninitialized variables get the zero value of
+		// their declared type. Constants must always be initialized (the
+		// parser enforces this; the assertion below is defensive).
+		if st.IsConst {
+			line, col := st.Pos()
+			return &runtimeError{Msg: "internal: constant without init reached interpreter", Line: line, Col: col}
+		}
+		val = ZeroFor(st.VarType)
+	}
+	if err := env.Define(st.VarName, val, st.VarType, st.IsConst); err != nil {
+		line, col := st.Pos()
+		return &runtimeError{Msg: err.Error(), Line: line, Col: col}
+	}
+	return nil
+}
+
+func (i *Interpreter) execAssign(st *parser.AssignStmt, env *Environment) error {
+	val, err := i.evalExpr(st.Value, env)
+	if err != nil {
+		return err
+	}
+	if err := env.Assign(st.VarName, val); err != nil {
+		line, col := st.Pos()
+		return &runtimeError{Msg: err.Error(), Line: line, Col: col}
+	}
+	return nil
+}
+
+func (i *Interpreter) execIf(st *parser.IfStmt, env *Environment) (blockResult, error) {
+	cond, err := i.evalBool(st.Cond, env, "`if` condition")
+	if err != nil {
+		return blockResult{}, err
+	}
+	if cond {
+		return i.execBlock(st.Then, env)
+	}
+	for idx, c := range st.ElseIfs {
+		ok, err := i.evalBool(c, env, "`elseif` condition")
+		if err != nil {
+			return blockResult{}, err
+		}
+		if ok {
+			return i.execBlock(st.ElseIfBodies[idx], env)
+		}
+	}
+	if st.Else != nil {
+		return i.execBlock(st.Else, env)
+	}
+	return blockResult{}, nil
+}
+
+func (i *Interpreter) execWhile(st *parser.WhileStmt, env *Environment) (blockResult, error) {
+	for {
+		cond, err := i.evalBool(st.Cond, env, "`while` condition")
+		if err != nil {
+			return blockResult{}, err
+		}
+		if !cond {
+			return blockResult{}, nil
+		}
+		res, err := i.execBlock(st.Body, env)
+		if err != nil {
+			return blockResult{}, err
+		}
+		if res.hasReturn {
+			return res, nil
+		}
+	}
+}
+
+func (i *Interpreter) execFor(st *parser.ForStmt, env *Environment) (blockResult, error) {
+	// for-statements introduce their own scope: the init's binding (if any)
+	// is visible in cond/step/body, but NOT after the loop.
+	forEnv := NewEnvironment(env)
+	if st.Init != nil {
+		if _, err := i.execStmt(st.Init, forEnv); err != nil {
+			return blockResult{}, err
+		}
+	}
+	for {
+		if st.Cond != nil {
+			cond, err := i.evalBool(st.Cond, forEnv, "`for` condition")
+			if err != nil {
+				return blockResult{}, err
+			}
+			if !cond {
+				return blockResult{}, nil
+			}
+		}
+		res, err := i.execBlock(st.Body, forEnv)
+		if err != nil {
+			return blockResult{}, err
+		}
+		if res.hasReturn {
+			return res, nil
+		}
+		if st.Step != nil {
+			if _, err := i.execStmt(st.Step, forEnv); err != nil {
+				return blockResult{}, err
+			}
+		}
+	}
+}
+
+// evalBool evaluates an expression that must yield a bool; otherwise it
+// produces a positional runtime error referring to `ctx`.
+func (i *Interpreter) evalBool(e parser.Expr, env *Environment, ctx string) (bool, error) {
+	v, err := i.evalExpr(e, env)
+	if err != nil {
+		return false, err
+	}
+	if v.Kind != KindBool {
+		line, col := e.Pos()
+		return false, &runtimeError{Msg: fmt.Sprintf("%s must be bool, got %s", ctx, v.Kind), Line: line, Col: col}
+	}
+	return v.Bool, nil
+}
+
 func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 	switch ex := e.(type) {
 	case *parser.IntLit:
 		return IntVal(ex.Value), nil
+	case *parser.FloatLit:
+		return FloatVal(ex.Value), nil
 	case *parser.StringLit:
 		return StringVal(ex.Value), nil
+	case *parser.BoolLit:
+		return BoolVal(ex.Value), nil
+	case *parser.NullLit:
+		return Null(), nil
 	case *parser.VarExpr:
 		v, err := env.Get(ex.Name)
 		if err != nil {
@@ -157,29 +300,85 @@ func (i *Interpreter) evalBinary(b *parser.BinaryExpr, env *Environment) (Value,
 		return Value{}, err
 	}
 	line, col := b.Pos()
-	// M1: only int arithmetic. String concatenation arrives in M2.
-	if lv.Kind != KindInt || rv.Kind != KindInt {
-		return Value{}, &runtimeError{Msg: fmt.Sprintf("operator %s requires int operands, got %s and %s", b.Op, lv.Kind, rv.Kind), Line: line, Col: col}
+
+	if b.Op.IsComparison() {
+		return i.evalComparison(b.Op, lv, rv, line, col)
 	}
-	switch b.Op {
+	return i.evalArithmetic(b.Op, lv, rv, line, col)
+}
+
+func (i *Interpreter) evalComparison(op parser.BinaryOp, lv, rv Value, line, col int) (Value, error) {
+	// `==` works for any same-kind comparison (and across int/float). Other
+	// comparisons require numeric operands.
+	if op == parser.OpEq {
+		return BoolVal(lv.Equal(rv)), nil
+	}
+	a, aok := lv.AsFloat()
+	b, bok := rv.AsFloat()
+	if !aok || !bok {
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("operator %s requires numeric operands, got %s and %s", op, lv.Kind, rv.Kind), Line: line, Col: col}
+	}
+	switch op {
+	case parser.OpLt:
+		return BoolVal(a < b), nil
+	case parser.OpGt:
+		return BoolVal(a > b), nil
+	case parser.OpLe:
+		return BoolVal(a <= b), nil
+	case parser.OpGe:
+		return BoolVal(a >= b), nil
+	}
+	return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown comparison %s", op), Line: line, Col: col}
+}
+
+func (i *Interpreter) evalArithmetic(op parser.BinaryOp, lv, rv Value, line, col int) (Value, error) {
+	// String concatenation with `+`
+	if op == parser.OpAdd && lv.Kind == KindString && rv.Kind == KindString {
+		return StringVal(lv.Str + rv.Str), nil
+	}
+	// Pure-int fast path keeps int results exact
+	if lv.Kind == KindInt && rv.Kind == KindInt {
+		switch op {
+		case parser.OpAdd:
+			return IntVal(lv.Int + rv.Int), nil
+		case parser.OpSub:
+			return IntVal(lv.Int - rv.Int), nil
+		case parser.OpMul:
+			return IntVal(lv.Int * rv.Int), nil
+		case parser.OpDiv:
+			if rv.Int == 0 {
+				return Value{}, &runtimeError{Msg: "integer division by zero", Line: line, Col: col}
+			}
+			return IntVal(lv.Int / rv.Int), nil
+		case parser.OpMod:
+			if rv.Int == 0 {
+				return Value{}, &runtimeError{Msg: "integer modulo by zero", Line: line, Col: col}
+			}
+			return IntVal(lv.Int % rv.Int), nil
+		}
+	}
+	// Mixed or float operands: promote both to float (modulo is rejected for floats).
+	a, aok := lv.AsFloat()
+	b, bok := rv.AsFloat()
+	if !aok || !bok {
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("operator %s requires numeric operands, got %s and %s", op, lv.Kind, rv.Kind), Line: line, Col: col}
+	}
+	switch op {
 	case parser.OpAdd:
-		return IntVal(lv.Int + rv.Int), nil
+		return FloatVal(a + b), nil
 	case parser.OpSub:
-		return IntVal(lv.Int - rv.Int), nil
+		return FloatVal(a - b), nil
 	case parser.OpMul:
-		return IntVal(lv.Int * rv.Int), nil
+		return FloatVal(a * b), nil
 	case parser.OpDiv:
-		if rv.Int == 0 {
-			return Value{}, &runtimeError{Msg: "integer division by zero", Line: line, Col: col}
+		if b == 0 {
+			return Value{}, &runtimeError{Msg: "float division by zero", Line: line, Col: col}
 		}
-		return IntVal(lv.Int / rv.Int), nil
+		return FloatVal(a / b), nil
 	case parser.OpMod:
-		if rv.Int == 0 {
-			return Value{}, &runtimeError{Msg: "integer modulo by zero", Line: line, Col: col}
-		}
-		return IntVal(lv.Int % rv.Int), nil
+		return Value{}, &runtimeError{Msg: "operator % requires int operands, got float", Line: line, Col: col}
 	}
-	return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown binary operator %s", b.Op), Line: line, Col: col}
+	return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown binary operator %s", op), Line: line, Col: col}
 }
 
 func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, error) {
@@ -189,8 +388,11 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 			line, col := c.Pos()
 			return Value{}, &runtimeError{Msg: fmt.Sprintf("method %q takes 0 arguments (M1), got %d", c.Callee, len(c.Args)), Line: line, Col: col}
 		}
-		// Per spec, methods get their own scope. Globals are not yet a thing in M1.
-		callFrame := NewEnvironment(nil)
+		// Methods open their own call frame that inherits from globals,
+		// so top-level vars are visible inside method bodies. The no-shadowing
+		// rule still applies: a method can't `define` a name that's already a
+		// global.
+		callFrame := NewEnvironment(i.global)
 		res, err := i.execBlock(m.Body, callFrame)
 		if err != nil {
 			return Value{}, err

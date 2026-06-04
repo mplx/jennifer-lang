@@ -42,18 +42,33 @@ A hand-written, single-pass scanner.
 ### Token types
 
 ```
-EOF       INT          DEFINE        LBRACE  PLUS
-ILLEGAL   STRING       AS            RBRACE  MINUS
-          IDENT        INIT          LPAREN  STAR
-          VARREF       IMPORT        RPAREN  SLASH
-                       INT_TYPE      SEMI    PERCENT
-                       STRING_TYPE   COMMA
-                                     ASSIGN
-                                     DOT
+EOF       INT          DEFINE        LBRACE  PLUS    LT
+ILLEGAL   FLOAT        FUNC          RBRACE  MINUS   GT
+          STRING       AS            LPAREN  STAR    LE
+          IDENT        INIT          RPAREN  SLASH   GE
+          VARREF       CONST         SEMI    PERCENT EQ
+                       IMPORT        COMMA
+                       RETURN        ASSIGN
+                       IF            DOT
+                       ELSEIF
+                       ELSE
+                       WHILE
+                       FOR
+                       TRUE
+                       FALSE
+                       NULL
+                       INT_TYPE
+                       FLOAT_TYPE
+                       STRING_TYPE
+                       BOOL_TYPE
 ```
 
-The keywords `def` and `define` both produce a single `TOKEN_DEFINE` -
-they are synonyms. `DOT` (`.`) is only used in file-import paths (`name.j`).
+`def` introduces a variable or constant binding (TOKEN_DEFINE); `func`
+introduces a method (TOKEN_FUNC). `DOT` (`.`) is only used in file-import
+paths (`name.j`).
+Comparison tokens `LE`, `GE`, `EQ` are two-character (`<=`, `>=`, `==`) and
+are recognized by a one-character lookahead from `<`, `>`, `=`. `RETURN` is
+already reserved for M3.
 
 `VARREF` carries the variable name *without* the leading `$`.
 `STRING` carries the value *with* escape sequences already processed and *without*
@@ -66,9 +81,10 @@ Every token records `Line` and `Col` (both 1-based). The `advance()` helper bump
 
 ### Keywords
 
-`define def as init import int string` are looked up in a map after reading an
-identifier; `def` and `define` map to the same token type. Anything else stays a
-`TOKEN_IDENT`.
+The lexer's keyword map covers: `def func as init const import return if elseif
+else while for true false null int float string bool`. Anything else lexed as
+a word stays a `TOKEN_IDENT`. `define` is **not** a keyword and lexes as a
+plain identifier.
 
 ### Comments
 
@@ -82,7 +98,7 @@ Per the spec, names use `[A-Za-z]` only. Digits and underscores are explicitly
 
 ---
 
-## Grammar (M1) - EBNF
+## Grammar (M2) - EBNF
 
 The authoritative grammar for what the parser accepts. This grammar describes
 the token stream **after** preprocessing - file imports (`import IDENT . IDENT ;`)
@@ -93,40 +109,87 @@ quoted strings are keywords or punctuation that match the corresponding token's
 lexeme.
 
 ```ebnf
-program     = { importStmt | methodDef } EOF ;
+program     = { importStmt | methodDef | statement } EOF ;
 importStmt  = "import" IDENT ";" ;                  (* library import *)
-methodDef   = ("def" | "define") IDENT "(" ")" block ;
+methodDef   = "func" IDENT "(" ")" block ;
 block       = "{" { statement } "}" ;
-statement   = defineStmt | exprStmt ;
-defineStmt  = ("def" | "define") VARREF "as" type "init" expr ";" ;
+
+statement   = defineStmt
+            | assignStmt
+            | ifStmt
+            | whileStmt
+            | forStmt
+            | exprStmt ;
+
+defineStmt  = "def" [ "const" ] IDENT "as" type [ "init" expr ] ";" ;
+                                       (* constants require "init" and an UPPERCASE name;
+                                          variables may omit "init" and get zero-value *)
+
+assignStmt  = VARREF "=" expr ";" ;
+
+ifStmt      = "if" "(" expr ")" block
+              { "elseif" "(" expr ")" block }
+              [ "else" block ] ;
+
+whileStmt   = "while" "(" expr ")" block ;
+
+forStmt     = "for" "(" [ defineStmt | assignStmt | ";" ]
+                        [ expr ] ";"
+                        [ assignNoSemi ]
+                  ")" block ;
+assignNoSemi = VARREF "=" expr ;       (* same shape as assignStmt without trailing ";" *)
+
 exprStmt    = expr ";" ;
-type        = "int" | "string" ;
-expr        = addExpr ;
+
+type        = "int" | "float" | "string" | "bool" | "null" ;
+
+expr        = compExpr ;
+compExpr    = addExpr { ("<" | ">" | "<=" | ">=" | "==") addExpr } ;
 addExpr     = mulExpr { ("+" | "-") mulExpr } ;
 mulExpr     = primary { ("*" | "/" | "%") primary } ;
-primary     = INT | STRING | VARREF | call | "(" expr ")" ;
+primary     = INT | FLOAT | STRING | "true" | "false" | "null"
+            | VARREF | call | "(" expr ")" ;
 call        = IDENT "(" [ expr { "," expr } ] ")" ;
 ```
 
 **Semantic notes that aren't expressed in the grammar:**
 
-- Both `def` and `define` produce `TOKEN_DEFINE`. The parser disambiguates a
-  `methodDef` from a `defineStmt` by lookahead: `IDENT` follows for a method,
-  `VARREF` for a variable definition.
-- `+` and `-` are left-associative; `*`, `/`, `%` bind tighter and are also
-  left-associative.
-- Variable definitions are only allowed inside a `block` (M1 has no top-level
-  variables).
-- `app()` must be among the program's `methodDef`s; it's the entry point.
+- Two separate keywords: `def` introduces a binding (variable or constant);
+  `func` introduces a method. There's no longer any lookahead disambiguation
+  in this area - the parser dispatches purely on the keyword.
+- The name in `defineStmt` is a bare `IDENT`. Writing `def $x as int`
+  produces a parse error with a hint to drop the `$` (it's reserved for
+  use-site references).
+- Operator precedence (lowest to highest): comparison `< > <= >= ==`, then
+  additive `+ -`, then multiplicative `* / %`. All are left-associative.
+- Comparison operators produce `bool`; `if`/`while`/`for` conditions **must**
+  be `bool` (no implicit truthiness).
+- Mixed `int`/`float` arithmetic promotes `int` to `float`; the result is
+  `float`. `%` requires int operands. `+` on two `string` values concatenates.
+- Methods may only be defined at the top level. Variable definitions, assignments,
+  control flow, and expression statements may appear at the top level or inside
+  a block.
+- Each `block` (`{...}`) introduces a new lexical scope. A binding is visible
+  from its `def` to the end of the enclosing block, and is inherited by
+  inner blocks; inner scopes **cannot redeclare** a name already visible.
+- `for` opens a private scope for its `init`, `cond`, `step`, and body so the
+  init variable does not leak out of the loop.
+- There is **no required entry point**. Top-level statements execute in source
+  order. Methods are hoisted (collected before any top-level statement runs)
+  so they can be called regardless of textual order.
+- Method bodies inherit the global scope as their outer scope, so top-level
+  variables are visible inside methods (subject to the no-shadowing rule).
+- Unary minus is not yet in the grammar - negative literals require a
+  workaround until M3+.
 
 ---
 
 ## Parser (`internal/parser`)
 
 Recursive descent with precedence climbing for binary operators. The grammar
-the parser implements is the one in [Grammar (M1)](#grammar-m1---ebnf) above.
+the parser implements is the one in [Grammar (M2)](#grammar-m2---ebnf) above.
 
-### AST nodes (M1)
+### AST nodes (M2)
 
 | Node          | Kind  | Fields                                       |
 |---------------|-------|----------------------------------------------|
@@ -134,13 +197,20 @@ the parser implements is the one in [Grammar (M1)](#grammar-m1---ebnf) above.
 | `ImportStmt`  | stmt  | `Name`                                       |
 | `MethodDef`   | stmt  | `Name`, `Body *Block`                        |
 | `Block`       | stmt  | `Stmts []Stmt`                               |
-| `DefineStmt`  | stmt  | `VarName`, `VarType Type`, `InitExpr Expr`   |
+| `DefineStmt`  | stmt  | `IsConst`, `VarName`, `VarType Type`, `InitExpr Expr` (nil = uninit) |
+| `AssignStmt`  | stmt  | `VarName`, `Value Expr`                      |
+| `IfStmt`      | stmt  | `Cond`, `Then *Block`, `ElseIfs []Expr`, `ElseIfBodies []*Block`, `Else *Block` |
+| `WhileStmt`   | stmt  | `Cond`, `Body *Block`                        |
+| `ForStmt`     | stmt  | `Init Stmt`, `Cond Expr`, `Step Stmt`, `Body *Block` (any may be nil) |
 | `ExprStmt`    | stmt  | `Expr`                                       |
 | `IntLit`      | expr  | `Value int64`                                |
+| `FloatLit`    | expr  | `Value float64`                              |
 | `StringLit`   | expr  | `Value string`                               |
+| `BoolLit`     | expr  | `Value bool`                                 |
+| `NullLit`     | expr  | -                                            |
 | `VarExpr`     | expr  | `Name` (no `$`)                              |
 | `CallExpr`    | expr  | `Callee`, `Args []Expr`                      |
-| `BinaryExpr`  | expr  | `Op BinaryOp`, `Left`, `Right`               |
+| `BinaryExpr`  | expr  | `Op BinaryOp`, `Left`, `Right` (comparison ops return bool) |
 
 Every node embeds a `pos{Line, Col}` for error reporting and exposes it via
 `Node.Pos()`.
@@ -187,36 +257,54 @@ binary small and predictable under TinyGo.
 
 ```go
 type Value struct {
-    Kind ValueKind  // KindNull | KindInt | KindString
-    Int  int64
-    Str  string
+    Kind  ValueKind  // KindNull | KindInt | KindFloat | KindString | KindBool
+    Int   int64
+    Float float64
+    Str   string
+    Bool  bool
 }
 ```
 
+`ZeroFor(t parser.Type)` returns the zero value for each declared type and is
+used when a `def` omits its `init` clause: `0`, `0.0`, `""`, `false`, or
+`null`. `Value.AsFloat()` handles int->float promotion for arithmetic and
+comparison; `Value.Equal()` implements `==` (same-kind comparison, plus the
+numeric-promotion rule across `int` and `float`).
+
 ### Environment
 
-`Environment` is a parent-linked map of names → `Value`, plus a per-frame
-`consts` set.
+`Environment` is a parent-linked map of names → `Binding{Value, DeclType, IsConst}`.
+Storing the declared type lets `Assign` reject type-mismatching writes (you
+cannot assign a string to a variable declared as int).
 
-- **`Define(name, val, isConst)`** - adds to the current frame; errors if the
-  name exists *anywhere in the chain* (the spec forbids shadowing).
+- **`Define(name, val, declType, isConst)`** - adds to the current frame;
+  errors if the name exists *anywhere in the chain* (the spec forbids
+  shadowing).
 - **`Assign(name, val)`** - walks up the chain to find the binding; errors if
-  the binding is a constant or doesn't exist.
+  the binding is a constant, the value's kind doesn't match its declared
+  type, or the name is undefined.
 - **`Get(name)`** - walks up the chain.
 
-In M1 only one global frame is used (no nested blocks yet beyond method bodies).
-A method call creates its own root frame - methods do not see outer variables.
-M2/M3 introduce block-scope nesting and the formal scoping rules from the spec.
+`execBlock` opens a fresh child `Environment` for each `{...}` block, so
+variables declared inside don't leak out. `for` opens its own scope wrapping
+init/cond/step/body so the init variable is visible throughout the loop
+without escaping it.
 
 ### Execution model
 
-1. `Interpreter.Run(prog)` records `Imports` and collects every `MethodDef`
-   into `i.methods`.
-2. It looks up `app` and errors if missing.
-3. It calls `app()` in a fresh `Environment`.
-4. Statements are evaluated sequentially; expressions return a `Value`.
-5. Method calls (M1: zero-arg) execute the body in a fresh frame and propagate
-   any returned `Value` (M1: always `null`, since `return` doesn't exist yet).
+1. `Interpreter.Run(prog)` records `Imports` into `i.imported`.
+2. Collects every `MethodDef` into `i.methods` (methods are hoisted: callable
+   regardless of source order).
+3. Creates the global `Environment` (`i.global`) and executes `prog.TopLevel`
+   statements in source order in that global scope.
+4. Method calls execute the body in a fresh call frame whose parent is
+   `i.global`, so top-level variables are visible inside methods (subject to
+   the no-shadowing rule). Returned values propagate (M2: always `null`, since
+   `return` doesn't exist yet).
+
+There is no required entry point. A program with only imports and method
+defs is valid and runs to completion immediately (those methods are simply
+never called).
 
 ### Builtins / stdlib
 
@@ -308,6 +396,3 @@ A few constraints shape the implementation:
   yet, but worth not introducing accidentally.
 - **`testing` runs under regular `go test`.** TinyGo's `testing` support is
   partial; we develop and verify with `go test ./...`.
-
-If a feature added in M2/M3 conflicts with TinyGo (e.g. `reflect`), the fix is
-in the interpreter, not the build target.

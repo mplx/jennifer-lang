@@ -7,8 +7,8 @@ import "testing"
 
 func TestTokenizeSimpleProgram(t *testing.T) {
 	src := `import stdlib;
-def app() {
-    define $x as int init 21;
+func app() {
+    def x as int init 21;
     printf($x + $x);
 }`
 	toks, err := Tokenize(src)
@@ -17,8 +17,8 @@ def app() {
 	}
 	want := []TokenType{
 		TOKEN_IMPORT, TOKEN_IDENT, TOKEN_SEMI,
-		TOKEN_DEFINE, TOKEN_IDENT, TOKEN_LPAREN, TOKEN_RPAREN, TOKEN_LBRACE,
-		TOKEN_DEFINE, TOKEN_VARREF, TOKEN_AS, TOKEN_INT_TYPE, TOKEN_INIT, TOKEN_INT, TOKEN_SEMI,
+		TOKEN_FUNC, TOKEN_IDENT, TOKEN_LPAREN, TOKEN_RPAREN, TOKEN_LBRACE,
+		TOKEN_DEFINE, TOKEN_IDENT, TOKEN_AS, TOKEN_INT_TYPE, TOKEN_INIT, TOKEN_INT, TOKEN_SEMI,
 		TOKEN_IDENT, TOKEN_LPAREN, TOKEN_VARREF, TOKEN_PLUS, TOKEN_VARREF, TOKEN_RPAREN, TOKEN_SEMI,
 		TOKEN_RBRACE, TOKEN_EOF,
 	}
@@ -117,11 +117,88 @@ func TestTokenizeRejectsUnterminatedString(t *testing.T) {
 	}
 }
 
-func TestTokenizeDefAndDefineAreSynonyms(t *testing.T) {
-	toks1, _ := Tokenize("def app")
-	toks2, _ := Tokenize("define app")
-	if toks1[0].Type != TOKEN_DEFINE || toks2[0].Type != TOKEN_DEFINE {
-		t.Errorf("def -> %s, define -> %s (both should be DEFINE)", toks1[0].Type, toks2[0].Type)
+func TestTokenizeFloatLiterals(t *testing.T) {
+	cases := []struct {
+		src     string
+		want    TokenType
+		lexeme  string
+		extra   []TokenType // extra tokens before EOF
+	}{
+		{"3.14", TOKEN_FLOAT, "3.14", nil},
+		{"0.5", TOKEN_FLOAT, "0.5", nil},
+		{"42", TOKEN_INT, "42", nil},
+		// trailing dot without digit is INT(3) DOT
+		{"3.", TOKEN_INT, "3", []TokenType{TOKEN_DOT}},
+		// dot followed by ident (file-import shape) stays INT(3) DOT IDENT(j)
+		{"3.j", TOKEN_INT, "3", []TokenType{TOKEN_DOT, TOKEN_IDENT}},
+	}
+	for _, c := range cases {
+		toks, err := Tokenize(c.src)
+		if err != nil {
+			t.Errorf("Tokenize(%q): %v", c.src, err)
+			continue
+		}
+		if toks[0].Type != c.want || toks[0].Lexeme != c.lexeme {
+			t.Errorf("Tokenize(%q): first token = %s(%q), want %s(%q)", c.src, toks[0].Type, toks[0].Lexeme, c.want, c.lexeme)
+		}
+		for i, e := range c.extra {
+			if toks[i+1].Type != e {
+				t.Errorf("Tokenize(%q): tok[%d] = %s, want %s", c.src, i+1, toks[i+1].Type, e)
+			}
+		}
+	}
+}
+
+func TestTokenizeComparisonOperators(t *testing.T) {
+	toks, err := Tokenize("< > <= >= == =")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	want := []TokenType{TOKEN_LT, TOKEN_GT, TOKEN_LE, TOKEN_GE, TOKEN_EQ, TOKEN_ASSIGN, TOKEN_EOF}
+	if len(toks) != len(want) {
+		t.Fatalf("got %d tokens, want %d: %v", len(toks), len(want), toks)
+	}
+	for i, w := range want {
+		if toks[i].Type != w {
+			t.Errorf("tok %d: got %s, want %s", i, toks[i].Type, w)
+		}
+	}
+}
+
+func TestTokenizeM2Keywords(t *testing.T) {
+	src := "const if elseif else while for true false null float bool return"
+	toks, err := Tokenize(src)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	want := []TokenType{
+		TOKEN_CONST, TOKEN_IF, TOKEN_ELSEIF, TOKEN_ELSE, TOKEN_WHILE, TOKEN_FOR,
+		TOKEN_TRUE, TOKEN_FALSE, TOKEN_NULL, TOKEN_FLOAT_TYPE, TOKEN_BOOL_TYPE, TOKEN_RETURN, TOKEN_EOF,
+	}
+	if len(toks) != len(want) {
+		t.Fatalf("got %d tokens, want %d: %v", len(toks), len(want), toks)
+	}
+	for i, w := range want {
+		if toks[i].Type != w {
+			t.Errorf("tok %d: got %s (%q), want %s", i, toks[i].Type, toks[i].Lexeme, w)
+		}
+	}
+}
+
+func TestTokenizeDefAndFuncKeywords(t *testing.T) {
+	// `def` introduces a variable/constant; `func` introduces a method.
+	// `define` is no longer a keyword - it lexes as a plain identifier.
+	defToks, _ := Tokenize("def")
+	funcToks, _ := Tokenize("func")
+	defineToks, _ := Tokenize("define")
+	if defToks[0].Type != TOKEN_DEFINE {
+		t.Errorf("def -> %s, want TOKEN_DEFINE", defToks[0].Type)
+	}
+	if funcToks[0].Type != TOKEN_FUNC {
+		t.Errorf("func -> %s, want TOKEN_FUNC", funcToks[0].Type)
+	}
+	if defineToks[0].Type != TOKEN_IDENT {
+		t.Errorf("define -> %s, want TOKEN_IDENT (no longer a keyword)", defineToks[0].Type)
 	}
 }
 

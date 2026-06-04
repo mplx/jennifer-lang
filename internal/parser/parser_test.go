@@ -10,8 +10,8 @@ import (
 
 func TestParseHelloProgram(t *testing.T) {
 	src := `import stdlib;
-def app() {
-    define $x as int init 21;
+func app() {
+    def x as int init 21;
     printf($x + $x);
 }`
 	prog, err := Parse(src)
@@ -37,7 +37,7 @@ def app() {
 }
 
 func TestParseOperatorPrecedence(t *testing.T) {
-	src := `def app() { define $r as int init 1 + 2 * 3; }`
+	src := `func app() { def r as int init 1 + 2 * 3; }`
 	prog, err := Parse(src)
 	if err != nil {
 		t.Fatalf("error: %v", err)
@@ -50,7 +50,7 @@ func TestParseOperatorPrecedence(t *testing.T) {
 }
 
 func TestParseParenGrouping(t *testing.T) {
-	src := `def app() { define $r as int init (1 + 2) * 3; }`
+	src := `func app() { def r as int init (1 + 2) * 3; }`
 	prog, err := Parse(src)
 	if err != nil {
 		t.Fatalf("error: %v", err)
@@ -63,7 +63,7 @@ func TestParseParenGrouping(t *testing.T) {
 }
 
 func TestParseStringLiteralCall(t *testing.T) {
-	src := `def app() { printf("hi"); }`
+	src := `func app() { printf("hi"); }`
 	prog, err := Parse(src)
 	if err != nil {
 		t.Fatalf("error: %v", err)
@@ -74,29 +74,28 @@ func TestParseStringLiteralCall(t *testing.T) {
 	}
 }
 
-func TestDefAndDefineAreInterchangeable(t *testing.T) {
-	// `def` for a variable (was historically only for methods)
-	src1 := `def app() { def $x as int init 5; }`
-	p1, err := Parse(src1)
+func TestDefRejectsDollarAtDefinitionSite(t *testing.T) {
+	// The `$` sigil is reserved for use-site references. At a def site we want
+	// a helpful error pointing the user at the bare name.
+	_, err := Parse(`func app() { def $x as int init 5; }`)
+	if err == nil || !strings.Contains(err.Error(), "drop the `$`") {
+		t.Errorf("expected $-at-def-site hint, got %v", err)
+	}
+}
+
+func TestFuncIntroducesMethod(t *testing.T) {
+	src := `func app() { printf(1); }`
+	p, err := Parse(src)
 	if err != nil {
-		t.Fatalf("def-as-variable parse error: %v", err)
+		t.Fatalf("parse error: %v", err)
 	}
-	if got := Sprint(p1.Methods[0].Body.Stmts[0]); got != "Define($x as int = Int(5))" {
-		t.Errorf("def-as-variable: got %s", got)
-	}
-	// `define` for a method (was historically only for variables)
-	src2 := `define app() { printf(1); }`
-	p2, err := Parse(src2)
-	if err != nil {
-		t.Fatalf("define-as-method parse error: %v", err)
-	}
-	if p2.Methods[0].Name != "app" {
-		t.Errorf("define-as-method: got %s", p2.Methods[0].Name)
+	if len(p.Methods) != 1 || p.Methods[0].Name != "app" {
+		t.Errorf("expected one method named app, got %+v", p.Methods)
 	}
 }
 
 func TestMethodInsideBlockRejected(t *testing.T) {
-	_, err := Parse(`def app() { def inner() {} }`)
+	_, err := Parse(`func app() { func inner() {} }`)
 	if err == nil || !contains(err.Error(), "top level") {
 		t.Errorf("expected nested-method error, got %v", err)
 	}
@@ -110,10 +109,12 @@ func TestParseErrors(t *testing.T) {
 		src  string
 		want string // substring of error
 	}{
-		{"missing semi", `import stdlib def app() {}`, "expected SEMI"},
-		{"top level expression", `42;`, "expected `import`, `def`, or `define`"},
-		{"define needs init in M1", `def app() { define $x as int; }`, "expected INIT"},
-		{"unknown type", `def app() { define $x as bool init 1; }`, "expected type"},
+		{"missing semi", `import stdlib func app() {}`, "expected SEMI"},
+		// `42;` and `def x ...;` are now both valid at top level - no
+		// equivalent rejection test belongs here.
+		{"truly unknown type", `func app() { def x as widget init 1; }`, "expected type"},
+		{"const needs uppercase", `func app() { def const lower as int init 1; }`, "must use [A-Z]"},
+		{"const needs init", `func app() { def const X as int; }`, "constants require"},
 	}
 	for _, c := range bad {
 		_, err := Parse(c.src)

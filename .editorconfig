@@ -1,0 +1,24 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Go uses tabs by convention. Render them as 4 columns.
+[*.go]
+indent_style = tab
+indent_size = 4
+tab_width = 4
+
+# Jennifer source files. The committed examples use 4 spaces;
+# any tabs that do appear should render as 4 columns.
+[*.j]
+indent_style = space
+indent_size = 4
+tab_width = 4
+
+# Markdown allows trailing whitespace (double-space = hard line break).
+[*.md]
+trim_trailing_whitespace = false
