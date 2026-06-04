@@ -6,7 +6,7 @@ package lexer
 import "testing"
 
 func TestTokenizeSimpleProgram(t *testing.T) {
-	src := `import stdlib;
+	src := `use stdlib;
 func app() {
     def x as int init 21;
     printf($x + $x);
@@ -16,7 +16,7 @@ func app() {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := []TokenType{
-		TOKEN_IMPORT, TOKEN_IDENT, TOKEN_SEMI,
+		TOKEN_USE, TOKEN_IDENT, TOKEN_SEMI,
 		TOKEN_FUNC, TOKEN_IDENT, TOKEN_LPAREN, TOKEN_RPAREN, TOKEN_LBRACE,
 		TOKEN_DEFINE, TOKEN_IDENT, TOKEN_AS, TOKEN_INT_TYPE, TOKEN_INIT, TOKEN_INT, TOKEN_SEMI,
 		TOKEN_IDENT, TOKEN_LPAREN, TOKEN_VARREF, TOKEN_PLUS, TOKEN_VARREF, TOKEN_RPAREN, TOKEN_SEMI,

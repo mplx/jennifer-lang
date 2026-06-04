@@ -2,10 +2,10 @@
 // Copyright (C) 2026 <developer@mplx.eu>
 //
 // main.j - demonstrates file imports.
-// `import greetinglib.j;` splices the contents of greetinglib.j at this point,
+// `import "greetinglib.j";` splices the contents of greetinglib.j at this point,
 // making $name and $greeting available to the surrounding scope.
-import stdlib;
-import greetinglib.j;
+use stdlib;
+import "greetinglib.j";
 
 printf($greeting);
 printf($name);

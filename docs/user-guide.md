@@ -21,13 +21,13 @@ tinygo build -o jennifer ./cmd/jennifer
 You can also pipe source in on stdin by passing `-` as the filename:
 
 ```sh
-echo 'import stdlib; printf("hi\n");' | ./jennifer run -
+echo 'use stdlib; printf("hi\n");' | ./jennifer run -
 ./jennifer run - < program.j
 cat program.j | ./jennifer run -
 ```
 
 When reading from stdin, error messages identify the source as `<stdin>` and
-file imports (`import name.j;`) resolve relative to the current working
+file imports (`import "name.j";`) resolve relative to the current working
 directory.
 
 For local development you can also use the Go toolchain directly:
@@ -45,7 +45,7 @@ Save the following as `hello.j`:
 
 ```jennifer
 // hello.j
-import stdlib;
+use stdlib;
 
 def x as int init 21;
 printf($x + $x);
@@ -61,7 +61,7 @@ You should see `42`.
 
 ### What just happened
 
-1. `import stdlib;` makes Jennifer's standard library functions (only `printf`
+1. `use stdlib;` makes Jennifer's standard library functions (only `printf`
    today) available.
 2. `def x as int init 21;` declares an integer variable named `x` and
    initializes it to `21`. Notice that **using** a variable requires the `$`
@@ -199,36 +199,52 @@ return values, and recursion arrive in M3.
 
 ### Imports
 
-Two forms:
+Two keywords, two mechanisms:
 
 ```jennifer
-import stdlib;          // library import - enables stdlib functions like printf
-import helpers.j;       // file import - splices the contents of helpers.j here
+use stdlib;                  // library import - enables stdlib functions
+import "helpers.j";          // file import - splices helpers.j here
 ```
 
-**Library imports** (`import NAME;`) enable a built-in module. Today only
+**Library imports** (`use NAME;`) enable a built-in module. Today only
 `stdlib` exists.
 
-**File imports** (`import NAME.j;`) textually include another `.j` source file
-at the point of the import. The file is resolved relative to the directory of
-the file containing the import. File imports may appear anywhere a statement is
-allowed, including inside a block:
+**File imports** (`import "PATH.j";`) textually include another `.j` source
+file at the point of import. The path is a **string literal** that must end
+in `.j`. Relative paths resolve from the directory of the file containing
+the import; absolute paths and subdirectories work:
 
 ```jennifer
-import stdlib;
-import helpers.j;       // ← spliced here; whatever helpers.j contains lands here
+import "helpers.j";          // sibling file
+import "subdir/utils.j";     // subdirectory
+import "../shared/util.j";   // parent dir
+import "/abs/path/lib.j";    // absolute path
+```
+
+File imports may appear anywhere a statement is allowed, including inside a
+block:
+
+```jennifer
+use stdlib;
+import "helpers.j";          // ← spliced here; whatever helpers.j contains lands here
 printf($helper_value);
 ```
 
 Circular imports (file A imports file B, B imports A) are detected and
 rejected with an error.
 
+Mixing the keywords produces a helpful error:
+
+```
+import stdlib;       → error: use `use stdlib;` for system libraries
+use foo.j;           → error: use `import "foo.j";` for files
+import foo.j;        → error: file imports take a string literal: `import "foo.j";`
+```
+
 Notes:
-- File names follow the identifier rule (`[A-Za-z]`), so `myblock.j` is fine
-  but `my_block.j` is not (yet).
 - The imported file's contents must be valid where the import appears. A file
-  containing a top-level `def` cannot be imported inside a block (since method
-  definitions are only allowed at the top level in M1).
+  containing a top-level `def` cannot be imported inside a block (since
+  definitions are only allowed at the top level).
 
 ### Operators
 
@@ -283,7 +299,7 @@ alongside multi-argument calls.
 
 ```jennifer
 // greeting.j
-import stdlib;
+use stdlib;
 
 def name as string init "Jennifer";
 printf("hello, " + $name + "!\n");
@@ -299,7 +315,7 @@ hello, Jennifer!
 
 ```jennifer
 // fizzbuzz.j
-import stdlib;
+use stdlib;
 
 for (def i as int init 1; $i <= 15; $i = $i + 1) {
     if ($i % 15 == 0) {

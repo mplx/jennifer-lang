@@ -24,7 +24,8 @@ const (
 	TOKEN_AS
 	TOKEN_INIT
 	TOKEN_CONST
-	TOKEN_IMPORT
+	TOKEN_IMPORT // file import: `import "name.j";`
+	TOKEN_USE    // library import: `use stdlib;`
 	TOKEN_RETURN
 	TOKEN_IF
 	TOKEN_ELSEIF
@@ -78,6 +79,7 @@ var tokenNames = map[TokenType]string{
 	TOKEN_INIT:        "INIT",
 	TOKEN_CONST:       "CONST",
 	TOKEN_IMPORT:      "IMPORT",
+	TOKEN_USE:         "USE",
 	TOKEN_RETURN:      "RETURN",
 	TOKEN_IF:          "IF",
 	TOKEN_ELSEIF:      "ELSEIF",
@@ -145,6 +147,7 @@ var keywords = map[string]TokenType{
 	"init":   TOKEN_INIT,
 	"const":  TOKEN_CONST,
 	"import": TOKEN_IMPORT,
+	"use":    TOKEN_USE,
 	"return": TOKEN_RETURN,
 	"if":     TOKEN_IF,
 	"elseif": TOKEN_ELSEIF,

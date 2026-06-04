@@ -46,7 +46,7 @@ func writeTmp(t *testing.T, files map[string]string) string {
 }
 
 func TestPassesThroughLibraryImports(t *testing.T) {
-	src := `import stdlib; def app() { printf(1); }`
+	src := `use stdlib; func app() { printf(1); }`
 	toks, err := lexer.Tokenize(src)
 	if err != nil {
 		t.Fatalf("lex: %v", err)
@@ -63,7 +63,7 @@ func TestPassesThroughLibraryImports(t *testing.T) {
 func TestFileImportSplices(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
 		"helpers.j": `def bonus as int init 7;`,
-		"main.j":    `func app() { import helpers.j; printf($bonus); }`,
+		"main.j":    `func app() { import "helpers.j"; printf($bonus); }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -96,8 +96,8 @@ func TestFileImportSplices(t *testing.T) {
 func TestNestedFileImports(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
 		"a.j":    `def a as int init 1;`,
-		"b.j":    `import a.j; def b as int init 2;`,
-		"main.j": `func app() { import b.j; printf($a + $b); }`,
+		"b.j":    `import "a.j"; def b as int init 2;`,
+		"main.j": `func app() { import "b.j"; printf($a + $b); }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -140,9 +140,9 @@ func TestNestedFileImports(t *testing.T) {
 
 func TestDetectsCircularImport(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
-		"a.j":    `import b.j; def a as int init 1;`,
-		"b.j":    `import a.j; def b as int init 2;`,
-		"main.j": `func app() { import a.j; }`,
+		"a.j":    `import "b.j"; def a as int init 1;`,
+		"b.j":    `import "a.j"; def b as int init 2;`,
+		"main.j": `func app() { import "a.j"; }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -157,7 +157,7 @@ func TestDetectsCircularImport(t *testing.T) {
 }
 
 func TestRejectsNonJExtension(t *testing.T) {
-	src := `func app() { import foo.go; }`
+	src := `func app() { import "foo.go"; }`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, ".", "")
 	if err == nil {
@@ -168,9 +168,45 @@ func TestRejectsNonJExtension(t *testing.T) {
 	}
 }
 
+func TestRejectsOldUnquotedFileImport(t *testing.T) {
+	src := `func app() { import foo.j; }`
+	toks, _ := lexer.Tokenize(src)
+	_, err := Process(toks, ".", "")
+	if err == nil {
+		t.Fatal("expected error for old unquoted file-import syntax")
+	}
+	if !strings.Contains(err.Error(), "string literal") {
+		t.Errorf("error should suggest string literal: %v", err)
+	}
+}
+
+func TestRejectsOldLibraryImport(t *testing.T) {
+	src := `import stdlib; func app() {}`
+	toks, _ := lexer.Tokenize(src)
+	_, err := Process(toks, ".", "")
+	if err == nil {
+		t.Fatal("expected error for old `import stdlib;`")
+	}
+	if !strings.Contains(err.Error(), "use stdlib") {
+		t.Errorf("error should suggest `use stdlib;`: %v", err)
+	}
+}
+
+func TestRejectsUseForFile(t *testing.T) {
+	src := `use foo.j; func app() {}`
+	toks, _ := lexer.Tokenize(src)
+	_, err := Process(toks, ".", "")
+	if err == nil {
+		t.Fatal("expected error for `use foo.j;`")
+	}
+	if !strings.Contains(err.Error(), `import "foo.j"`) {
+		t.Errorf("error should suggest `import \"foo.j\";`: %v", err)
+	}
+}
+
 func TestMissingFile(t *testing.T) {
 	dir := t.TempDir()
-	src := `func app() { import nope.j; }`
+	src := `func app() { import "nope.j"; }`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, dir, "")
 	if err == nil {
@@ -183,8 +219,8 @@ func TestMissingFile(t *testing.T) {
 
 func TestImportAtTopLevel(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
-		"top.j":  `def helper() { printf(1); }`,
-		"main.j": `import stdlib; import top.j; def app() { helper(); }`,
+		"top.j":  `func helper() { printf(1); }`,
+		"main.j": `use stdlib; import "top.j"; func app() { helper(); }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -193,8 +229,8 @@ func TestImportAtTopLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preproc: %v", err)
 	}
-	// First import (stdlib) remains; second import is spliced and contributes a method def.
-	if out[0].Type != lexer.TOKEN_IMPORT || out[1].Lexeme != "stdlib" {
+	// `use stdlib;` is preserved; the file import is spliced and contributes a method def.
+	if out[0].Type != lexer.TOKEN_USE || out[1].Lexeme != "stdlib" {
 		t.Errorf("first import not preserved: %v %v", out[0], out[1])
 	}
 }

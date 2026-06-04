@@ -96,7 +96,10 @@ func (p *parser) parseProgram() (*Program, error) {
 		switch t.Type {
 		case lexer.TOKEN_EOF:
 			return prog, nil
-		case lexer.TOKEN_IMPORT:
+		case lexer.TOKEN_USE:
+			// Library import. After preprocessing, `import "file.j";`
+			// statements are gone (spliced in place), so only `use NAME;`
+			// reaches the parser.
 			imp, err := p.parseImport()
 			if err != nil {
 				return nil, err
@@ -121,16 +124,18 @@ func (p *parser) parseProgram() (*Program, error) {
 	}
 }
 
+// parseImport parses a `use NAME;` library import. (File imports are handled
+// by the preprocessor and never reach the parser.)
 func (p *parser) parseImport() (*ImportStmt, error) {
-	imp, _ := p.match(lexer.TOKEN_IMPORT)
-	name, err := p.expect(lexer.TOKEN_IDENT, "after `import`")
+	use, _ := p.match(lexer.TOKEN_USE)
+	name, err := p.expect(lexer.TOKEN_IDENT, "after `use`")
 	if err != nil {
 		return nil, err
 	}
-	if _, err := p.expect(lexer.TOKEN_SEMI, "after import statement"); err != nil {
+	if _, err := p.expect(lexer.TOKEN_SEMI, "after `use` statement"); err != nil {
 		return nil, err
 	}
-	return &ImportStmt{pos: pos{Line: imp.Line, Col: imp.Col}, Name: name.Lexeme}, nil
+	return &ImportStmt{pos: pos{Line: use.Line, Col: use.Col}, Name: name.Lexeme}, nil
 }
 
 func (p *parser) parseMethodDef() (*MethodDef, error) {

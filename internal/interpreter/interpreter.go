@@ -406,7 +406,7 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 	if fn, ok := i.Builtins[c.Callee]; ok {
 		if !i.imported["stdlib"] {
 			line, col := c.Pos()
-			return Value{}, &runtimeError{Msg: fmt.Sprintf("`%s` requires `import stdlib;`", c.Callee), Line: line, Col: col}
+			return Value{}, &runtimeError{Msg: fmt.Sprintf("`%s` requires `use stdlib;`", c.Callee), Line: line, Col: col}
 		}
 		args := make([]Value, 0, len(c.Args))
 		for _, a := range c.Args {

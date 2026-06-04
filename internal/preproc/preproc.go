@@ -3,20 +3,21 @@
 
 // Package preproc handles Jennifer's file-import preprocessor.
 //
-// A file import has the form `import name.j;` and is replaced, at the location it
-// appears, by the tokens of the referenced file. The referenced file's path is
-// resolved relative to the directory of the file that contains the import. File
-// imports are processed recursively, with a cycle check to prevent infinite
-// inclusion.
+// A file import has the form `import "name.j";` and is replaced, at the
+// location it appears, by the tokens of the referenced file. The path is
+// resolved relative to the directory of the file that contains the import.
+// File imports are processed recursively, with a cycle check to prevent
+// infinite inclusion.
 //
-// Library imports (e.g. `import stdlib;`) are left in place and remain as
-// ImportStmt nodes for the interpreter to handle.
+// Library imports use the `use` keyword (e.g. `use stdlib;`) and are left in
+// place; the parser turns them into ImportStmt nodes.
 package preproc
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mplx/jennifer-lang/internal/lexer"
 )
@@ -38,8 +39,9 @@ func (e *PreprocessError) Error() string {
 
 // Process expands all file imports in `tokens`.
 // `baseDir` is the directory used to resolve relative `.j` filenames.
-// `selfPath`, if non-empty, is the absolute path of the file that produced `tokens`;
-// it is added to the visited set so a file can't import itself transitively.
+// `selfPath`, if non-empty, is the absolute path of the file that produced
+// `tokens`; it is added to the visited set so a file can't import itself
+// transitively.
 func Process(tokens []lexer.Token, baseDir, selfPath string) ([]lexer.Token, error) {
 	visited := map[string]bool{}
 	if selfPath != "" {
@@ -55,73 +57,150 @@ func processTokens(tokens []lexer.Token, baseDir string, visited map[string]bool
 	out := make([]lexer.Token, 0, len(tokens))
 	i := 0
 	for i < len(tokens) {
-		// Look for `import IDENT . IDENT(=j) ;` - a file import.
-		// Anything else (including `import IDENT ;` - a library import) is left alone.
-		if isFileImportPattern(tokens, i) {
-			ident := tokens[i+1] // the file's base name (without .j)
-			suffix := tokens[i+3]
-			if suffix.Lexeme != "j" {
-				return nil, &PreprocessError{
-					Msg:  fmt.Sprintf("file imports must reference a .j file, got `.%s`", suffix.Lexeme),
-					File: suffix.File, Line: suffix.Line, Col: suffix.Col,
-				}
-			}
-			// Resolve the path. The bare name "name.j" is taken relative to baseDir.
-			filename := ident.Lexeme + ".j"
-			fullPath := filepath.Join(baseDir, filename)
-			absPath, err := filepath.Abs(fullPath)
-			if err != nil {
-				return nil, &PreprocessError{Msg: err.Error(), File: ident.File, Line: ident.Line, Col: ident.Col}
-			}
-			if visited[absPath] {
-				return nil, &PreprocessError{
-					Msg:  fmt.Sprintf("circular import: %s is already being included", absPath),
-					File: ident.File, Line: ident.Line, Col: ident.Col,
-				}
-			}
-			srcBytes, err := os.ReadFile(fullPath)
-			if err != nil {
-				return nil, &PreprocessError{
-					Msg:  fmt.Sprintf("cannot read imported file %q: %v", fullPath, err),
-					File: ident.File, Line: ident.Line, Col: ident.Col,
-				}
-			}
-			incToks, err := lexer.TokenizeWithFile(string(srcBytes), fullPath)
+		tok := tokens[i]
+
+		// `import "path/file.j";` - file import
+		if tok.Type == lexer.TOKEN_IMPORT {
+			expanded, advance, err := handleImport(tokens, i, baseDir, visited)
 			if err != nil {
 				return nil, err
 			}
-			// Recurse with a new baseDir = dir of the included file, and mark this file as visited.
-			childVisited := copyVisited(visited)
-			childVisited[absPath] = true
-			expanded, err := processTokens(incToks, filepath.Dir(fullPath), childVisited)
-			if err != nil {
-				return nil, err
-			}
-			// Splice expanded tokens (drop trailing EOF).
-			for _, t := range expanded {
-				if t.Type == lexer.TOKEN_EOF {
-					continue
-				}
-				out = append(out, t)
-			}
-			i += 5
+			out = append(out, expanded...)
+			i += advance
 			continue
 		}
-		out = append(out, tokens[i])
+
+		// `use NAME ;` - library import. Check for a common mistake
+		// (`use file.j;`) and produce a helpful error.
+		if tok.Type == lexer.TOKEN_USE {
+			if err := validateUse(tokens, i); err != nil {
+				return nil, err
+			}
+			// pass through unchanged
+			out = append(out, tok)
+			i++
+			continue
+		}
+
+		out = append(out, tok)
 		i++
 	}
 	return out, nil
 }
 
-func isFileImportPattern(toks []lexer.Token, i int) bool {
-	if i+4 >= len(toks) {
-		return false
+// handleImport processes an `import` token. Possible shapes:
+//
+//	import "path.j" ;     (canonical file import)
+//	import NAME ;          (old library form - error: use `use NAME;`)
+//	import NAME.j ;        (old file form - error: quote the path)
+//
+// Returns the spliced tokens (empty if it was a pass-through) and the number
+// of input tokens consumed.
+func handleImport(tokens []lexer.Token, i int, baseDir string, visited map[string]bool) ([]lexer.Token, int, error) {
+	imp := tokens[i]
+	next := tokens[i+1]
+
+	// `import "path.j" ;`
+	if next.Type == lexer.TOKEN_STRING && i+2 < len(tokens) && tokens[i+2].Type == lexer.TOKEN_SEMI {
+		path := next.Lexeme
+		if !strings.HasSuffix(path, ".j") {
+			return nil, 0, &PreprocessError{
+				Msg:  fmt.Sprintf("import path %q must end with `.j`", path),
+				File: next.File, Line: next.Line, Col: next.Col,
+			}
+		}
+		spliced, err := spliceFile(path, baseDir, visited, next)
+		if err != nil {
+			return nil, 0, err
+		}
+		return spliced, 3, nil // import STRING ;
 	}
-	return toks[i].Type == lexer.TOKEN_IMPORT &&
-		toks[i+1].Type == lexer.TOKEN_IDENT &&
-		toks[i+2].Type == lexer.TOKEN_DOT &&
-		toks[i+3].Type == lexer.TOKEN_IDENT &&
-		toks[i+4].Type == lexer.TOKEN_SEMI
+
+	// `import NAME ;` - looks like the old library form
+	if next.Type == lexer.TOKEN_IDENT && i+2 < len(tokens) && tokens[i+2].Type == lexer.TOKEN_SEMI {
+		return nil, 0, &PreprocessError{
+			Msg:  fmt.Sprintf("`import` is for files; use `use %s;` for system libraries", next.Lexeme),
+			File: imp.File, Line: imp.Line, Col: imp.Col,
+		}
+	}
+
+	// `import NAME.j ;` - the old unquoted file form
+	if next.Type == lexer.TOKEN_IDENT && i+4 < len(tokens) &&
+		tokens[i+2].Type == lexer.TOKEN_DOT &&
+		tokens[i+3].Type == lexer.TOKEN_IDENT &&
+		tokens[i+4].Type == lexer.TOKEN_SEMI {
+		return nil, 0, &PreprocessError{
+			Msg:  fmt.Sprintf("file imports take a string literal: `import \"%s.%s\";`", next.Lexeme, tokens[i+3].Lexeme),
+			File: imp.File, Line: imp.Line, Col: imp.Col,
+		}
+	}
+
+	return nil, 0, &PreprocessError{
+		Msg:  "expected `import \"path.j\";`",
+		File: imp.File, Line: imp.Line, Col: imp.Col,
+	}
+}
+
+func spliceFile(path, baseDir string, visited map[string]bool, originTok lexer.Token) ([]lexer.Token, error) {
+	fullPath := path
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(baseDir, path)
+	}
+	absPath, err := filepath.Abs(fullPath)
+	if err != nil {
+		return nil, &PreprocessError{Msg: err.Error(), File: originTok.File, Line: originTok.Line, Col: originTok.Col}
+	}
+	if visited[absPath] {
+		return nil, &PreprocessError{
+			Msg:  fmt.Sprintf("circular import: %s is already being included", absPath),
+			File: originTok.File, Line: originTok.Line, Col: originTok.Col,
+		}
+	}
+	srcBytes, err := os.ReadFile(fullPath)
+	if err != nil {
+		return nil, &PreprocessError{
+			Msg:  fmt.Sprintf("cannot read imported file %q: %v", fullPath, err),
+			File: originTok.File, Line: originTok.Line, Col: originTok.Col,
+		}
+	}
+	incToks, err := lexer.TokenizeWithFile(string(srcBytes), fullPath)
+	if err != nil {
+		return nil, err
+	}
+	childVisited := copyVisited(visited)
+	childVisited[absPath] = true
+	expanded, err := processTokens(incToks, filepath.Dir(fullPath), childVisited)
+	if err != nil {
+		return nil, err
+	}
+	// drop trailing EOF
+	out := make([]lexer.Token, 0, len(expanded))
+	for _, t := range expanded {
+		if t.Type == lexer.TOKEN_EOF {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+// validateUse catches the common mistake `use foo.j;` (using `use` for a file).
+// `use NAME;` is fine and passes through unchanged.
+func validateUse(tokens []lexer.Token, i int) error {
+	if i+4 >= len(tokens) {
+		return nil
+	}
+	if tokens[i+1].Type == lexer.TOKEN_IDENT &&
+		tokens[i+2].Type == lexer.TOKEN_DOT &&
+		tokens[i+3].Type == lexer.TOKEN_IDENT &&
+		tokens[i+4].Type == lexer.TOKEN_SEMI {
+		t := tokens[i]
+		return &PreprocessError{
+			Msg:  fmt.Sprintf("`use` is for system libraries; for files use `import \"%s.%s\";`", tokens[i+1].Lexeme, tokens[i+3].Lexeme),
+			File: t.File, Line: t.Line, Col: t.Col,
+		}
+	}
+	return nil
 }
 
 func copyVisited(m map[string]bool) map[string]bool {

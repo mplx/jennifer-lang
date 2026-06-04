@@ -48,8 +48,9 @@ ILLEGAL   FLOAT        FUNC          RBRACE  MINUS   GT
           IDENT        INIT          RPAREN  SLASH   GE
           VARREF       CONST         SEMI    PERCENT EQ
                        IMPORT        COMMA
-                       RETURN        ASSIGN
-                       IF            DOT
+                       USE           ASSIGN
+                       RETURN        DOT
+                       IF
                        ELSEIF
                        ELSE
                        WHILE
@@ -64,8 +65,10 @@ ILLEGAL   FLOAT        FUNC          RBRACE  MINUS   GT
 ```
 
 `def` introduces a variable or constant binding (TOKEN_DEFINE); `func`
-introduces a method (TOKEN_FUNC). `DOT` (`.`) is only used in file-import
-paths (`name.j`).
+introduces a method (TOKEN_FUNC). `import` (TOKEN_IMPORT) is for **file
+imports** (`import "path.j";`); `use` (TOKEN_USE) is for **library imports**
+(`use stdlib;`). `DOT` (`.`) no longer appears in import syntax (paths are
+strings now) and is reserved for future expression use.
 Comparison tokens `LE`, `GE`, `EQ` are two-character (`<=`, `>=`, `==`) and
 are recognized by a one-character lookahead from `<`, `>`, `=`. `RETURN` is
 already reserved for M3.
@@ -81,10 +84,10 @@ Every token records `Line` and `Col` (both 1-based). The `advance()` helper bump
 
 ### Keywords
 
-The lexer's keyword map covers: `def func as init const import return if elseif
-else while for true false null int float string bool`. Anything else lexed as
-a word stays a `TOKEN_IDENT`. `define` is **not** a keyword and lexes as a
-plain identifier.
+The lexer's keyword map covers: `def func as init const import use return if
+elseif else while for true false null int float string bool`. Anything else
+lexed as a word stays a `TOKEN_IDENT`. `define` is **not** a keyword and lexes
+as a plain identifier.
 
 ### Comments
 
@@ -101,16 +104,17 @@ Per the spec, names use `[A-Za-z]` only. Digits and underscores are explicitly
 ## Grammar (M2) - EBNF
 
 The authoritative grammar for what the parser accepts. This grammar describes
-the token stream **after** preprocessing - file imports (`import IDENT . IDENT ;`)
-are spliced before the parser runs, so they don't appear here.
+the token stream **after** preprocessing - file imports (`import STRING ;`)
+are spliced before the parser runs, so they don't appear here. Only library
+imports (`use IDENT ;`) reach the parser.
 
 Terminals in CAPITALS are token classes from the lexer (see [Token types](#token-types));
 quoted strings are keywords or punctuation that match the corresponding token's
 lexeme.
 
 ```ebnf
-program     = { importStmt | methodDef | statement } EOF ;
-importStmt  = "import" IDENT ";" ;                  (* library import *)
+program     = { useStmt | methodDef | statement } EOF ;
+useStmt     = "use" IDENT ";" ;                     (* library import *)
 methodDef   = "func" IDENT "(" ")" block ;
 block       = "{" { statement } "}" ;
 
@@ -221,25 +225,31 @@ Every node embeds a `pos{Line, Col}` for error reporting and exposes it via
 
 ## Preprocessor (`internal/preproc`)
 
-Sits between the lexer and the parser. Its only job is to expand file imports.
+Sits between the lexer and the parser. Its only job is to expand file imports
+and pass library imports through.
 
 ### Algorithm
 
 1. Walk the token stream.
-2. When the sequence `IMPORT IDENT DOT IDENT(=="j") SEMI` is found:
-   - Resolve `IDENT.j` relative to the current file's directory.
+2. When `IMPORT STRING SEMI` is found:
+   - Verify the string ends in `.j`.
+   - Resolve the path (relative to the current file's directory, or absolute
+     if it starts with `/`).
    - Reject if the path was already visited up the import chain (circular import).
    - Read the file, lex it (with file-tagged tokens), recursively preprocess it.
    - Splice the result (dropping the trailing `EOF`) at this point.
-3. Any other `import` (including the canonical `import stdlib;`) is left alone
-   and reaches the parser as an `ImportStmt` node.
+3. When `USE IDENT SEMI` is found: pass through unchanged. The parser turns
+   it into an `ImportStmt` node.
+4. Helpful errors for common mistakes:
+   - `import IDENT;` (old library form) -> "use `use NAME;` for system libraries".
+   - `import IDENT.j;` (old unquoted file form) -> "file imports take a string literal".
+   - `use IDENT.j;` (file form with `use`) -> "use `import \"name.j\";` for files".
 
 ### Edge cases
 
-- The file extension must literally be `.j` - `import foo.go;` is rejected.
-- Filenames follow the identifier rule (`[A-Za-z]`) since they're carried by
-  `TOKEN_IDENT`. Future expansion: accept quoted strings to allow underscores,
-  hyphens, and subdirectories.
+- The path string must literally end in `.j`. `import "foo.go";` is rejected.
+- Paths may contain `/` for subdirectories. Absolute paths are accepted as-is;
+  relative paths resolve from the importing file's directory.
 - Circular imports are detected by tracking absolute paths visited along the
   current chain.
 
@@ -318,7 +328,7 @@ A call to `foo(...)` resolves in this order:
 
 1. User-defined method `foo` in `i.methods`.
 2. Builtin `foo` - **but only if the library that registered it was imported**.
-   In M1, all builtins gate on `import stdlib;`.
+   All builtins gate on `use stdlib;`.
 
 `stdlib.Install(in)` registers `printf`. M1 `printf` takes exactly one argument
 and writes its `Display()` form to the interpreter's writer.

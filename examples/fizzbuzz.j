@@ -3,7 +3,7 @@
 //
 // fizzbuzz.j - classic FizzBuzz from 1 to 15.
 // Demonstrates M2 features: for loop, if/elseif/else, comparison, modulo.
-import stdlib;
+use stdlib;
 
 for (def i as int init 1; $i <= 15; $i = $i + 1) {
     if ($i % 15 == 0) {

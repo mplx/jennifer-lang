@@ -23,7 +23,7 @@ tinygo build -o jennifer ./cmd/jennifer
 A first program:
 
 ```jennifer
-import stdlib;
+use stdlib;
 
 def x as int init 21;
 printf($x + $x);

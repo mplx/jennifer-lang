@@ -19,9 +19,10 @@ source → tokens → preprocessed tokens → AST → result.
 - `$var` references
 - Arithmetic: `+ - * /` and `%` on ints; parenthesised grouping
 - `printf("text")` and `printf($var)` - single argument, no format specifiers
-- `import stdlib;` (library import)
-- `import file.j;` (file import - textual splice; works anywhere, including
-  inside a block; circular-import detection)
+- `use stdlib;` (library import)
+- `import "file.j";` (file import - textual splice; works anywhere, including
+  inside a block; circular-import detection; subdirectories supported via the
+  string path)
 - Method definitions (zero-arg, top-level only)
 - Comments: `//` and `/* */`
 
@@ -33,6 +34,10 @@ source → tokens → preprocessed tokens → AST → result.
   `def` remains, and methods use a new `func` keyword.
 - At the def site, names are bare identifiers (no `$` sigil). The `$` is
   reserved for use-site references to mutable variables.
+- Imports split into two keywords: `use NAME;` for system libraries (originally
+  `import NAME;`) and `import "PATH.j";` for files (originally
+  `import NAME.j;` with an identifier path). The new string-literal path
+  enables subdirectories, hyphens, and underscores.
 
 **What lands beyond the bare MVP:**
 

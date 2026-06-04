@@ -9,7 +9,7 @@ import (
 )
 
 func TestParseHelloProgram(t *testing.T) {
-	src := `import stdlib;
+	src := `use stdlib;
 func app() {
     def x as int init 21;
     printf($x + $x);
@@ -109,7 +109,7 @@ func TestParseErrors(t *testing.T) {
 		src  string
 		want string // substring of error
 	}{
-		{"missing semi", `import stdlib func app() {}`, "expected SEMI"},
+		{"missing semi", `use stdlib func app() {}`, "expected SEMI"},
 		// `42;` and `def x ...;` are now both valid at top level - no
 		// equivalent rejection test belongs here.
 		{"truly unknown type", `func app() { def x as widget init 1; }`, "expected type"},
