@@ -4,7 +4,7 @@
 // main.j - demonstrates file imports.
 // `import "greetinglib.j";` splices the contents of greetinglib.j at this point,
 // making $name and $greeting available to the surrounding scope.
-use stdlib;
+use io;
 import "greetinglib.j";
 
 printf($greeting);

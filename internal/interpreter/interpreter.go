@@ -7,31 +7,65 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
 
-// Builtin is a Go-implemented stdlib function callable from Jennifer source.
+// Builtin is a Go-implemented library function callable from Jennifer source.
 // `out` is where stdout-like effects (e.g. printf) write; the interpreter passes
 // its configured writer in. Returning Null() for void-like calls is fine.
 type Builtin func(out io.Writer, args []Value) (Value, error)
 
+// builtinEntry records a registered builtin and the library that owns it.
+// A call resolves a callee name to its entry; the call is only allowed if
+// the owning library has been `use`d in the program.
+type builtinEntry struct {
+	Lib string
+	Fn  Builtin
+}
+
 // Interpreter walks a parsed Program and runs it.
 type Interpreter struct {
-	Out      io.Writer       // defaults to os.Stdout if nil
-	Builtins map[string]Builtin
-	imported map[string]bool // libraries the program has `import`ed
-	methods  map[string]*parser.MethodDef
-	global   *Environment // global scope where top-level statements live
+	Out       io.Writer // defaults to os.Stdout if nil
+	Builtins  map[string]builtinEntry
+	knownLibs map[string]bool // libraries that have at least one registered builtin
+	imported  map[string]bool // libraries the program has `use`d
+	methods   map[string]*parser.MethodDef
+	global    *Environment // global scope where top-level statements live
 }
 
 func New() *Interpreter {
 	return &Interpreter{
-		Out:      os.Stdout,
-		Builtins: map[string]Builtin{},
-		imported: map[string]bool{},
-		methods:  map[string]*parser.MethodDef{},
+		Out:       os.Stdout,
+		Builtins:  map[string]builtinEntry{},
+		knownLibs: map[string]bool{},
+		imported:  map[string]bool{},
+		methods:   map[string]*parser.MethodDef{},
 	}
+}
+
+// Register attaches a builtin function under the given Jennifer library name.
+// Libraries call this at install time; programs make those builtins callable
+// by writing `use <lib>;`.
+func (i *Interpreter) Register(lib, name string, fn Builtin) {
+	i.Builtins[name] = builtinEntry{Lib: lib, Fn: fn}
+	i.knownLibs[lib] = true
+}
+
+// availableLibsString returns a sorted, comma-separated list of registered
+// library names for use in error messages. "(none)" if nothing was installed.
+func (i *Interpreter) availableLibsString() string {
+	if len(i.knownLibs) == 0 {
+		return "(none)"
+	}
+	names := make([]string, 0, len(i.knownLibs))
+	for n := range i.knownLibs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }
 
 type runtimeError struct {
@@ -62,8 +96,17 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	if i.Out == nil {
 		i.Out = os.Stdout
 	}
-	// Imports
+	// Imports: every `use NAME;` must refer to a library that has at least
+	// one registered builtin. Silent acceptance of unknown libraries would
+	// hide typos like `use stdio;` (instead of `io`).
 	for _, imp := range prog.Imports {
+		if !i.knownLibs[imp.Name] {
+			line, col := imp.Pos()
+			return &runtimeError{
+				Msg:  fmt.Sprintf("unknown library %q (available: %s)", imp.Name, i.availableLibsString()),
+				Line: line, Col: col,
+			}
+		}
 		i.imported[imp.Name] = true
 	}
 	// Methods: collect first so call order doesn't matter
@@ -73,13 +116,13 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 			return &runtimeError{Msg: fmt.Sprintf("method %q is defined more than once", m.Name), Line: line, Col: col}
 		}
 		// No-shadowing rule for methods: a user method may not share a name
-		// with a builtin from a library the program has imported. This mirrors
-		// the variable no-shadowing rule. Without `use stdlib;` the name is
-		// free - define your own `printf` to your heart's content.
-		if _, isBuiltin := i.Builtins[m.Name]; isBuiltin && i.imported["stdlib"] {
+		// with a builtin from a library the program has `use`d. This mirrors
+		// the variable no-shadowing rule. Without the relevant `use`, the
+		// name is free for user code.
+		if b, isBuiltin := i.Builtins[m.Name]; isBuiltin && i.imported[b.Lib] {
 			line, col := m.Pos()
 			return &runtimeError{
-				Msg:  fmt.Sprintf("method %q shadows a builtin from `stdlib`; rename it or remove `use stdlib;`", m.Name),
+				Msg:  fmt.Sprintf("method %q shadows a builtin from `%s`; rename it or remove `use %s;`", m.Name, b.Lib, b.Lib),
 				Line: line, Col: col,
 			}
 		}
@@ -458,11 +501,11 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 		}
 		return Null(), nil
 	}
-	// Builtin? Only callable if the owning library was imported.
-	if fn, ok := i.Builtins[c.Callee]; ok {
-		if !i.imported["stdlib"] {
+	// Builtin? Only callable if the owning library was `use`d.
+	if b, ok := i.Builtins[c.Callee]; ok {
+		if !i.imported[b.Lib] {
 			line, col := c.Pos()
-			return Value{}, &runtimeError{Msg: fmt.Sprintf("`%s` requires `use stdlib;`", c.Callee), Line: line, Col: col}
+			return Value{}, &runtimeError{Msg: fmt.Sprintf("`%s` requires `use %s;`", c.Callee, b.Lib), Line: line, Col: col}
 		}
 		args := make([]Value, 0, len(c.Args))
 		for _, a := range c.Args {
@@ -472,7 +515,7 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 			}
 			args = append(args, v)
 		}
-		v, err := fn(i.Out, args)
+		v, err := b.Fn(i.Out, args)
 		if err != nil {
 			line, col := c.Pos()
 			return Value{}, &runtimeError{Msg: err.Error(), Line: line, Col: col}

@@ -21,7 +21,7 @@ tinygo build -o jennifer ./cmd/jennifer
 You can also pipe source in on stdin by passing `-` as the filename:
 
 ```sh
-echo 'use stdlib; printf("hi\n");' | ./jennifer run -
+echo 'use io; printf("hi\n");' | ./jennifer run -
 ./jennifer run - < program.j
 cat program.j | ./jennifer run -
 ```
@@ -45,7 +45,7 @@ Save the following as `hello.j`:
 
 ```jennifer
 // hello.j
-use stdlib;
+use io;
 
 def x as int init 21;
 printf($x + $x);
@@ -61,7 +61,7 @@ You should see `42`.
 
 ### What just happened
 
-1. `use stdlib;` makes Jennifer's standard library functions (only `printf`
+1. `use io;` makes Jennifer's standard library functions (only `printf`
    today) available.
 2. `def x as int init 21;` declares an integer variable named `x` and
    initializes it to `21`. Notice that **using** a variable requires the `$`
@@ -219,15 +219,15 @@ Methods can only be defined at the top level (not inside another method's
 body). Method bodies inherit the global scope, so top-level variables are
 visible inside methods (subject to the no-shadowing rule).
 
-**Methods cannot shadow imported builtins.** If you write `use stdlib;` and
+**Methods cannot shadow imported builtins.** If you write `use io;` and
 then `func printf() { ... }`, the program is rejected:
 
 ```
-runtime error at 2:1: method "printf" shadows a builtin from `stdlib`;
-rename it or remove `use stdlib;`
+runtime error at 2:1: method "printf" shadows a builtin from `io`;
+rename it or remove `use io;`
 ```
 
-Without the `use stdlib;`, the name is yours to define. This is the same
+Without the `use io;`, the name is yours to define. This is the same
 no-shadowing discipline Jennifer applies to variables.
 
 ### Imports
@@ -235,12 +235,12 @@ no-shadowing discipline Jennifer applies to variables.
 Two keywords, two mechanisms:
 
 ```jennifer
-use stdlib;                  // library import - enables stdlib functions
-import "helpers.j";          // file import - splices helpers.j here
+use io;                  // library import - enables `io` library (printf, sprintf)
+import "helpers.j";      // file import - splices helpers.j here
 ```
 
 **Library imports** (`use NAME;`) enable a built-in module. Today only
-`stdlib` exists.
+`io` exists; M4 will add `math`, `strings`, and `convert`.
 
 **File imports** (`import "PATH.j";`) textually include another `.j` source
 file at the point of import. The path is a **string literal** that must end
@@ -258,7 +258,7 @@ File imports may appear anywhere a statement is allowed, including inside a
 block:
 
 ```jennifer
-use stdlib;
+use io;
 import "helpers.j";          // ← spliced here; whatever helpers.j contains lands here
 printf($helper_value);
 ```
@@ -269,7 +269,7 @@ rejected with an error.
 Mixing the keywords produces a helpful error:
 
 ```
-import stdlib;       → error: use `use stdlib;` for system libraries
+import io;           → error: use `use io;` for system libraries
 use foo.j;           → error: use `import "foo.j";` for files
 import foo.j;        → error: file imports take a string literal: `import "foo.j";`
 ```
@@ -359,7 +359,7 @@ passed to `printf`/`sprintf` must be doubled to `%%`.
 
 ```jennifer
 // greeting.j
-use stdlib;
+use io;
 
 def name as string init "Jennifer";
 printf("hello, " + $name + "!\n");
@@ -375,7 +375,7 @@ hello, Jennifer!
 
 ```jennifer
 // fizzbuzz.j
-use stdlib;
+use io;
 
 for (def i as int init 1; $i <= 15; $i = $i + 1) {
     if ($i % 15 == 0) {
@@ -394,7 +394,7 @@ for (def i as int init 1; $i <= 15; $i = $i + 1) {
 
 ```jennifer
 // factorial.j
-use stdlib;
+use io;
 
 func fact(n as int) {
     if ($n == 0) { return 1; }

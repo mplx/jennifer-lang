@@ -24,7 +24,7 @@ Internals of the Jennifer interpreter as of Milestone 1.
        │ *Program (AST)
        ▼
    ┌─────────────┐
-   │ interpreter │   internal/interpreter + internal/stdlib
+   │ interpreter │   internal/interpreter + internal/lib/io (and other libs)
    └─────────────┘
        │
        ▼
@@ -67,7 +67,7 @@ ILLEGAL   FLOAT        FUNC          RBRACE  MINUS   GT
 `def` introduces a variable or constant binding (TOKEN_DEFINE); `func`
 introduces a method (TOKEN_FUNC). `import` (TOKEN_IMPORT) is for **file
 imports** (`import "path.j";`); `use` (TOKEN_USE) is for **library imports**
-(`use stdlib;`). `DOT` (`.`) no longer appears in import syntax (paths are
+(`use io;`). `DOT` (`.`) no longer appears in import syntax (paths are
 strings now) and is reserved for future expression use.
 Comparison tokens `LE`, `GE`, `EQ` are two-character (`<=`, `>=`, `==`) and
 are recognized by a one-character lookahead from `<`, `>`, `=`. `RETURN` is
@@ -341,22 +341,32 @@ There is no required entry point. A program with only imports and method
 defs is valid and runs to completion immediately (those methods are simply
 never called).
 
-### Builtins / stdlib
+### Builtins and libraries
 
-Stdlib functions are Go closures registered in `Interpreter.Builtins`:
+Library functions are Go closures registered with the interpreter:
 
 ```go
 type Builtin func(out io.Writer, args []Value) (Value, error)
+
+// In a library package:
+func Install(in *interpreter.Interpreter) {
+    in.Register("io", "printf", printf)
+    in.Register("io", "sprintf", sprintf)
+}
 ```
 
-A call to `foo(...)` resolves in this order:
+`Interpreter.Builtins` stores `builtinEntry{Lib, Fn}` per name. A call to
+`foo(...)` resolves in this order:
 
 1. User-defined method `foo` in `i.methods`.
-2. Builtin `foo` - **but only if the library that registered it was imported**.
-   All builtins gate on `use stdlib;`.
+2. Builtin `foo` - **but only if its owning library has been `use`d**. The
+   error otherwise quotes the right library name: `` `foo` requires `use <lib>;` ``.
 
-`stdlib.Install(in)` registers `printf` and `sprintf`. Both share a
-`formatArgs` helper with three shapes:
+The no-shadowing check at hoist time uses the same lookup: a user method
+that collides with an imported library's builtin is rejected.
+
+**`internal/lib/io`** registers `printf` and `sprintf` under the Jennifer
+library name `io`. Both share a `formatArgs` helper with three shapes:
 - 0 args -> error.
 - First arg is a string -> treat as a Go-style format string and substitute
   the remaining args. Verbs: `%d` (int), `%f` (float), `%s` (string),
@@ -396,7 +406,7 @@ jennifer run <file.j>
 | `internal/lexer`       | Token-by-token output for fixed inputs; error cases |
 | `internal/parser`      | AST shape via `Sprint`; precedence; error cases |
 | `internal/interpreter` | Full programs in-memory; stdout captured       |
-| `internal/stdlib`      | `Install` registers `printf`; arity errors     |
+| `internal/lib/io`       | `Install` registers `printf`/`sprintf`; arity and format errors |
 | `cmd/jennifer`         | Golden test that runs every `examples/*.j` and compares stdout to `examples/expected/*.txt` |
 
 Run everything with `go test ./...`.
@@ -420,8 +430,8 @@ internal/interpreter/value.go         Runtime Value tagged union
 internal/interpreter/environment.go   Scoped symbol table
 internal/interpreter/interpreter.go   Tree-walking evaluator
 internal/interpreter/interpreter_test.go End-to-end interpreter tests
-internal/stdlib/stdlib.go        Builtin Jennifer functions
-internal/stdlib/stdlib_test.go   Stdlib unit tests
+internal/lib/io/iolib.go          `io` library: printf, sprintf
+internal/lib/io/iolib_test.go     io library unit tests
 examples/*.j                     Example programs
 examples/expected/*.txt          Expected stdout per example
 examples/with_import/            Subdirectory demonstrating file imports

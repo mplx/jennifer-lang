@@ -3,7 +3,7 @@
 //
 // hello.j - the canonical first Jennifer program.
 // Prints 42.
-use stdlib;
+use io;
 
 def x as int init 21;
 printf($x + $x);

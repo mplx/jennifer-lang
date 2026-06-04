@@ -25,7 +25,7 @@ const (
 	TOKEN_INIT
 	TOKEN_CONST
 	TOKEN_IMPORT // file import: `import "name.j";`
-	TOKEN_USE    // library import: `use stdlib;`
+	TOKEN_USE    // library import: `use io;`
 	TOKEN_RETURN
 	TOKEN_IF
 	TOKEN_ELSEIF

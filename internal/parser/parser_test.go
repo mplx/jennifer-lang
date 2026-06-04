@@ -9,7 +9,7 @@ import (
 )
 
 func TestParseHelloProgram(t *testing.T) {
-	src := `use stdlib;
+	src := `use io;
 func app() {
     def x as int init 21;
     printf($x + $x);
@@ -18,7 +18,7 @@ func app() {
 	if err != nil {
 		t.Fatalf("unexpected parse error: %v", err)
 	}
-	if len(prog.Imports) != 1 || prog.Imports[0].Name != "stdlib" {
+	if len(prog.Imports) != 1 || prog.Imports[0].Name != "io" {
 		t.Errorf("imports: got %+v, want [stdlib]", prog.Imports)
 	}
 	if len(prog.Methods) != 1 || prog.Methods[0].Name != "app" {

@@ -14,7 +14,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lexer"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
-	"github.com/mplx/jennifer-lang/internal/stdlib"
+	"github.com/mplx/jennifer-lang/internal/lib/io"
 )
 
 func main() {
@@ -117,7 +117,7 @@ func runFile(path string) int {
 		return 1
 	}
 	in := interpreter.New()
-	stdlib.Install(in)
+	iolib.Install(in)
 	if err := in.Run(prog); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %s\n", label, err.Error())
 		printErrorContext(src, err)

@@ -1,21 +1,37 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-package stdlib
+package iolib
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 )
 
+// callPrintf and callSprintf invoke the registered builtins. Builtins are now
+// stored as `builtinEntry{Lib, Fn}` rather than bare function values; the
+// helpers hide that indirection from each test.
+func callPrintf(in *interpreter.Interpreter, out io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+	return in.Builtins["printf"].Fn(out, args)
+}
+
+func callSprintf(in *interpreter.Interpreter, args []interpreter.Value) (interpreter.Value, error) {
+	return in.Builtins["sprintf"].Fn(nil, args)
+}
+
 func TestInstallRegistersBuiltins(t *testing.T) {
 	in := interpreter.New()
 	Install(in)
-	if _, ok := in.Builtins["printf"]; !ok {
+	b, ok := in.Builtins["printf"]
+	if !ok {
 		t.Fatal("printf not registered after Install")
+	}
+	if b.Lib != "io" {
+		t.Errorf("printf registered under lib %q, want %q", b.Lib, "io")
 	}
 	if _, ok := in.Builtins["sprintf"]; !ok {
 		t.Fatal("sprintf not registered after Install")
@@ -37,7 +53,7 @@ func TestPrintfSingleArgDisplay(t *testing.T) {
 	}
 	for _, c := range cases {
 		var buf bytes.Buffer
-		if _, err := in.Builtins["printf"](&buf, []interpreter.Value{c.v}); err != nil {
+		if _, err := callPrintf(in, &buf, []interpreter.Value{c.v}); err != nil {
 			t.Errorf("printf(%v): %v", c.v, err)
 			continue
 		}
@@ -63,7 +79,7 @@ func TestPrintfFormatString(t *testing.T) {
 	}
 	for _, c := range cases {
 		var buf bytes.Buffer
-		if _, err := in.Builtins["printf"](&buf, c.args); err != nil {
+		if _, err := callPrintf(in, &buf, c.args); err != nil {
 			t.Errorf("printf(%v): %v", c.args, err)
 			continue
 		}
@@ -91,7 +107,7 @@ func TestPrintfFormatErrors(t *testing.T) {
 	}
 	for _, c := range cases {
 		var buf bytes.Buffer
-		_, err := in.Builtins["printf"](&buf, c.args)
+		_, err := callPrintf(in, &buf, c.args)
 		if err == nil {
 			t.Errorf("printf(%v): expected error, got nil", c.args)
 			continue
@@ -105,7 +121,7 @@ func TestPrintfFormatErrors(t *testing.T) {
 func TestSprintfReturnsString(t *testing.T) {
 	in := interpreter.New()
 	Install(in)
-	v, err := in.Builtins["sprintf"](nil, []interpreter.Value{interpreter.StringVal("%d+%d=%d"), interpreter.IntVal(1), interpreter.IntVal(2), interpreter.IntVal(3)})
+	v, err := callSprintf(in, []interpreter.Value{interpreter.StringVal("%d+%d=%d"), interpreter.IntVal(1), interpreter.IntVal(2), interpreter.IntVal(3)})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}

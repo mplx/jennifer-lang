@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-package stdlib
+// Package iolib implements Jennifer's `io` library: printf, sprintf, and
+// (later) other I/O primitives. The Go package name is `iolib` to avoid
+// colliding with the standard `io` package the implementation depends on.
+package iolib
 
 import (
 	"fmt"
@@ -12,11 +15,14 @@ import (
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 )
 
-// Install registers stdlib functions on an interpreter.
+// LibraryName is the Jennifer name programs `use` to enable these functions.
+const LibraryName = "io"
+
+// Install registers io library functions on an interpreter.
 // Call this before Interpreter.Run(prog).
 func Install(in *interpreter.Interpreter) {
-	in.Builtins["printf"] = printf
-	in.Builtins["sprintf"] = sprintf
+	in.Register(LibraryName, "printf", printf)
+	in.Register(LibraryName, "sprintf", sprintf)
 }
 
 // printf writes formatted output to stdout. Two forms:

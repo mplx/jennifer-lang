@@ -46,7 +46,7 @@ func writeTmp(t *testing.T, files map[string]string) string {
 }
 
 func TestPassesThroughLibraryImports(t *testing.T) {
-	src := `use stdlib; func app() { printf(1); }`
+	src := `use io; func app() { printf(1); }`
 	toks, err := lexer.Tokenize(src)
 	if err != nil {
 		t.Fatalf("lex: %v", err)
@@ -181,14 +181,16 @@ func TestRejectsOldUnquotedFileImport(t *testing.T) {
 }
 
 func TestRejectsOldLibraryImport(t *testing.T) {
-	src := `import stdlib; func app() {}`
+	// Pre-split, `import stdlib;` was the way to enable the printf builtin.
+	// Now imports are file-only; the preprocessor should redirect to `use`.
+	src := `import io; func app() {}`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, ".", "")
 	if err == nil {
-		t.Fatal("expected error for old `import stdlib;`")
+		t.Fatal("expected error for `import io;`")
 	}
-	if !strings.Contains(err.Error(), "use stdlib") {
-		t.Errorf("error should suggest `use stdlib;`: %v", err)
+	if !strings.Contains(err.Error(), "use io") {
+		t.Errorf("error should suggest `use io;`: %v", err)
 	}
 }
 
@@ -220,7 +222,7 @@ func TestMissingFile(t *testing.T) {
 func TestImportAtTopLevel(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
 		"top.j":  `func helper() { printf(1); }`,
-		"main.j": `use stdlib; import "top.j"; func app() { helper(); }`,
+		"main.j": `use io; import "top.j"; func app() { helper(); }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -229,8 +231,8 @@ func TestImportAtTopLevel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preproc: %v", err)
 	}
-	// `use stdlib;` is preserved; the file import is spliced and contributes a method def.
-	if out[0].Type != lexer.TOKEN_USE || out[1].Lexeme != "stdlib" {
+	// `use io;` is preserved; the file import is spliced and contributes a method def.
+	if out[0].Type != lexer.TOKEN_USE || out[1].Lexeme != "io" {
 		t.Errorf("first import not preserved: %v %v", out[0], out[1])
 	}
 }

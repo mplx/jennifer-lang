@@ -6,7 +6,7 @@ package lexer
 import "testing"
 
 func TestTokenizeSimpleProgram(t *testing.T) {
-	src := `use stdlib;
+	src := `use io;
 func app() {
     def x as int init 21;
     printf($x + $x);

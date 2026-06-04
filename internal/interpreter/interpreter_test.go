@@ -10,10 +10,10 @@ import (
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/stdlib"
+	"github.com/mplx/jennifer-lang/internal/lib/io"
 )
 
-// run lexes/parses/installs stdlib/runs a program and returns captured stdout.
+// run lexes/parses/installs the io library/runs a program and returns captured stdout.
 //
 // Convenience: if the source defines `app()` and has no top-level statements
 // other than imports/defs, we append `app();` automatically. This keeps the
@@ -31,7 +31,7 @@ func run(t *testing.T, src string) (string, error) {
 	in := interpreter.New()
 	var buf bytes.Buffer
 	in.Out = &buf
-	stdlib.Install(in)
+	iolib.Install(in)
 	if err := in.Run(prog); err != nil {
 		return buf.String(), err
 	}
@@ -40,7 +40,7 @@ func run(t *testing.T, src string) (string, error) {
 
 func TestHelloProgramPrints42(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def x as int init 21;
     printf($x + $x);
@@ -55,7 +55,7 @@ func app() {
 
 func TestStringLiteralPrints(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     printf("hello, jennifer\n");
 }`)
@@ -69,7 +69,7 @@ func app() {
 
 func TestArithmeticPrecedence(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def r as int init 2 + 3 * 4;
     printf($r);
@@ -84,7 +84,7 @@ func app() {
 
 func TestDivisionAndModulo(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def a as int init 17 / 5;
     def b as int init 17 % 5;
@@ -103,7 +103,7 @@ func app() {
 func TestEmptyProgramRunsCleanly(t *testing.T) {
 	// app() is no longer required. An empty program (or one with only imports
 	// and method defs that are never called) is valid and produces no output.
-	out, err := run(t, `use stdlib;`)
+	out, err := run(t, `use io;`)
 	if err != nil {
 		t.Errorf("expected no error, got %v", err)
 	}
@@ -115,7 +115,7 @@ func TestEmptyProgramRunsCleanly(t *testing.T) {
 func TestTopLevelStatementsRun(t *testing.T) {
 	// Bare top-level form - no `app()` wrapper.
 	out, err := run(t, `
-use stdlib;
+use io;
 def x as int init 21;
 printf($x + $x);
 `)
@@ -129,7 +129,7 @@ printf($x + $x);
 
 func TestMethodSeesGlobals(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 def greeting as string init "hello";
 func show() { printf($greeting); }
 show();
@@ -144,7 +144,7 @@ show();
 
 func TestMethodCannotShadowGlobal(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 def x as int init 1;
 func f() { def x as int init 2; }
 f();
@@ -156,14 +156,14 @@ f();
 
 func TestErrorOnPrintfWithoutImport(t *testing.T) {
 	_, err := run(t, `func app() { printf(1); }`)
-	if err == nil || !strings.Contains(err.Error(), "use stdlib") {
-		t.Errorf("expected use-stdlib error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "use io") {
+		t.Errorf("expected use-io error, got %v", err)
 	}
 }
 
 func TestErrorOnDivisionByZero(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func app() { def x as int init 1 / 0; }`)
 	if err == nil || !strings.Contains(err.Error(), "division by zero") {
 		t.Errorf("expected division-by-zero error, got %v", err)
@@ -172,7 +172,7 @@ func app() { def x as int init 1 / 0; }`)
 
 func TestErrorOnTypeMismatch(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func app() { def x as int init "nope"; }`)
 	if err == nil || !strings.Contains(err.Error(), "cannot initialize int") {
 		t.Errorf("expected type-mismatch error, got %v", err)
@@ -181,7 +181,7 @@ func app() { def x as int init "nope"; }`)
 
 func TestErrorOnUndefinedVar(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func app() { printf($missing); }`)
 	if err == nil || !strings.Contains(err.Error(), `undefined variable "missing"`) {
 		t.Errorf("expected undefined-var error, got %v", err)
@@ -190,7 +190,7 @@ func app() { printf($missing); }`)
 
 func TestErrorOnUnknownFunction(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func app() { nope(1); }`)
 	if err == nil || !strings.Contains(err.Error(), "unknown function") {
 		t.Errorf("expected unknown-function error, got %v", err)
@@ -206,21 +206,35 @@ func app() {}`)
 	}
 }
 
-func TestUserMethodCannotShadowStdlibBuiltin(t *testing.T) {
-	// With `use stdlib;`, defining `func printf()` is a shadowing error.
+func TestUserMethodCannotShadowIOBuiltin(t *testing.T) {
+	// With `use io;`, defining `func printf()` is a shadowing error.
 	_, err := run(t, `
-use stdlib;
+use io;
 func printf() {}
 printf();
 `)
-	if err == nil || !strings.Contains(err.Error(), "shadows a builtin") {
+	if err == nil || !strings.Contains(err.Error(), "shadows a builtin from `io`") {
 		t.Errorf("expected shadowing error, got %v", err)
+	}
+}
+
+func TestUnknownLibraryErrors(t *testing.T) {
+	_, err := run(t, `use blub; func app() {}`)
+	if err == nil || !strings.Contains(err.Error(), `unknown library "blub"`) {
+		t.Errorf("expected unknown-library error, got %v", err)
+	}
+}
+
+func TestUnknownLibraryErrorListsAvailable(t *testing.T) {
+	_, err := run(t, `use blub; func app() {}`)
+	if err == nil || !strings.Contains(err.Error(), "available: io") {
+		t.Errorf("expected error to list available libraries, got %v", err)
 	}
 }
 
 func TestReturnValue(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func answer() { return 42; }
 printf(answer());
 `)
@@ -234,7 +248,7 @@ printf(answer());
 
 func TestReturnBare(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func nothing() { return; }
 printf(nothing());
 `)
@@ -248,7 +262,7 @@ printf(nothing());
 
 func TestReturnEndsMethodEarly(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func early() {
     printf("a");
     return 1;
@@ -266,7 +280,7 @@ printf(early());
 
 func TestReturnInsideNestedBlock(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func find() {
     for (def i as int init 0; $i < 10; $i = $i + 1) {
         if ($i == 3) {
@@ -289,7 +303,7 @@ printf(find());
 
 func TestParamsAddTwoInts(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func add(a as int, b as int) { return $a + $b; }
 printf(add(3, 4));
 `)
@@ -303,7 +317,7 @@ printf(add(3, 4));
 
 func TestParamTypeMismatch(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func add(a as int, b as int) { return $a + $b; }
 add(3, "four");
 `)
@@ -314,7 +328,7 @@ add(3, "four");
 
 func TestParamArityMismatch(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func add(a as int, b as int) { return $a + $b; }
 add(3);
 `)
@@ -325,7 +339,7 @@ add(3);
 
 func TestRecursionFactorial(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func fact(n as int) {
     if ($n == 0) { return 1; }
     return $n * fact($n - 1);
@@ -343,7 +357,7 @@ printf(fact(7));
 func TestParamSeesGlobalsThroughChain(t *testing.T) {
 	// Params bind in the call frame; globals visible via the parent chain.
 	out, err := run(t, `
-use stdlib;
+use io;
 def greeting as string init "hi ";
 func greet(name as string) {
     printf($greeting + $name);
@@ -360,7 +374,7 @@ greet("Jennifer");
 
 func TestConstReferenceBare(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 def const MAX as int init 100;
 printf("%d", MAX);
 `)
@@ -374,7 +388,7 @@ printf("%d", MAX);
 
 func TestConstInExpression(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 def const MAX as int init 10;
 def y as int init MAX + 5;
 printf("%d", $y);
@@ -389,7 +403,7 @@ printf("%d", $y);
 
 func TestBareVariableRefErrorsHelpfully(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 def x as int init 5;
 printf("%d", x);
 `)
@@ -400,7 +414,7 @@ printf("%d", x);
 
 func TestBareUndefinedNameError(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 printf("%d", NOPE);
 `)
 	if err == nil || !strings.Contains(err.Error(), "undefined name") {
@@ -410,7 +424,7 @@ printf("%d", NOPE);
 
 func TestParamRejectsDollarAtDefSite(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func bad($x as int) { return $x; }
 `)
 	if err == nil || !strings.Contains(err.Error(), "no `$`") {
@@ -418,8 +432,8 @@ func bad($x as int) { return $x; }
 	}
 }
 
-func TestUserMethodCanReuseBuiltinNameWithoutStdlib(t *testing.T) {
-	// Without `use stdlib;`, the name is free - the user's printf is the only one.
+func TestUserMethodCanReuseBuiltinNameWithoutImportingLib(t *testing.T) {
+	// Without `use io;`, the name is free - the user's printf is the only one.
 	out, err := run(t, `
 func printf() {}
 printf();
@@ -436,7 +450,7 @@ printf();
 
 func TestM2FloatArithmetic(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def a as float init 1.5;
     def b as float init 2.5;
@@ -452,7 +466,7 @@ func app() {
 
 func TestM2IntFloatPromotion(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def a as int init 3;
     def b as float init 0.5;
@@ -469,7 +483,7 @@ func app() {
 
 func TestM2StringConcatenation(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def a as string init "hello, ";
     def b as string init "world";
@@ -485,7 +499,7 @@ func app() {
 
 func TestM2BoolLiterals(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def t as bool init true;
     def f as bool init false;
@@ -503,7 +517,7 @@ func app() {
 
 func TestM2NullLiteral(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def n as null init null;
     printf($n);
@@ -518,7 +532,7 @@ func app() {
 
 func TestM2UninitializedZeroValues(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def i as int;
     def f as float;
@@ -559,7 +573,7 @@ func TestM2Comparisons(t *testing.T) {
 	}
 	for _, c := range cases {
 		out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def r as bool init `+c.expr+`;
     printf($r);
@@ -579,7 +593,7 @@ func TestM2IfElseifElse(t *testing.T) {
 	// non-negative literals.
 	src := func(n int) string {
 		return `
-use stdlib;
+use io;
 func app() {
     def n as int init ` + itoa(n) + `;
     if ($n == 0) {
@@ -606,7 +620,7 @@ func app() {
 
 func TestM2While(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def i as int init 0;
     def sum as int init 0;
@@ -626,7 +640,7 @@ func app() {
 
 func TestM2For(t *testing.T) {
 	out, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def sum as int init 0;
     for (def i as int init 1; $i <= 5; $i = $i + 1) {
@@ -644,7 +658,7 @@ func app() {
 
 func TestM2ForInitVarNotVisibleOutside(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func app() {
     for (def i as int init 0; $i < 1; $i = $i + 1) { }
     printf($i);
@@ -656,7 +670,7 @@ func app() {
 
 func TestM2ConstCannotBeReassigned(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def const MAX as int init 10;
     MAX = 20;
@@ -671,7 +685,7 @@ func app() {
 
 func TestM2AssignTypeCheck(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def x as int init 1;
     $x = "string";
@@ -683,7 +697,7 @@ func app() {
 
 func TestM2NoShadowing(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func app() {
     def x as int init 1;
     if (true) {
@@ -697,7 +711,7 @@ func app() {
 
 func TestM2BlockScopeDoesNotLeak(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func app() {
     if (true) {
         def y as int init 1;
@@ -711,7 +725,7 @@ func app() {
 
 func TestM2ConditionMustBeBool(t *testing.T) {
 	_, err := run(t, `
-use stdlib;
+use io;
 func app() {
     if (1) { printf("x"); }
 }`)

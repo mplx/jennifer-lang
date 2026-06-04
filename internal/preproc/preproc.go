@@ -9,7 +9,7 @@
 // File imports are processed recursively, with a cycle check to prevent
 // infinite inclusion.
 //
-// Library imports use the `use` keyword (e.g. `use stdlib;`) and are left in
+// Library imports use the `use` keyword (e.g. `use io;`) and are left in
 // place; the parser turns them into ImportStmt nodes.
 package preproc
 

@@ -19,7 +19,7 @@ source → tokens → preprocessed tokens → AST → result.
 - `$var` references
 - Arithmetic: `+ - * /` and `%` on ints; parenthesised grouping
 - `printf("text")` and `printf($var)` - single argument, no format specifiers
-- `use stdlib;` (library import)
+- `use io;` (library import)
 - `import "file.j";` (file import - textual splice; works anywhere, including
   inside a block; circular-import detection; subdirectories supported via the
   string path)
@@ -115,25 +115,30 @@ cannot be reassigned), full arithmetic/comparison matrices, programs like
 - `printf` / `sprintf` accept Go-style format strings with verbs `%d %f %s %t %v %%`
 - `examples/factorial.j` added as a recursion smoke test with golden output
 
+**Post-M3 adjustment:** the omnibus `stdlib` library was retired in favor
+of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
+(`use io;`). Future builtins go in their own libraries (`math`, `strings`,
+`convert`, etc.), all explicit `use` - no auto-loading.
+
 ---
 
 ## M4 - Polish & ergonomics
 
 **Status:** not started.
 
-
 - **Better errors:** line/column on every error, source snippet with caret
 - **REPL:** `jennifer repl` reusing the existing lexer/parser/interpreter
 - **Formatter:** `jennifer fmt` - re-emit the AST as canonical source
 - **Logical operators:** `and`, `or`, `not` - only if their absence becomes painful
-- **Type-conversion functions:** stdlib builtins `string(v)`, `int(v)`, `float(v)`, `bool(v)`.
+- **Type-conversion functions:** new `convert` library with `string(v)`,
+  `int(v)`, `float(v)`, `bool(v)`. (Originally planned under `stdlib`, but
+  that omnibus library was retired in favor of topic-based libraries.)
   Explicit casts only - no implicit coercion in `+` or comparisons. Each errors on
   impossible conversions (e.g. `int("abc")`). Roughly:
   - `string(any)` -> `string` (uses `Value.Display()`)
   - `int(int|float|string|bool)` -> `int` (truncate float; parse string; true=1/false=0)
   - `float(int|float|string)` -> `float`
   - `bool(bool|int)` -> `bool` (nonzero int is true) - or restrict to bool to stay strict
-- **Arrays:** the original spec teased them; significant lift, essentially its own milestone
 
 ---
 
@@ -152,3 +157,5 @@ foreclose them.
   `reflect`-heavy code, no goroutines in the core, no heavy stdlib
   dependencies, and no hard dependencies on a hosted runtime (ambient stdin,
   network, dynamic linking).
+- **Arrays:** the original spec teased them; significant lift, essentially its own milestone
+- **Inline Assembler**
