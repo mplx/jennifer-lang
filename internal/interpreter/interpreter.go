@@ -169,6 +169,65 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	return err
 }
 
+// EvalInteractive runs a parsed Program in REPL mode. It differs from Run in
+// three ways:
+//
+//  1. The global env is initialized lazily on the first call and preserved
+//     across calls, so vars and consts defined in one REPL input remain
+//     visible in the next.
+//  2. Methods and imports already present are silently overwritten / no-oped
+//     rather than producing "defined more than once" errors. The
+//     builtin-shadowing rule still applies for new methods.
+//  3. If the program's final TopLevel statement is a bare ExprStmt, the
+//     value of that expression is returned to the caller so the REPL can
+//     print it. For non-expression-ending input, the returned Value is null.
+//
+// EvalInteractive is intended for the REPL only; ordinary CLI runs use Run.
+func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
+	if i.Out == nil {
+		i.Out = os.Stdout
+	}
+	for _, imp := range prog.Imports {
+		if !i.knownLibs[imp.Name] {
+			file, line, col := posFor(imp)
+			return Null(), &runtimeError{
+				Msg:  fmt.Sprintf("unknown library %q (available: %s)", imp.Name, i.availableLibsString()),
+				File: file, Line: line, Col: col,
+			}
+		}
+		i.imported[imp.Name] = true
+	}
+	for _, m := range prog.Methods {
+		if b, isBuiltin := i.Builtins[m.Name]; isBuiltin && i.imported[b.Lib] {
+			file, line, col := posFor(m)
+			return Null(), &runtimeError{
+				Msg:  fmt.Sprintf("method %q shadows a builtin from `%s`; rename it or remove `use %s;`", m.Name, b.Lib, b.Lib),
+				File: file, Line: line, Col: col,
+			}
+		}
+		i.methods[m.Name] = m
+	}
+	if i.global == nil {
+		i.global = NewEnvironment(nil)
+	}
+	last := Null()
+	for _, st := range prog.TopLevel {
+		if es, ok := st.(*parser.ExprStmt); ok {
+			v, err := i.evalExpr(es.Expr, i.global)
+			if err != nil {
+				return Null(), err
+			}
+			last = v
+			continue
+		}
+		last = Null()
+		if _, err := i.execStmt(st, i.global); err != nil {
+			return Null(), err
+		}
+	}
+	return last, nil
+}
+
 // blockResult carries control flow info out of a block. M1 has no return/break,
 // but the shape is ready for M2+ to plug control flow in.
 type blockResult struct {

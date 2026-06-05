@@ -32,6 +32,12 @@ func main() {
 			os.Exit(2)
 		}
 		os.Exit(runFile(os.Args[2]))
+	case "repl":
+		if len(os.Args) != 2 {
+			usage()
+			os.Exit(2)
+		}
+		os.Exit(runRepl())
 	case "-h", "--help", "help":
 		usage()
 		os.Exit(0)
@@ -58,6 +64,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  jennifer run <file.j>    run a Jennifer program")
 	fmt.Fprintln(os.Stderr, "  jennifer run -           read source from stdin")
+	fmt.Fprintln(os.Stderr, "  jennifer repl            interactive REPL")
 	fmt.Fprintln(os.Stderr, "  jennifer help            show this message")
 }
 

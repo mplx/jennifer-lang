@@ -159,7 +159,14 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
   uses that interface to load the right file when printing the source
   snippet, so an error raised inside an imported `.j` displays the line
   from the imported file, not from the importing file.
-- **REPL:** `jennifer repl` reusing the existing lexer/parser/interpreter
+- **REPL:** `jennifer repl` - done. Interactive read-eval-print loop that
+  reuses the existing lexer/preproc/parser/interpreter. Globals, constants,
+  methods, and library imports persist across inputs; a bare final
+  expression prints its non-null value. Continuation lines are detected by
+  counting `{`/`(` depth and requiring a `;`/`}` terminator, so multi-line
+  method definitions and blocks work transparently. Methods can be
+  redefined freely from one input to the next (`Run` still rejects
+  duplicates; the REPL uses a new `EvalInteractive` entry point).
 - **Formatter:** `jennifer fmt` - re-emit the AST as canonical source
 
 ---

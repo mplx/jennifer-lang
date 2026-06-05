@@ -474,13 +474,44 @@ disk before slicing out the snippet to display.
 ## CLI (`cmd/jennifer`)
 
 ```
-jennifer run <file.j>
+jennifer run <file.j>     run a Jennifer program
+jennifer run -            read source from stdin
+jennifer repl             interactive REPL
+jennifer help             show usage
 ```
 
 - Verifies the `.j` extension
 - Reads the file, parses, runs
 - On error: prints the message and a source-context caret on stderr, exits `1`
 - Bad usage exits `2`
+
+### REPL (`cmd/jennifer/repl.go`)
+
+The REPL drives a read-eval-print loop on top of the standard pipeline. Each
+input is lexed, preprocessed, parsed, and fed to `Interpreter.EvalInteractive`
+(not `Run`). `EvalInteractive` differs from `Run` in three documented ways:
+the global env is lazy-initialized and preserved across calls, library
+imports and method definitions are idempotent / re-assignable so the user
+can iterate, and the value of a trailing `ExprStmt` is returned so the loop
+can print it.
+
+Multi-line input is handled by a small `inputComplete(tokens)` helper that
+balances `{`/`(` against `}`/`)` (using the lexer's tokens so string and
+comment contents are ignored) and requires the input to end in `;` or `}`.
+Anything else triggers a `... ` continuation prompt. Unbalanced *closing*
+delimiters intentionally fall through to the parser for diagnosis since no
+amount of additional input would fix them.
+
+REPL input is tagged with the synthetic file label `<repl>`. The
+cross-file-error snippet loader in `printErrorContext` treats `<repl>` like
+`<stdin>`: no external file lookup is attempted, and the current input
+buffer is used as the snippet source. Lex errors discard the buffer (since
+they cannot become valid by reading more); parse and runtime errors print
+and the loop continues.
+
+`:quit` / `:exit` / EOF terminate cleanly; `:help` prints a short reminder.
+Directives are only recognized at a fresh prompt so a literal `:quit` inside
+a block doesn't short-circuit.
 
 ---
 
@@ -502,7 +533,10 @@ Run everything with `go test ./...`.
 
 ```
 cmd/jennifer/main.go             CLI + source-context error formatting
+cmd/jennifer/repl.go             Interactive REPL loop
 cmd/jennifer/examples_test.go    Golden-file integration test
+cmd/jennifer/repl_test.go        REPL inputComplete unit tests
+cmd/jennifer/cross_file_error_test.go  Cross-file error reporting tests
 internal/lexer/token.go          Token type definitions
 internal/lexer/lexer.go          Scanner (with optional file tagging)
 internal/lexer/lexer_test.go     Lexer tests

@@ -30,6 +30,44 @@ When reading from stdin, error messages identify the source as `<stdin>` and
 file imports (`import "name.j";`) resolve relative to the current working
 directory.
 
+### Interactive REPL
+
+For experimenting with the language, start an interactive session with
+`jennifer repl`:
+
+```text
+$ ./jennifer repl
+jennifer - Jennifer programming language interpreter
+type :quit (or Ctrl-D) to exit; :help for help
+>>> use io;
+>>> def x as int init 21;
+>>> $x + $x;
+42
+>>> printf("hi\n");
+hi
+>>> func dbl(n as int) {
+...   return $n * 2;
+... }
+>>> dbl(7);
+14
+>>> :quit
+```
+
+A few notes:
+
+- Statements still end with `;`. If a line ends with an unclosed `{` or `(`,
+  the prompt switches to `... ` and waits for you to finish the block.
+- A bare expression at the end of an input (like `$x + $x;`) prints its
+  value. `null` results (including the return value of `printf`) are
+  suppressed.
+- String results are printed with surrounding double quotes so they're
+  distinguishable from numbers (`"hello"`, not `hello`).
+- Variables, constants, methods, and library imports persist for the whole
+  session. Methods can be redefined freely as you iterate.
+- File imports (`import "lib.j";`) work in the REPL and resolve relative to
+  the directory you launched `jennifer repl` from.
+- `:quit`, `:exit`, or Ctrl-D end the session; `:help` shows a reminder.
+
 For local development you can also use the Go toolchain directly:
 
 ```sh
