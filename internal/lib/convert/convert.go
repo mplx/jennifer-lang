@@ -2,7 +2,7 @@
 // Copyright (C) 2026 <developer@mplx.eu>
 
 // Package convert implements Jennifer's `convert` library: explicit value
-// conversions between the primitive kinds, plus `typeof` for runtime kind
+// conversions between the primitive kinds, plus `typeOf` for runtime kind
 // introspection.
 package convert
 
@@ -23,7 +23,7 @@ func Install(in *interpreter.Interpreter) {
 	in.Register(LibraryName, "float", floatFn)
 	in.Register(LibraryName, "string", stringFn)
 	in.Register(LibraryName, "bool", boolFn)
-	in.Register(LibraryName, "typeof", typeofFn)
+	in.Register(LibraryName, "typeOf", typeOfFn)
 }
 
 // arityOne returns an error if args doesn't contain exactly one value.
@@ -151,11 +151,11 @@ func boolFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 	return interpreter.Null(), fmt.Errorf("bool(): cannot convert %s to bool", v.Kind)
 }
 
-// typeofFn returns the runtime kind name of its argument as a string:
+// typeOfFn returns the runtime kind name of its argument as a string:
 // "null", "int", "float", "string", or "bool". Useful for debugging and
 // runtime introspection.
-func typeofFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
-	if err := arityOne("typeof", args); err != nil {
+func typeOfFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityOne("typeOf", args); err != nil {
 		return interpreter.Null(), err
 	}
 	return interpreter.StringVal(args[0].Kind.String()), nil

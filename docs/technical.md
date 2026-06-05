@@ -369,8 +369,9 @@ registers its functions (and constants) on the interpreter. User-facing
 reference docs are split per library:
 
 - [lib_io.md](lib_io.md) - `printf`, `sprintf`, format verbs
-- [lib_convert.md](lib_convert.md) - `int`, `float`, `string`, `bool`, `typeof`
+- [lib_convert.md](lib_convert.md) - `int`, `float`, `string`, `bool`, `typeOf`
 - [lib_math.md](lib_math.md) - `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`, `PI`, `E`
+- [lib_strings.md](lib_strings.md) - `len`, `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`/`trimLeft`/`trimRight`, `replace`, `repeat`, `substring`
 
 What follows is the implementation contract, not the user-facing API.
 
@@ -418,10 +419,20 @@ name, gated on the owning library being `use`d.
 
 **`internal/lib/convert`**: parser side - the `typeCall` production lets
 `int(...)`, `float(...)`, `string(...)`, `bool(...)` parse despite their
-names being type keywords. `typeof` is a normal IDENT call. `bool(v)`
+names being type keywords. `typeOf` is a normal IDENT call. `bool(v)`
 implements canonical-only conversion at all source kinds (`0`/`1` for int,
 `0.0`/`1.0` for float, `"true"`/`"false"` for string) - non-canonical
 values produce a positioned error, not silent coercion.
+
+**`internal/lib/strings`**: all indices and lengths are **rune-based**
+(Unicode code points), implemented via `unicode/utf8`. `len` returns the
+rune count; `indexOf` returns a rune index (not the byte index Go's
+`strings.Index` produces - we translate); `substring` uses a small
+`byteOffsetForRune` helper to convert rune-indexed bounds back to byte
+slicing on the underlying string. `repeat` guards against multiplication
+overflow before calling Go's `strings.Repeat` to avoid the panic in the
+standard library. The Go package is named `stringslib` to avoid colliding
+with the standard `strings` package, which it depends on heavily.
 
 ### Runtime errors
 
@@ -479,6 +490,7 @@ internal/lib/io/iolib.go          `io` library: printf, sprintf
 internal/lib/io/iolib_test.go     io library unit tests
 internal/lib/convert/convert.go   `convert` library: int, float, string, bool, typeof
 internal/lib/math/mathlib.go      `math` library: abs/min/max/sqrt/pow/floor/ceil/round; PI/E
+internal/lib/strings/stringslib.go  `strings` library: len/upper/lower/contains/startsWith/endsWith/indexOf/trim*/replace/repeat/substring
 examples/*.j                     Example programs
 examples/expected/*.txt          Expected stdout per example
 examples/with_import/            Subdirectory demonstrating file imports

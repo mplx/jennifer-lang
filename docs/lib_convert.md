@@ -1,7 +1,7 @@
 # `convert` - explicit type conversion
 
 Enable with `use convert;`. Provides one-argument conversion functions plus
-`typeof` for runtime kind introspection. Every function either returns the
+`typeOf` for runtime kind introspection. Every function either returns the
 converted value or produces a positioned runtime error.
 
 ```jennifer
@@ -13,8 +13,8 @@ def f as float init float(5);       // int -> 5.0
 def s as string init string(3.14);  // any -> "3.14"
 def b as bool init bool(0);         // 0 -> false
 
-printf("%s\n", typeof(5 / 2));      // "float" (after Python 3 / change)
-printf("%s\n", typeof(5 div 2));    // "int"
+printf("%s\n", typeOf(5 / 2));      // "float" (after Python 3 / change)
+printf("%s\n", typeOf(5 div 2));    // "int"
 ```
 
 ## Behavior summary
@@ -25,7 +25,7 @@ printf("%s\n", typeof(5 div 2));    // "int"
 | `float(v)`    | int / float / string / bool   | convert / identity / parse / `true`=1.0, `false`=0.0                 |
 | `string(v)`   | any                           | always succeeds; uses the value's display form                       |
 | `bool(v)`     | bool / int / float / string   | identity / canonical only (`0`/`1`, `0.0`/`1.0`, `"true"`/`"false"`) |
-| `typeof(v)`   | any                           | returns the kind as a string: `"int"`, `"float"`, etc.               |
+| `typeOf(v)`   | any                           | returns the kind as a string: `"int"`, `"float"`, etc.               |
 
 ## Errors
 
@@ -50,7 +50,7 @@ want to project an arbitrary value into a bool, state the criterion.
 The names `int`, `float`, `string`, `bool` are type keywords. The parser
 allows them in expression position **only** when immediately followed by `(`.
 Writing `def x as int init int;` (bare keyword, no call) errors with a hint
-to either use it as a conversion call or supply a value. `typeof` is a normal
+to either use it as a conversion call or supply a value. `typeOf` is a normal
 identifier and is not a type keyword.
 
 See also: [user-guide.md](user-guide.md), [technical.md](technical.md#libraries-and-builtins).

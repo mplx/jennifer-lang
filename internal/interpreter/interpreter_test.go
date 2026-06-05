@@ -12,6 +12,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/convert"
 	"github.com/mplx/jennifer-lang/internal/lib/io"
 	"github.com/mplx/jennifer-lang/internal/lib/math"
+	"github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
 
@@ -36,6 +37,7 @@ func run(t *testing.T, src string) (string, error) {
 	iolib.Install(in)
 	convert.Install(in)
 	mathlib.Install(in)
+	stringslib.Install(in)
 	if err := in.Run(prog); err != nil {
 		return buf.String(), err
 	}
@@ -234,7 +236,7 @@ func TestUnknownLibraryErrors(t *testing.T) {
 
 func TestUnknownLibraryErrorListsAvailable(t *testing.T) {
 	_, err := run(t, `use blub; func app() {}`)
-	if err == nil || !strings.Contains(err.Error(), "available: convert, io") {
+	if err == nil || !strings.Contains(err.Error(), "available: convert, io, math, strings") {
 		t.Errorf("expected error to list available libraries, got %v", err)
 	}
 }
@@ -978,14 +980,14 @@ func TestTypeof(t *testing.T) {
 		expr string
 		want string
 	}{
-		{`typeof(5)`, "int"},
-		{`typeof(3.14)`, "float"},
-		{`typeof("hi")`, "string"},
-		{`typeof(true)`, "bool"},
-		{`typeof(null)`, "null"},
-		{`typeof(5 / 2)`, "float"},
-		{`typeof(5 div 2)`, "int"},
-		{`typeof(2.5 * 2)`, "float"},
+		{`typeOf(5)`, "int"},
+		{`typeOf(3.14)`, "float"},
+		{`typeOf("hi")`, "string"},
+		{`typeOf(true)`, "bool"},
+		{`typeOf(null)`, "null"},
+		{`typeOf(5 / 2)`, "float"},
+		{`typeOf(5 div 2)`, "int"},
+		{`typeOf(2.5 * 2)`, "float"},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
@@ -1210,6 +1212,255 @@ def r as int init `+c.expr+`;
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: got %v, want substring %q", c.expr, err, c.want)
 		}
+	}
+}
+
+// ---- M4 strings library ----
+
+func TestStringsLen(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{`len("")`, "0"},
+		{`len("hello")`, "5"},
+		{`len("héllo")`, "5"}, // rune count, not bytes
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+use strings;
+def r as int init `+c.expr+`;
+printf("%d", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: %v", c.expr, err)
+			continue
+		}
+		if out != c.want {
+			t.Errorf("%s: got %q, want %q", c.expr, out, c.want)
+		}
+	}
+}
+
+func TestStringsCaseConversion(t *testing.T) {
+	out, err := run(t, `
+use io;
+use strings;
+def a as string init upper("hello");
+def b as string init lower("HELLO");
+printf("%s|%s", $a, $b);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "HELLO|hello" {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestStringsSearchPredicates(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{`contains("hello world", "world")`, "true"},
+		{`contains("hello", "z")`, "false"},
+		{`startsWith("hello", "he")`, "true"},
+		{`startsWith("hello", "lo")`, "false"},
+		{`endsWith("hello", "lo")`, "true"},
+		{`endsWith("hello", "he")`, "false"},
+		{`contains("", "")`, "true"}, // empty is always contained
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+use strings;
+def r as bool init `+c.expr+`;
+printf("%t", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: %v", c.expr, err)
+			continue
+		}
+		if out != c.want {
+			t.Errorf("%s: got %q, want %q", c.expr, out, c.want)
+		}
+	}
+}
+
+func TestStringsIndexOf(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{`indexOf("hello", "l")`, "2"},
+		{`indexOf("hello", "z")`, "-1"},
+		{`indexOf("hello", "")`, "0"},
+		{`indexOf("héllo", "l")`, "2"}, // rune index, not byte (é is 2 bytes)
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+use strings;
+def r as int init `+c.expr+`;
+printf("%d", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: %v", c.expr, err)
+			continue
+		}
+		if out != c.want {
+			t.Errorf("%s: got %q, want %q", c.expr, out, c.want)
+		}
+	}
+}
+
+func TestStringsTrim(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{`trim("   hello   ")`, "hello"},
+		{`trim("\t\nhello\n")`, "hello"},
+		{`trim("nothing")`, "nothing"},
+		{`trimLeft("   hello   ")`, "hello   "},
+		{`trimRight("   hello   ")`, "   hello"},
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+use strings;
+def r as string init `+c.expr+`;
+printf("[%s]", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: %v", c.expr, err)
+			continue
+		}
+		if out != "["+c.want+"]" {
+			t.Errorf("%s: got %q, want %q", c.expr, out, "["+c.want+"]")
+		}
+	}
+}
+
+func TestStringsReplace(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{`replace("hello world", "world", "Jennifer")`, "hello Jennifer"},
+		{`replace("a-b-c", "-", "/")`, "a/b/c"}, // replace all
+		{`replace("xyz", "q", "?")`, "xyz"},     // no occurrence -> unchanged
+		{`replace("", "x", "y")`, ""},
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+use strings;
+def r as string init `+c.expr+`;
+printf("%s", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: %v", c.expr, err)
+			continue
+		}
+		if out != c.want {
+			t.Errorf("%s: got %q, want %q", c.expr, out, c.want)
+		}
+	}
+}
+
+func TestStringsRepeat(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{`repeat("ab", 3)`, "ababab"},
+		{`repeat("x", 0)`, ""},
+		{`repeat("", 5)`, ""},
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+use strings;
+def r as string init `+c.expr+`;
+printf("[%s]", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: %v", c.expr, err)
+			continue
+		}
+		if out != "["+c.want+"]" {
+			t.Errorf("%s: got %q, want %q", c.expr, out, "["+c.want+"]")
+		}
+	}
+}
+
+func TestStringsRepeatNegativeErrors(t *testing.T) {
+	_, err := run(t, `
+use io;
+use strings;
+def r as string init repeat("x", 0 - 1);
+`)
+	if err == nil || !strings.Contains(err.Error(), "negative count") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestStringsSubstring(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{`substring("hello", 0, 5)`, "hello"},
+		{`substring("hello", 1, 4)`, "ell"},
+		{`substring("hello", 0, 0)`, ""},
+		{`substring("hello", 5, 5)`, ""},   // at end
+		{`substring("héllo", 0, 2)`, "hé"}, // rune-indexed
+		// Optional end - omit to mean "to the end of the string".
+		{`substring("hello", 0)`, "hello"},
+		{`substring("hello", 2)`, "llo"},
+		{`substring("hello", 5)`, ""},
+		{`substring("héllo", 2)`, "llo"},   // 2-arg form, rune-indexed
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+use strings;
+def r as string init `+c.expr+`;
+printf("[%s]", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: %v", c.expr, err)
+			continue
+		}
+		if out != "["+c.want+"]" {
+			t.Errorf("%s: got %q, want %q", c.expr, out, "["+c.want+"]")
+		}
+	}
+}
+
+func TestStringsSubstringErrors(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{`substring("hello", 0 - 1, 3)`, "is negative"},
+		{`substring("hello", 0, 99)`, "out of range"},
+		{`substring("hello", 4, 2)`, "before start"},
+		{`substring("hello")`, "2 or 3 arguments"},          // arity: too few
+		{`substring("hello", 1, 2, 3)`, "2 or 3 arguments"}, // arity: too many
+		{`substring("hello", 99)`, "out of range"},          // 2-arg form, out of range
+		{`substring("hello", 0 - 1)`, "is negative"},        // 2-arg form, negative
+	}
+	for _, c := range cases {
+		_, err := run(t, `
+use io;
+use strings;
+def r as string init `+c.expr+`;
+`)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: got %v, want substring %q", c.expr, err, c.want)
+		}
+	}
+}
+
+func TestStringsTypeErrors(t *testing.T) {
+	// Non-string operands should error positionally.
+	_, err := run(t, `
+use io;
+use strings;
+def r as int init len(42);
+`)
+	if err == nil || !strings.Contains(err.Error(), "must be string") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestStringsRequiresUse(t *testing.T) {
+	_, err := run(t, `
+use io;
+def r as int init len("hello");
+`)
+	if err == nil || !strings.Contains(err.Error(), "use strings") {
+		t.Errorf("got %v", err)
 	}
 }
 

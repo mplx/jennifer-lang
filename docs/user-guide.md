@@ -368,8 +368,9 @@ index.
 | Library   | Enable with    | Contents                                                        | Reference                |
 |-----------|----------------|-----------------------------------------------------------------|--------------------------|
 | `io`      | `use io;`      | `printf`, `sprintf` and the format-verb mini-language           | [lib_io.md](lib_io.md)         |
-| `convert` | `use convert;` | `int`, `float`, `string`, `bool`, `typeof` - explicit casts     | [lib_convert.md](lib_convert.md) |
+| `convert` | `use convert;` | `int`, `float`, `string`, `bool`, `typeOf` - explicit casts     | [lib_convert.md](lib_convert.md) |
 | `math`    | `use math;`    | `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`; constants `PI`, `E` | [lib_math.md](lib_math.md)     |
+| `strings` | `use strings;` | `len`, `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring` | [lib_strings.md](lib_strings.md) |
 
 Quick orientation - if you're reading top to bottom and just want a flavor:
 
@@ -378,7 +379,7 @@ use io;
 use convert;
 use math;
 
-printf("%s\n", typeof(5 / 2));         // "float"      [convert]
+printf("%s\n", typeOf(5 / 2));         // "float"      [convert]
 printf("%d\n", floor(PI * 2.0));       // 6            [math + io]
 printf("%s\n", string(true));          // "true"       [convert]
 ```

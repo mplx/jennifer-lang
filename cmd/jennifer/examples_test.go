@@ -15,6 +15,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/convert"
 	"github.com/mplx/jennifer-lang/internal/lib/io"
 	"github.com/mplx/jennifer-lang/internal/lib/math"
+	"github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 )
@@ -69,6 +70,7 @@ func TestExamples(t *testing.T) {
 			iolib.Install(in)
 			convert.Install(in)
 			mathlib.Install(in)
+			stringslib.Install(in)
 			if err := in.Run(prog); err != nil {
 				t.Fatalf("run %s: %v", name, err)
 			}

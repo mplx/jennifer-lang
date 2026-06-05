@@ -124,9 +124,7 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
 
 ## M4 - Polish & ergonomics
 
-**Status:** in progress.
-
-**done**
+**Status:** done.
 
 - **Logical operators:** `and`, `or`, `not` (word-based) with standard
   precedence and short-circuit `and`/`or`.
@@ -136,7 +134,7 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
 - **Float display fix:** floats always print with a decimal (`5.0`, not `5`)
   so the type stays visible.
 - **`convert` library:** `int(v)`, `float(v)`, `string(v)`, `bool(v)`,
-  `typeof(v)`. Type-name calls (`int(...)` etc.) work in expression position
+  `typeOf(v)`. Type-name calls (`int(...)` etc.) work in expression position
   because the parser allows TYPE tokens before `(`. Strict conversion
   semantics - `int("abc")` and `bool("maybe")` both error. `bool` is
   canonical-only across all source kinds (`bool(123)` errors).
@@ -145,13 +143,15 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
   negative, pow producing NaN/Inf rejected). `floor`/`ceil`/`round` return
   int. Interpreter gained `RegisterConst` so libraries can expose constants.
 
-**open**
-
-- **`strings` library:** `len`, `upper`, `lower`, `contains`, `split`, `trim`.
+- **`strings` library:** `len`, `upper`, `lower`, `contains`, `startsWith`,
+  `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`,
+  `substring`. Rune-based indexing throughout. `split`/`chars`/`join`
+  deferred until arrays land. Also renamed `typeof` → `typeOf` in `convert`
+  for camelCase consistency with the new multi-word names.
 
 ---
 
-## M5
+## M5 - Interpreter improvements
 
 - **Better errors:** cross-file error sources (snippet from the right file
   when an imported `.j` triggers the error)
@@ -162,13 +162,12 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
 
 ## M6 - Arrays
 
-- **Arrays:** the original spec teased them; significant lift, essentially its own milestone
+- **Arrays**
 
 ---
 
 ## M7 - Libraries
 
-- **Inline Assembler**
 - **Regex library**
 - **Network library**
 
@@ -189,3 +188,4 @@ foreclose them.
   `reflect`-heavy code, no goroutines in the core, no heavy stdlib
   dependencies, and no hard dependencies on a hosted runtime (ambient stdin,
   network, dynamic linking).
+- **Inline Assembler**
