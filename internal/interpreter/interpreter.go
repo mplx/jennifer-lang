@@ -26,23 +26,34 @@ type builtinEntry struct {
 	Fn  Builtin
 }
 
+// libConstantEntry records a constant that ships with a library (e.g. math.PI).
+// Looked up at evaluation time when a bare-IDENT reference isn't found in the
+// user environment - same gating rule as builtins (owning library must be
+// `use`d).
+type libConstantEntry struct {
+	Lib   string
+	Value Value
+}
+
 // Interpreter walks a parsed Program and runs it.
 type Interpreter struct {
-	Out       io.Writer // defaults to os.Stdout if nil
-	Builtins  map[string]builtinEntry
-	knownLibs map[string]bool // libraries that have at least one registered builtin
-	imported  map[string]bool // libraries the program has `use`d
-	methods   map[string]*parser.MethodDef
-	global    *Environment // global scope where top-level statements live
+	Out          io.Writer // defaults to os.Stdout if nil
+	Builtins     map[string]builtinEntry
+	LibConstants map[string]libConstantEntry // library-provided constants (math.PI, ...)
+	knownLibs    map[string]bool             // libraries with at least one registered builtin OR constant
+	imported     map[string]bool             // libraries the program has `use`d
+	methods      map[string]*parser.MethodDef
+	global       *Environment // global scope where top-level statements live
 }
 
 func New() *Interpreter {
 	return &Interpreter{
-		Out:       os.Stdout,
-		Builtins:  map[string]builtinEntry{},
-		knownLibs: map[string]bool{},
-		imported:  map[string]bool{},
-		methods:   map[string]*parser.MethodDef{},
+		Out:          os.Stdout,
+		Builtins:     map[string]builtinEntry{},
+		LibConstants: map[string]libConstantEntry{},
+		knownLibs:    map[string]bool{},
+		imported:     map[string]bool{},
+		methods:      map[string]*parser.MethodDef{},
 	}
 }
 
@@ -51,6 +62,14 @@ func New() *Interpreter {
 // by writing `use <lib>;`.
 func (i *Interpreter) Register(lib, name string, fn Builtin) {
 	i.Builtins[name] = builtinEntry{Lib: lib, Fn: fn}
+	i.knownLibs[lib] = true
+}
+
+// RegisterConst attaches a library-provided constant under the given Jennifer
+// library name. Programs reference it as a bare identifier (e.g. `PI`); the
+// reference is only allowed after `use <lib>;`.
+func (i *Interpreter) RegisterConst(lib, name string, value Value) {
+	i.LibConstants[name] = libConstantEntry{Lib: lib, Value: value}
 	i.knownLibs[lib] = true
 }
 
@@ -345,19 +364,29 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 		}
 		return v, nil
 	case *parser.ConstRefExpr:
+		// 1. User scope first (variables and `def const`).
 		b, err := env.GetBinding(ex.Name)
-		if err != nil {
-			line, col := ex.Pos()
-			return Value{}, &runtimeError{Msg: fmt.Sprintf("undefined name %q", ex.Name), Line: line, Col: col}
-		}
-		if !b.IsConst {
-			line, col := ex.Pos()
-			return Value{}, &runtimeError{
-				Msg:  fmt.Sprintf("%q is a variable; use `$%s` to reference it", ex.Name, ex.Name),
-				Line: line, Col: col,
+		if err == nil {
+			if !b.IsConst {
+				line, col := ex.Pos()
+				return Value{}, &runtimeError{
+					Msg:  fmt.Sprintf("%q is a variable; use `$%s` to reference it", ex.Name, ex.Name),
+					Line: line, Col: col,
+				}
 			}
+			return b.Value, nil
 		}
-		return b.Value, nil
+		// 2. Library-provided constants (e.g. math.PI), only when the
+		// owning library has been `use`d.
+		if c, ok := i.LibConstants[ex.Name]; ok {
+			if !i.imported[c.Lib] {
+				line, col := ex.Pos()
+				return Value{}, &runtimeError{Msg: fmt.Sprintf("`%s` requires `use %s;`", ex.Name, c.Lib), Line: line, Col: col}
+			}
+			return c.Value, nil
+		}
+		line, col := ex.Pos()
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("undefined name %q", ex.Name), Line: line, Col: col}
 	case *parser.BinaryExpr:
 		return i.evalBinary(ex, env)
 	case *parser.UnaryExpr:

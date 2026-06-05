@@ -138,21 +138,43 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
 - **`convert` library:** `int(v)`, `float(v)`, `string(v)`, `bool(v)`,
   `typeof(v)`. Type-name calls (`int(...)` etc.) work in expression position
   because the parser allows TYPE tokens before `(`. Strict conversion
-  semantics - `int("abc")` and `bool("maybe")` both error.
+  semantics - `int("abc")` and `bool("maybe")` both error. `bool` is
+  canonical-only across all source kinds (`bool(123)` errors).
+- **`math` library:** `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`,
+  `round` plus constants `PI`, `E`. Strict on undefined math (sqrt of
+  negative, pow producing NaN/Inf rejected). `floor`/`ceil`/`round` return
+  int. Interpreter gained `RegisterConst` so libraries can expose constants.
 
 **open**
+
+- **`strings` library:** `len`, `upper`, `lower`, `contains`, `split`, `trim`.
+
+---
+
+## M5
 
 - **Better errors:** cross-file error sources (snippet from the right file
   when an imported `.j` triggers the error)
 - **REPL:** `jennifer repl` reusing the existing lexer/parser/interpreter
 - **Formatter:** `jennifer fmt` - re-emit the AST as canonical source
-- **`math` library:** `abs`, `min`, `max`, `sqrt`, `pow`, `ceil`, `floor`,
-  constants `PI`, `E`.
-- **`strings` library:** `len`, `upper`, `lower`, `contains`, `split`, `trim`.
 
 ---
 
-## Future directions (post-M4)
+## M6 - Arrays
+
+- **Arrays:** the original spec teased them; significant lift, essentially its own milestone
+
+---
+
+## M7 - Libraries
+
+- **Inline Assembler**
+- **Regex library**
+- **Network library**
+
+---
+
+## Future directions
 
 Long-term goals - not committed to a milestone yet, but the code should not
 foreclose them.
@@ -161,11 +183,9 @@ foreclose them.
   macOS are planned. When touching filesystem, paths, line endings, or
   process behavior, prefer portable stdlib helpers (`path/filepath`, not
   hardcoded `/`); avoid Linux-only assumptions.
-- **macflyos kernel integration.** A long-term goal is to embed the Jennifer
-  interpreter into **macflyos**, an experimental OS also
+- **McFly OS kernel integration.** A long-term goal is to embed the Jennifer
+  interpreter into **McFly OS**, an experimental OS also
   written in TinyGo. This reinforces the TinyGo-friendliness discipline: no
   `reflect`-heavy code, no goroutines in the core, no heavy stdlib
   dependencies, and no hard dependencies on a hosted runtime (ambient stdin,
   network, dynamic linking).
-- **Arrays:** the original spec teased them; significant lift, essentially its own milestone
-- **Inline Assembler**

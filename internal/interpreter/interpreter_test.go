@@ -11,6 +11,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 	"github.com/mplx/jennifer-lang/internal/lib/convert"
 	"github.com/mplx/jennifer-lang/internal/lib/io"
+	"github.com/mplx/jennifer-lang/internal/lib/math"
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
 
@@ -34,6 +35,7 @@ func run(t *testing.T, src string) (string, error) {
 	in.Out = &buf
 	iolib.Install(in)
 	convert.Install(in)
+	mathlib.Install(in)
 	if err := in.Run(prog); err != nil {
 		return buf.String(), err
 	}
@@ -1021,6 +1023,193 @@ def r as int init int;
 `)
 	if err == nil || !strings.Contains(err.Error(), "called as a conversion") {
 		t.Errorf("expected hint, got %v", err)
+	}
+}
+
+// ---- M4 math library ----
+
+func TestMathAbs(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{"abs(5)", "5"},
+		{"abs(0 - 5)", "5"},
+		{"abs(0)", "0"},
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+use math;
+def r as int init `+c.expr+`;
+printf("%d", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: %v", c.expr, err)
+			continue
+		}
+		if out != c.want {
+			t.Errorf("%s: got %q, want %q", c.expr, out, c.want)
+		}
+	}
+}
+
+func TestMathAbsFloat(t *testing.T) {
+	out, err := run(t, `
+use io;
+use math;
+def r as float init abs(-3.14);
+printf("%f", $r);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "3.14" {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestMathMinMax(t *testing.T) {
+	cases := []struct{ expr, want, typ string }{
+		{"min(3, 7)", "3", "int"},
+		{"min(7, 3)", "3", "int"},
+		{"max(3, 7)", "7", "int"},
+		{"max(7, 3)", "7", "int"},
+		{"min(3, 2.5)", "2.5", "float"},     // mixed -> float
+		{"max(3, 2.5)", "3.0", "float"},     // mixed -> float (int promoted)
+		{"min(1.0, 2.0)", "1.0", "float"},
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+use math;
+def r as `+c.typ+` init `+c.expr+`;
+printf("%v", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: %v", c.expr, err)
+			continue
+		}
+		if out != c.want {
+			t.Errorf("%s: got %q, want %q", c.expr, out, c.want)
+		}
+	}
+}
+
+func TestMathSqrt(t *testing.T) {
+	out, err := run(t, `
+use io;
+use math;
+def r as float init sqrt(16);
+printf("%f", $r);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "4.0" {
+		t.Errorf("got %q, want %q", out, "4.0")
+	}
+}
+
+func TestMathSqrtNegativeErrors(t *testing.T) {
+	_, err := run(t, `
+use io;
+use math;
+def r as float init sqrt(0 - 1);
+`)
+	if err == nil || !strings.Contains(err.Error(), "undefined for negative") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestMathPow(t *testing.T) {
+	out, err := run(t, `
+use io;
+use math;
+def a as float init pow(2, 10);
+def b as float init pow(2, 0.5);
+printf("%f|%f", $a, $b);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// pow(2,10) = 1024.0; pow(2,0.5) = sqrt(2)
+	if !strings.HasPrefix(out, "1024.0|1.41") {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestMathFloorCeilRound(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{"floor(3.7)", "3"},
+		{"floor(3.2)", "3"},
+		{"floor(0 - 3.2)", "-4"}, // toward -inf
+		{"ceil(3.2)", "4"},
+		{"ceil(3.7)", "4"},
+		{"ceil(0 - 3.7)", "-3"},
+		{"round(2.5)", "3"}, // half away from zero
+		{"round(2.4)", "2"},
+		{"round(0 - 2.5)", "-3"},
+		{"floor(5)", "5"}, // int passes through
+		{"ceil(5)", "5"},
+		{"round(5)", "5"},
+	}
+	for _, c := range cases {
+		out, err := run(t, `
+use io;
+use math;
+def r as int init `+c.expr+`;
+printf("%d", $r);
+`)
+		if err != nil {
+			t.Errorf("%s: %v", c.expr, err)
+			continue
+		}
+		if out != c.want {
+			t.Errorf("%s: got %q, want %q", c.expr, out, c.want)
+		}
+	}
+}
+
+func TestMathConstants(t *testing.T) {
+	out, err := run(t, `
+use io;
+use math;
+def pi as float init PI;
+def e as float init E;
+printf("%f|%f", $pi, $e);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !strings.HasPrefix(out, "3.14159") || !strings.Contains(out, "|2.71828") {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestMathConstantRequiresUse(t *testing.T) {
+	_, err := run(t, `
+use io;
+def r as float init PI;
+`)
+	if err == nil || !strings.Contains(err.Error(), "use math") {
+		t.Errorf("got %v", err)
+	}
+}
+
+func TestMathArityErrors(t *testing.T) {
+	cases := []struct{ expr, want string }{
+		{"abs()", "expects 1 argument"},
+		{"abs(1, 2)", "expects 1 argument"},
+		{"min(1)", "expects 2 arguments"},
+		{"pow(1)", "expects 2 arguments"},
+	}
+	for _, c := range cases {
+		_, err := run(t, `
+use io;
+use math;
+def r as int init `+c.expr+`;
+`)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: got %v, want substring %q", c.expr, err, c.want)
+		}
 	}
 }
 

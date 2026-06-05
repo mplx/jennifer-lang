@@ -362,98 +362,28 @@ is no implicit truthiness. Use a comparison (`$x == 0`) to get a bool.
 ### Libraries
 
 Standard functions live in topic-based libraries enabled with `use`. Nothing
-is auto-loaded.
+is auto-loaded. Each library has its own reference doc; this table is the
+index.
 
-| Library    | Enable with  | Functions                                    |
-|------------|--------------|----------------------------------------------|
-| `io`       | `use io;`    | `printf`, `sprintf`                          |
-| `convert`  | `use convert;` | `int`, `float`, `string`, `bool`, `typeof` |
+| Library   | Enable with    | Contents                                                        | Reference                |
+|-----------|----------------|-----------------------------------------------------------------|--------------------------|
+| `io`      | `use io;`      | `printf`, `sprintf` and the format-verb mini-language           | [lib_io.md](lib_io.md)         |
+| `convert` | `use convert;` | `int`, `float`, `string`, `bool`, `typeof` - explicit casts     | [lib_convert.md](lib_convert.md) |
+| `math`    | `use math;`    | `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`; constants `PI`, `E` | [lib_math.md](lib_math.md)     |
 
-#### `io` library
-
-`printf` and `sprintf` share a Go-style format-string mini-language.
-
-```jennifer
-printf("hi\n");                              // literal string
-printf($x);                                  // single value, displayed
-printf("you are %d years old!\n", $age);     // format + arguments
-printf("%s = %d, ok=%t\n", "answer", 42, true);
-```
-
-`sprintf` takes the same arguments and **returns** the formatted string instead
-of writing to stdout:
-
-```jennifer
-def msg as string init sprintf("%d + %d = %d", 1, 2, 3);
-printf("%s\n", $msg);   // "1 + 2 = 3"
-```
-
-Format verbs:
-
-| Verb | Required kind  | Notes                                  |
-|------|----------------|----------------------------------------|
-| `%d` | `int`          | decimal                                |
-| `%f` | `float`        | shortest round-trip                    |
-| `%s` | `string`       | raw                                    |
-| `%t` | `bool`         | `true` / `false`                       |
-| `%v` | any            | uses the value's display form          |
-| `%%` | -              | literal `%`                            |
-
-Mismatches (wrong verb for the value kind, too few or too many args, dangling
-`%`, unknown verb) all produce runtime errors. A literal `%` in any string
-passed to `printf`/`sprintf` must be doubled to `%%`.
-
-Floats always display with a decimal point so the value's type stays visible:
-`5.0` prints as `"5.0"`, not `"5"`. That's particularly important after the
-Python 3 division change - `4 / 2` is the float `2.0`, and you can tell at
-a glance.
-
-#### `convert` library
-
-Explicit value-kind conversion. Each function takes one argument and either
-returns the converted value or errors at runtime.
+Quick orientation - if you're reading top to bottom and just want a flavor:
 
 ```jennifer
 use io;
 use convert;
+use math;
 
-def n as int init int("42");       // parse string -> 42
-def f as float init float(5);      // int -> 5.0
-def s as string init string(3.14); // any -> "3.14"
-def b as bool init bool(0);        // 0 -> false, nonzero -> true
-
-printf("%s\n", typeof(5 / 2));     // "float" (after Python 3 / change)
-printf("%s\n", typeof(5 div 2));   // "int"
+printf("%s\n", typeof(5 / 2));         // "float"      [convert]
+printf("%d\n", floor(PI * 2.0));       // 6            [math + io]
+printf("%s\n", string(true));          // "true"       [convert]
 ```
 
-| Call          | Source kinds                       | Behavior                                                |
-|---------------|------------------------------------|---------------------------------------------------------|
-| `int(v)`      | int / float / string / bool        | identity / truncate / parse / `true`=1, `false`=0       |
-| `float(v)`    | int / float / string / bool        | convert / identity / parse / `true`=1.0, `false`=0.0    |
-| `string(v)`   | any                                | always succeeds; uses the value's display form          |
-| `bool(v)`     | bool / int / float / string        | identity / canonical only (`0`/`1`, `0.0`/`1.0`, `"true"`/`"false"`) |
-| `typeof(v)`   | any                                | returns kind as string: `"int"`, `"float"`, etc.        |
-
-Errors:
-- `int("abc")` - parse failure
-- `int(null)` - no conversion defined
-- `bool("maybe")` - strings: only `"true"` and `"false"` accepted
-- `bool(123)`, `bool(-1)` - ints: only `0` and `1` accepted
-- `bool(1.5)` - floats: only `0.0` and `1.0` accepted
-- arity errors (too many/few arguments)
-
-For "any nonzero counts as true" semantics, write the comparison explicitly:
-
-```jennifer
-def b as bool init $count != 0;     // not bool($count)
-```
-
-This matches the strict-conditions rule everywhere else in Jennifer - if
-you want to project an arbitrary value into a bool, you state the criterion.
-
-The type-name calls (`int`, `float`, `string`, `bool`) only work in expression
-position when immediately followed by `(`. Writing `def x as int init int;`
-errors with a hint to either use it as a conversion call or use a value.
+The per-library docs cover every function in detail along with error cases.
 
 ---
 

@@ -364,6 +364,16 @@ never called).
 
 ### Builtins and libraries
 
+Each library lives in its own Go package under `internal/lib/<name>/` and
+registers its functions (and constants) on the interpreter. User-facing
+reference docs are split per library:
+
+- [lib_io.md](lib_io.md) - `printf`, `sprintf`, format verbs
+- [lib_convert.md](lib_convert.md) - `int`, `float`, `string`, `bool`, `typeof`
+- [lib_math.md](lib_math.md) - `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`, `PI`, `E`
+
+What follows is the implementation contract, not the user-facing API.
+
 Library functions are Go closures registered with the interpreter:
 
 ```go
@@ -386,39 +396,32 @@ func Install(in *interpreter.Interpreter) {
 The no-shadowing check at hoist time uses the same lookup: a user method
 that collides with an imported library's builtin is rejected.
 
-**`internal/lib/io`** registers `printf` and `sprintf` under the Jennifer
-library name `io`. Both share a `formatArgs` helper with three shapes:
-- 0 args -> error.
-- First arg is a string -> treat as a Go-style format string and substitute
-  the remaining args. Verbs: `%d` (int), `%f` (float), `%s` (string),
-  `%t` (bool), `%v` (any/display), `%%` (literal `%`). Mismatches between
-  verb and arg kind produce a runtime error.
-- Exactly 1 non-string arg -> write its `Display()` form (preserves the M2
-  ergonomics of `printf($int)`).
+Library-provided **constants** (like `math.PI`) are registered via
+`Interpreter.RegisterConst(lib, name, value)`. Lookup happens in
+`evalExpr`'s `ConstRefExpr` case: user env first, then library constants
+gated on the same `use`-check.
 
-`printf` writes to the interpreter's `Out`; `sprintf` returns a `KindString`
-value and ignores the writer.
+For the user-facing API of each library, follow the links above. Below are
+the implementation-only notes worth knowing as a maintainer.
 
-**`internal/lib/convert`** registers `int`, `float`, `string`, `bool`, and
-`typeof` under the Jennifer library name `convert`. Each takes exactly one
-argument:
+**`internal/lib/io`**: `printf` and `sprintf` share a `formatArgs` helper
+with three shapes - 0 args errors; first-arg-is-string triggers format
+substitution; single non-string arg writes `Display()` (the M2 ergonomic
+preserved). `printf` writes to `Interpreter.Out`; `sprintf` returns a
+`KindString` value and ignores the writer.
 
-- `int(v)`: int identity; float truncates toward zero; string parses (errors
-  on bad input); bool → 1/0; null errors.
-- `float(v)`: int→float; float identity; string parses; bool → 1.0/0.0;
-  null errors.
-- `string(v)`: always succeeds; returns `Display()`.
-- `bool(v)`: bool identity; canonical-only otherwise - `0`/`1` (int), `0.0`/`1.0`
-  (float), `"true"`/`"false"` (string). Non-canonical values like `-1`, `123`,
-  `0.5`, `"x"`, and `null` all error. For "nonzero is true" semantics write
-  the comparison explicitly (`$x != 0`).
-- `typeof(v)`: returns the kind name (`"int"`/`"float"`/`"string"`/`"bool"`/`"null"`)
-  as a string. Useful when the result of an arithmetic expression isn't
-  obviously typed.
+**`internal/lib/math`**: `floor`/`ceil`/`round` accept int (identity) or
+float and return `int`. `round` uses Go's `math.Round` (half away from
+zero). `PI` and `E` are registered via `RegisterConst`; the `ConstRefExpr`
+lookup falls back to library constants when the user env doesn't have the
+name, gated on the owning library being `use`d.
 
-The parser allows `int(...)`, `float(...)`, `string(...)`, `bool(...)` even
-though those tokens are type keywords - see the `typeCall` production. `typeof`
-is a normal IDENT call.
+**`internal/lib/convert`**: parser side - the `typeCall` production lets
+`int(...)`, `float(...)`, `string(...)`, `bool(...)` parse despite their
+names being type keywords. `typeof` is a normal IDENT call. `bool(v)`
+implements canonical-only conversion at all source kinds (`0`/`1` for int,
+`0.0`/`1.0` for float, `"true"`/`"false"` for string) - non-canonical
+values produce a positioned error, not silent coercion.
 
 ### Runtime errors
 
@@ -475,6 +478,7 @@ internal/interpreter/interpreter_test.go End-to-end interpreter tests
 internal/lib/io/iolib.go          `io` library: printf, sprintf
 internal/lib/io/iolib_test.go     io library unit tests
 internal/lib/convert/convert.go   `convert` library: int, float, string, bool, typeof
+internal/lib/math/mathlib.go      `math` library: abs/min/max/sqrt/pow/floor/ceil/round; PI/E
 examples/*.j                     Example programs
 examples/expected/*.txt          Expected stdout per example
 examples/with_import/            Subdirectory demonstrating file imports

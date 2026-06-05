@@ -14,6 +14,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lexer"
 	"github.com/mplx/jennifer-lang/internal/lib/convert"
 	"github.com/mplx/jennifer-lang/internal/lib/io"
+	"github.com/mplx/jennifer-lang/internal/lib/math"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 )
@@ -67,6 +68,7 @@ func TestExamples(t *testing.T) {
 			in.Out = &buf
 			iolib.Install(in)
 			convert.Install(in)
+			mathlib.Install(in)
 			if err := in.Run(prog); err != nil {
 				t.Fatalf("run %s: %v", name, err)
 			}
