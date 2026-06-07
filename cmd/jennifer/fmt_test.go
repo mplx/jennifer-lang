@@ -194,6 +194,46 @@ func TestFmtSpacingRules(t *testing.T) {
 			`if($x){a();}elseif($y){b();}else{c();}`,
 			"if ($x) {\n    a();\n} elseif ($y) {\n    b();\n} else {\n    c();\n}\n",
 		},
+		{
+			"list literal no padding inside",
+			`def xs as list of int init [ 1 , 2 , 3 ];`,
+			"def xs as list of int init [1, 2, 3];\n",
+		},
+		{
+			"empty list literal",
+			`def xs as list of int init [ ];`,
+			"def xs as list of int init [];\n",
+		},
+		{
+			"map literal: no inside padding, space after colon",
+			`def m as map of string to int init { "a" : 1 , "b" : 2 };`,
+			"def m as map of string to int init {\"a\": 1, \"b\": 2};\n",
+		},
+		{
+			"empty map literal",
+			`def m as map of string to int init { };`,
+			"def m as map of string to int init {};\n",
+		},
+		{
+			"index read hugs target",
+			`def y as int init $xs [ 0 ];`,
+			"def y as int init $xs[0];\n",
+		},
+		{
+			"chained index write hugs target",
+			`$g [ 0 ] [ 1 ] = 99;`,
+			"$g[0][1] = 99;\n",
+		},
+		{
+			"for-each header",
+			`for ( def x in $xs ) { return; }`,
+			"for (def x in $xs) {\n    return;\n}\n",
+		},
+		{
+			"block brace still expands",
+			`func f() { return; }`,
+			"func f() {\n    return;\n}\n",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

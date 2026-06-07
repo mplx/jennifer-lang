@@ -64,17 +64,56 @@ type fmtState struct {
 	// Token kinds that "begin an operand context" - i.e. when the next
 	// token is `-`, that `-` is binary, not unary. Maintained on every
 	// emit() so unary-vs-binary disambiguation stays a state lookup.
-	prevIsOperand     bool
-	prevIsUnaryMinus  bool // true when prev was a `-` parsed as unary
+	prevIsOperand    bool
+	prevIsUnaryMinus bool // true when prev was a `-` parsed as unary
+	// braceStack records, for every open `{`, whether it's a block
+	// (statements) or a map literal (key:value pairs). Matching `}`
+	// pops; the kind determines indenting and newline behavior.
+	braceStack []byte // 'b' for block, 'm' for map literal
+	// lastBraceKind remembers the kind of the most recently emitted
+	// `{` or `}` so the next token's separator logic can ask "was that
+	// `}` a block close or a map close?" after the stack was already
+	// popped. 0 if no brace has been seen yet.
+	lastBraceKind byte
 }
+
+const (
+	braceBlock = byte('b')
+	braceMap   = byte('m')
+)
 
 const fmtIndent = "    " // 4 spaces, per stylespec.md
 
 func (f *fmtState) emit(t, next lexer.Token) {
-	// Closing braces dedent before they're written, so the `}` lands at
-	// the outer indent level.
-	if t.Type == lexer.TOKEN_RBRACE && f.indent > 0 {
-		f.indent--
+	// Classify `{` before writing it: prev token decides whether this is
+	// a block opener (after `)` or `else`) or a map literal (anywhere
+	// else - the parser only allows `{` in expression position when it's
+	// a map literal, so any non-block context must be a map).
+	openBlock := false
+	if t.Type == lexer.TOKEN_LBRACE {
+		openBlock = f.hasPrev && (f.prev.Type == lexer.TOKEN_RPAREN || f.prev.Type == lexer.TOKEN_ELSE)
+		if openBlock {
+			f.braceStack = append(f.braceStack, braceBlock)
+			f.lastBraceKind = braceBlock
+		} else {
+			f.braceStack = append(f.braceStack, braceMap)
+			f.lastBraceKind = braceMap
+		}
+	}
+	// Closing brace: pop and find out what kind we're closing. For block
+	// `}` we dedent before writing so the brace lands at the outer
+	// indent; for map literal `}` we don't touch indent. The popped kind
+	// is also remembered in lastBraceKind so the next token's separator
+	// logic can branch correctly.
+	if t.Type == lexer.TOKEN_RBRACE && len(f.braceStack) > 0 {
+		kind := f.braceStack[len(f.braceStack)-1]
+		f.braceStack = f.braceStack[:len(f.braceStack)-1]
+		f.lastBraceKind = kind
+		if kind == braceBlock {
+			if f.indent > 0 {
+				f.indent--
+			}
+		}
 	}
 	// Detect whether the `-` we're about to write is unary. A `-` is
 	// unary when nothing operand-shaped came before it.
@@ -86,10 +125,15 @@ func (f *fmtState) emit(t, next lexer.Token) {
 	f.atLineStart = false
 	f.prevIsOperand = isOperandToken(t)
 	f.prevIsUnaryMinus = isUnaryMinus
-	if t.Type == lexer.TOKEN_LBRACE {
+	if openBlock {
 		f.indent++
 	}
 }
+
+// prevBraceKind reports the kind of the most recently emitted `{` or `}`
+// token. The brace stack itself has already popped by the time the
+// separator runs, so we cache the kind on emit.
+func (f *fmtState) prevBraceKind() byte { return f.lastBraceKind }
 
 // writeSeparator decides what (if anything) goes between f.prev and t,
 // and writes it. Five outcomes: nothing, single space, newline+indent,
@@ -113,21 +157,31 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 		f.out.WriteByte(' ')
 		return
 	}
-	// Closing brace: blocks end with `}`; the next token starts a new
-	// line, except for the cuddled `} else` / `} elseif` forms.
+	// Closing brace: block `}` ends a statement-bearing block; the next
+	// token starts a new line, except for the cuddled `} else` /
+	// `} elseif` forms. Map-literal `}` stays inline (no newline) -
+	// `prevBraceKind` reports what kind of `{` matched the brace we just
+	// emitted.
 	if f.prev.Type == lexer.TOKEN_RBRACE {
-		if t.Type == lexer.TOKEN_ELSE || t.Type == lexer.TOKEN_ELSEIF {
-			f.out.WriteByte(' ')
+		if f.prevBraceKind() == braceBlock {
+			if t.Type == lexer.TOKEN_ELSE || t.Type == lexer.TOKEN_ELSEIF {
+				f.out.WriteByte(' ')
+				return
+			}
+			f.newline()
 			return
 		}
-		f.newline()
-		return
+		// Map literal close: fall through to default-space-or-tight-rules.
 	}
-	// Opening brace: the body that follows always starts on a new line.
-	// (Single-line block compaction is a future optional optimization;
-	// for now the formatter is deterministic and always expands.)
+	// Opening brace: block `{` triggers a newline so the body starts on
+	// its own indented line. Map-literal `{` keeps the contents inline
+	// with no padding (matches the existing `(` rule).
 	if f.prev.Type == lexer.TOKEN_LBRACE {
-		f.newline()
+		if f.prevBraceKind() == braceBlock {
+			f.newline()
+			return
+		}
+		// Map literal: no padding inside.
 		return
 	}
 	// No space between an IDENT or TYPE keyword and an opening `(` - call
@@ -138,13 +192,28 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 	if t.Type == lexer.TOKEN_LPAREN && noSpaceBeforeLParen(f.prev.Type) {
 		return
 	}
-	// Tight punctuation: nothing between `(`/`[` and the next token, and
-	// nothing between the previous token and `)`/`]`/`,`/`;`.
-	switch t.Type {
-	case lexer.TOKEN_RPAREN, lexer.TOKEN_COMMA, lexer.TOKEN_SEMI, lexer.TOKEN_DOT:
+	// Index expressions hug their target: `$xs[0]`, `foo()[1]`,
+	// `bar()[0][1]`. Any token that can stand at the end of an indexable
+	// expression (IDENT, VARREF, RPAREN, RBRACKET, RBRACE-from-map) gets
+	// tight binding to a following `[`.
+	if t.Type == lexer.TOKEN_LBRACKET && noSpaceBeforeLBracket(f.prev.Type) {
 		return
 	}
-	if f.prev.Type == lexer.TOKEN_LPAREN || f.prev.Type == lexer.TOKEN_DOT {
+	// No space before a map literal `}` (the closing brace was already
+	// classified during emit and recorded in lastBraceKind).
+	if t.Type == lexer.TOKEN_RBRACE && f.lastBraceKind == braceMap {
+		return
+	}
+	// Tight punctuation: nothing between `(`/`[`/map-`{` and the next
+	// token, and nothing between the previous token and the matching
+	// close, comma, semi, dot, or `:` (map-literal key/value separator).
+	switch t.Type {
+	case lexer.TOKEN_RPAREN, lexer.TOKEN_COMMA, lexer.TOKEN_SEMI,
+		lexer.TOKEN_DOT, lexer.TOKEN_RBRACKET, lexer.TOKEN_COLON:
+		return
+	}
+	if f.prev.Type == lexer.TOKEN_LPAREN || f.prev.Type == lexer.TOKEN_DOT ||
+		f.prev.Type == lexer.TOKEN_LBRACKET {
 		return
 	}
 	// Unary minus hugs its operand: `-5`, `-$x`, `-foo()`. The state
@@ -281,6 +350,20 @@ func noSpaceBeforeLParen(tt lexer.TokenType) bool {
 	case lexer.TOKEN_IDENT,
 		lexer.TOKEN_INT_TYPE, lexer.TOKEN_FLOAT_TYPE,
 		lexer.TOKEN_STRING_TYPE, lexer.TOKEN_BOOL_TYPE:
+		return true
+	}
+	return false
+}
+
+// noSpaceBeforeLBracket lists the token types that hug a following `[`
+// (index expression target). Anything that can end an indexable
+// expression: a variable reference, an identifier (when it's the
+// callee of a call without args), a closing paren/bracket/brace
+// (call result, list slice, map literal).
+func noSpaceBeforeLBracket(tt lexer.TokenType) bool {
+	switch tt {
+	case lexer.TOKEN_IDENT, lexer.TOKEN_VARREF,
+		lexer.TOKEN_RPAREN, lexer.TOKEN_RBRACKET, lexer.TOKEN_RBRACE:
 		return true
 	}
 	return false

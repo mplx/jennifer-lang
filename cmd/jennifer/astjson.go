@@ -171,6 +171,41 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 		emitNodeField(b, "operand", v.Operand, indent+1)
 		endObj(b, indent)
 
+	case *parser.ListLit:
+		startObj(b, indent)
+		emitTypeAndPos(b, "ListLit", v, indent+1)
+		emitNodeListField(b, "elements", asNodes(v.Elements), indent+1)
+		endObj(b, indent)
+
+	case *parser.MapLit:
+		startObj(b, indent)
+		emitTypeAndPos(b, "MapLit", v, indent+1)
+		emitNodeListField(b, "keys", asNodes(v.Keys), indent+1)
+		emitNodeListField(b, "values", asNodes(v.Values), indent+1)
+		endObj(b, indent)
+
+	case *parser.IndexExpr:
+		startObj(b, indent)
+		emitTypeAndPos(b, "IndexExpr", v, indent+1)
+		emitNodeField(b, "target", v.Target, indent+1)
+		emitNodeField(b, "index", v.Index, indent+1)
+		endObj(b, indent)
+
+	case *parser.IndexAssignStmt:
+		startObj(b, indent)
+		emitTypeAndPos(b, "IndexAssignStmt", v, indent+1)
+		emitNodeField(b, "target", v.Target, indent+1)
+		emitNodeField(b, "value", v.Value, indent+1)
+		endObj(b, indent)
+
+	case *parser.ForEachStmt:
+		startObj(b, indent)
+		emitTypeAndPos(b, "ForEachStmt", v, indent+1)
+		emitStringField(b, "varName", v.VarName, indent+1)
+		emitNodeField(b, "coll", v.Coll, indent+1)
+		emitNodeField(b, "body", v.Body, indent+1)
+		endObj(b, indent)
+
 	default:
 		// Forward-compat: unknown node kind shows up as a small object with
 		// just its Go type name. We hit this if a new AST node lands without

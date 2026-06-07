@@ -23,6 +23,10 @@ func TestAstJSONIsValid(t *testing.T) {
 		`func fact(n as int) { if ($n == 0) { return 1; } return $n * fact($n - 1); }`,
 		`def const MAX_RETRIES as int init 3; printf(MAX_RETRIES);`,
 		`for (def i as int init 0; $i < 3; $i = $i + 1) { printf($i); }`,
+		`def xs as list of int init [1, 2, 3]; def y as int init $xs[0];`,
+		`def m as map of string to int init {"a": 1, "b": 2};`,
+		`def g as list of list of int init [[1, 2], [3, 4]]; $g[0][1] = 99;`,
+		`for (def x in $xs) { return; }`,
 	}
 	for _, src := range cases {
 		prog, err := parser.Parse(src)
@@ -57,6 +61,38 @@ func TestAstJSONShape(t *testing.T) {
 		`"type": "ExprStmt"`,
 		`"type": "CallExpr"`, `"callee": "printf"`,
 		`"type": "VarExpr"`, `"name": "x"`,
+	}
+	_ = mustContain
+}
+
+// TestAstJSONM6Shape covers the new AST nodes added in M6: list/map
+// literals, index expressions, for-each. We assert a handful of field
+// signatures per node to catch a future refactor that drops a field or
+// renames it.
+func TestAstJSONM6Shape(t *testing.T) {
+	src := `
+def xs as list of int init [10, 20];
+def m as map of string to int init {"a": 1};
+def y as int init $xs[0];
+$xs[1] = 99;
+for (def x in $xs) { return; }
+`
+	prog, err := parser.Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var b strings.Builder
+	emitNode(&b, prog, 0)
+	out := b.String()
+
+	mustContain := []string{
+		`"type": "ListLit"`, `"elements": [`,
+		`"type": "MapLit"`, `"keys": [`, `"values": [`,
+		`"type": "IndexExpr"`, `"target":`, `"index":`,
+		`"type": "IndexAssignStmt"`,
+		`"type": "ForEachStmt"`, `"varName": "x"`, `"coll":`,
+		`"varType": "list of int"`,
+		`"varType": "map of string to int"`,
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(out, want) {
