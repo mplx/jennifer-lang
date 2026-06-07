@@ -200,6 +200,20 @@ type AssignStmt struct {
 
 func (*AssignStmt) stmtNode() {}
 
+// IndexAssignStmt: `$xs[i] = <expr>;`, `$m["k"] = <expr>;`, or a chain
+// `$xs[i][j] = <expr>;`. Target is always an IndexExpr (an l-value
+// chain rooted on a VarExpr). Distinguished from AssignStmt because the
+// interpreter has to walk the index chain to find the slot to write,
+// and because const-target enforcement runs only against the *root*
+// binding (the VarExpr at the bottom of the chain).
+type IndexAssignStmt struct {
+	pos
+	Target *IndexExpr
+	Value  Expr
+}
+
+func (*IndexAssignStmt) stmtNode() {}
+
 // IfStmt: `if (cond) { body } [elseif (cond) { body }]* [else { body }]?`
 // ElseIfs is parallel to ElseIfBodies. Else may be nil.
 type IfStmt struct {
@@ -234,6 +248,21 @@ type ForStmt struct {
 }
 
 func (*ForStmt) stmtNode() {}
+
+// ForEachStmt: `for (def NAME in EXPR) { body }`. The iteration variable
+// is bound in the body's scope. For lists the value of NAME is each
+// element in order; for maps it's each key in insertion order. EXPR is
+// evaluated once at loop entry. Distinct from ForStmt because the two
+// constructs share nothing semantically beyond the keyword - it's
+// cleaner to have two AST nodes than one big union.
+type ForEachStmt struct {
+	pos
+	VarName string
+	Coll    Expr
+	Body    *Block
+}
+
+func (*ForEachStmt) stmtNode() {}
 
 // ReturnStmt: `return;` (returns null) or `return EXPR;`.
 type ReturnStmt struct {
@@ -286,6 +315,42 @@ type NullLit struct {
 }
 
 func (*NullLit) exprNode() {}
+
+// ListLit: a `[expr, expr, ...]` literal. Element types are checked
+// against the declared variable type at assignment time; the parser
+// doesn't constrain element types itself.
+type ListLit struct {
+	pos
+	Elements []Expr
+}
+
+func (*ListLit) exprNode() {}
+
+// MapLit: a `{key: value, key: value, ...}` literal. Keys and values are
+// arbitrary expressions; the interpreter enforces that keys are of the
+// declared key type and hashable. Insertion order is preserved.
+type MapLit struct {
+	pos
+	Keys, Values []Expr // parallel slices
+}
+
+func (*MapLit) exprNode() {}
+
+// IndexExpr: `$xs[i]` for lists or `$m[k]` for maps. The same node
+// covers both - the interpreter dispatches at evaluation time based on
+// the kind of Target.
+//
+// Used as both an r-value (read) in expressions and as an l-value
+// (write target) in AssignStmt-with-index. We attach the operation site
+// for positioned error messages on out-of-bounds reads / missing-key
+// reads / write-type-mismatch.
+type IndexExpr struct {
+	pos
+	Target Expr
+	Index  Expr
+}
+
+func (*IndexExpr) exprNode() {}
 
 type VarExpr struct {
 	pos
@@ -519,6 +584,30 @@ func Sprint(n Node) string {
 		return fmt.Sprintf("(%s %s %s)", Sprint(v.Left), v.Op, Sprint(v.Right))
 	case *UnaryExpr:
 		return fmt.Sprintf("(%s %s)", v.Op, Sprint(v.Operand))
+	case *ListLit:
+		s := "List["
+		for i, e := range v.Elements {
+			if i > 0 {
+				s += ", "
+			}
+			s += Sprint(e)
+		}
+		return s + "]"
+	case *MapLit:
+		s := "Map{"
+		for i := range v.Keys {
+			if i > 0 {
+				s += ", "
+			}
+			s += Sprint(v.Keys[i]) + ": " + Sprint(v.Values[i])
+		}
+		return s + "}"
+	case *IndexExpr:
+		return fmt.Sprintf("Index(%s, %s)", Sprint(v.Target), Sprint(v.Index))
+	case *IndexAssignStmt:
+		return fmt.Sprintf("IndexAssign(%s = %s)", Sprint(v.Target), Sprint(v.Value))
+	case *ForEachStmt:
+		return fmt.Sprintf("ForEach($%s in %s, %s)", v.VarName, Sprint(v.Coll), Sprint(v.Body))
 	}
 	return fmt.Sprintf("<unknown %T>", n)
 }

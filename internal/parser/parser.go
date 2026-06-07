@@ -237,11 +237,19 @@ func (p *parser) parseStatement() (Stmt, error) {
 	case lexer.TOKEN_RETURN:
 		return p.parseReturn()
 	case lexer.TOKEN_VARREF:
-		// `$x = expr ;` is an assignment; anything else starting with $x
-		// is an expression statement (rare, but possible if VARREF is used
-		// in a call - which it currently isn't - kept open for safety).
+		// `$x = expr ;` is a simple assignment.
 		if p.peekN(1).Type == lexer.TOKEN_ASSIGN {
 			return p.parseAssign(true)
+		}
+		// `$xs[...] = expr ;` (or chained `$xs[i][j] = ...`) is an
+		// index-assignment. We can't decide until we see the `=` after
+		// the lvalue chain, so we save the parser position, attempt the
+		// chain, and either commit (if `=` follows) or restore and fall
+		// through to the expression-statement path below.
+		if p.peekN(1).Type == lexer.TOKEN_LBRACKET {
+			if stmt, ok, err := p.tryParseIndexAssign(); ok || err != nil {
+				return stmt, err
+			}
 		}
 	}
 	// expression statement
@@ -362,6 +370,59 @@ func (p *parser) parseReturn() (Stmt, error) {
 	return stmt, nil
 }
 
+// tryParseIndexAssign attempts to parse `$xs[i]...[j] = expr ;` as an
+// IndexAssignStmt. Returns (stmt, true, nil) on success. Returns (nil,
+// false, nil) when the lvalue chain parses but no `=` follows (meaning
+// the original token stream was an expression statement, not an
+// assignment) - in that case the parser position is restored to the
+// VARREF so the caller can re-parse it as an expression.
+// Errors during the lvalue chain itself are propagated.
+func (p *parser) tryParseIndexAssign() (Stmt, bool, error) {
+	saved := p.pos
+	vref, _ := p.match(lexer.TOKEN_VARREF)
+	var target Expr = &VarExpr{pos: pos{File: vref.File, Line: vref.Line, Col: vref.Col}, Name: vref.Lexeme}
+	// Consume one or more `[expr]` suffixes.
+	for p.check(lexer.TOKEN_LBRACKET) {
+		bra := p.peek()
+		p.advance()
+		idx, err := p.parseExpr()
+		if err != nil {
+			return nil, false, err
+		}
+		if _, err := p.expect(lexer.TOKEN_RBRACKET, "to close index expression"); err != nil {
+			return nil, false, err
+		}
+		target = &IndexExpr{
+			pos:    pos{File: bra.File, Line: bra.Line, Col: bra.Col},
+			Target: target,
+			Index:  idx,
+		}
+	}
+	if _, ok := p.match(lexer.TOKEN_ASSIGN); !ok {
+		// Not an assignment; let the expression-statement path try again.
+		p.pos = saved
+		return nil, false, nil
+	}
+	val, err := p.parseExpr()
+	if err != nil {
+		return nil, false, err
+	}
+	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate assignment"); err != nil {
+		return nil, false, err
+	}
+	idx, ok := target.(*IndexExpr)
+	if !ok {
+		// Defensive: tryParseIndexAssign is only entered when LBRACKET
+		// follows the VARREF, so target should always end up an IndexExpr.
+		return nil, false, &ParseError{Msg: "expected index expression on left of `=`", File: vref.File, Line: vref.Line, Col: vref.Col}
+	}
+	return &IndexAssignStmt{
+		pos:    pos{File: vref.File, Line: vref.Line, Col: vref.Col},
+		Target: idx,
+		Value:  val,
+	}, true, nil
+}
+
 // parseAssign parses `$x = expr;`. If consumeSemi is false (e.g. inside a
 // for-loop step), the trailing `;` is not consumed.
 func (p *parser) parseAssign(consumeSemi bool) (Stmt, error) {
@@ -434,6 +495,15 @@ func (p *parser) parseFor() (Stmt, error) {
 	if _, err := p.expect(lexer.TOKEN_LPAREN, "after `for`"); err != nil {
 		return nil, err
 	}
+	// Disambiguate `for (def NAME in EXPR)` (for-each) from the C-style
+	// `for (def NAME as TYPE init EXPR; cond; step)`. Both start with
+	// `def IDENT`; the token after the IDENT decides:
+	//   - `in`  -> for-each
+	//   - `as`  -> regular for
+	// Anything else is a parse error inside parseDefineLike or here.
+	if p.check(lexer.TOKEN_DEFINE) && p.peekN(1).Type == lexer.TOKEN_IDENT && p.peekN(2).Type == lexer.TOKEN_IN {
+		return p.parseForEachTail(ft)
+	}
 	// init: define-stmt | assign | empty
 	var initStmt Stmt
 	if p.check(lexer.TOKEN_DEFINE) {
@@ -486,6 +556,47 @@ func (p *parser) parseFor() (Stmt, error) {
 		return nil, err
 	}
 	return &ForStmt{pos: pos{File: ft.File, Line: ft.Line, Col: ft.Col}, Init: initStmt, Cond: cond, Step: step, Body: body}, nil
+}
+
+// parseForEachTail finishes a `for (def NAME in EXPR) { body }` after
+// the `for` and `(` have already been consumed by parseFor. The
+// iteration variable name uses the same rule as a regular def (no
+// underscores, [A-Za-z]{1,64}); the collection expression is anything
+// that evaluates to a list or map at runtime.
+func (p *parser) parseForEachTail(ft lexer.Token) (Stmt, error) {
+	// Consume `def NAME in`.
+	def, _ := p.match(lexer.TOKEN_DEFINE)
+	_ = def
+	name, err := p.expect(lexer.TOKEN_IDENT, "after `def` in for-each")
+	if err != nil {
+		return nil, err
+	}
+	if containsUnderscore(name.Lexeme) {
+		return nil, &ParseError{
+			Msg:  fmt.Sprintf("iteration variable name %q may not contain `_` (use camelCase)", name.Lexeme),
+			File: name.File, Line: name.Line, Col: name.Col,
+		}
+	}
+	if _, err := p.expect(lexer.TOKEN_IN, "after for-each variable"); err != nil {
+		return nil, err
+	}
+	coll, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TOKEN_RPAREN, "to close for-each header"); err != nil {
+		return nil, err
+	}
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	return &ForEachStmt{
+		pos:     pos{File: ft.File, Line: ft.Line, Col: ft.Col},
+		VarName: name.Lexeme,
+		Coll:    coll,
+		Body:    body,
+	}, nil
 }
 
 func (p *parser) parseParenCond(ctx string) (Expr, error) {
@@ -797,7 +908,36 @@ func (p *parser) parseUnaryMinus() (Expr, error) {
 	return p.parsePrimary()
 }
 
+// parsePrimary parses an atom (literal, var ref, call, grouped expr,
+// list/map literal) and then chains any number of `[index]` suffixes
+// onto it. Returning the chained form from `primary` lets every level
+// above (unary, mul, add, ...) treat `$xs[0]` exactly like any other
+// expression without special-casing.
 func (p *parser) parsePrimary() (Expr, error) {
+	e, err := p.parsePrimaryAtom()
+	if err != nil {
+		return nil, err
+	}
+	for p.check(lexer.TOKEN_LBRACKET) {
+		bra := p.peek()
+		p.advance() // consume [
+		idx, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(lexer.TOKEN_RBRACKET, "to close index expression"); err != nil {
+			return nil, err
+		}
+		e = &IndexExpr{
+			pos:    pos{File: bra.File, Line: bra.Line, Col: bra.Col},
+			Target: e,
+			Index:  idx,
+		}
+	}
+	return e, nil
+}
+
+func (p *parser) parsePrimaryAtom() (Expr, error) {
 	t := p.peek()
 	switch t.Type {
 	case lexer.TOKEN_INT:
@@ -861,6 +1001,67 @@ func (p *parser) parsePrimary() (Expr, error) {
 			return nil, err
 		}
 		return e, nil
+	case lexer.TOKEN_LBRACKET:
+		return p.parseListLit()
+	case lexer.TOKEN_LBRACE:
+		return p.parseMapLit()
 	}
 	return nil, &ParseError{Msg: fmt.Sprintf("unexpected token %s (%q) in expression", t.Type, t.Lexeme), File: t.File, Line: t.Line, Col: t.Col}
+}
+
+// parseListLit reads `[ expr, expr, ..., ]`. The trailing comma is
+// allowed (consistent with multi-line struct/map literal habits in other
+// languages, and makes diffs cleaner). Empty `[]` is legal and produces
+// an empty list whose element type is decided by the enclosing context.
+func (p *parser) parseListLit() (Expr, error) {
+	bra, _ := p.match(lexer.TOKEN_LBRACKET)
+	var elems []Expr
+	for !p.check(lexer.TOKEN_RBRACKET) {
+		e, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		elems = append(elems, e)
+		if _, ok := p.match(lexer.TOKEN_COMMA); !ok {
+			break
+		}
+	}
+	if _, err := p.expect(lexer.TOKEN_RBRACKET, "to close list literal"); err != nil {
+		return nil, err
+	}
+	return &ListLit{pos: pos{File: bra.File, Line: bra.Line, Col: bra.Col}, Elements: elems}, nil
+}
+
+// parseMapLit reads `{ key: value, key: value, ..., }`. Trailing comma
+// allowed. Empty `{}` produces an empty map whose key/value types come
+// from the enclosing context.
+//
+// Care: `{` also starts blocks in statement position. parseMapLit is
+// only reached through parsePrimary, which is called from expression
+// context, so the ambiguity is already resolved by the caller.
+func (p *parser) parseMapLit() (Expr, error) {
+	brace, _ := p.match(lexer.TOKEN_LBRACE)
+	var keys, vals []Expr
+	for !p.check(lexer.TOKEN_RBRACE) {
+		key, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(lexer.TOKEN_COLON, "between map key and value"); err != nil {
+			return nil, err
+		}
+		val, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+		vals = append(vals, val)
+		if _, ok := p.match(lexer.TOKEN_COMMA); !ok {
+			break
+		}
+	}
+	if _, err := p.expect(lexer.TOKEN_RBRACE, "to close map literal"); err != nil {
+		return nil, err
+	}
+	return &MapLit{pos: pos{File: brace.File, Line: brace.Line, Col: brace.Col}, Keys: keys, Values: vals}, nil
 }

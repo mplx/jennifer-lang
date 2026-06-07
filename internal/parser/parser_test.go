@@ -156,3 +156,103 @@ func TestConstNameAccepts(t *testing.T) {
 		}
 	}
 }
+
+// TestParseM6Constructs covers the new list/map syntax forms added in M6:
+// type declarations, literals, indexing reads + writes, and for-each.
+// We use Sprint() to assert AST shape rather than poking at internal
+// fields - keeps the test stable across small AST refactors.
+func TestParseM6Constructs(t *testing.T) {
+	cases := []struct {
+		name, src, want string
+	}{
+		{
+			"list type with literal init",
+			`def xs as list of int init [1, 2, 3];`,
+			`Define($xs as list of int = List[Int(1), Int(2), Int(3)])`,
+		},
+		{
+			"empty list literal",
+			`def xs as list of int init [];`,
+			`Define($xs as list of int = List[])`,
+		},
+		{
+			"map type with literal init",
+			`def m as map of string to int init {"a": 1, "b": 2};`,
+			`Define($m as map of string to int = Map{Str("a"): Int(1), Str("b"): Int(2)})`,
+		},
+		{
+			"nested list type",
+			`def xs as list of list of int init [[1, 2], [3, 4]];`,
+			`Define($xs as list of list of int = List[List[Int(1), Int(2)], List[Int(3), Int(4)]])`,
+		},
+		{
+			"index read",
+			`def y as int init $xs[0];`,
+			`Define($y as int = Index(Var($xs), Int(0)))`,
+		},
+		{
+			"index write",
+			`$xs[0] = 99;`,
+			`IndexAssign(Index(Var($xs), Int(0)) = Int(99))`,
+		},
+		{
+			"chained index write",
+			`$g[0][1] = 99;`,
+			`IndexAssign(Index(Index(Var($g), Int(0)), Int(1)) = Int(99))`,
+		},
+		{
+			"for-each over list",
+			`for (def x in $xs) { return; }`,
+			`ForEach($x in Var($xs), Block[Return])`,
+		},
+		{
+			"for-each over map",
+			`for (def k in $m) { return; }`,
+			`ForEach($k in Var($m), Block[Return])`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prog, err := Parse(c.src)
+			if err != nil {
+				t.Fatalf("parse %q: %v", c.src, err)
+			}
+			// One top-level stmt expected.
+			if len(prog.TopLevel) != 1 {
+				t.Fatalf("expected 1 top-level stmt, got %d", len(prog.TopLevel))
+			}
+			got := Sprint(prog.TopLevel[0])
+			if got != c.want {
+				t.Errorf("got %q\nwant %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestParseM6Rejections covers the parser-level error paths for the
+// new syntax: malformed literals, missing keywords, bad identifiers.
+func TestParseM6Rejections(t *testing.T) {
+	bad := []struct {
+		name, src, want string
+	}{
+		{"list with missing of", `def xs as list int init [];`, "after `list`"},
+		{"map with missing of", `def m as map string to int init {};`, "after `map`"},
+		{"map with missing to", `def m as map of string int init {};`, "after map key type"},
+		{"map literal missing colon", `def m as map of string to int init {"a" 1};`, "between map key and value"},
+		{"unclosed list literal", `def xs as list of int init [1, 2;`, "to close list literal"},
+		{"unclosed index", `def y as int init $xs[0;`, "to close index expression"},
+		{"for-each underscore in iter var", `for (def my_var in $xs) {}`, "may not contain"},
+	}
+	for _, c := range bad {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := Parse(c.src)
+			if err == nil {
+				t.Errorf("expected error, got nil")
+				return
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("error %q does not contain %q", err.Error(), c.want)
+			}
+		})
+	}
+}
