@@ -32,13 +32,13 @@ comparison; `Value.Equal()` implements `==` (same-kind comparison, plus
 the numeric-promotion rule across `int` and `float`; deep-equal for
 lists; order-insensitive key→value equality for maps).
 
-### Parameterized Type (M6)
+### Parameterized Type
 
 `parser.Type` is a recursive struct: `{ Kind TypeKind; Element,
 KeyType, ValType *Type }`. Compound types nest naturally
 (`list of list of int`). Equality (`Type.Equal`) is structural.
 
-### Value semantics (M6)
+### Value semantics
 
 Lists and maps are **value-typed** in Jennifer: `$ys = $xs;` copies,
 function parameters bind by copy, and `const` is deep. No aliasing.
@@ -53,7 +53,7 @@ The interpreter enforces this at every binding boundary:
 Cost is O(n) per binding; copy-on-write is a future optimization that
 preserves the user-visible semantics.
 
-### Type stamping (M6)
+### Type stamping
 
 After a literal like `[1, 2, 3]` evaluates, the resulting `Value` has
 no `ElemTyp`. The declared type lives only on the receiving binding's
@@ -64,7 +64,7 @@ at every binding boundary. The helper writes `ElemTyp` / `KeyTyp` /
 `ValTyp` onto the value and recurses into nested compound elements so
 deep type tracking is preserved for nested `$xs[i][j] = ...` writes.
 
-### Index access (M6)
+### Index access
 
 - **Reads** (`evalIndex`): out-of-bounds list indices and missing map
   keys are positioned runtime errors. Reads return the slot value by
@@ -77,7 +77,7 @@ deep type tracking is preserved for nested `$xs[i][j] = ...` writes.
   Map writes to a missing key extend the map (insertion order
   preserved); writes to an existing key update in place.
 
-### Iteration (M6)
+### Iteration
 
 `execForEach` opens a fresh per-iteration scope so the loop variable
 binding doesn't leak out and `def`-rebindings don't accumulate. For

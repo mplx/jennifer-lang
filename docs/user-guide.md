@@ -1,7 +1,7 @@
 # Jennifer - User Guide
 
 Jennifer is a small, experimental, interpreted programming language. This guide
-covers everything you can do in Jennifer today ([Milestone 3](milestones.md)).
+covers everything you can do in Jennifer today ([Milestone 6](milestones.md)).
 
 ---
 
@@ -510,7 +510,7 @@ for (def i as int init 0; $i < 10; $i = $i + 1) {
     printf($i);
 }
 
-// for-each over a list or map (M6).
+// for-each over a list or map.
 for (def x in $xs) {
     printf("%d ", $x);
 }

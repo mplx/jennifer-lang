@@ -6,8 +6,8 @@ substring extraction.
 
 > **Looking for `len(s)`?** It lives in the auto-loaded
 > [`core`](core.md) library now, so it's available everywhere without
-> any `use` statement. The same `len` covers strings, lists (M6), and
-> maps (M6) with one polymorphic dispatch.
+> any `use` statement. The same `len` covers strings, lists, and maps
+> with one polymorphic dispatch.
 
 **String positions are 0-relative.** The first character is at index `0`, not
 `1`. So `indexOf("hello", "h")` returns `0`, `substring("hello", 0, 1)` returns
@@ -92,11 +92,5 @@ ASCII spaces, tabs, newlines, plus characters like non-breaking space
 
 If you need to trim specific characters instead of whitespace, that's not
 in v1 - propose `trimChars(s, chars)` as a follow-up if it comes up.
-
-## Coming later
-
-`split(s, sep)`, `chars(s)`, `join(parts, sep)` are deferred until Jennifer
-gets arrays (planned in a later milestone). Right now there's no way to
-return multiple strings cleanly.
 
 See also: [../user-guide.md](../user-guide.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

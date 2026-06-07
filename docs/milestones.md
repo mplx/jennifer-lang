@@ -151,9 +151,6 @@ implementation contract.
 ## M7 - printf modifier
 
 - **(s)printf**: introduce format verb modifiers
-- **CI/CD:** Github Actions pipeline for automatic testing and release
-- **Packages** for Debian and Archlinux
-- **Pages** - create github pages
 
 ---
 
@@ -261,6 +258,12 @@ in early M9 before too many call sites lock in.
 ---
 
 ## Future directions
+
+### Mid-term goals
+
+- **CI/CD:** Github Actions pipeline for automatic testing and release
+- **Packages** for Debian and Archlinux
+- **Pages** - create github pages
 
 ### Long-term goals
 

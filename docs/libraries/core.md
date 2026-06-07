@@ -112,13 +112,9 @@ silently ignores `-X`. The generated file is `.gitignore`d.
 
 ## Roadmap
 
-Pass 2 of this M5 cleanup migrates `len` from the `strings` library into
-`core`, where it becomes polymorphic on strings, lists, and maps once
-lists and maps land in M6.
-
 Future candidates for `core` membership (none committed yet):
-`PLATFORM`, `BUILDTIME`, `has($m, key)` once maps exist. Each one needs
-to clear the bar of "universally needed structural primitive that's more
-like an operator than a library function."
+`PLATFORM`, `BUILDTIME`, runtime introspection like `JENNIFER_TARGET`.
+Each one needs to clear the bar of "universally needed structural
+primitive that's more like an operator than a library function."
 
 See also: [../user-guide.md](../user-guide.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).
