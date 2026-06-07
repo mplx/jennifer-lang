@@ -9,42 +9,15 @@ interpreter that runs a strictly larger subset of the language.
 
 **Status:** done.
 
-The smallest possible vertical slice that proves the pipeline:
-source → tokens → preprocessed tokens → AST → result.
+Smallest vertical slice that proves the pipeline (source → tokens →
+preprocessed tokens → AST → result):
 
-**Language subset:**
-
-- Types: `int`, `string` only
-- `def x as int init 5;` (the `init` clause is required in M1)
-- `$var` references
-- Arithmetic: `+ - * /` and `%` on ints; parenthesised grouping
-- `printf("text")` and `printf($var)` - single argument, no format specifiers
-- `use io;` (library import)
-- `import "file.j";` (file import - textual splice; works anywhere, including
-  inside a block; circular-import detection; subdirectories supported via the
-  string path)
-- Method definitions (zero-arg, top-level only)
-- Comments: `//` and `/* */`
-
-**Post-M1/M2 syntax adjustments (kept here for historical clarity):**
-
-- The `app()` entry-method requirement was dropped: top-level statements run
-  in source order, methods are just hoisted callables.
-- `define` was originally a synonym for `def`. It has been removed; only
-  `def` remains, and methods use a new `func` keyword.
-- At the def site, names are bare identifiers (no `$` sigil). The `$` is
-  reserved for use-site references to mutable variables.
-- Imports split into two keywords: `use NAME;` for system libraries (originally
-  `import NAME;`) and `import "PATH.j";` for files (originally
-  `import NAME.j;` with an identifier path). The new string-literal path
-  enables subdirectories, hyphens, and underscores.
-
-**What lands beyond the bare MVP:**
-
-- Source-context caret in error messages (`file: error at L:C` + the offending
-  line + caret)
-- Golden-file integration test that walks `examples/*.j`
-- TinyGo build target verified
+- Types: `int`, `string`
+- `def x as int init 5;`, `$var` references, method defs (zero-arg, top
+  level), `import "file.j";`, `use io;`, single-arg `printf`
+- Arithmetic `+ - * / %` on ints; comments `//` and `/* */`
+- Source-context caret in error messages
+- Golden-file integration test and TinyGo build verified
 
 **Exit criterion:** `./jennifer run examples/hello.j` prints `42`.
 
@@ -54,50 +27,19 @@ source → tokens → preprocessed tokens → AST → result.
 
 **Status:** done.
 
-**Decision (resolved at start of M2):** uninitialized `def x as T;` gives
-`$x` the zero value of `T` (`0`, `0.0`, `""`, `false`, `null`).
+Rounds out the "ordinary" feature set:
 
-Rounds out the "ordinary" feature set the spec calls for.
-
-**New types and literals:**
-
-- `float`, `null`, `bool` types
-- Literals `null`, `true`, `false`
-- `float` literals: `3.14`, `0.5`
-
-**Variable system:**
-
-- `def x as int;` (uninitialized → zero value of the type)
-- `def const NAME as TYPE init VALUE;` - constants; assignment-after-init
-  is an error
-- Name-rule enforcement: variable names `[A-Za-z]{1,64}`, constant names
-  `[A-Z]{1,64}`
-- Nested block scoping with the full visibility/no-shadowing rules
-- Assignment statement: `$x = EXPR;`
-
-**Operators:**
-
-- Comparison: `< > <= >= ==` → `bool`
-- `+` for string concatenation
-- `int` ↔ `float` promotion in mixed arithmetic (result is `float`)
-- Escape-sequence parsing inside `'...'` strings (currently only `"..."`)
-
-**Control flow:**
-
-- `if (cond) { } elseif (cond) { } else { }`
-- `while (cond) { }`
-- `for (init; cond; step) { }`
-- All conditions must be `bool` (no implicit truthiness)
-
-**New AST nodes:** `FloatLit`, `NullLit`, `BoolLit`, `ConstDefineStmt`,
-`AssignStmt`, `IfStmt`, `WhileStmt`, `ForStmt`, `CompareExpr`.
-
-**Decision required at start of M2:** semantics of uninitialized `def`
-(recommend: zero value of the declared type - `0`, `0.0`, `""`, `false`).
-
-**New tests:** scope tests (inner reads outer; inner cannot re-declare; const
-cannot be reassigned), full arithmetic/comparison matrices, programs like
-`fizzbuzz.j` and `fib.j`.
+- New types `float`, `null`, `bool` with literals `3.14`, `null`, `true`,
+  `false`
+- Uninitialized `def x as T;` gives `T`'s zero value
+- `def const NAME as TYPE init VALUE;` (reassignment is an error)
+- Nested block scoping; inner scopes cannot redeclare visible names
+- Assignment statement `$x = EXPR;`
+- Comparison `< > <= >= ==`, `+` for string concat, `int`↔`float`
+  promotion
+- Escape parsing in `'...'` strings (previously only `"..."`)
+- Control flow: `if`/`elseif`/`else`, `while`, `for`, all requiring
+  `bool` conditions (no implicit truthiness)
 
 ---
 
@@ -105,20 +47,13 @@ cannot be reassigned), full arithmetic/comparison matrices, programs like
 
 **Status:** done.
 
-- `func name(a as int, b as string) { ... }` - parameter parsing
-- Argument passing - by value (parameters bind in a fresh call frame whose
-  parent is the global env)
-- `return;` and `return EXPR;`
-- Type-checking at the call site: argument count and declared type both checked
-- Method calls inside expressions, recursion (free once methods call methods)
-- `sprintf(...)` returns a formatted string instead of writing
-- `printf` / `sprintf` accept Go-style format strings with verbs `%d %f %s %t %v %%`
-- `examples/factorial.j` added as a recursion smoke test with golden output
-
-**Post-M3 adjustment:** the omnibus `stdlib` library was retired in favor
-of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
-(`use io;`). Future builtins go in their own libraries (`math`, `strings`,
-`convert`, etc.), all explicit `use` - no auto-loading.
+- `func name(a as int, b as string) { ... }` with typed parameters,
+  by-value argument passing, call-site arity + type checks
+- `return;` and `return EXPR;`; recursion works
+- `sprintf` and format verbs `%d %f %s %t %v %%` for both `printf` and
+  `sprintf`
+- The omnibus `stdlib` retired in favor of topic-based libraries; `io`
+  is the first.
 
 ---
 
@@ -126,97 +61,52 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
 
 **Status:** done.
 
-- **Logical operators:** `and`, `or`, `not` (word-based) with standard
-  precedence and short-circuit `and`/`or`.
-- **Unary minus.**
-- **Python 3 division:** `/` always returns `float`; new `div` keyword for
-  floor division (Pascal-style because `//` collides with line comments).
-- **Float display fix:** floats always print with a decimal (`5.0`, not `5`)
-  so the type stays visible.
-- **`convert` library:** `int(v)`, `float(v)`, `string(v)`, `bool(v)`,
-  `typeOf(v)`. Type-name calls (`int(...)` etc.) work in expression position
-  because the parser allows TYPE tokens before `(`. Strict conversion
-  semantics - `int("abc")` and `bool("maybe")` both error. `bool` is
-  canonical-only across all source kinds (`bool(123)` errors).
-- **`math` library:** `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`,
-  `round` plus constants `PI`, `E`. Strict on undefined math (sqrt of
-  negative, pow producing NaN/Inf rejected). `floor`/`ceil`/`round` return
-  int. Interpreter gained `RegisterConst` so libraries can expose constants.
-- **`strings` library:** `len`, `upper`, `lower`, `contains`, `startsWith`,
-  `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`,
-  `substring`. Rune-based indexing throughout. `split`/`chars`/`join`
-  deferred until arrays land. Also renamed `typeof` → `typeOf` in `convert`
-  for camelCase consistency with the new multi-word names.
+- Logical operators `and`, `or`, `not` (word-based, short-circuit)
+- Unary minus
+- Python-3 division: `/` always returns `float`; new `div` keyword for
+  floor division (`//` is taken by line comments)
+- Floats always display with a decimal (`5.0`, not `5`) so the type
+  stays visible
+- New libraries (all `use`-gated): [`convert`](libraries/convert.md),
+  [`math`](libraries/math.md), [`strings`](libraries/strings.md)
+- Interpreter gained `RegisterConst` so libraries can expose constants
+  (`PI`, `E`).
 
 ---
 
 ## M5 - Interpreter improvements
 
-- **Better errors:** cross-file error sources - done. Every error type
-  (`LexError`, `PreprocessError`, `ParseError`, `runtimeError`) carries the
-  originating file and implements a small `Position()` interface. The CLI
-  uses that interface to load the right file when printing the source
-  snippet, so an error raised inside an imported `.j` displays the line
-  from the imported file, not from the importing file.
-- **REPL:** `jennifer repl` - done. Interactive read-eval-print loop that
-  reuses the existing lexer/preproc/parser/interpreter. Globals, constants,
-  methods, and library imports persist across inputs; a bare final
-  expression prints its non-null value. Continuation lines are detected by
-  counting `{`/`(` depth and requiring a `;`/`}` terminator, so multi-line
-  method definitions and blocks work transparently. Methods can be
-  redefined freely from one input to the next (`Run` still rejects
-  duplicates; the REPL uses a new `EvalInteractive` entry point).
-- **Build version + `core` library** - done. The Makefile regenerates
-  `internal/version/version_gen.go` from `git describe --tags --long`
-  before every build, so `jennifer help` / `jennifer version` always
-  report the current commit. The `core` library exposes the same string
-  to Jennifer programs as the `JENNIFER_VERSION` constant. Format: `"<tag>"` on
-  a tag, `"<tag>-dev+<N>.<shortsha>"` past a tag, `"dev"` outside git.
-  Codegen is used instead of `-ldflags -X` because TinyGo 0.41 silently
-  ignores `-X`; codegen works on both toolchains.
+**Status:** done.
 
-  The library was originally named `meta` and required `use meta;`. As
-  a late-M5 cleanup it was renamed to `core` and made auto-loaded -
-  pre-imported by the interpreter in `New()`, with explicit `use core;`
-  now a runtime error. (The constant itself was also renamed from
-  `VERSION` to `JENNIFER_VERSION` once the M5 underscore-in-constants
-  rule made that possible - follows the PHP_VERSION / RUBY_VERSION
-  precedent and leaves the bare `VERSION` name free for future
-  per-library use.) The rationale: `JENNIFER_VERSION` is structural and
-  universally useful, and the same library hosts other structural
-  builtins: pass 2 of the cleanup moved `len` here from `strings`,
-  where it stays polymorphic across strings now and lists/maps in M6.
-  Future inhabitants might include `has`, `PLATFORM`, etc. The
-  "nothing for free" rule still holds for every other library.
-- **Formatter:** `jennifer fmt` - done. Token-stream formatter that
-  re-emits canonical source per [docs/stylespec.md](stylespec.md).
-  Works at the lexer level (not AST) to preserve `import "file.j";`
-  statements and user-written parentheses verbatim. Verified
-  idempotent and behavior-preserving across all `examples/*.j`.
-  Known v1 limitations: comments are dropped (lexer strips them) and
-  blank lines aren't preserved or inserted between logical groups.
-- **Inspection subcommands:** `jennifer tokens <file>` dumps the lexer
-  output; `jennifer ast <file>` dumps the preprocessed AST as JSON
-  (hand-rolled emitter, no `encoding/json`, so TinyGo stays clean).
-  Both useful for understanding the pipeline and for tooling that
-  wants to consume Jennifer programs as data.
-- **REPL:** improve repl with history (cursor up/down scrolling)
-- **Documentation:** improve documentation in /docs and make sure it's up-to-date with M5
-
-### Deferred from M5
-
-- **Comment preservation in `fmt`.** Lexer would need to carry `//` and
-  `/* */` as tokens (or attach them to following nodes); the formatter
-  would then weave them back in.
-- **Blank-line preservation / auto-insertion in `fmt`.** Either keep
-  user blank lines as a side channel during lexing, or insert them
-  automatically between logical groups (imports vs methods vs top-level
-  code, method-to-method).
-- **Binary AST cache (`.jc` files).** Pre-parsed loading for big
-  programs and McFly OS embedding. Its own milestone - file-format
-  design, versioning, and TinyGo-safe serialization are enough work to
-  merit dedicated treatment. The text JSON form via `jennifer ast` is
-  the placeholder until then.
+- **Cross-file error sources** - errors raised inside an imported `.j`
+  display the line from the imported file. See
+  [technical/interpreter.md > Errors and positions](technical/interpreter.md#errors-and-positions-cross-file).
+- **REPL** - `jennifer repl`, persistent globals/methods/imports across
+  inputs, multi-line input via brace balancing, expression results
+  printed. See [technical/cli.md > REPL](technical/cli.md#repl-cmdjenniferreplgo).
+- **REPL line editor** - cursor keys, Home/End, word motions, Ctrl+W /
+  Ctrl+U / Ctrl+K, in-memory history (Up/Down), Ctrl+C cancel. Non-TTY
+  stdin falls back to plain line reading. See
+  [technical/cli.md > Line editor](technical/cli.md#line-editor-cmdjenniferlineeditgo-cmdjenniferhistorygo).
+- **Auto-loaded `core` library** - new library kind, pre-imported at
+  startup; writing `use core;` is a runtime error. Contents:
+  `JENNIFER_VERSION` (a `git describe`-derived build-version constant)
+  and `len` (polymorphic over strings now; lists/maps in M6). `len`
+  moved here from `strings`. See [libraries/core.md](libraries/core.md)
+  and [technical/cli.md > Version injection](technical/cli.md#version-injection).
+- **Formatter** - `jennifer fmt` re-emits canonical source per
+  [stylespec.md](stylespec.md). Token-level walker so file imports and
+  user-written parentheses survive. See
+  [technical/cli.md > Formatter](technical/cli.md#formatter-cmdjenniferfmtgo).
+- **Inspection subcommands** - `jennifer tokens <file>` dumps the lexer
+  output; `jennifer ast <file>` dumps the preprocessed AST as JSON.
+  See [technical/cli.md > Inspection](technical/cli.md#inspection-tokens-and-ast).
+- **Underscore-in-constants** - constant names became `[A-Z]+(_[A-Z]+)*`,
+  enabling `MAX_RETRIES` and the `JENNIFER_VERSION` rename. See
+  [technical/lexer.md > Identifier rule](technical/lexer.md#identifier-rule).
+- **Documentation overhaul** - `docs/technical.md` split into
+  `docs/technical/<topic>.md`; `docs/lib_*.md` moved to
+  `docs/libraries/`; new `docs/stylespec.md`.
 
 ---
 
@@ -306,20 +196,13 @@ const. The same rule applies to map values (`$CONST_MAP["k"] = ...`).
 explicit depth cap. The recursive parser bottoms out at Go's stack
 limit (~10K-100K levels) - far beyond anything any human will write,
 and a clean stack-overflow if someone generates Jennifer source
-programmatically. Inventing an arbitrary limit (8? 16?) would just
-be the next surprise users hit, and the threshold is impossible to
-defend.
-
-What we ship instead: a style note in `docs/stylespec.md` saying
+programmatically. A style note in `docs/stylespec.md` will be saying
 that nesting beyond 3 levels is a code smell - 1-2 levels is normal,
 3 is uncommon, 4+ almost always wants a struct or a named type
 instead. The advice points forward to structs whenever they land
 (post-M9 namespacing and M10 domain libraries; tentatively M11). A
 future fmt-time linter could nudge at depth >= 4; out of scope for
 M6.
-- New auto-loaded `core` library housing `len`. Pre-imported by the
-  interpreter at startup; users never write `use core;`. See the
-  "len" decision below.
 
 **Syntax:**
 
@@ -365,17 +248,6 @@ randomized default) so tests and the REPL are reproducible. The
 underlying map representation will need to track insertion order, which
 rules out `map[K]V` alone - probably a `struct { keys []K; values
 map[K]V }` or similar.
-
-**`len(...)` becomes an auto-loaded builtin (resolved at start of
-M6):** `len` lives in a new `core` library that the interpreter
-pre-imports at startup (`i.imported["core"] = true` in `New()`). Users
-never write `use core;` - it's always available. Polymorphic on
-strings, lists, and maps. Migration: `len` moves out of `strings`; the
-`strings` library keeps only the string-specific functions. The
-`core` library establishes "auto-loaded" as a special library kind -
-reserve this carefully, it's the escape hatch from "nothing for free"
-and should hold at most 2-3 things ever. `len` is the only inhabitant
-for M6.
 
 **Strings library completion (in scope for M6):**
 
@@ -438,16 +310,11 @@ list/map literals and indexed assignment correctly.
 ## M7 - printf modifier
 
 - **(s)printf**: introduce format verb modifiers
-
----
-
-## M8
-
 - **CI/CD:** Github Actions pipeline for automatic testing and release
 
 ---
 
-## M9 - Library namespacing
+## M8 - Library namespacing
 
 The flat-namespace model is fine for the essential libraries today
 (`io`, `convert`, `math`, `strings`, plus the auto-loaded `core`) -
@@ -533,7 +400,7 @@ continue to work unchanged.
 
 ---
 
-## M10 - Domain libraries
+## M09 - Domain libraries
 
 - **File library** (`use fs;`)
 - **OS library** (`use os;`)
@@ -541,19 +408,20 @@ continue to work unchanged.
 - **Network library** (`use net;`)
 - **Crypto library** (`use crypto;`)
 
-All M10 libraries are domain libraries and ship with namespaces
-(per M9): `fs.read`, `os.getenv`, `regex.match`, `net.dial`,
+All M09 libraries are domain libraries and ship with namespaces
+(per M8): `fs.read`, `os.getenv`, `regex.match`, `net.dial`,
 `crypto.sha256`. This is the first real test of the namespacing
 convention - if any of these prove awkward (`crypto.sha256` reads
 fine; `fs.read` collides with the urge to call it `readFile`), revisit
-in early M10 before too many call sites lock in.
+in early M9 before too many call sites lock in.
 
 ---
 
 ## Future directions
 
-Long-term goals - not committed to a milestone yet, but the code should not
-foreclose them.
+### Long-term goals
+
+Not committed to a milestone yet, but the code should not foreclose them.
 
 - **Cross-platform support.** Today Jennifer targets Linux only. Windows and
   macOS are planned. When touching filesystem, paths, line endings, or
@@ -566,3 +434,18 @@ foreclose them.
   dependencies, and no hard dependencies on a hosted runtime (ambient stdin,
   network, dynamic linking).
 - **Inline Assembler**
+
+### Deferred from M5
+
+- **Comment preservation in `fmt`.** Lexer would need to carry `//` and
+  `/* */` as tokens (or attach them to following nodes); the formatter
+  would then weave them back in.
+- **Blank-line preservation / auto-insertion in `fmt`.** Either keep
+  user blank lines as a side channel during lexing, or insert them
+  automatically between logical groups (imports vs methods vs top-level
+  code, method-to-method).
+- **Binary AST cache (`.jc` files).** Pre-parsed loading for big
+  programs and McFly OS embedding. Its own milestone - file-format
+  design, versioning, and TinyGo-safe serialization are enough work to
+  merit dedicated treatment. The text JSON form via `jennifer ast` is
+  the placeholder until then.

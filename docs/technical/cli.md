@@ -45,6 +45,56 @@ and the loop continues.
 Directives are only recognized at a fresh prompt so a literal `:quit` inside
 a block doesn't short-circuit.
 
+### Line editor (`cmd/jennifer/lineedit.go`, `cmd/jennifer/history.go`)
+
+When stdin is a terminal the REPL installs raw mode via
+`golang.org/x/term` and reads lines through a small built-in editor.
+The editor is a single state machine over a rune buffer plus a cursor
+index; each keystroke updates the state and triggers a `redraw()`.
+
+Supported input:
+
+| Key                          | Action                              |
+|------------------------------|-------------------------------------|
+| Printable rune               | Insert at cursor                    |
+| Backspace, Ctrl+H            | Delete char before cursor           |
+| Delete (CSI `3~`)            | Delete char at cursor               |
+| Left / Right (CSI `D` / `C`) | Move cursor by one char             |
+| Home / End (CSI `H` / `F`)   | Jump to line start / end            |
+| Ctrl+A / Ctrl+E              | Same as Home / End                  |
+| Ctrl+Left / Ctrl+Right       | Move by word                        |
+| Alt+B / Alt+F                | Same as Ctrl+Left / Ctrl+Right (macOS terminals send these for option-arrow) |
+| Ctrl+W, Ctrl+Backspace       | Delete word backward                |
+| Ctrl+U                       | Kill from line start to cursor      |
+| Ctrl+K                       | Kill from cursor to line end        |
+| Up / Down                    | History navigation                  |
+| Ctrl+C                       | Cancel current line (fresh prompt)  |
+| Ctrl+D on empty buffer       | EOF (exits the REPL)                |
+| Ctrl+D on non-empty buffer   | Forward-delete                      |
+
+Word boundaries use a small punctuation + whitespace ruleset that's
+predictable for source-code editing without needing a full Unicode
+word-break implementation. History is an in-memory ring (`replHistory`,
+100 entries by default, adjacent duplicates collapsed); on-disk
+persistence is a future enhancement.
+
+Non-TTY stdin falls back to the original `bufio` line reader. This
+keeps `echo ... | jennifer repl` and integration tests working
+unchanged - the editor would do nothing useful on a non-interactive
+stream anyway.
+
+Raw mode disables the kernel's `OPOST` flag, so `\n` written to stdout
+no longer auto-translates to `\r\n`. The REPL works around this with
+a tiny `crlfWriter` wrapper that performs the translation in user
+space for error/help/result prints. Cooked-mode output (the banner
+printed before raw mode is entered, and anything after raw mode is
+restored) goes to `os.Stderr` / `os.Stdout` directly.
+
+The editor only handles single-line editing. Multi-line input via the
+continuation prompt (`... `) is still driven by the surrounding REPL
+loop's `inputComplete()` check, so unclosed `{` / `(` accumulate
+across calls to `editor.readLine`.
+
 ## Inspection: `tokens` and `ast`
 
 `cmd/jennifer/dump.go` and `cmd/jennifer/astjson.go` implement two

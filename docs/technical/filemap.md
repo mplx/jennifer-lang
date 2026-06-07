@@ -2,12 +2,15 @@
 
 ```
 cmd/jennifer/main.go             CLI + source-context error formatting
-cmd/jennifer/repl.go             Interactive REPL loop
+cmd/jennifer/repl.go             Interactive REPL loop (TTY + bufio fallback)
+cmd/jennifer/lineedit.go         Raw-mode line editor (cursor keys, word ops)
+cmd/jennifer/history.go          In-memory REPL history ring buffer
 cmd/jennifer/dump.go             `tokens` and `ast` subcommands
 cmd/jennifer/astjson.go          Hand-rolled AST -> JSON emitter
 cmd/jennifer/fmt.go              Token-level source formatter
 cmd/jennifer/examples_test.go    Golden-file integration test
 cmd/jennifer/repl_test.go        REPL inputComplete unit tests
+cmd/jennifer/lineedit_test.go    Line-editor state-machine tests
 cmd/jennifer/dump_test.go        AST-JSON validity and token-name tests
 cmd/jennifer/fmt_test.go         Formatter idempotence + behavior tests
 cmd/jennifer/cross_file_error_test.go  Cross-file error reporting tests

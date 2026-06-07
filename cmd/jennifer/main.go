@@ -180,7 +180,15 @@ type positioned interface {
 // carries a position. If the error originates in a different file than `src`
 // (e.g. inside an imported `.j`), it loads that file and prints the snippet
 // from there. Best-effort: silently does nothing if the file can't be read.
+// Writes to os.Stderr; for callers that need a different destination (e.g.
+// the REPL's CRLF-translating wrapper) use printErrorContextTo.
 func printErrorContext(src, mainFile string, err error) {
+	printErrorContextTo(os.Stderr, src, mainFile, err)
+}
+
+// printErrorContextTo is the writer-parametric form. The REPL uses it to
+// route caret output through a crlfWriter when stdin is in raw mode.
+func printErrorContextTo(w io.Writer, src, mainFile string, err error) {
 	p, ok := err.(positioned)
 	if !ok {
 		return
@@ -206,9 +214,9 @@ func printErrorContext(src, mainFile string, err error) {
 		return
 	}
 	srcLine := lines[line-1]
-	fmt.Fprintf(os.Stderr, "  %s\n", srcLine)
+	fmt.Fprintf(w, "  %s\n", srcLine)
 	if col > 0 {
-		fmt.Fprintf(os.Stderr, "  %s^\n", caretIndent(srcLine, col))
+		fmt.Fprintf(w, "  %s^\n", caretIndent(srcLine, col))
 	}
 }
 

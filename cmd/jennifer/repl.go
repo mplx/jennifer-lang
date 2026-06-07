@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,9 +14,9 @@ import (
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 	"github.com/mplx/jennifer-lang/internal/lexer"
 	"github.com/mplx/jennifer-lang/internal/lib/convert"
+	corelib "github.com/mplx/jennifer-lang/internal/lib/core"
 	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
 	mathlib "github.com/mplx/jennifer-lang/internal/lib/math"
-	corelib "github.com/mplx/jennifer-lang/internal/lib/core"
 	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
@@ -32,6 +33,12 @@ const (
 
 // runRepl drives the interactive read-eval-print loop. Returns a process exit
 // code: 0 on clean exit (EOF or :quit), 1 on a fatal startup error.
+//
+// When stdin is a terminal we install raw mode and use the line editor
+// (lineedit.go) so users get cursor keys, history, and the standard
+// editing shortcuts. When stdin is not a terminal (piped input, tests,
+// `jennifer repl < script.j`) we fall back to bufio line reading - the
+// editor would do nothing useful on a non-interactive stream anyway.
 func runRepl() int {
 	in := interpreter.New()
 	iolib.Install(in)
@@ -46,9 +53,57 @@ func runRepl() int {
 		return 1
 	}
 
-	stdin := bufio.NewReader(os.Stdin)
+	// Print the banner in cooked mode so newlines auto-translate. Raw
+	// mode (if we enter it) starts on the next line.
 	fmt.Println(description)
 	fmt.Println("type :quit (or Ctrl-D) to exit; :help for help")
+
+	// Try to install raw mode. If stdin isn't a TTY (piped input, tests,
+	// CI), withRawMode returns ok=false and we use the bufio fallback.
+	restoreTerm, rawOK := withRawMode(os.Stdin)
+	defer restoreTerm()
+
+	history := newReplHistory()
+
+	// Build the line reader. In raw mode the editor returns lines without
+	// a trailing newline; we re-append "\n" so the rest of the loop's
+	// bufio-style logic (line concatenation into buf, EOF detection) works
+	// without branching.
+	var readLine func(prompt string) (line string, err error)
+	// stderrW and stdoutW carry the right newline convention for the mode:
+	// in raw mode they translate \n to \r\n so multi-line error / banner
+	// output doesn't stairstep; in cooked mode they're the bare os files.
+	var stderrW io.Writer = os.Stderr
+	var stdoutW io.Writer = os.Stdout
+	var editor *lineEditor
+	if rawOK {
+		// Single wrapper shared across the editor's output channel, the
+		// REPL's print helpers, and the interpreter's Out. That way every
+		// byte going to stdout passes through the CRLF translator AND
+		// updates lastByteIsNL, so the editor can decide whether to emit
+		// a fresh line before drawing the next prompt.
+		stdoutWrap := &crlfWriter{w: os.Stdout}
+		editor = newLineEditor(os.Stdin, stdoutWrap, history)
+		readLine = func(prompt string) (string, error) {
+			s, err := editor.readLine(prompt)
+			if err != nil {
+				return "", err
+			}
+			return s + "\n", nil
+		}
+		stderrW = &crlfWriter{w: os.Stderr}
+		stdoutW = stdoutWrap
+		// Route `printf` / `sprintf`'s side-effect output through the
+		// same wrapper, so user programs that write to stdout get both
+		// the CRLF translation and the trailing-newline tracking.
+		in.Out = stdoutWrap
+	} else {
+		stdin := bufio.NewReader(os.Stdin)
+		readLine = func(prompt string) (string, error) {
+			fmt.Print(prompt)
+			return stdin.ReadString('\n')
+		}
+	}
 
 	var buf strings.Builder
 	for {
@@ -56,18 +111,26 @@ func runRepl() int {
 		if buf.Len() > 0 {
 			prompt = replContPrompt
 		}
-		fmt.Print(prompt)
 
-		line, readErr := stdin.ReadString('\n')
-		// Treat EOF as an exit signal when the buffer is empty; otherwise let
-		// the current input be evaluated (the user finished without a newline).
+		line, readErr := readLine(prompt)
+
+		// Ctrl+C in raw mode: discard the in-progress accumulator and
+		// start over at a fresh prompt. The editor already printed "^C"
+		// on the line being cancelled.
+		if errors.Is(readErr, errLineCancelled) {
+			buf.Reset()
+			continue
+		}
+		// Treat EOF as an exit signal when the buffer is empty; otherwise
+		// let the current input be evaluated (the user finished without
+		// a newline).
 		if readErr == io.EOF {
 			if buf.Len() == 0 && line == "" {
-				fmt.Println()
+				fmt.Fprintln(stdoutW)
 				return 0
 			}
 		} else if readErr != nil {
-			fmt.Fprintf(os.Stderr, "\njennifer: read error: %v\n", readErr)
+			fmt.Fprintf(stderrW, "\njennifer: read error: %v\n", readErr)
 			return 1
 		}
 
@@ -77,7 +140,7 @@ func runRepl() int {
 			case ":quit", ":exit":
 				return 0
 			case ":help":
-				printReplHelp()
+				printReplHelp(stdoutW)
 				continue
 			case "":
 				if readErr == io.EOF {
@@ -92,15 +155,15 @@ func runRepl() int {
 		// Try to lex what we have. A lex error is final - clear the buffer.
 		tokens, lerr := lexer.TokenizeWithFile(buf.String(), replFileTag)
 		if lerr != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", lerr.Error())
-			printErrorContext(buf.String(), replFileTag, lerr)
+			fmt.Fprintf(stderrW, "%s\n", lerr.Error())
+			printErrorContextTo(stderrW, buf.String(), replFileTag, lerr)
 			buf.Reset()
 			continue
 		}
 		if !inputComplete(tokens) {
 			if readErr == io.EOF {
 				// User ended input mid-statement.
-				fmt.Fprintln(os.Stderr, "jennifer: incomplete input at EOF")
+				fmt.Fprintln(stderrW, "jennifer: incomplete input at EOF")
 				return 1
 			}
 			continue
@@ -111,23 +174,26 @@ func runRepl() int {
 
 		tokens, perr := preproc.Process(tokens, cwd, replFileTag)
 		if perr != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", perr.Error())
-			printErrorContext(src, replFileTag, perr)
+			fmt.Fprintf(stderrW, "%s\n", perr.Error())
+			printErrorContextTo(stderrW, src, replFileTag, perr)
 			continue
 		}
 		prog, parseErr := parser.ParseTokens(tokens)
 		if parseErr != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", parseErr.Error())
-			printErrorContext(src, replFileTag, parseErr)
+			fmt.Fprintf(stderrW, "%s\n", parseErr.Error())
+			printErrorContextTo(stderrW, src, replFileTag, parseErr)
 			continue
 		}
 		val, rerr := in.EvalInteractive(prog)
 		if rerr != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", rerr.Error())
-			printErrorContext(src, replFileTag, rerr)
+			fmt.Fprintf(stderrW, "%s\n", rerr.Error())
+			printErrorContextTo(stderrW, src, replFileTag, rerr)
 			continue
 		}
-		printReplValue(val)
+		// Submission succeeded - record it in history (trimmed so blank
+		// edits at the end don't make every entry distinct).
+		history.Add(strings.TrimRight(src, "\n"))
+		printReplValue(stdoutW, val)
 
 		if readErr == io.EOF {
 			return 0
@@ -176,21 +242,72 @@ func inputComplete(tokens []lexer.Token) bool {
 // (so void calls like `printf(...)` don't append `null` to their own output).
 // Strings are shown with surrounding double quotes so the user can tell
 // them apart from numbers.
-func printReplValue(v interpreter.Value) {
+func printReplValue(w io.Writer, v interpreter.Value) {
 	if v.Kind == interpreter.KindNull {
 		return
 	}
 	if v.Kind == interpreter.KindString {
-		fmt.Printf("%q\n", v.Str)
+		fmt.Fprintf(w, "%q\n", v.Str)
 		return
 	}
-	fmt.Println(v.Display())
+	fmt.Fprintln(w, v.Display())
 }
 
-func printReplHelp() {
-	fmt.Println("jennifer REPL")
-	fmt.Println("  - statements end with ;")
-	fmt.Println("  - unclosed braces continue on the next line")
-	fmt.Println("  - a final bare expression prints its value")
-	fmt.Println("  - :quit / :exit / Ctrl-D to exit")
+func printReplHelp(w io.Writer) {
+	fmt.Fprintln(w, "jennifer REPL")
+	fmt.Fprintln(w, "  - statements end with ;")
+	fmt.Fprintln(w, "  - unclosed braces continue on the next line")
+	fmt.Fprintln(w, "  - a final bare expression prints its value")
+	fmt.Fprintln(w, "  - cursor keys, Home/End, Ctrl+Left/Right, Ctrl+W edit the line")
+	fmt.Fprintln(w, "  - Up/Down browse history")
+	fmt.Fprintln(w, "  - :quit / :exit / Ctrl-D to exit; Ctrl-C cancels the line")
+}
+
+// crlfWriter wraps an io.Writer and translates every '\n' it sees into
+// '\r\n'. Used inside the REPL loop when stdin is in raw mode (which
+// disables the kernel's OPOST flag, so newlines no longer auto-translate
+// on the way out). Cooked-mode writes go to the underlying writer
+// directly; we only install the wrapper when the editor is active.
+//
+// It also tracks whether the most recent byte was a newline. The editor
+// reads `lastByteIsNL` before each redraw and emits a fresh `\r\n` if
+// the cursor isn't already on a clean line. Without this, a program
+// like `printf("%s", JENNIFER_VERSION);` (no trailing newline) would
+// have its output wiped by the next prompt's `\r ESC[K` redraw.
+type crlfWriter struct {
+	w            io.Writer
+	lastByteIsNL bool
+}
+
+func (c *crlfWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	n := 0
+	last := 0
+	for i := 0; i < len(p); i++ {
+		if p[i] == '\n' {
+			if i > last {
+				m, err := c.w.Write(p[last:i])
+				n += m
+				if err != nil {
+					return n, err
+				}
+			}
+			if _, err := c.w.Write([]byte{'\r', '\n'}); err != nil {
+				return n, err
+			}
+			n++
+			last = i + 1
+		}
+	}
+	if last < len(p) {
+		m, err := c.w.Write(p[last:])
+		n += m
+		if err != nil {
+			return n, err
+		}
+	}
+	c.lastByteIsNL = p[len(p)-1] == '\n'
+	return n, nil
 }
