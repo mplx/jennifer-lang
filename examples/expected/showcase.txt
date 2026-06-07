@@ -1,0 +1,81 @@
+=== variables ===
+x=10 y=2.5 name=Jennifer flag=true nothing=null empty=0
+=== arithmetic ===
+10 + 5 = 15
+10 - 5 = 5
+10 * 5 = 50
+10 / 4 = 2.5
+10 div 4 = 2
+10 % 3 = 1
+-x = -10
+int + float = 3.5
+=== comparison and logic ===
+5 < 10  = true
+5 == 5  = true
+5 >= 5  = true
+true and false = false
+true or  false = true
+not false      = true
+=== string concat ===
+Hello, Jennifer!
+=== if / elseif / else ===
+x is positive
+=== while ===
+  while i=1
+  while i=2
+  while i=3
+=== for ===
+  for j=0
+  for j=1
+  for j=2
+=== methods ===
+fact(5) = 120
+Hi, Jennifer!
+=== sprintf ===
+[42:hi]
+=== convert ===
+int(3.7)       = 3
+int("42")      = 42
+float(5)       = 5.0
+string(42)     = 42
+bool(1)        = true
+bool("true")   = true
+typeOf(3.14)   = float
+typeOf("x")    = string
+typeOf(true)   = bool
+typeOf(null)   = null
+=== math ===
+abs(-7)        = 7
+abs(-3.5)      = 3.5
+min(3, 7)      = 3
+max(3.5, 2.5)  = 3.5
+sqrt(16)       = 4.0
+pow(2, 10)     = 1024.0
+floor(3.7)     = 3
+ceil(3.2)      = 4
+round(2.5)     = 3
+round(-2.5)    = -3
+=== math constants ===
+typeOf(PI)     = float
+typeOf(E)      = float
+=== strings ===
+len           = 12
+upper         = HELLO, WORLD
+lower         = hello, world
+contains      = true
+startsWith    = true
+endsWith      = true
+indexOf       = 7
+indexOf miss  = -1
+trim          = [ab]
+trimLeft      = [ab  ]
+trimRight     = [  ab]
+replace       = Hello, Jennifer
+repeat        = ababab
+substring 0..5 = Hello
+substring 7..  = World
+=== meta ===
+typeOf(VERSION) = string
+=== constants ===
+MAX=5 MAX_RETRIES=3 HTTP_OK=200 PI_APPROX=3.14
+=== done ===
