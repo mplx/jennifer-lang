@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"github.com/mplx/jennifer-lang/internal/parser"
 )
 
 // LibraryName is the Jennifer name programs `use` to enable these functions.
@@ -41,6 +42,9 @@ func Install(in *interpreter.Interpreter) {
 	in.Register(LibraryName, "replace", replaceFn)
 	in.Register(LibraryName, "repeat", repeatFn)
 	in.Register(LibraryName, "substring", substringFn)
+	in.Register(LibraryName, "split", splitFn)
+	in.Register(LibraryName, "chars", charsFn)
+	in.Register(LibraryName, "join", joinFn)
 }
 
 // ---- helpers ----
@@ -316,3 +320,82 @@ func substringFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, erro
 	}
 	return interpreter.StringVal(s[startByte:endByte]), nil
 }
+
+// stringListType is the `list of string` declared type stamped onto
+// results of split / chars / join's inverse. Built once and reused so we
+// don't allocate a fresh Type tree per call.
+var stringListType = parser.ListType(parser.PrimitiveType(parser.TypeString))
+
+// splitFn returns the substrings of s separated by sep. A literal Go
+// `strings.Split` with an empty separator splits on runes; we expose
+// that via the separate `chars` builtin and require a non-empty
+// separator here so the behavior is unambiguous to users.
+func splitFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityN("split", args, 2); err != nil {
+		return interpreter.Null(), err
+	}
+	s, err := requireString("split", args, 0)
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	sep, err := requireString("split", args, 1)
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	if sep == "" {
+		return interpreter.Null(), fmt.Errorf("split(): separator must be non-empty; use chars() to split into runes")
+	}
+	parts := gostrings.Split(s, sep)
+	out := make([]interpreter.Value, len(parts))
+	for i, p := range parts {
+		out[i] = interpreter.StringVal(p)
+	}
+	return interpreter.ListVal(parser.PrimitiveType(parser.TypeString), out), nil
+}
+
+// charsFn returns the runes of s as a list of single-rune strings.
+// Returns an empty list for the empty string. Each entry is one Unicode
+// code point - the same unit `len`, `indexOf`, and `substring` work in.
+func charsFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityN("chars", args, 1); err != nil {
+		return interpreter.Null(), err
+	}
+	s, err := requireString("chars", args, 0)
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	out := make([]interpreter.Value, 0, utf8.RuneCountInString(s))
+	for _, r := range s {
+		out = append(out, interpreter.StringVal(string(r)))
+	}
+	return interpreter.ListVal(parser.PrimitiveType(parser.TypeString), out), nil
+}
+
+// joinFn concatenates the strings in `parts` with `sep` between them.
+// `parts` must be a `list of string`; any non-string element is a
+// positioned error rather than silent coercion.
+func joinFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityN("join", args, 2); err != nil {
+		return interpreter.Null(), err
+	}
+	parts := args[0]
+	if parts.Kind != interpreter.KindList {
+		return interpreter.Null(), fmt.Errorf("join(): first argument must be a list of string, got %s", parts.Kind)
+	}
+	sep, err := requireString("join", args, 1)
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	strs := make([]string, len(parts.List))
+	for i, e := range parts.List {
+		if e.Kind != interpreter.KindString {
+			return interpreter.Null(), fmt.Errorf("join(): element %d is %s, expected string", i, e.Kind)
+		}
+		strs[i] = e.Str
+	}
+	return interpreter.StringVal(gostrings.Join(strs, sep)), nil
+}
+
+// (the package-level `stringListType` keeps the type-tree alloc cost
+// at zero for callers that build lists of strings inline.)
+var _ = stringListType

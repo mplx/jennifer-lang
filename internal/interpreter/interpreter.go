@@ -295,12 +295,16 @@ func (i *Interpreter) execStmt(s parser.Stmt, env *Environment) (blockResult, er
 		return blockResult{}, i.execDefine(st, env)
 	case *parser.AssignStmt:
 		return blockResult{}, i.execAssign(st, env)
+	case *parser.IndexAssignStmt:
+		return blockResult{}, i.execIndexAssign(st, env)
 	case *parser.IfStmt:
 		return i.execIf(st, env)
 	case *parser.WhileStmt:
 		return i.execWhile(st, env)
 	case *parser.ForStmt:
 		return i.execFor(st, env)
+	case *parser.ForEachStmt:
+		return i.execForEach(st, env)
 	case *parser.ReturnStmt:
 		if st.Value == nil {
 			return blockResult{hasReturn: true, value: Null()}, nil
@@ -335,7 +339,12 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 			}
 			return &runtimeError{Msg: fmt.Sprintf("cannot initialize %s %s %q with value of type %s", st.VarType, noun, st.VarName, v.Kind), File: file, Line: line, Col: col}
 		}
-		val = v
+		// Value semantics + type stamping: take an independent copy so the
+		// initializer expression can't alias into this binding, and stamp
+		// the declared element / key+value type onto the (possibly empty
+		// or untyped) container so subsequent `$x[i] = ...` writes can
+		// enforce the declared inner type.
+		val = stampDeclaredType(v.Copy(), st.VarType)
 	} else {
 		// Spec / M2 decision: uninitialized variables get the zero value of
 		// their declared type. Constants must always be initialized (the
@@ -344,7 +353,7 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 			file, line, col := posFor(st)
 			return &runtimeError{Msg: "internal: constant without init reached interpreter", File: file, Line: line, Col: col}
 		}
-		val = ZeroFor(st.VarType)
+		val = stampDeclaredType(ZeroFor(st.VarType), st.VarType)
 	}
 	if err := env.Define(st.VarName, val, st.VarType, st.IsConst); err != nil {
 		file, line, col := posFor(st)
@@ -353,16 +362,300 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 	return nil
 }
 
+// stampDeclaredType walks v and writes the declared inner-type pointers
+// (Element for lists, KeyType/ValType for maps) onto the value and,
+// recursively, onto every nested compound element. After this, an index
+// chain has the type info it needs at each level to type-check writes -
+// even though the literal expression that built v didn't carry any.
+//
+// Called at every binding boundary: Define, Assign, parameter pass,
+// for-each iteration variable. Operates in place on v (caller is
+// expected to have already Copy()'d if independence matters).
+func stampDeclaredType(v Value, declType parser.Type) Value {
+	switch declType.Kind {
+	case parser.TypeList:
+		if v.Kind != KindList {
+			return v
+		}
+		v.ElemTyp = declType.Element
+		if declType.Element != nil {
+			et := declType.Element
+			if et.Kind == parser.TypeList || et.Kind == parser.TypeMap {
+				for i := range v.List {
+					v.List[i] = stampDeclaredType(v.List[i], *et)
+				}
+			}
+		}
+	case parser.TypeMap:
+		if v.Kind != KindMap {
+			return v
+		}
+		v.KeyTyp = declType.KeyType
+		v.ValTyp = declType.ValType
+		if declType.ValType != nil {
+			vt := declType.ValType
+			if vt.Kind == parser.TypeList || vt.Kind == parser.TypeMap {
+				for k := range v.Map {
+					v.Map[k].Value = stampDeclaredType(v.Map[k].Value, *vt)
+				}
+			}
+		}
+	}
+	return v
+}
+
 func (i *Interpreter) execAssign(st *parser.AssignStmt, env *Environment) error {
 	val, err := i.evalExpr(st.Value, env)
 	if err != nil {
 		return err
 	}
+	// Value semantics + type stamping for compound assignments. The
+	// destination's declared type tells us the inner shape; we re-stamp
+	// because the right-hand-side may be a literal that's not yet
+	// stamped. Primitives skip the stamp branch entirely.
+	b, err := env.GetBinding(st.VarName)
+	if err != nil {
+		file, line, col := posFor(st)
+		return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+	}
+	val = stampDeclaredType(val.Copy(), b.DeclType)
 	if err := env.Assign(st.VarName, val); err != nil {
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 	}
 	return nil
+}
+
+// execIndexAssign handles `$xs[i] = ...;`, `$m["k"] = ...;`, and chained
+// forms. The const-target check fires once against the root binding; the
+// rest is walking the index chain to find the slot and writing newVal.
+// We operate on a Copy of the root binding so that intermediate slice
+// aliasing doesn't leak out - the only thing visible to the caller is the
+// final env.Assign at the end.
+func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environment) error {
+	rootVar := findIndexRoot(st.Target)
+	if rootVar == nil {
+		file, line, col := posFor(st)
+		return &runtimeError{Msg: "internal: index-assign target has no root variable", File: file, Line: line, Col: col}
+	}
+	binding, err := env.GetBinding(rootVar.Name)
+	if err != nil {
+		file, line, col := posFor(st)
+		return &runtimeError{Msg: fmt.Sprintf("undefined variable %q", rootVar.Name), File: file, Line: line, Col: col}
+	}
+	if binding.IsConst {
+		file, line, col := posFor(st)
+		return &runtimeError{Msg: fmt.Sprintf("cannot mutate contents of constant %q (const is deep)", rootVar.Name), File: file, Line: line, Col: col}
+	}
+
+	newVal, err := i.evalExpr(st.Value, env)
+	if err != nil {
+		return err
+	}
+
+	// Evaluate indices outermost-first into a slice the chain walker can
+	// consume. For `$xs[i][j]` the AST nests j on the outside and i on the
+	// inside, so we collect inner-to-outer and reverse.
+	var indices []Value
+	for cur := st.Target; cur != nil; {
+		v, err := i.evalExpr(cur.Index, env)
+		if err != nil {
+			return err
+		}
+		indices = append([]Value{v}, indices...)
+		if next, ok := cur.Target.(*parser.IndexExpr); ok {
+			cur = next
+		} else {
+			break
+		}
+	}
+
+	// Work on a fresh copy of the root so writes don't accidentally
+	// alias other live values; commit it back to the binding at the end.
+	rootCopy := binding.Value.Copy()
+	if err := applyIndexAssign(&rootCopy, indices, newVal, st); err != nil {
+		return err
+	}
+	if err := env.Assign(rootVar.Name, rootCopy); err != nil {
+		file, line, col := posFor(st)
+		return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+	}
+	return nil
+}
+
+// findIndexRoot walks an IndexExpr chain back to the underlying VarExpr.
+// The parser guarantees that an IndexAssignStmt's Target is rooted on a
+// VarExpr (the chain bottom), but production code shouldn't trust that
+// invariant blindly: nil indicates "no usable root" and the caller
+// surfaces an internal error.
+func findIndexRoot(ix *parser.IndexExpr) *parser.VarExpr {
+	var cur parser.Expr = ix
+	for {
+		switch n := cur.(type) {
+		case *parser.IndexExpr:
+			cur = n.Target
+		case *parser.VarExpr:
+			return n
+		default:
+			return nil
+		}
+	}
+}
+
+// applyIndexAssign walks the evaluated index path through a (mutable)
+// root copy and writes newVal at the leaf. Intermediate steps go through
+// indexInto, which returns a *Value pointing into the structure - so the
+// final writeIndexedSlot writes through the chain without explicit
+// writeback bookkeeping.
+func applyIndexAssign(rootCopy *Value, indices []Value, newVal Value, st *parser.IndexAssignStmt) error {
+	if len(indices) == 0 {
+		file, line, col := posFor(st)
+		return &runtimeError{Msg: "internal: index-assign with no indices", File: file, Line: line, Col: col}
+	}
+	cur := rootCopy
+	for k := 0; k < len(indices)-1; k++ {
+		next, err := indexInto(cur, indices[k], st)
+		if err != nil {
+			return err
+		}
+		cur = next
+	}
+	return writeIndexedSlot(cur, indices[len(indices)-1], newVal, st)
+}
+
+// indexInto returns a *Value pointing at the slot designated by idx
+// within parent. Used by both reads (in evalExpr's IndexExpr case) and
+// intermediate steps of index-assign chains. Out-of-bounds list indices
+// and missing map keys both error positionally.
+func indexInto(parent *Value, idx Value, st parser.Node) (*Value, error) {
+	switch parent.Kind {
+	case KindList:
+		if idx.Kind != KindInt {
+			file, line, col := posFor(st)
+			return nil, &runtimeError{Msg: fmt.Sprintf("list index must be int, got %s", idx.Kind), File: file, Line: line, Col: col}
+		}
+		n := int(idx.Int)
+		if n < 0 || n >= len(parent.List) {
+			file, line, col := posFor(st)
+			return nil, &runtimeError{Msg: fmt.Sprintf("list index %d out of bounds (len %d)", n, len(parent.List)), File: file, Line: line, Col: col}
+		}
+		return &parent.List[n], nil
+	case KindMap:
+		for k := range parent.Map {
+			if parent.Map[k].Key.Equal(idx) {
+				return &parent.Map[k].Value, nil
+			}
+		}
+		file, line, col := posFor(st)
+		return nil, &runtimeError{Msg: fmt.Sprintf("map has no entry for key %s", idx.Display()), File: file, Line: line, Col: col}
+	}
+	file, line, col := posFor(st)
+	return nil, &runtimeError{Msg: fmt.Sprintf("cannot index into %s", parent.Kind), File: file, Line: line, Col: col}
+}
+
+// writeIndexedSlot sets parent[idx] = newVal. Lists: in-bounds only.
+// Maps: existing key updates in place, missing key extends the map
+// (insertion order is preserved). Element/value-type mismatches error.
+func writeIndexedSlot(parent *Value, idx Value, newVal Value, st *parser.IndexAssignStmt) error {
+	switch parent.Kind {
+	case KindList:
+		if idx.Kind != KindInt {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("list index must be int, got %s", idx.Kind), File: file, Line: line, Col: col}
+		}
+		n := int(idx.Int)
+		if n < 0 || n >= len(parent.List) {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("list index %d out of bounds (len %d)", n, len(parent.List)), File: file, Line: line, Col: col}
+		}
+		if parent.ElemTyp != nil && !newVal.MatchesDeclared(*parent.ElemTyp) {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("cannot assign %s to list element of declared type %s", newVal.Kind, parent.ElemTyp), File: file, Line: line, Col: col}
+		}
+		parent.List[n] = newVal.Copy()
+		return nil
+	case KindMap:
+		if parent.KeyTyp != nil && !idx.MatchesDeclared(*parent.KeyTyp) {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("map key must be %s, got %s", parent.KeyTyp, idx.Kind), File: file, Line: line, Col: col}
+		}
+		if parent.ValTyp != nil && !newVal.MatchesDeclared(*parent.ValTyp) {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("cannot assign %s to map value of declared type %s", newVal.Kind, parent.ValTyp), File: file, Line: line, Col: col}
+		}
+		for k := range parent.Map {
+			if parent.Map[k].Key.Equal(idx) {
+				parent.Map[k].Value = newVal.Copy()
+				return nil
+			}
+		}
+		// New key: append, preserving insertion order.
+		parent.Map = append(parent.Map, MapEntry{Key: idx.Copy(), Value: newVal.Copy()})
+		return nil
+	}
+	file, line, col := posFor(st)
+	return &runtimeError{Msg: fmt.Sprintf("cannot index-assign into %s", parent.Kind), File: file, Line: line, Col: col}
+}
+
+// execForEach runs the body once per element (lists) or once per key
+// (maps), binding the iteration variable in a fresh per-iteration scope
+// so the binding doesn't leak out and `def` re-bindings don't accumulate.
+func (i *Interpreter) execForEach(st *parser.ForEachStmt, env *Environment) (blockResult, error) {
+	coll, err := i.evalExpr(st.Coll, env)
+	if err != nil {
+		return blockResult{}, err
+	}
+	// Surface the iteration variable's declared type to the binding so
+	// MatchesDeclared works in the body. For lists it's the element type;
+	// for maps it's the key type.
+	var iterType parser.Type
+	switch coll.Kind {
+	case KindList:
+		if coll.ElemTyp != nil {
+			iterType = *coll.ElemTyp
+		}
+	case KindMap:
+		if coll.KeyTyp != nil {
+			iterType = *coll.KeyTyp
+		}
+	default:
+		file, line, col := posFor(st)
+		return blockResult{}, &runtimeError{Msg: fmt.Sprintf("for-each requires a list or map, got %s", coll.Kind), File: file, Line: line, Col: col}
+	}
+
+	emit := func(iter Value) (blockResult, error) {
+		// Each iteration opens its own scope so the binding is fresh.
+		iterEnv := NewEnvironment(env)
+		if err := iterEnv.Define(st.VarName, iter.Copy(), iterType, false); err != nil {
+			file, line, col := posFor(st)
+			return blockResult{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+		}
+		return i.execStmts(st.Body.Stmts, iterEnv)
+	}
+
+	switch coll.Kind {
+	case KindList:
+		for _, elem := range coll.List {
+			res, err := emit(elem)
+			if err != nil {
+				return blockResult{}, err
+			}
+			if res.hasReturn {
+				return res, nil
+			}
+		}
+	case KindMap:
+		for _, entry := range coll.Map {
+			res, err := emit(entry.Key)
+			if err != nil {
+				return blockResult{}, err
+			}
+			if res.hasReturn {
+				return res, nil
+			}
+		}
+	}
+	return blockResult{}, nil
 }
 
 func (i *Interpreter) execIf(st *parser.IfStmt, env *Environment) (blockResult, error) {
@@ -504,9 +797,76 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 		return i.evalUnary(ex, env)
 	case *parser.CallExpr:
 		return i.evalCall(ex, env)
+	case *parser.ListLit:
+		return i.evalListLit(ex, env)
+	case *parser.MapLit:
+		return i.evalMapLit(ex, env)
+	case *parser.IndexExpr:
+		return i.evalIndex(ex, env)
 	}
 	file, line, col := posFor(e)
 	return Value{}, &runtimeError{Msg: fmt.Sprintf("unsupported expression type %T", e), File: file, Line: line, Col: col}
+}
+
+// evalListLit builds a runtime list from a literal. Element types come
+// from the values; the declared element type is set later by the
+// surrounding Define/Assign when MatchesDeclared runs. The "list of T"
+// constraint is enforced at assignment time, not literal time.
+func (i *Interpreter) evalListLit(ex *parser.ListLit, env *Environment) (Value, error) {
+	out := make([]Value, 0, len(ex.Elements))
+	for _, e := range ex.Elements {
+		v, err := i.evalExpr(e, env)
+		if err != nil {
+			return Value{}, err
+		}
+		out = append(out, v.Copy())
+	}
+	// Element type is left unset on the raw literal; the receiving
+	// binding's MatchesDeclared check stamps it on via type inference at
+	// the Define site. This keeps `[1, 2, 3]` usable as both `list of int`
+	// and `list of int`-element nesting without re-parsing.
+	return Value{Kind: KindList, List: out}, nil
+}
+
+// evalMapLit builds a runtime map from a literal. Insertion order is
+// preserved (the entries slice is built in source order); deduplication
+// is *not* performed here - duplicate keys are caught when the value is
+// assigned to a typed binding, or simply produce extra entries the
+// reader can spot.
+func (i *Interpreter) evalMapLit(ex *parser.MapLit, env *Environment) (Value, error) {
+	entries := make([]MapEntry, 0, len(ex.Keys))
+	for k, keyExpr := range ex.Keys {
+		key, err := i.evalExpr(keyExpr, env)
+		if err != nil {
+			return Value{}, err
+		}
+		val, err := i.evalExpr(ex.Values[k], env)
+		if err != nil {
+			return Value{}, err
+		}
+		entries = append(entries, MapEntry{Key: key.Copy(), Value: val.Copy()})
+	}
+	return Value{Kind: KindMap, Map: entries}, nil
+}
+
+// evalIndex implements read access for `$xs[i]`, `$m["k"]`, or arbitrary
+// nesting. Reads of out-of-bounds list indices and missing map keys are
+// positioned runtime errors (no null fallback - that's the M6 decision
+// from milestones.md).
+func (i *Interpreter) evalIndex(ex *parser.IndexExpr, env *Environment) (Value, error) {
+	parent, err := i.evalExpr(ex.Target, env)
+	if err != nil {
+		return Value{}, err
+	}
+	idx, err := i.evalExpr(ex.Index, env)
+	if err != nil {
+		return Value{}, err
+	}
+	slot, err := indexInto(&parent, idx, ex)
+	if err != nil {
+		return Value{}, err
+	}
+	return *slot, nil
 }
 
 func (i *Interpreter) evalBinary(b *parser.BinaryExpr, env *Environment) (Value, error) {
@@ -725,7 +1085,12 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 		}
 		callFrame := NewEnvironment(i.global)
 		for idx, p := range m.Params {
-			if err := callFrame.Define(p.Name, args[idx], p.Type, false); err != nil {
+			// Value semantics: arguments copy into the call frame, so
+			// callee mutations don't leak back to the caller. Stamp the
+			// declared parameter type so compound parameters know their
+			// element / key+value type for index-write checks.
+			bound := stampDeclaredType(args[idx].Copy(), p.Type)
+			if err := callFrame.Define(p.Name, bound, p.Type, false); err != nil {
 				return Value{}, &runtimeError{Msg: err.Error(), Line: p.Line, Col: p.Col}
 			}
 		}

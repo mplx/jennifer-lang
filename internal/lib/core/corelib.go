@@ -50,17 +50,17 @@ const LibraryName = "core"
 func Install(in *interpreter.Interpreter) {
 	in.RegisterConst(LibraryName, "JENNIFER_VERSION", interpreter.StringVal(version.Version))
 	in.Register(LibraryName, "len", lenFn)
+	in.Register(LibraryName, "has", hasFn)
 }
 
-// lenFn returns the structural length of its argument. Polymorphic on the
-// types where "length" is well-defined:
+// lenFn returns the structural length of its argument. Polymorphic on
+// every kind where "length" is well-defined:
 //
 //   - string -> rune count (Unicode code points, not bytes)
-//   - list   -> element count (added in M6)
-//   - map    -> entry count   (added in M6)
+//   - list   -> element count
+//   - map    -> entry count
 //
-// Any other kind is a positioned runtime error. The signature is the
-// builtin one (args slice + writer); the writer is unused.
+// Any other kind is a positioned runtime error.
 func lenFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 	if len(args) != 1 {
 		return interpreter.Null(), fmt.Errorf("len() expects 1 argument, got %d", len(args))
@@ -69,8 +69,34 @@ func lenFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 	switch v.Kind {
 	case interpreter.KindString:
 		return interpreter.IntVal(int64(utf8.RuneCountInString(v.Str))), nil
-	// List and map cases land in M6, when KindList / KindMap exist.
-	default:
-		return interpreter.Null(), fmt.Errorf("len() expects a string (M6: list or map), got %s", v.Kind)
+	case interpreter.KindList:
+		return interpreter.IntVal(int64(len(v.List))), nil
+	case interpreter.KindMap:
+		return interpreter.IntVal(int64(len(v.Map))), nil
 	}
+	return interpreter.Null(), fmt.Errorf("len() expects a string, list or map, got %s", v.Kind)
+}
+
+// hasFn reports whether a map contains a given key. The companion to
+// the M6 decision that reads of missing keys are runtime errors: callers
+// who need a non-erroring "does it exist?" check use `has($m, key)`.
+//
+// Only maps are accepted - "does this list contain this value?" is a
+// different question (linear search; future strings library
+// `contains(haystack, needle)` is the analogous string-side operation).
+func hasFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 2 {
+		return interpreter.Null(), fmt.Errorf("has() expects 2 arguments (map, key), got %d", len(args))
+	}
+	m := args[0]
+	if m.Kind != interpreter.KindMap {
+		return interpreter.Null(), fmt.Errorf("has() expects a map as the first argument, got %s", m.Kind)
+	}
+	key := args[1]
+	for _, e := range m.Map {
+		if e.Key.Equal(key) {
+			return interpreter.BoolVal(true), nil
+		}
+	}
+	return interpreter.BoolVal(false), nil
 }
