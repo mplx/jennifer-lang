@@ -87,4 +87,4 @@ in v1 - propose `trimChars(s, chars)` as a follow-up if it comes up.
 gets arrays (planned in a later milestone). Right now there's no way to
 return multiple strings cleanly.
 
-See also: [user-guide.md](user-guide.md), [technical.md](technical.md#libraries-and-builtins).
+See also: [../user-guide.md](../user-guide.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

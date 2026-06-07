@@ -1,6 +1,6 @@
 # Jennifer Programming Language
 
-**Milestone 4**
+**Milestone 5**
 
 Jennifer is a small, experimental, interpreted programming language. The
 interpreter is written in Go and the shipping binary is produced with
@@ -35,8 +35,9 @@ printf($x + $x);
 
 - [docs/user-guide.md](docs/user-guide.md) - language tutorial and reference
   for everything you can write in Jennifer today.
-- [docs/technical.md](docs/technical.md) - interpreter internals: pipeline,
-  token list, grammar (EBNF), AST nodes, evaluation model.
+- [docs/technical/](docs/technical/index.md) - interpreter internals split
+  by topic: lexer, grammar/parser, preprocessor, interpreter, CLI, testing,
+  file map, rejected features, TinyGo notes.
 - [docs/milestones.md](docs/milestones.md) - what's implemented, what's
   coming, and the rationale behind the order.
 

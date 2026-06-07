@@ -45,3 +45,5 @@ codegen and uses the default `"dev"` baked into `version.go`.
 
 Codegen rather than `go build -ldflags -X` is used because TinyGo 0.41
 silently ignores `-X`. The generated file is `.gitignore`d.
+
+See also: [../user-guide.md](../user-guide.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

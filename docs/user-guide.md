@@ -26,8 +26,9 @@ make build-go
 
 The `make` targets regenerate `internal/version/version_gen.go` from git
 state before invoking the toolchain, so `./jennifer version` always
-reflects the current commit. See [lib_meta.md](lib_meta.md) for the
-`VERSION` string format and how programs can read it via `use meta;`.
+reflects the current commit. See [libraries/meta.md](libraries/meta.md)
+for the `VERSION` string format and how programs can read it via
+`use meta;`.
 
 You can also pipe source in on stdin by passing `-` as the filename:
 
@@ -148,7 +149,7 @@ explicitly.
 
 ---
 
-## Language reference (M3)
+## Language reference
 
 ### Tokens and whitespace
 
@@ -317,8 +318,9 @@ use io;                  // library import - enables `io` library (printf, sprin
 import "helpers.j";      // file import - splices helpers.j here
 ```
 
-**Library imports** (`use NAME;`) enable a built-in module. Today only
-`io` exists; M4 will add `math`, `strings`, and `convert`.
+**Library imports** (`use NAME;`) enable a built-in module. The libraries
+that ship today are `io`, `convert`, `math`, `strings`, and `meta`; see
+[libraries/index.md](libraries/index.md) for the catalog.
 
 **File imports** (`import "PATH.j";`) textually include another `.j` source
 file at the point of import. The path is a **string literal** that must end
@@ -445,11 +447,14 @@ index.
 
 | Library   | Enable with    | Contents                                                        | Reference                |
 |-----------|----------------|-----------------------------------------------------------------|--------------------------|
-| `io`      | `use io;`      | `printf`, `sprintf` and the format-verb mini-language           | [lib_io.md](lib_io.md)         |
-| `convert` | `use convert;` | `int`, `float`, `string`, `bool`, `typeOf` - explicit casts     | [lib_convert.md](lib_convert.md) |
-| `math`    | `use math;`    | `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`; constants `PI`, `E` | [lib_math.md](lib_math.md)     |
-| `strings` | `use strings;` | `len`, `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring` | [lib_strings.md](lib_strings.md) |
-| `meta`    | `use meta;`    | `VERSION` - the interpreter's build version string             | [lib_meta.md](lib_meta.md)     |
+| `io`      | `use io;`      | `printf`, `sprintf` and the format-verb mini-language           | [libraries/io.md](libraries/io.md)             |
+| `convert` | `use convert;` | `int`, `float`, `string`, `bool`, `typeOf` - explicit casts     | [libraries/convert.md](libraries/convert.md)   |
+| `math`    | `use math;`    | `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`; constants `PI`, `E` | [libraries/math.md](libraries/math.md)         |
+| `strings` | `use strings;` | `len`, `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring` | [libraries/strings.md](libraries/strings.md)   |
+| `meta`    | `use meta;`    | `VERSION` - the interpreter's build version string             | [libraries/meta.md](libraries/meta.md)         |
+
+See [libraries/index.md](libraries/index.md) for a catalog with code
+samples and the library-organization principles.
 
 Quick orientation - if you're reading top to bottom and just want a flavor:
 

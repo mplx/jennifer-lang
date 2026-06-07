@@ -46,4 +46,4 @@ Floats always display with a decimal point so the value's type stays visible:
 division change - `4 / 2` is the float `2.0`, and you can tell at a glance
 rather than wondering whether it's an `int`.
 
-See also: [user-guide.md](user-guide.md), [technical.md](technical.md#libraries-and-builtins).
+See also: [../user-guide.md](../user-guide.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

@@ -1,0 +1,168 @@
+# Grammar and parser
+
+The authoritative grammar for what the parser accepts, plus a quick tour of
+the AST node table and the parser's structure.
+
+## Grammar - EBNF
+
+This grammar describes the token stream **after** preprocessing - file
+imports (`import STRING ;`) are spliced before the parser runs, so they
+don't appear here. Only library imports (`use IDENT ;`) reach the parser.
+
+Terminals in CAPITALS are token classes from the lexer (see
+[Lexer > Token types](lexer.md#token-types)); quoted strings are keywords or
+punctuation that match the corresponding token's lexeme.
+
+```ebnf
+program     = { useStmt | methodDef | statement } EOF ;
+useStmt     = "use" IDENT ";" ;                     (* library import *)
+methodDef   = "func" IDENT "(" [ paramList ] ")" block ;
+paramList   = param { "," param } ;
+param       = IDENT "as" type ;
+block       = "{" { statement } "}" ;
+
+statement   = defineStmt
+            | assignStmt
+            | returnStmt
+            | ifStmt
+            | whileStmt
+            | forStmt
+            | exprStmt ;
+
+returnStmt  = "return" [ expr ] ";" ;
+
+defineStmt  = "def" [ "const" ] IDENT "as" type [ "init" expr ] ";" ;
+                                       (* constants require "init" and an
+                                          uppercase name matching
+                                          [A-Z]+(_[A-Z]+)* (uppercase
+                                          chunks joined by single `_`;
+                                          no leading, trailing or
+                                          consecutive `_`); variables may
+                                          omit "init" and get zero-value,
+                                          and use the letters-only IDENT
+                                          form *)
+
+assignStmt  = VARREF "=" expr ";" ;
+
+ifStmt      = "if" "(" expr ")" block
+              { "elseif" "(" expr ")" block }
+              [ "else" block ] ;
+
+whileStmt   = "while" "(" expr ")" block ;
+
+forStmt     = "for" "(" [ defineStmt | assignStmt | ";" ]
+                        [ expr ] ";"
+                        [ assignNoSemi ]
+                  ")" block ;
+assignNoSemi = VARREF "=" expr ;       (* same shape as assignStmt without trailing ";" *)
+
+exprStmt    = expr ";" ;
+
+type        = "int" | "float" | "string" | "bool" | "null" ;
+
+expr        = orExpr ;
+orExpr      = andExpr { "or" andExpr } ;
+andExpr     = notExpr { "and" notExpr } ;
+notExpr     = "not" notExpr | compExpr ;
+compExpr    = addExpr { ("<" | ">" | "<=" | ">=" | "==") addExpr } ;
+addExpr     = mulExpr { ("+" | "-") mulExpr } ;
+mulExpr     = unaryExpr { ("*" | "/" | "div" | "%") unaryExpr } ;
+unaryExpr   = "-" unaryExpr | primary ;
+primary     = INT | FLOAT | STRING | "true" | "false" | "null"
+            | VARREF | call | typeCall | constRef | "(" expr ")" ;
+call        = IDENT "(" [ expr { "," expr } ] ")" ;
+typeCall    = ("int" | "float" | "string" | "bool") "(" [ expr { "," expr } ] ")" ;
+                                       (* type keywords usable as calls only when
+                                          immediately followed by `(`; resolved as
+                                          convert-library builtins at runtime *)
+constRef    = IDENT ;                  (* bare-IDENT: constant reference; the
+                                          parser disambiguates `call` vs
+                                          `constRef` by peeking for "(". *)
+```
+
+**Semantic notes that aren't expressed in the grammar:**
+
+- Two separate keywords: `def` introduces a binding (variable or constant);
+  `func` introduces a method. There's no longer any lookahead disambiguation
+  in this area - the parser dispatches purely on the keyword.
+- The name in `defineStmt` is a bare `IDENT`. Writing `def $x as int`
+  produces a parse error with a hint to drop the `$` (it's reserved for
+  use-site references).
+- Operator precedence (lowest to highest): `or`, `and`, unary `not`,
+  comparison `< > <= >= ==`, additive `+ -`, multiplicative `* / %`, unary
+  `-`. Binary operators are left-associative; `not` and unary `-` are
+  right-associative (`not not x` and `--x` are both valid).
+- `and` and `or` **short-circuit**: the right operand is not evaluated when
+  the left already decides the result. Both operands must be `bool`.
+- Unary `not` requires `bool`; unary `-` requires `int` or `float`.
+- Comparison operators produce `bool`; `if`/`while`/`for` conditions **must**
+  be `bool` (no implicit truthiness).
+- Mixed `int`/`float` arithmetic promotes `int` to `float`; the result is
+  `float`. `%` requires int operands. `+` on two `string` values concatenates.
+- **`/` (true division) always returns `float`** (Python 3 semantics). For
+  integer-result division use the `div` keyword: `5 / 2 = 2.5`, `5 div 2 = 2`.
+  `div` on float operands returns the floor as a float (`5.7 div 2.0 = 2.0`).
+- Floats always display with a `.` so the type stays visible: `5.0` prints as
+  `"5.0"`, not `"5"`. See `interpreter.DisplayFloat`.
+- Methods may only be defined at the top level. Variable definitions, assignments,
+  control flow, and expression statements may appear at the top level or inside
+  a block.
+- Each `block` (`{...}`) introduces a new lexical scope. A binding is visible
+  from its `def` to the end of the enclosing block, and is inherited by
+  inner blocks; inner scopes **cannot redeclare** a name already visible.
+- `for` opens a private scope for its `init`, `cond`, `step`, and body so the
+  init variable does not leak out of the loop.
+- There is **no required entry point**. Top-level statements execute in source
+  order. Methods are hoisted (collected before any top-level statement runs)
+  so they can be called regardless of textual order.
+- Method bodies inherit the global scope as their outer scope, so top-level
+  variables are visible inside methods (subject to the no-shadowing rule).
+- Method parameters use bare `IDENT` (no `$`), same as variable definitions.
+  Writing `func f($x as int)` errors with "parameter name has no `$`".
+- Call sites type-check arguments against the declared parameter types at
+  runtime; both arity and per-argument kind are checked.
+- Method return values are dynamically typed - methods don't declare a
+  return type, and callers receive whatever value the body returns (or
+  `null` for a bare `return;` or a body that falls off the end).
+- A bare `IDENT` in expression position is parsed as a `CallExpr` if
+  immediately followed by `(`, otherwise as a `ConstRefExpr`. At runtime
+  the latter must resolve to a constant in scope; a name that resolves to
+  a variable produces a helpful error ("use `$name`").
+
+## Parser (`internal/parser`)
+
+Recursive descent with precedence climbing for binary operators. The
+grammar the parser implements is the EBNF above.
+
+### AST nodes
+
+| Node          | Kind  | Fields                                       |
+|---------------|-------|----------------------------------------------|
+| `Program`     | root  | `Imports []*ImportStmt`, `Methods []*MethodDef`, `TopLevel []Stmt` |
+| `ImportStmt`  | stmt  | `Name`                                       |
+| `MethodDef`   | stmt  | `Name`, `Params []Param`, `Body *Block`      |
+| `Param`       | -     | `Name`, `Type`                               |
+| `Block`       | stmt  | `Stmts []Stmt`                               |
+| `DefineStmt`  | stmt  | `IsConst`, `VarName`, `VarType Type`, `InitExpr Expr` (nil = uninit) |
+| `AssignStmt`  | stmt  | `VarName`, `Value Expr`                      |
+| `ReturnStmt`  | stmt  | `Value Expr` (nil for bare `return;`)        |
+| `IfStmt`      | stmt  | `Cond`, `Then *Block`, `ElseIfs []Expr`, `ElseIfBodies []*Block`, `Else *Block` |
+| `WhileStmt`   | stmt  | `Cond`, `Body *Block`                        |
+| `ForStmt`     | stmt  | `Init Stmt`, `Cond Expr`, `Step Stmt`, `Body *Block` (any may be nil) |
+| `ExprStmt`    | stmt  | `Expr`                                       |
+| `IntLit`      | expr  | `Value int64`                                |
+| `FloatLit`    | expr  | `Value float64`                              |
+| `StringLit`   | expr  | `Value string`                               |
+| `BoolLit`     | expr  | `Value bool`                                 |
+| `NullLit`     | expr  | -                                            |
+| `VarExpr`     | expr  | `Name` (no `$`) - mutable-variable reference  |
+| `ConstRefExpr`| expr  | `Name` - bare-IDENT reference; interpreter expects it to resolve to a constant |
+| `CallExpr`    | expr  | `Callee`, `Args []Expr`                      |
+| `BinaryExpr`  | expr  | `Op BinaryOp`, `Left`, `Right` (comparison/logical ops return bool; `and`/`or` short-circuit at eval time) |
+| `UnaryExpr`   | expr  | `Op UnaryOp` (`OpNeg`/`OpNot`), `Operand` |
+
+Every node embeds a `pos{File, Line, Col}` for error reporting and exposes
+it via `Node.Pos()` (line/col) and `Node.Filename()` (file path). The file
+is populated from the originating token so cross-file diagnostics work.
+
+`Sprint(node)` produces a stable textual representation used by tests.
