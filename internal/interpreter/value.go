@@ -32,6 +32,8 @@ const (
 	KindFloat
 	KindString
 	KindBool
+	KindList // M6: ordered, mutable sequence (Go slice underneath)
+	KindMap  // M6: ordered key-value map; iteration is insertion order
 )
 
 func (k ValueKind) String() string {
@@ -46,19 +48,47 @@ func (k ValueKind) String() string {
 		return "string"
 	case KindBool:
 		return "bool"
+	case KindList:
+		return "list"
+	case KindMap:
+		return "map"
 	}
 	return "?"
+}
+
+// MapEntry is one entry in a Value of kind KindMap. Maps preserve
+// insertion order (so iteration is deterministic), so they're stored as a
+// parallel slice rather than a Go map[string]Value or similar.
+type MapEntry struct {
+	Key, Value Value
 }
 
 // Value is a tagged union for all Jennifer runtime values.
 // One concrete struct rather than a Go interface hierarchy keeps GC pressure
 // low and avoids reflect - important when the binary is built with TinyGo.
+//
+// Compound kinds (List, Map) carry their declared element / key+value
+// types alongside the data so runtime checks (assignment, parameter
+// binding, index-write type matching) have the same information the
+// declaration site recorded. Reading just the data isn't enough: an
+// empty `list of int` and an empty `list of string` are both empty
+// slices, but they aren't assignment-compatible.
+//
+// Sub-values are stored by value (List elements, Map keys/values are
+// Value, not *Value). That matches the value-semantics decision from M6:
+// `$ys = $xs;` and parameter binding both copy the whole structure;
+// aliasing is impossible.
 type Value struct {
-	Kind  ValueKind
-	Int   int64
-	Float float64
-	Str   string
-	Bool  bool
+	Kind    ValueKind
+	Int     int64
+	Float   float64
+	Str     string
+	Bool    bool
+	List    []Value      // KindList: element data
+	Map     []MapEntry   // KindMap:  insertion-ordered entries
+	ElemTyp *parser.Type // KindList: element type
+	KeyTyp  *parser.Type // KindMap:  key type
+	ValTyp  *parser.Type // KindMap:  value type
 }
 
 func Null() Value              { return Value{Kind: KindNull} }
@@ -67,10 +97,52 @@ func FloatVal(f float64) Value { return Value{Kind: KindFloat, Float: f} }
 func StringVal(s string) Value { return Value{Kind: KindString, Str: s} }
 func BoolVal(b bool) Value     { return Value{Kind: KindBool, Bool: b} }
 
+// ListVal constructs a list value with the given element type and data.
+// The data slice is taken by reference; callers that need value-semantics
+// guarantees (assignment, parameter binding) must call Value.Copy.
+func ListVal(elemT parser.Type, data []Value) Value {
+	t := elemT
+	return Value{Kind: KindList, List: data, ElemTyp: &t}
+}
+
+// MapVal constructs a map value with the given key + value types and
+// entries. Insertion order is whatever the entries slice expresses.
+func MapVal(keyT, valT parser.Type, entries []MapEntry) Value {
+	kt, vt := keyT, valT
+	return Value{Kind: KindMap, Map: entries, KeyTyp: &kt, ValTyp: &vt}
+}
+
+// Copy returns a deep clone of v. Used everywhere value-semantics matter:
+// variable assignment, function-parameter binding, returning a list/map
+// from a function. Primitives are already value-typed so they fall
+// through; lists and maps recurse so nested compound types are also
+// independent. Cost is O(total elements); copy-on-write is a future
+// optimization that won't change observable semantics.
+func (v Value) Copy() Value {
+	switch v.Kind {
+	case KindList:
+		out := make([]Value, len(v.List))
+		for i, e := range v.List {
+			out[i] = e.Copy()
+		}
+		return Value{Kind: KindList, List: out, ElemTyp: v.ElemTyp}
+	case KindMap:
+		out := make([]MapEntry, len(v.Map))
+		for i, e := range v.Map {
+			out[i] = MapEntry{Key: e.Key.Copy(), Value: e.Value.Copy()}
+		}
+		return Value{Kind: KindMap, Map: out, KeyTyp: v.KeyTyp, ValTyp: v.ValTyp}
+	}
+	return v
+}
+
 // ZeroFor returns the zero value for a declared parser.Type. Used when a
-// variable is defined without an `init` clause.
+// variable is defined without an `init` clause. For lists and maps the
+// zero value is an *empty* container of the declared element / key+value
+// type, not null - that matches the spec's "zero value of the declared
+// type" rule and keeps `len($xs)` immediately well-defined.
 func ZeroFor(t parser.Type) Value {
-	switch t {
+	switch t.Kind {
 	case parser.TypeInt:
 		return IntVal(0)
 	case parser.TypeFloat:
@@ -81,6 +153,21 @@ func ZeroFor(t parser.Type) Value {
 		return BoolVal(false)
 	case parser.TypeNull:
 		return Null()
+	case parser.TypeList:
+		var et parser.Type
+		if t.Element != nil {
+			et = *t.Element
+		}
+		return ListVal(et, []Value{})
+	case parser.TypeMap:
+		var kt, vt parser.Type
+		if t.KeyType != nil {
+			kt = *t.KeyType
+		}
+		if t.ValType != nil {
+			vt = *t.ValType
+		}
+		return MapVal(kt, vt, []MapEntry{})
 	}
 	return Null()
 }
@@ -101,16 +188,51 @@ func (v Value) Display() string {
 			return "true"
 		}
 		return "false"
+	case KindList:
+		var b strings.Builder
+		b.WriteByte('[')
+		for i, e := range v.List {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(displayElement(e))
+		}
+		b.WriteByte(']')
+		return b.String()
+	case KindMap:
+		var b strings.Builder
+		b.WriteByte('{')
+		for i, e := range v.Map {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(displayElement(e.Key))
+			b.WriteString(": ")
+			b.WriteString(displayElement(e.Value))
+		}
+		b.WriteByte('}')
+		return b.String()
 	}
 	return "<unknown>"
 }
 
-// MatchesDeclared reports whether v's runtime kind matches a declared parser.Type.
-// `null` is the only value accepted for parser.TypeNull and is also accepted
-// anywhere (a null can stand in for any typed slot) - see [[design-null]] notes
-// in CLAUDE.md if added later. For M2 we keep it strict to surface bugs early.
+// displayElement is Display() but with string values quoted, so that
+// list / map representations are unambiguous (`[1, "2", 3]` rather than
+// `[1, 2, 3]` when the middle entry is a string). Nested lists/maps
+// recurse through the regular Display() so they stay unquoted.
+func displayElement(v Value) string {
+	if v.Kind == KindString {
+		return strconv.Quote(v.Str)
+	}
+	return v.Display()
+}
+
+// MatchesDeclared reports whether v's runtime kind matches a declared
+// parser.Type. For lists and maps the inner types are compared too -
+// `list of int` does not accept a value built as `list of string`. Empty
+// containers with the right shape pass.
 func (v Value) MatchesDeclared(t parser.Type) bool {
-	switch t {
+	switch t.Kind {
 	case parser.TypeInt:
 		return v.Kind == KindInt
 	case parser.TypeFloat:
@@ -121,6 +243,24 @@ func (v Value) MatchesDeclared(t parser.Type) bool {
 		return v.Kind == KindBool
 	case parser.TypeNull:
 		return v.Kind == KindNull
+	case parser.TypeList:
+		if v.Kind != KindList {
+			return false
+		}
+		// Empty list with no recorded element type is assignable to any
+		// list type. Otherwise element types must match recursively.
+		if t.Element == nil || v.ElemTyp == nil {
+			return true
+		}
+		return t.Element.Equal(*v.ElemTyp)
+	case parser.TypeMap:
+		if v.Kind != KindMap {
+			return false
+		}
+		if t.KeyType == nil || t.ValType == nil || v.KeyTyp == nil || v.ValTyp == nil {
+			return true
+		}
+		return t.KeyType.Equal(*v.KeyTyp) && t.ValType.Equal(*v.ValTyp)
 	}
 	return false
 }
@@ -139,7 +279,7 @@ func (v Value) AsFloat() (float64, bool) {
 
 // Equal implements Jennifer's `==` semantics. Same-kind: deep equal. Mixed
 // int/float: compared as floats (per the int->float promotion rule). Any
-// other cross-kind pairing is not equal.
+// other cross-kind pairing is not equal. Lists and maps recurse.
 func (v Value) Equal(o Value) bool {
 	if v.Kind == o.Kind {
 		switch v.Kind {
@@ -153,6 +293,36 @@ func (v Value) Equal(o Value) bool {
 			return v.Str == o.Str
 		case KindBool:
 			return v.Bool == o.Bool
+		case KindList:
+			if len(v.List) != len(o.List) {
+				return false
+			}
+			for i := range v.List {
+				if !v.List[i].Equal(o.List[i]) {
+					return false
+				}
+			}
+			return true
+		case KindMap:
+			// Maps compare equal if they hold the same key->value mapping;
+			// insertion order is *not* considered semantically significant
+			// for equality (it only matters for iteration order).
+			if len(v.Map) != len(o.Map) {
+				return false
+			}
+			for _, a := range v.Map {
+				found := false
+				for _, b := range o.Map {
+					if a.Key.Equal(b.Key) && a.Value.Equal(b.Value) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return false
+				}
+			}
+			return true
 		}
 	}
 	// numeric promotion

@@ -34,20 +34,25 @@ func (p pos) Pos() (int, int)  { return p.Line, p.Col }
 func (p pos) Filename() string { return p.File }
 func (p pos) astNode()         {}
 
-// Type is the declared static type of a variable or constant.
-type Type int
+// TypeKind tags the static kind of a declared type. Primitive kinds
+// (TypeInt..TypeNull) don't need any payload; compound kinds (TypeList,
+// TypeMap) carry their element / key+value type via the pointers on the
+// surrounding Type struct.
+type TypeKind int
 
 const (
-	TypeInvalid Type = iota
+	TypeInvalid TypeKind = iota
 	TypeInt
 	TypeFloat
 	TypeString
 	TypeBool
 	TypeNull
+	TypeList
+	TypeMap
 )
 
-func (t Type) String() string {
-	switch t {
+func (k TypeKind) String() string {
+	switch k {
 	case TypeInt:
 		return "int"
 	case TypeFloat:
@@ -58,10 +63,77 @@ func (t Type) String() string {
 		return "bool"
 	case TypeNull:
 		return "null"
+	case TypeList:
+		return "list"
+	case TypeMap:
+		return "map"
 	default:
 		return "<invalid>"
 	}
 }
+
+// Type is the declared static type of a variable, constant, or method
+// parameter. For primitives only `Kind` matters; for compound kinds the
+// pointer fields are non-nil and themselves point at full Type values,
+// which is how `list of list of int` and `map of string to list of int`
+// fall out without special casing.
+type Type struct {
+	Kind    TypeKind
+	Element *Type // TypeList: element type
+	KeyType *Type // TypeMap:  key type
+	ValType *Type // TypeMap:  value type
+}
+
+func (t Type) String() string {
+	switch t.Kind {
+	case TypeList:
+		if t.Element == nil {
+			return "list of <?>"
+		}
+		return "list of " + t.Element.String()
+	case TypeMap:
+		if t.KeyType == nil || t.ValType == nil {
+			return "map of <?> to <?>"
+		}
+		return "map of " + t.KeyType.String() + " to " + t.ValType.String()
+	}
+	return t.Kind.String()
+}
+
+// Equal reports whether two types are structurally identical (same kind
+// and, for compound kinds, recursively equal element / key / value types).
+// Used by the type-mismatch checks at assignment and call sites.
+func (t Type) Equal(o Type) bool {
+	if t.Kind != o.Kind {
+		return false
+	}
+	switch t.Kind {
+	case TypeList:
+		if (t.Element == nil) != (o.Element == nil) {
+			return false
+		}
+		if t.Element == nil {
+			return true
+		}
+		return t.Element.Equal(*o.Element)
+	case TypeMap:
+		if (t.KeyType == nil) != (o.KeyType == nil) || (t.ValType == nil) != (o.ValType == nil) {
+			return false
+		}
+		if t.KeyType == nil {
+			return true
+		}
+		return t.KeyType.Equal(*o.KeyType) && t.ValType.Equal(*o.ValType)
+	}
+	return true
+}
+
+// Primitive type-value constructors. Compound types are built from these
+// at parse time: `Type{Kind: TypeList, Element: &elem}`,
+// `Type{Kind: TypeMap, KeyType: &k, ValType: &v}`.
+func PrimitiveType(k TypeKind) Type { return Type{Kind: k} }
+func ListType(elem Type) Type       { return Type{Kind: TypeList, Element: &elem} }
+func MapType(k, v Type) Type        { return Type{Kind: TypeMap, KeyType: &k, ValType: &v} }
 
 // ---- Top-level program ----
 

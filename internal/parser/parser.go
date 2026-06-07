@@ -502,26 +502,62 @@ func (p *parser) parseParenCond(ctx string) (Expr, error) {
 	return c, nil
 }
 
+// parseType consumes a type expression. Primitives are a single keyword
+// (`int`, `float`, `string`, `bool`, `null`). Compound types are
+// recursive:
+//
+//	list of <TYPE>
+//	map  of <TYPE> to <TYPE>
+//
+// Nesting falls out naturally because each recursive call reads one
+// fresh <TYPE>; there is no depth cap.
 func (p *parser) parseType() (Type, error) {
 	t := p.peek()
 	switch t.Type {
 	case lexer.TOKEN_INT_TYPE:
 		p.advance()
-		return TypeInt, nil
+		return PrimitiveType(TypeInt), nil
 	case lexer.TOKEN_FLOAT_TYPE:
 		p.advance()
-		return TypeFloat, nil
+		return PrimitiveType(TypeFloat), nil
 	case lexer.TOKEN_STRING_TYPE:
 		p.advance()
-		return TypeString, nil
+		return PrimitiveType(TypeString), nil
 	case lexer.TOKEN_BOOL_TYPE:
 		p.advance()
-		return TypeBool, nil
+		return PrimitiveType(TypeBool), nil
 	case lexer.TOKEN_NULL:
 		p.advance()
-		return TypeNull, nil
+		return PrimitiveType(TypeNull), nil
+	case lexer.TOKEN_LIST:
+		p.advance()
+		if _, err := p.expect(lexer.TOKEN_OF, "after `list`"); err != nil {
+			return Type{}, err
+		}
+		elem, err := p.parseType()
+		if err != nil {
+			return Type{}, err
+		}
+		return ListType(elem), nil
+	case lexer.TOKEN_MAP:
+		p.advance()
+		if _, err := p.expect(lexer.TOKEN_OF, "after `map`"); err != nil {
+			return Type{}, err
+		}
+		keyT, err := p.parseType()
+		if err != nil {
+			return Type{}, err
+		}
+		if _, err := p.expect(lexer.TOKEN_TO, "after map key type"); err != nil {
+			return Type{}, err
+		}
+		valT, err := p.parseType()
+		if err != nil {
+			return Type{}, err
+		}
+		return MapType(keyT, valT), nil
 	}
-	return TypeInvalid, &ParseError{Msg: fmt.Sprintf("expected type, got %s (%q)", t.Type, t.Lexeme), File: t.File, Line: t.Line, Col: t.Col}
+	return Type{}, &ParseError{Msg: fmt.Sprintf("expected type, got %s (%q)", t.Type, t.Lexeme), File: t.File, Line: t.Line, Col: t.Col}
 }
 
 // isValidConstName reports whether s matches the constant naming rule:
