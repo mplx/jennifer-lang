@@ -44,15 +44,25 @@ const (
 	TOKEN_STRING_TYPE // the word "string" used as a type
 	TOKEN_BOOL_TYPE   // the word "bool" used as a type
 
+	// Compound-type keywords (M6)
+	TOKEN_LIST // the word "list" used as a type
+	TOKEN_MAP  // the word "map" used as a type
+	TOKEN_OF   // "of" - element-type separator: `list of int`, `map of K to V`
+	TOKEN_TO   // "to" - K/V separator inside `map of K to V`
+	TOKEN_IN   // "in" - for-each iterator: `for (def x in $coll)`
+
 	// Punctuation
-	TOKEN_LBRACE // {
-	TOKEN_RBRACE // }
-	TOKEN_LPAREN // (
-	TOKEN_RPAREN // )
-	TOKEN_SEMI   // ;
-	TOKEN_COMMA  // ,
-	TOKEN_ASSIGN // =
-	TOKEN_DOT    // . (used in file-import paths, e.g. `import name.j;`)
+	TOKEN_LBRACE   // {
+	TOKEN_RBRACE   // }
+	TOKEN_LPAREN   // (
+	TOKEN_RPAREN   // )
+	TOKEN_LBRACKET // [ (M6: list literals + index expressions)
+	TOKEN_RBRACKET // ] (M6)
+	TOKEN_SEMI     // ;
+	TOKEN_COMMA    // ,
+	TOKEN_COLON    // : (M6: map literal key-value separator)
+	TOKEN_ASSIGN   // =
+	TOKEN_DOT      // . (reserved; future namespacing / field access)
 
 	// Arithmetic operators
 	TOKEN_PLUS    // +
@@ -101,12 +111,20 @@ var tokenNames = map[TokenType]string{
 	TOKEN_FLOAT_TYPE:  "FLOAT_TYPE",
 	TOKEN_STRING_TYPE: "STRING_TYPE",
 	TOKEN_BOOL_TYPE:   "BOOL_TYPE",
+	TOKEN_LIST:        "LIST",
+	TOKEN_MAP:         "MAP",
+	TOKEN_OF:          "OF",
+	TOKEN_TO:          "TO",
+	TOKEN_IN:          "IN",
 	TOKEN_LBRACE:      "LBRACE",
 	TOKEN_RBRACE:      "RBRACE",
 	TOKEN_LPAREN:      "LPAREN",
 	TOKEN_RPAREN:      "RPAREN",
+	TOKEN_LBRACKET:    "LBRACKET",
+	TOKEN_RBRACKET:    "RBRACKET",
 	TOKEN_SEMI:        "SEMI",
 	TOKEN_COMMA:       "COMMA",
+	TOKEN_COLON:       "COLON",
 	TOKEN_ASSIGN:      "ASSIGN",
 	TOKEN_DOT:         "DOT",
 	TOKEN_PLUS:        "PLUS",
@@ -173,6 +191,11 @@ var keywords = map[string]TokenType{
 	"float":  TOKEN_FLOAT_TYPE,
 	"string": TOKEN_STRING_TYPE,
 	"bool":   TOKEN_BOOL_TYPE,
+	"list":   TOKEN_LIST,
+	"map":    TOKEN_MAP,
+	"of":     TOKEN_OF,
+	"to":     TOKEN_TO,
+	"in":     TOKEN_IN,
 }
 
 func lookupKeyword(ident string) (TokenType, bool) {

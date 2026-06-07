@@ -117,6 +117,75 @@ func TestTokenizeRejectsUnterminatedString(t *testing.T) {
 	}
 }
 
+// TestTokenizeM6Tokens covers the new punctuation and keywords M6 needs
+// for list/map syntax: `[`, `]`, `:` and the keywords `list`, `map`,
+// `of`, `to`, `in`.
+func TestTokenizeM6Tokens(t *testing.T) {
+	src := `def xs as list of int init [1, 2, 3];
+def m as map of string to int init {"a": 1};
+for (def x in $xs) { printf($x); }`
+	toks, err := Tokenize(src)
+	if err != nil {
+		t.Fatalf("lex: %v", err)
+	}
+	// Collect just the types so the assertion is readable.
+	var types []TokenType
+	for _, tok := range toks {
+		if tok.Type == TOKEN_EOF {
+			break
+		}
+		types = append(types, tok.Type)
+	}
+	// Spot-check by counting occurrences - the exact stream is long.
+	count := func(want TokenType) int {
+		n := 0
+		for _, tt := range types {
+			if tt == want {
+				n++
+			}
+		}
+		return n
+	}
+	want := map[TokenType]int{
+		TOKEN_LIST:     1,
+		TOKEN_MAP:      1,
+		TOKEN_OF:       2,
+		TOKEN_TO:       1,
+		TOKEN_IN:       1,
+		TOKEN_LBRACKET: 1,
+		TOKEN_RBRACKET: 1,
+		TOKEN_COLON:    1,
+	}
+	for tt, n := range want {
+		if got := count(tt); got != n {
+			t.Errorf("%s: got %d, want %d", tt, got, n)
+		}
+	}
+}
+
+// TestTokenizeBracketsAndColon directly checks the three new punctuation
+// tokens to give a small per-character failure mode when something is
+// broken in lexer.Next().
+func TestTokenizeBracketsAndColon(t *testing.T) {
+	cases := []struct {
+		src  string
+		want TokenType
+	}{
+		{"[", TOKEN_LBRACKET},
+		{"]", TOKEN_RBRACKET},
+		{":", TOKEN_COLON},
+	}
+	for _, c := range cases {
+		toks, err := Tokenize(c.src)
+		if err != nil {
+			t.Fatalf("%q: %v", c.src, err)
+		}
+		if len(toks) < 2 || toks[0].Type != c.want {
+			t.Errorf("%q: got %+v, want %s", c.src, toks, c.want)
+		}
+	}
+}
+
 // TestTokenizeIdentifierUnderscores covers the constant-name relaxation:
 // the lexer accepts `_` inside IDENTs (so `MAX_RETRIES` is a single token),
 // but rejects identifiers that *end* with `_` since no name kind allows

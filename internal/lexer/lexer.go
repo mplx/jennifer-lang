@@ -102,9 +102,18 @@ func (l *Lexer) Next() (Token, error) {
 	case ch == ')':
 		l.advance()
 		return Token{Type: TOKEN_RPAREN, Lexeme: ")", Line: startLine, Col: startCol}, nil
+	case ch == '[':
+		l.advance()
+		return Token{Type: TOKEN_LBRACKET, Lexeme: "[", Line: startLine, Col: startCol}, nil
+	case ch == ']':
+		l.advance()
+		return Token{Type: TOKEN_RBRACKET, Lexeme: "]", Line: startLine, Col: startCol}, nil
 	case ch == ';':
 		l.advance()
 		return Token{Type: TOKEN_SEMI, Lexeme: ";", Line: startLine, Col: startCol}, nil
+	case ch == ':':
+		l.advance()
+		return Token{Type: TOKEN_COLON, Lexeme: ":", Line: startLine, Col: startCol}, nil
 	case ch == ',':
 		l.advance()
 		return Token{Type: TOKEN_COMMA, Lexeme: ",", Line: startLine, Col: startCol}, nil
