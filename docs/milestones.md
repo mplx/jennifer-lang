@@ -142,7 +142,6 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
   `round` plus constants `PI`, `E`. Strict on undefined math (sqrt of
   negative, pow producing NaN/Inf rejected). `floor`/`ceil`/`round` return
   int. Interpreter gained `RegisterConst` so libraries can expose constants.
-
 - **`strings` library:** `len`, `upper`, `lower`, `contains`, `startsWith`,
   `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`,
   `substring`. Rune-based indexing throughout. `split`/`chars`/`join`
@@ -175,7 +174,35 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
   `"<tag>"` on a tag, `"<tag>-dev+<N>.<shortsha>"` past a tag, `"dev"`
   outside git. Codegen is used instead of `-ldflags -X` because TinyGo
   0.41 silently ignores `-X`; codegen works on both toolchains.
-- **Formatter:** `jennifer fmt` - re-emit the AST as canonical source
+- **Formatter:** `jennifer fmt` - done. Token-stream formatter that
+  re-emits canonical source per [docs/stylespec.md](stylespec.md).
+  Works at the lexer level (not AST) to preserve `import "file.j";`
+  statements and user-written parentheses verbatim. Verified
+  idempotent and behavior-preserving across all `examples/*.j`.
+  Known v1 limitations: comments are dropped (lexer strips them) and
+  blank lines aren't preserved or inserted between logical groups.
+- **Inspection subcommands:** `jennifer tokens <file>` dumps the lexer
+  output; `jennifer ast <file>` dumps the preprocessed AST as JSON
+  (hand-rolled emitter, no `encoding/json`, so TinyGo stays clean).
+  Both useful for understanding the pipeline and for tooling that
+  wants to consume Jennifer programs as data.
+- **REPL:** improve repl with history (cursor up/down scrolling)
+- **Documentation:** improve documentation in /docs and make sure it's up-to-date with M5
+
+### Deferred from M5
+
+- **Comment preservation in `fmt`.** Lexer would need to carry `//` and
+  `/* */` as tokens (or attach them to following nodes); the formatter
+  would then weave them back in.
+- **Blank-line preservation / auto-insertion in `fmt`.** Either keep
+  user blank lines as a side channel during lexing, or insert them
+  automatically between logical groups (imports vs methods vs top-level
+  code, method-to-method).
+- **Binary AST cache (`.jc` files).** Pre-parsed loading for big
+  programs and McFly OS embedding. Its own milestone - file-format
+  design, versioning, and TinyGo-safe serialization are enough work to
+  merit dedicated treatment. The text JSON form via `jennifer ast` is
+  the placeholder until then.
 
 ---
 
@@ -185,10 +212,25 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
 
 ---
 
-## M7 - Libraries
+## M7 - printf modifier
 
+- **(s)printf**: introduce format verb modifiers
+
+---
+
+## M8
+
+- **CI/CD:** Github Actions pipeline for automatic testing and release
+
+---
+
+## M9 - Libraries
+
+- **File library**
+- **OS library**
 - **Regex library**
 - **Network library**
+- **Crypto libarary**
 
 ---
 

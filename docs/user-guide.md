@@ -79,6 +79,30 @@ A few notes:
   the directory you launched `jennifer repl` from.
 - `:quit`, `:exit`, or Ctrl-D end the session; `:help` shows a reminder.
 
+### Inspection and formatting
+
+Three commands help you see what Jennifer is doing under the hood and
+keep your source in canonical shape:
+
+```sh
+# Print the lexer's token stream, one per line
+./jennifer tokens examples/hello.j
+
+# Print the parsed (and preprocessed) AST as JSON
+./jennifer ast examples/hello.j
+
+# Reformat the source to canonical style (see docs/stylespec.md)
+./jennifer fmt examples/hello.j
+```
+
+`fmt` writes the formatted source to stdout. To rewrite in place, use
+your shell: `./jennifer fmt foo.j > foo.j.new && mv foo.j.new foo.j`.
+The formatter is idempotent (`fmt` of `fmt` output equals `fmt` output)
+and preserves runtime behavior - every example in this repo is checked
+both ways by the test suite. Current v1 limitations: comments are
+dropped, and blank lines aren't preserved or inserted automatically.
+See [stylespec.md](stylespec.md) for the full style rules.
+
 For local development you can also use the Go toolchain directly:
 
 ```sh
@@ -142,7 +166,12 @@ terminated by `;`.
 
 ### Identifiers
 
-- Variable and method names are letters only: `[A-Za-z]`, up to 64 characters.
+- Variable, method, parameter and library names are letters only: `[A-Za-z]`,
+  up to 64 characters. No digits or underscores.
+- **Constants** are uppercase chunks joined by single `_` separators:
+  `[A-Z]+(_[A-Z]+)*`, up to 64 characters. Every `_` must be immediately
+  followed by another uppercase letter. `MAX`, `MAX_RETRIES`, `HTTP_OK`,
+  and `A_B_C` are all legal; `_MAX`, `MAX_`, and `MAX__INT` are not.
 - **Variable references** use a leading `$`: define `name`, refer to it as
   `$name`.
 

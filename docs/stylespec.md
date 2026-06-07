@@ -1,0 +1,137 @@
+# Jennifer style guide
+
+This is the recommended source style for Jennifer programs. `jennifer fmt`
+re-emits source in exactly this shape, so anything you write that matches
+the spec will survive a `fmt` round-trip unchanged.
+
+The guide is short on purpose: there are only a handful of rules, but they
+are consistent. If you've used `gofmt`, `prettier`, `rustfmt`, or PSR-12,
+nothing here will surprise you.
+
+## Spacing
+
+- **One space around every binary operator**: `$i = 1 + 2;`, not
+  `$i=1+2;`. Applies to `+ - * / div % < > <= >= == and or` and `=`.
+- **Unary `-` hugs its operand**: `-5`, `-$x`, `-fact($n - 1)`. No space
+  between the `-` and the value it negates.
+- **Word-form unary operators take a space**: `not $ok`, never `not$ok`.
+  Same goes for any other keyword operator the language grows.
+- **One space after `,` and `;` inside `for (...; ...; ...)`**, never
+  before. `for (def i as int init 0; $i < 10; $i = $i + 1)`.
+- **No space inside parentheses**: `printf("hi")`, not `printf( "hi" )`.
+- **One space between a keyword and its `(`**: `if (cond)`, `while (cond)`,
+  `for (...)`. Function calls don't get this space: `printf(...)`.
+- **No trailing whitespace** on any line.
+
+## Indentation
+
+- **4 spaces per level**, no tabs. Re-indenting on `}` always lands you
+  back on a multiple of 4.
+- One level per block - method body, `if`/`elseif`/`else` body, `while`
+  body, `for` body.
+
+## Braces
+
+- **K&R: opening brace on the same line**, separated by one space:
+  `func fact(n as int) {`, `if ($x > 0) {`, `else {`.
+- **`}` on its own line**, except for the `} else {` / `} elseif (...) {`
+  cascade, where `else`/`elseif` continues on the same line as the
+  preceding `}`.
+- **`fmt` always expands blocks across multiple lines** - the canonical
+  form has the opening brace at end-of-line, each body statement on its
+  own indented line, and the closing brace on its own line. Single-line
+  blocks are still legal source (the parser accepts them), but `fmt`
+  rewrites them to the expanded form for consistency.
+
+## Statements
+
+- **Every statement ends with `;`** - no exceptions, including the last
+  statement in a block.
+- **One statement per line**. Don't chain multiple statements with `;`
+  on a single line.
+- **Blank lines separate logical groups** - imports from method
+  definitions, methods from top-level code, distinct steps within a long
+  block. Never more than one consecutive blank line.
+
+## Names
+
+- **Variables, methods, parameters**: lowercase or `camelCase` if the name
+  has multiple words. Identifiers are `[A-Za-z]{1,64}` - no digits, no
+  underscores.
+- **Constants**: `UPPERCASE`, with `_` as a single word separator. The
+  full rule is `[A-Z]+(_[A-Z]+)*`, up to 64 characters: one or more
+  uppercase chunks joined by single `_`. Every `_` must be immediately
+  followed by `[A-Z]` - no leading, trailing, or consecutive `_`.
+  Examples: `MAX`, `MAX_RETRIES`, `HTTP_OK`, `A_B_C`. Digits and
+  lowercase letters are not allowed.
+- **Library names**: lowercase, single word where possible (`io`, `math`,
+  `strings`, `meta`).
+
+## Strings
+
+- **Prefer double quotes**: `"hello"` over `'hello'`. Both forms parse
+  escape sequences the same way, but mixing styles in one file reads as
+  noise. Use single quotes only when the string contains a `"` you'd
+  otherwise need to escape.
+- **Escape sequences are explicit**: `"\n"`, `"\t"`, `"\\"`. Don't rely
+  on multi-line string literals - Jennifer doesn't have them.
+
+## Comments
+
+- `// line comment` for short notes that belong on or just above the
+  thing they describe.
+- `/* block comment */` for longer commentary that doesn't fit one line.
+  Block comments don't nest.
+- Comments explain *why*, not *what*. The code already says what.
+
+## Source file conventions
+
+- **`.j` extension** for all Jennifer source. The interpreter rejects
+  anything else.
+- **One SPDX header at the top** of every committed `.j` file (the
+  project uses `LGPL-3.0-only` - see existing examples).
+- **`use` and `import` statements come first**, before any methods or
+  top-level statements. Group `use` lines together, then `import` lines,
+  then a blank line, then the rest of the program.
+- **Trailing newline** at end of file.
+
+## Limitations
+
+`jennifer fmt` (v1) operates on the lexer's token stream and re-emits
+canonical source. As a consequence:
+
+- **Comments are dropped.** The lexer strips `//` and `/* */` at scan
+  time. Preserving them would require carrying comments as tokens, which
+  is a future enhancement.
+- **Blank lines aren't preserved or inserted.** The formatter packs
+  statements one per line at the appropriate indent without inserting
+  vertical whitespace between logical groups. You can still write blank
+  lines in source, but they don't survive a `fmt` round-trip.
+
+Both limitations are listed in `docs/milestones.md` for tracking.
+
+## A complete example
+
+```jennifer
+use io;
+func fact(n as int) {
+    if ($n == 0) {
+        return 1;
+    }
+    return $n * fact($n - 1);
+}
+for (def i as int init 0; $i <= 8; $i = $i + 1) {
+    printf("%d! = %d\n", $i, fact($i));
+}
+```
+
+Everything in this example follows the rules above: K&R braces, 4-space
+indent, spaces around binary operators, unary `-` flush against its
+operand, double-quoted strings, expanded blocks, no blank lines (a
+limitation - see above). `jennifer fmt` will produce this output
+byte-for-byte from any equivalent input.
+
+The SPDX header (`// SPDX-License-Identifier: ...`) and copyright comment
+that the project's source files carry are stripped by `fmt` today; keep
+them in version control via your normal workflow and re-apply after a
+reformat until the comment-preservation enhancement lands.

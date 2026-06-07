@@ -104,8 +104,20 @@ keyword and lexes as a plain identifier.
 
 ### Identifier rule
 
-Per the spec, names use `[A-Za-z]` only. Digits and underscores are explicitly
-**not** part of identifiers; encountering one mid-token ends the identifier.
+Variable, method, parameter and library names use `[A-Za-z]{1,64}` only -
+no digits, no underscores. Constants use a looser form: uppercase chunks
+separated by single `_` characters - `[A-Z]+(_[A-Z]+)*`. Every `_` must
+be immediately followed by `[A-Z]`, so leading, trailing and consecutive
+underscores are all rejected.
+
+The lexer reflects this by accepting `_` as a continuation character for
+bare IDENT tokens (so `MAX_RETRIES` is a single token) but rejecting any
+identifier that *ends* with `_`. The full per-kind rule is then enforced
+by the parser at each def / use site - variables, methods, parameters,
+library names and call callees may not contain `_`; constants may, with
+the leading-`_` case already excluded by `isIdentStart`. `$var` references
+go through a separate lexer path (`readVarRef`) that still uses the
+strict letters-only `isIdentPart`, so `$foo_bar` lex-errors directly.
 
 ---
 
@@ -139,8 +151,15 @@ statement   = defineStmt
 returnStmt  = "return" [ expr ] ";" ;
 
 defineStmt  = "def" [ "const" ] IDENT "as" type [ "init" expr ] ";" ;
-                                       (* constants require "init" and an UPPERCASE name;
-                                          variables may omit "init" and get zero-value *)
+                                       (* constants require "init" and an
+                                          uppercase name matching
+                                          [A-Z]+(_[A-Z]+)* (uppercase
+                                          chunks joined by single `_`;
+                                          no leading, trailing or
+                                          consecutive `_`); variables may
+                                          omit "init" and get zero-value,
+                                          and use the letters-only IDENT
+                                          form *)
 
 assignStmt  = VARREF "=" expr ";" ;
 
@@ -478,6 +497,9 @@ disk before slicing out the snippet to display.
 jennifer run <file.j>     run a Jennifer program
 jennifer run -            read source from stdin
 jennifer repl             interactive REPL
+jennifer tokens <file.j>  dump the lexer's token stream
+jennifer ast <file.j>     dump the preprocessed AST as JSON
+jennifer fmt <file.j>     format source per docs/stylespec.md
 jennifer version          print the build version and exit
 jennifer help             show usage
 ```
@@ -515,6 +537,62 @@ and the loop continues.
 `:quit` / `:exit` / EOF terminate cleanly; `:help` prints a short reminder.
 Directives are only recognized at a fresh prompt so a literal `:quit` inside
 a block doesn't short-circuit.
+
+### Inspection: `tokens` and `ast`
+
+`cmd/jennifer/dump.go` and `cmd/jennifer/astjson.go` implement two
+read-only inspection subcommands. `tokens` runs only the lexer and
+prints one token per line in column-aligned `LINE:COL TYPE [lexeme]`
+form - useful for tracing scanning issues and as a teaching tool.
+`ast` runs lex + preproc + parse and writes the resulting AST as
+two-space-indented JSON; every node carries `type`, `file`, `line`,
+`col`, plus its node-specific fields.
+
+The JSON emitter is hand-rolled in `astjson.go`'s `emitNode` (a switch
+over every concrete AST type). We avoid `encoding/json` because its
+reflect-based marshaling is fragile under TinyGo and at odds with the
+tagged-union `Value` discipline used elsewhere; a switch over ~20 node
+kinds is small enough to keep readable. Each field-emitter
+(`emitStringField`, `emitBoolField`, `emitNodeListField`, etc.) writes
+`"key": value,` and the closing `endObj` trims the trailing comma so
+the output is valid JSON.
+
+### Formatter (`cmd/jennifer/fmt.go`)
+
+`jennifer fmt` formats source per [docs/stylespec.md](stylespec.md). It
+operates on the lexer's token stream rather than the AST, for two
+reasons:
+
+1. **`import "file.j";` survives.** The preprocessor consumes file
+   imports before the parser sees them; an AST-based formatter would
+   inline every import, which is the opposite of what a developer
+   wants from `fmt`. The token-level formatter sees IMPORT tokens
+   unchanged and re-emits them.
+2. **User-written parens survive.** The AST records grouping only
+   through nesting structure; redundant parens are erased. A token
+   walker preserves LPAREN/RPAREN exactly as written, so
+   `($a + $b) * $c` stays parenthesized after a round trip.
+
+`formatTokens(tokens)` drives a small state machine (`fmtState`): for
+each token it computes the separator (`writeSeparator`) - none, a
+space, or a newline-plus-indent - and then writes the token's canonical
+spelling (`writeToken`). Key state fields:
+
+- `indent` bumps on `{` and drops on `}` (the closing brace dedents
+  *before* it's written so it lands at the outer indent).
+- `prevIsOperand` answers "is the next `-` binary or unary?" - flipped
+  by `isOperandToken` after every emit.
+- `prevIsUnaryMinus` suppresses the right-side space after a `-` that
+  was determined to be unary.
+- `insideForHeader` is a small backward scan that lets the two `;`s
+  inside `for (...; ...; ...)` stay on the same line.
+
+Strings are re-quoted with `quoteJenniferString` (double quotes plus
+standard escapes), mirroring the lexer's `readString` on the way in.
+
+Known v1 limitations are documented in stylespec.md: comments are
+stripped by the lexer and not preserved; blank lines aren't preserved
+or auto-inserted between logical groups.
 
 ### Version injection
 
@@ -563,8 +641,13 @@ Run everything with `go test ./...`.
 ```
 cmd/jennifer/main.go             CLI + source-context error formatting
 cmd/jennifer/repl.go             Interactive REPL loop
+cmd/jennifer/dump.go             `tokens` and `ast` subcommands
+cmd/jennifer/astjson.go          Hand-rolled AST -> JSON emitter
+cmd/jennifer/fmt.go              Token-level source formatter
 cmd/jennifer/examples_test.go    Golden-file integration test
 cmd/jennifer/repl_test.go        REPL inputComplete unit tests
+cmd/jennifer/dump_test.go        AST-JSON validity and token-name tests
+cmd/jennifer/fmt_test.go         Formatter idempotence + behavior tests
 cmd/jennifer/cross_file_error_test.go  Cross-file error reporting tests
 internal/lexer/token.go          Token type definitions
 internal/lexer/lexer.go          Scanner (with optional file tagging)
