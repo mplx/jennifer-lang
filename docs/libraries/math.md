@@ -58,4 +58,4 @@ constant (or dedicated check functions) can be added later. For now Jennifer
 treats them as errors at the boundary - consistent with how the language
 already refuses to silently coerce types.
 
-See also: [../user-guide.md](../user-guide.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).
+See also: [../user-guide/index.md](../user-guide/index.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

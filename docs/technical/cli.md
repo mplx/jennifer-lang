@@ -6,7 +6,7 @@ jennifer run -            read source from stdin
 jennifer repl             interactive REPL
 jennifer tokens <file.j>  dump the lexer's token stream
 jennifer ast <file.j>     dump the preprocessed AST as JSON
-jennifer fmt <file.j>     format source per docs/style-guide.md
+jennifer fmt <file.j>     format source per docs/user-guide/style-guide.md
 jennifer version          print the build version and exit
 jennifer help             show usage
 ```
@@ -116,8 +116,8 @@ the output is valid JSON.
 
 ## Formatter (`cmd/jennifer/fmt.go`)
 
-`jennifer fmt` formats source per [../style-guide.md](../style-guide.md). It
-operates on the lexer's token stream rather than the AST, for two
+`jennifer fmt` formats source per [../user-guide/style-guide.md](../user-guide/style-guide.md).
+It operates on the lexer's token stream rather than the AST, for two
 reasons:
 
 1. **`import "file.j";` survives.** The preprocessor consumes file

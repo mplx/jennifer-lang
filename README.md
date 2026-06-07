@@ -33,8 +33,9 @@ printf($x + $x);
 
 ## Documentation
 
-- [docs/user-guide.md](docs/user-guide.md) - language tutorial and reference
-  for everything you can write in Jennifer today.
+- [docs/user-guide/](docs/user-guide/index.md) - language tutorial and
+  reference split by topic: installing, first program, syntax, types
+  and values, methods, control flow, imports, examples.
 - [docs/technical/](docs/technical/index.md) - interpreter internals split
   by topic: lexer, grammar/parser, preprocessor, interpreter, CLI, testing,
   file map, rejected features, TinyGo notes.

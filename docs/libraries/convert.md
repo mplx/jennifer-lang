@@ -53,4 +53,4 @@ Writing `def x as int init int;` (bare keyword, no call) errors with a hint
 to either use it as a conversion call or supply a value. `typeOf` is a normal
 identifier and is not a type keyword.
 
-See also: [../user-guide.md](../user-guide.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).
+See also: [../user-guide/index.md](../user-guide/index.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

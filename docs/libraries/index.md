@@ -5,6 +5,10 @@ enabled explicitly with `use NAME;`; nothing is auto-loaded. This page
 catalogs every library that ships with the interpreter today and links
 to the reference doc for each.
 
+> **Looking for one specific function?** See the
+> [cheatsheet](cheatsheet.md) - alphabetical list of every builtin
+> with its library and a one-line description.
+
 | Library   | Enable with     | Contents                                                                                                                                   | Reference                  |
 |-----------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------|----------------------------|
 | `io`      | `use io;`       | `printf`, `sprintf`, and a `%d %f %s %t %v %%` format-verb mini-language                                                                   | [io.md](io.md)             |
@@ -37,10 +41,39 @@ ones. The organizing principle, captured for future extensions:
 - Pure value transformation across kinds -> `convert`.
 - Pure numeric -> `math`.
 - String manipulation -> `strings`.
-- Interpreter introspection (version, host, build info) -> `meta`.
+- Interpreter introspection (version, host, build info) -> auto-loaded
+  `core` (reserve carefully; this is the only escape hatch from the
+  "nothing for free" rule).
 - A genuinely new topic with three or more functions -> a new library.
 - A single function with no clear topic -> the most-related existing
   library.
+
+## Naming convention
+
+Library names look mixed at first glance - `strings` is plural but
+`math` is singular. The rule:
+
+- **Plural for count nouns**: when the library operates on instances of
+  something you can have multiples of. `strings`, `lists` (planned),
+  `maps` (planned), `bytes`, `files`.
+- **Singular for mass nouns and conceptual wholes**: `math`, `core`,
+  `time` (planned), `regex` (planned).
+- **Bare verb when the library is named for what it does**, not what
+  it touches: `convert`.
+- **Idiomatic abbreviations are fine**: `os`, `fs`, `net`, `regex`.
+
+Three practical constraints reinforce the count/mass rule:
+
+1. Type keywords are reserved. `string`, `int`, `float`, `bool`, `list`,
+   `map`, `null` cannot be library names because they tokenize as type
+   tokens, not IDENTs. The plural form (`strings`, `lists`, `maps`)
+   sidesteps this naturally.
+2. The rule matches Go's stdlib: `strings` and `bytes` are plural;
+   `math`, `io`, `os` are singular. Since the interpreter is written in
+   Go, the convention transfers cleanly to library author intuition.
+3. Within a library, function names are lowercase / camelCase
+   (`upper`, `startsWith`, `typeOf`). Constants are uppercase
+   (`PI`, `E`, `JENNIFER_VERSION`).
 
 For implementation notes on how libraries register themselves with the
 interpreter (`Register`, `RegisterConst`, the `use`-gated lookup),

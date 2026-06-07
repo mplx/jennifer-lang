@@ -117,4 +117,4 @@ Future candidates for `core` membership (none committed yet):
 Each one needs to clear the bar of "universally needed structural
 primitive that's more like an operator than a library function."
 
-See also: [../user-guide.md](../user-guide.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).
+See also: [../user-guide/index.md](../user-guide/index.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

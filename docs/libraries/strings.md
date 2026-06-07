@@ -93,4 +93,4 @@ ASCII spaces, tabs, newlines, plus characters like non-breaking space
 If you need to trim specific characters instead of whitespace, that's not
 in v1 - propose `trimChars(s, chars)` as a follow-up if it comes up.
 
-See also: [../user-guide.md](../user-guide.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).
+See also: [../user-guide/index.md](../user-guide/index.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

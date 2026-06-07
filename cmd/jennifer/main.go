@@ -91,7 +91,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  jennifer repl            interactive REPL")
 	fmt.Fprintln(os.Stderr, "  jennifer tokens <file>   dump the lexer's token stream")
 	fmt.Fprintln(os.Stderr, "  jennifer ast <file>      dump the parsed AST as JSON")
-	fmt.Fprintln(os.Stderr, "  jennifer fmt <file>      format the source per docs/style-guide.md")
+	fmt.Fprintln(os.Stderr, "  jennifer fmt <file>      format the source per docs/user-guide/style-guide.md")
 	fmt.Fprintln(os.Stderr, "  jennifer version         print the version and exit")
 	fmt.Fprintln(os.Stderr, "  jennifer help            show this message")
 }

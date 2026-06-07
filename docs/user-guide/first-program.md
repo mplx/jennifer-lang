@@ -1,0 +1,33 @@
+# Your first program
+
+Save the following as `hello.j`:
+
+```jennifer
+// hello.j
+use io;
+
+def x as int init 21;
+printf($x + $x);
+```
+
+Run it:
+
+```sh
+./jennifer run hello.j
+```
+
+You should see `42`.
+
+## What just happened
+
+1. `use io;` makes Jennifer's standard library functions (only `printf`
+   today) available.
+2. `def x as int init 21;` declares an integer variable named `x` and
+   initializes it to `21`. Notice that **using** a variable requires the `$`
+   prefix.
+3. `printf($x + $x)` calls the standard library function with the result of
+   `21 + 21`.
+
+Top-level statements run in source order - there is no required entry-point
+method. You can still group reusable code into methods (`def`) and call them
+explicitly.

@@ -57,5 +57,5 @@ The compiler/interpreter is a five-stage pipeline:
 
 The CLI lives in `cmd/jennifer/main.go` and orchestrates these stages.
 For the user-facing language reference (types, control flow, libraries),
-see [../user-guide.md](../user-guide.md). For the style rules `jennifer
-fmt` enforces, see [../style-guide.md](../style-guide.md).
+see [../user-guide/](../user-guide/index.md). For the style rules `jennifer
+fmt` enforces, see [../user-guide/style-guide.md](../user-guide/style-guide.md).

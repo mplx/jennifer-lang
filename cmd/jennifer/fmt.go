@@ -12,7 +12,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lexer"
 )
 
-// runFmt formats path's source to stdout per docs/style-guide.md. The
+// runFmt formats path's source to stdout per docs/user-guide/style-guide.md. The
 // formatter operates on the token stream rather than the AST so it can
 // preserve `import "file.j";` statements verbatim (the preprocessor would
 // otherwise inline them) and any parentheses the user wrote (the AST
