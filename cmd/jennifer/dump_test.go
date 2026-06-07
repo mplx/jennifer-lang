@@ -62,7 +62,11 @@ func TestAstJSONShape(t *testing.T) {
 		`"type": "CallExpr"`, `"callee": "printf"`,
 		`"type": "VarExpr"`, `"name": "x"`,
 	}
-	_ = mustContain
+	for _, want := range mustContain {
+		if !strings.Contains(out, want) {
+			t.Errorf("AST JSON missing %q\nfull output:\n%s", want, out)
+		}
+	}
 }
 
 // TestAstJSONM6Shape covers the new AST nodes added in M6: list/map

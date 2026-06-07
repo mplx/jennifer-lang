@@ -144,7 +144,7 @@ func runProgramOutput(path, src string) (string, error) {
 }
 
 // TestFmtSpacingRules exercises the documented spacing rules with small
-// inputs whose expected output is hand-written from docs/stylespec.md.
+// inputs whose expected output is hand-written from docs/style-guide.md.
 func TestFmtSpacingRules(t *testing.T) {
 	cases := []struct {
 		name, src, want string

@@ -74,6 +74,28 @@ replace       = Hello, Jennifer
 repeat        = ababab
 substring 0..5 = Hello
 substring 7..  = World
+split         = a|b|c
+chars count   = 5
+join          = x-y-z
+=== lists ===
+xs = [10, 20, 30]
+len(xs) = 3
+after $xs[1] = 99: 99
+grid[0] = [1, 9]
+=== for-each list ===
+  10
+  99
+  30
+=== maps ===
+alice=90 bob=80
+len(scores) = 2
+has alice = true, has dave = false
+=== for-each map (insertion order) ===
+  alice=90
+  bob=80
+  carol=70
+=== value semantics ===
+src[0]=1 dst[0]=99
 === core ===
 typeOf(JENNIFER_VERSION) = string
 === constants ===

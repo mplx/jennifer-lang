@@ -26,19 +26,47 @@ domain-library, not here.
 
 ## Functions
 
-| Call         | Returns | Notes                                                       |
-|--------------|---------|-------------------------------------------------------------|
-| `len(s)`     | int     | Rune count of a string (Unicode code points, not bytes). M6 extends `len` to accept lists and maps too. |
+| Call              | Returns | Notes                                                       |
+|-------------------|---------|-------------------------------------------------------------|
+| `len(v)`          | int     | Structural length, polymorphic                              |
+| `has(m, key)`     | bool    | Map membership test                                         |
 
-`len` is polymorphic - the same name covers every type where "structural
-length" is well-defined. Today that's strings; lists and maps join in
-M6. Passing any other kind (`int`, `float`, `bool`, `null`) is a
-positioned runtime error.
+### `len`
+
+Polymorphic - the same name covers every type where "structural length"
+is well-defined:
+
+- **string** → rune count (Unicode code points, not bytes)
+- **list**   → element count
+- **map**    → entry count
+
+Passing any other kind (`int`, `float`, `bool`, `null`) is a positioned
+runtime error.
 
 ```jennifer
-printf("%d\n", len("hello"));    // 5
-printf("%d\n", len("héllo"));    // 5 (rune count, not byte count)
+printf("%d\n", len("hello"));      // 5
+printf("%d\n", len("héllo"));      // 5 (rune count)
+printf("%d\n", len([1, 2, 3]));    // 3
+printf("%d\n", len({"a": 1, "b": 2})); // 2
 ```
+
+### `has`
+
+Reports whether a map contains a given key. The companion to the M6
+decision that *reads* of missing keys are runtime errors: when you
+need to test for a key without erroring, use `has`.
+
+```jennifer
+def m as map of string to int init {"a": 1};
+if (has($m, "a")) {
+    printf("%d\n", $m["a"]);    // safe to read; we just checked
+}
+```
+
+`has` only accepts maps. The string-side question "does this haystack
+contain this needle?" is `strings.contains`. A future list-side
+`contains` would slot under [strings](strings.md) or a new collections
+namespace.
 
 ## Constants
 

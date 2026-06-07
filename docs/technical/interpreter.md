@@ -10,19 +10,81 @@ binary small and predictable under TinyGo.
 
 ```go
 type Value struct {
-    Kind  ValueKind  // KindNull | KindInt | KindFloat | KindString | KindBool
-    Int   int64
-    Float float64
-    Str   string
-    Bool  bool
+    Kind    ValueKind  // KindNull | KindInt | KindFloat | KindString |
+                       //  KindBool | KindList | KindMap
+    Int     int64
+    Float   float64
+    Str     string
+    Bool    bool
+    List    []Value      // KindList: element data
+    Map     []MapEntry   // KindMap:  insertion-ordered entries
+    ElemTyp *parser.Type // KindList: declared element type (stamped)
+    KeyTyp  *parser.Type // KindMap:  declared key type   (stamped)
+    ValTyp  *parser.Type // KindMap:  declared value type (stamped)
 }
 ```
 
 `ZeroFor(t parser.Type)` returns the zero value for each declared type and is
-used when a `def` omits its `init` clause: `0`, `0.0`, `""`, `false`, or
-`null`. `Value.AsFloat()` handles int->float promotion for arithmetic and
-comparison; `Value.Equal()` implements `==` (same-kind comparison, plus the
-numeric-promotion rule across `int` and `float`).
+used when a `def` omits its `init` clause: `0`, `0.0`, `""`, `false`,
+`null`, an empty `[]` list (typed by the declaration), or an empty `{}` map.
+`Value.AsFloat()` handles int->float promotion for arithmetic and
+comparison; `Value.Equal()` implements `==` (same-kind comparison, plus
+the numeric-promotion rule across `int` and `float`; deep-equal for
+lists; order-insensitive key→value equality for maps).
+
+### Parameterized Type (M6)
+
+`parser.Type` is a recursive struct: `{ Kind TypeKind; Element,
+KeyType, ValType *Type }`. Compound types nest naturally
+(`list of list of int`). Equality (`Type.Equal`) is structural.
+
+### Value semantics (M6)
+
+Lists and maps are **value-typed** in Jennifer: `$ys = $xs;` copies,
+function parameters bind by copy, and `const` is deep. No aliasing.
+The interpreter enforces this at every binding boundary:
+
+- **`execDefine`** / **`execAssign`**: take an independent copy of the
+  right-hand-side value via `Value.Copy()`.
+- **`evalCall`** parameter binding: same `Value.Copy()` before
+  `callFrame.Define`.
+- **`execForEach`**: each iteration copies the bound value.
+
+Cost is O(n) per binding; copy-on-write is a future optimization that
+preserves the user-visible semantics.
+
+### Type stamping (M6)
+
+After a literal like `[1, 2, 3]` evaluates, the resulting `Value` has
+no `ElemTyp`. The declared type lives only on the receiving binding's
+`DeclType`. To make subsequent operations - index-writes, parameter
+checks, iteration types - have inner-type info without re-consulting
+the declaration, the interpreter calls `stampDeclaredType(v, declType)`
+at every binding boundary. The helper writes `ElemTyp` / `KeyTyp` /
+`ValTyp` onto the value and recurses into nested compound elements so
+deep type tracking is preserved for nested `$xs[i][j] = ...` writes.
+
+### Index access (M6)
+
+- **Reads** (`evalIndex`): out-of-bounds list indices and missing map
+  keys are positioned runtime errors. Reads return the slot value by
+  copy via Go's struct semantics, but the inner slice headers still
+  alias - which is fine because reads can't mutate anything.
+- **Writes** (`execIndexAssign`): walk the chain on a fresh copy of
+  the root binding, apply via `applyIndexAssign` /
+  `writeIndexedSlot`, then commit back through `env.Assign`. Const
+  enforcement fires once against the root binding (deep constness).
+  Map writes to a missing key extend the map (insertion order
+  preserved); writes to an existing key update in place.
+
+### Iteration (M6)
+
+`execForEach` opens a fresh per-iteration scope so the loop variable
+binding doesn't leak out and `def`-rebindings don't accumulate. For
+lists it walks elements in order; for maps it walks keys in
+insertion order. The underlying map representation is a parallel
+slice (`[]MapEntry`) rather than a Go `map[K]V` precisely to make
+this iteration deterministic and testable.
 
 ## Environment
 

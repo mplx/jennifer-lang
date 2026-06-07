@@ -95,7 +95,7 @@ Rounds out the "ordinary" feature set:
   moved here from `strings`. See [libraries/core.md](libraries/core.md)
   and [technical/cli.md > Version injection](technical/cli.md#version-injection).
 - **Formatter** - `jennifer fmt` re-emits canonical source per
-  [stylespec.md](stylespec.md). Token-level walker so file imports and
+  [style-guide.md](style-guide.md). Token-level walker so file imports and
   user-written parentheses survive. See
   [technical/cli.md > Formatter](technical/cli.md#formatter-cmdjenniferfmtgo).
 - **Inspection subcommands** - `jennifer tokens <file>` dumps the lexer
@@ -106,204 +106,45 @@ Rounds out the "ordinary" feature set:
   [technical/lexer.md > Identifier rule](technical/lexer.md#identifier-rule).
 - **Documentation overhaul** - `docs/technical.md` split into
   `docs/technical/<topic>.md`; `docs/lib_*.md` moved to
-  `docs/libraries/`; new `docs/stylespec.md`.
+  `docs/libraries/`; new `docs/style-guide.md`.
 
 ---
 
 ## M6 - Lists and maps
 
-Two new compound types, plus the strings-library functions that were
-deferred until compound types existed.
+**Status:** done.
 
-**Naming decision (resolved at start of M6):** the sequence type is
-called `list`, not `array`. "List" describes an ordered sequence of
-values; "array" carries fixed-size / contiguous-memory baggage from C/
-Java/Go that doesn't match Jennifer's semantics. The map type is called
-`map`. The pair reads as one vocabulary: "list of values, map of keys to
-values." Beginners coming from Lisp/Scheme should note that Jennifer's
-`list` is array-backed (Go slice underneath), not a linked list - O(1)
-random access, but no O(1) prepend.
+Two new compound types - `list` and `map` - plus the strings library
+functions deferred until compound types existed.
 
-**Value semantics (resolved at start of M6):** lists and maps are
-value-typed, like every scalar in Jennifer today. `$ys = $xs;` copies;
-mutations to `$ys` do not affect `$xs`. Function parameters bind by
-copy. Aliasing is impossible. This is the Pascal/Algol tradition, not
-the Python/JS tradition.
+- **Syntax**: `def xs as list of int init [1, 2, 3];`,
+  `def m as map of string to int init {"a": 1};`. Index read/write
+  `$xs[i]`, `$m["k"]`, chains `$g[i][j]`. Iteration via
+  `for (def x in $coll) { ... }` (new keyword `in`). New tokens
+  `[ ] :` and keywords `list`, `map`, `of`, `to`, `in`.
+- **Semantics**: value-typed (copy on assignment and on
+  function-parameter binding; no aliasing); `const` is deep
+  (`$NUMS[0] = ...` is a runtime error if `NUMS` is `const`);
+  out-of-bounds list reads/writes and missing map keys are positioned
+  runtime errors; map iteration is insertion-order deterministic.
+- **Type system**: `parser.Type` became a recursive struct
+  (`Element`, `KeyType`, `ValType` `*Type` slots), so nesting like
+  `list of list of int` falls out without depth cap. 3+ levels is a
+  documented code smell.
+- **Stdlib**: `core.len` extended to lists and maps; `core.has(m, key)`
+  for membership tests; `strings.split`, `strings.chars`,
+  `strings.join` finished.
+- **Tooling**: formatter handles `[...]` / `{...}` per
+  [style-guide.md](style-guide.md) (no inner padding, space after `,`/`:`,
+  block-vs-map disambiguation via a small brace stack); AST JSON
+  emitter handles `ListLit`, `MapLit`, `IndexExpr`, `IndexAssignStmt`,
+  `ForEachStmt`.
 
-Why: Jennifer is teachable, and reference semantics introduce "spooky
-action at a distance" bugs (mutate `$ys`, find `$xs` changed) plus they
-undermine `const` - any other binding holding the same list could
-mutate through it. Value semantics removes both problems for free.
-
-Cost: O(n) copy on every assignment and call. Acceptable at Jennifer's
-educational scale; copy-on-write is available as a future optimization
-that preserves the user-visible semantics.
-
-Implications: `Value` stores lists/maps as owned data (not pointers),
-the call-frame binder copies the value, and the AST-JSON emitter
-serializes by value.
-
-**`const` works for `list` and `map`, and constness is deep
-(resolved at start of M6):**
-
-```jennifer
-def const PRIMES as list of int init [2, 3, 5, 7, 11];
-printf("%d\n", $PRIMES[0]);   // 2 - reads are fine
-$PRIMES = [9, 8];             // error: binding is const
-$PRIMES[0] = 9;               // error: contents are const
-```
-
-Combined with the value-semantics decision above, `const` becomes a
-real guarantee: the binding can't be repointed, the contents can't be
-mutated, and the value can't escape through aliasing to a non-const
-binding that would mutate it. The existing `IsConst` flag on every
-binding carries through; the new check is at index-assignment time,
-which errors with a positioned message when the target binding is
-const. The same rule applies to map values (`$CONST_MAP["k"] = ...`).
-
-**Language additions:**
-
-- New value kinds: `KindList`, `KindMap`.
-- New keywords: `list`, `map`, `of`, `to`, `in`.
-- New tokens: `LBRACKET` (`[`), `RBRACKET` (`]`), `COLON` (`:`).
-- New AST nodes: `ListLit`, `MapLit`, `IndexExpr` (for both `$xs[0]` and
-  `$m["key"]`), `ForEachStmt` (for the `for (def x in $coll) { ... }`
-  form). Existing `ForStmt` stays for the C-style three-part header.
-- New parameterized `Type` representation, **recursive**. Today `Type`
-  is a flat enum (`TypeInt`, `TypeFloat`, ...); M6 widens it to a
-  struct that carries an element-type pointer for `list of T` and
-  key/value-type pointers for `map of K to V`:
-
-  ```go
-  type Type struct {
-      Kind    TypeKind  // TypeInt, ..., TypeList, TypeMap
-      Element *Type     // for TypeList; nil otherwise
-      KeyType *Type     // for TypeMap; nil otherwise
-      ValType *Type     // for TypeMap; nil otherwise
-  }
-  ```
-
-  Because `Element`, `KeyType`, and `ValType` are themselves `*Type`,
-  nesting falls out naturally: `list of list of int`,
-  `map of string to list of int`, `list of map of string to int` all
-  work without special-casing. `parseType()` recurses through the
-  `list of <TYPE>` and `map of <TYPE> to <TYPE>` productions. This is
-  the most substantial structural change in the milestone and ripples
-  into parser declarations, `Environment.Binding`, `MatchesDeclared`,
-  the formatter, and the AST-JSON emitter.
-
-**Nesting depth and style guidance (resolved at start of M6):** no
-explicit depth cap. The recursive parser bottoms out at Go's stack
-limit (~10K-100K levels) - far beyond anything any human will write,
-and a clean stack-overflow if someone generates Jennifer source
-programmatically. A style note in `docs/stylespec.md` will be saying
-that nesting beyond 3 levels is a code smell - 1-2 levels is normal,
-3 is uncommon, 4+ almost always wants a struct or a named type
-instead. The advice points forward to structs whenever they land
-(post-M9 namespacing and M10 domain libraries; tentatively M11). A
-future fmt-time linter could nudge at depth >= 4; out of scope for
-M6.
-
-**Syntax:**
-
-```jennifer
-def xs as list of int init [1, 2, 3];
-def m as map of string to int init { "a": 1, "b": 2 };
-
-printf("%d\n", $xs[0]);
-printf("%d\n", $m["a"]);
-
-$xs[1] = 42;
-$m["c"] = 3;
-```
-
-**Semantics:**
-
-- Lists: 0-indexed, mutable, dynamically grown. Out-of-bounds read or
-  write is a positioned runtime error (no silent extension).
-- Maps: arbitrary key type as long as it's hashable (`int`, `float`,
-  `string`, `bool`); typically `string` keys are the path of least
-  surprise. Reads of a missing key are a runtime error (no `null`
-  fallback - keeps the type discipline tight); add a separate
-  `has($m, key)` builtin or a key-test operator for the lookup case.
-
-**Iteration (in scope for M6):** ships in M6, not a follow-up. Lists
-and maps without iteration would be barely usable, and the syntax fits
-the existing `for` shape cleanly:
-
-```jennifer
-for (def x in $xs) {
-    printf("%v\n", $x);
-}
-
-for (def k in $m) {
-    printf("%s -> %d\n", $k, $m[$k]);
-}
-```
-
-New keyword: `in`. For maps, iterates **keys** (no tuple destructuring -
-we don't have tuples). Users look up values explicitly via `$m[$k]`.
-Map iteration order is **insertion order, deterministic** (not Go's
-randomized default) so tests and the REPL are reproducible. The
-underlying map representation will need to track insertion order, which
-rules out `map[K]V` alone - probably a `struct { keys []K; values
-map[K]V }` or similar.
-
-**Strings library completion (in scope for M6):**
-
-`split`, `chars`, and `join` were deferred until compound types
-existed. They land here:
-
-- `split(s, sep) -> list of string`
-- `chars(s) -> list of string` (one entry per Unicode code point)
-- `join(parts, sep) -> string` where `parts` is `list of string`
-
-**New tests:**
-
-- List operations: literal, index read/write, out-of-bounds error,
-  type mismatch on write, equality semantics (defer if scope is tight).
-- Map operations: literal, key read/write, missing-key error, key-type
-  mismatch.
-- Integration: `split($s, ",")` and `join($parts, ", ")` round-trip on
-  the showcase example.
-- AST JSON: `ListLit`, `MapLit`, `IndexExpr` emit cleanly.
-- Formatter: `[1, 2, 3]` and `{"a": 1}` survive a round-trip
-  unchanged. **Whitespace rule (resolved at start of M6):** no padding
-  inside `[ ]` or `{ }`, space after `,`, space after `:`. Matches the
-  existing `(...)` rule for consistency. Empty literals are `[]` and
-  `{}` (no inner space). Multi-line literals are allowed when values
-  don't fit on one line; trailing comma in the multi-line form is
-  permitted (not required).
-
-**Docs to update at end of M6:**
-
-- `docs/user-guide.md` - new "Lists and maps" section, plus one-liner
-  clarification that `list` is array-backed (not Lisp-style) and that
-  list/map values copy on assignment (value semantics).
-- `docs/technical/lexer.md` - new tokens (`LBRACKET`, `RBRACKET`,
-  `COLON`) and keywords (`list`, `map`, `of`, `to`, `in`) in the token
-  table.
-- `docs/technical/grammar.md` - new EBNF productions for list/map
-  literals, parameterized types, index expressions, and the
-  `for (def x in $coll)` iteration form.
-- `docs/technical/interpreter.md` - new value kinds, the parameterized
-  `Type` representation, semantics of bounds/key errors, value-copy
-  semantics on assignment and function-parameter binding, and
-  deterministic insertion-order map iteration.
-- `docs/stylespec.md` - whitespace rules for `[...]` and `{...}`
-  (no padding, space after `,` and `:`, trailing-comma allowed
-  multi-line).
-- `docs/libraries/strings.md` - `split` / `chars` / `join` defined.
-  (`len` already moved to `core` in pass 2 of the M5 cleanup.)
-- `docs/libraries/core.md` - extend the existing page to describe
-  `len`'s list/map dispatch.
-- `examples/showcase.j` - exercise lists, maps, iteration, and the
-  three new strings functions; update `examples/expected/showcase.txt`.
-
-**Exit criterion:** the showcase example exercises lists, maps, and
-`split`/`chars`/`join` end-to-end; round-trips through `fmt` are
-stable; AST JSON for the new node kinds validates; the REPL handles
-list/map literals and indexed assignment correctly.
+See [user-guide.md > Lists and maps](user-guide.md#lists-and-maps) for
+the user-facing tour, and
+[technical/grammar.md](technical/grammar.md) /
+[technical/interpreter.md](technical/interpreter.md) for the
+implementation contract.
 
 ---
 
@@ -311,6 +152,8 @@ list/map literals and indexed assignment correctly.
 
 - **(s)printf**: introduce format verb modifiers
 - **CI/CD:** Github Actions pipeline for automatic testing and release
+- **Packages** for Debian and Archlinux
+- **Pages** - create github pages
 
 ---
 
@@ -386,7 +229,7 @@ lets the user shorten a namespace.
 - Update `docs/technical/grammar.md` EBNF.
 - Update `docs/technical/interpreter.md` Builtins-and-libraries
   section to describe the lookup rule.
-- New section in `docs/stylespec.md`: how to write namespaced calls
+- New section in `docs/style-guide.md`: how to write namespaced calls
   (`bio.translate($seq)`, no space around `.`, same as method-call
   paren-hugging).
 - `cmd/jennifer/fmt.go` already preserves `TOKEN_DOT` verbatim;

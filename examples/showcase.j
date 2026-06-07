@@ -138,6 +138,46 @@ printf("replace       = %s\n", replace($sample, "World", "Jennifer"));
 printf("repeat        = %s\n", repeat("ab", 3));
 printf("substring 0..5 = %s\n", substring($sample, 0, 5));
 printf("substring 7..  = %s\n", substring($sample, 7));
+printf("split         = %s\n", join(split("a,b,c", ","), "|"));
+printf("chars count   = %d\n", len(chars("héllo")));
+printf("join          = %s\n", join(["x", "y", "z"], "-"));
+
+// --- lists ---
+printf("=== lists ===\n");
+def xs as list of int init [10, 20, 30];
+printf("xs = [%d, %d, %d]\n", $xs[0], $xs[1], $xs[2]);
+printf("len(xs) = %d\n", len($xs));
+$xs[1] = 99;
+printf("after $xs[1] = 99: %d\n", $xs[1]);
+def grid as list of list of int init [[1, 2], [3, 4]];
+$grid[0][1] = 9;
+printf("grid[0] = [%d, %d]\n", $grid[0][0], $grid[0][1]);
+
+printf("=== for-each list ===\n");
+for (def elem in $xs) {
+    printf("  %d\n", $elem);
+}
+
+// --- maps ---
+printf("=== maps ===\n");
+def scores as map of string to int init {"alice": 90, "bob": 80};
+printf("alice=%d bob=%d\n", $scores["alice"], $scores["bob"]);
+printf("len(scores) = %d\n", len($scores));
+$scores["carol"] = 70;
+printf("has alice = %t, has dave = %t\n", has($scores, "alice"), has($scores, "dave"));
+
+printf("=== for-each map (insertion order) ===\n");
+for (def who in $scores) {
+    printf("  %s=%d\n", $who, $scores[$who]);
+}
+
+// --- value semantics + deep const ---
+printf("=== value semantics ===\n");
+def src as list of int init [1, 2, 3];
+def dst as list of int init [0];
+$dst = $src;
+$dst[0] = 99;
+printf("src[0]=%d dst[0]=%d\n", $src[0], $dst[0]);
 
 // --- core (auto-loaded): prove JENNIFER_VERSION is wired without baking its value into the golden ---
 printf("=== core ===\n");

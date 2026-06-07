@@ -1,0 +1,42 @@
+=== input ===
+sentence: the quick brown fox jumps over the lazy dog the quick fox
+words:    12
+unique:   8
+
+=== counts (insertion order) ===
+  the = 3
+  quick = 2
+  brown = 1
+  fox = 2
+  jumps = 1
+  over = 1
+  lazy = 1
+  dog = 1
+
+most frequent: the (3)
+
+=== histogram ===
+  the : ### (3)
+  quick : ## (2)
+  brown : # (1)
+  fox : ## (2)
+  jumps : # (1)
+  over : # (1)
+  lazy : # (1)
+  dog : # (1)
+
+=== reviews ===
+  alice: total=12 (across 3 reviewers)
+  bob: total=9 (across 2 reviewers)
+  carol: total=9 (across 2 reviewers)
+
+=== identity matrix 3x3 ===
+ 1 0 0
+ 0 1 0
+ 0 0 1
+
+=== value semantics ===
+original[0] = 1 (unchanged)
+working[0]  = 99 (mutated)
+
+=== done ===

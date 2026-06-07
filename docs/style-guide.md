@@ -21,6 +21,13 @@ nothing here will surprise you.
 - **No space inside parentheses**: `printf("hi")`, not `printf( "hi" )`.
 - **One space between a keyword and its `(`**: `if (cond)`, `while (cond)`,
   `for (...)`. Function calls don't get this space: `printf(...)`.
+- **No space inside `[ ]` or `{ }` list/map literals**: `[1, 2, 3]`,
+  `{"a": 1, "b": 2}`, not `[ 1, 2, 3 ]` or `{ "a" : 1 }`. Empty
+  literals are `[]` and `{}`. Same rule as `()`.
+- **No space before `[`**: `$xs[0]`, not `$xs [0]`. Index expressions
+  hug their target.
+- **One space after `:`** in map literals, never before: `{"a": 1}`,
+  not `{"a" :1}` or `{"a":1}`.
 - **No trailing whitespace** on any line.
 
 ## Indentation

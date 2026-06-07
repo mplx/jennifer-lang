@@ -52,6 +52,14 @@ printf("%s\n", substring("hello", 1, 4));   // "ell"
 | `repeat(s, n)`                | string  | `n` copies concatenated; `n` must be non-negative      |
 | `substring(s, start)`         | string  | Rune-indexed; from `start` to the end of the string    |
 | `substring(s, start, end)`    | string  | Rune-indexed; **exclusive end**                        |
+| `split(s, sep)`               | list of string | Split on a non-empty separator; preserves empty segments |
+| `chars(s)`                    | list of string | One single-rune string per Unicode code point   |
+| `join(parts, sep)`            | string  | Concatenate a `list of string` with `sep` between entries |
+
+`split` and `chars` complement each other: use `chars(s)` to break a
+string into runes (one entry per code point), `split(s, sep)` to break
+on a delimiter substring. `join` is the inverse of `split` for any
+non-empty separator: `join(split(s, sep), sep) == s`.
 
 ## Indexing rules
 

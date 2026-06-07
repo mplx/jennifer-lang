@@ -12,12 +12,14 @@ A hand-written, single-pass scanner.
 | Declaration keywords      | `DEFINE` (`def`), `FUNC`, `AS`, `INIT`, `CONST`, `RETURN`                                               |
 | Import keywords           | `USE`, `IMPORT`                                                                                         |
 | Control-flow keywords     | `IF`, `ELSEIF`, `ELSE`, `WHILE`, `FOR`                                                                  |
-| Type keywords             | `INT_TYPE`, `FLOAT_TYPE`, `STRING_TYPE`, `BOOL_TYPE`                                                    |
+| Type keywords             | `INT_TYPE`, `FLOAT_TYPE`, `STRING_TYPE`, `BOOL_TYPE`, `LIST`, `MAP`                                     |
+| Type structure keywords   | `OF`, `TO`                                                                                              |
+| Iteration keyword         | `IN`                                                                                                    |
 | Keyword operators         | `AND`, `OR`, `NOT`, `DIV`                                                                               |
 | Arithmetic operators      | `PLUS` (`+`), `MINUS` (`-`), `STAR` (`*`), `SLASH` (`/`), `PERCENT` (`%`)                               |
 | Comparison operators      | `LT` (`<`), `GT` (`>`), `LE` (`<=`), `GE` (`>=`), `EQ` (`==`)                                           |
 | Assignment                | `ASSIGN` (`=`)                                                                                          |
-| Grouping and punctuation  | `LBRACE` (`{`), `RBRACE` (`}`), `LPAREN` (`(`), `RPAREN` (`)`), `SEMI` (`;`), `COMMA` (`,`), `DOT` (`.`) |
+| Grouping and punctuation  | `LBRACE` (`{`), `RBRACE` (`}`), `LPAREN` (`(`), `RPAREN` (`)`), `LBRACKET` (`[`), `RBRACKET` (`]`), `SEMI` (`;`), `COMMA` (`,`), `COLON` (`:`), `DOT` (`.`) |
 
 `def` introduces a variable or constant binding (TOKEN_DEFINE); `func`
 introduces a method (TOKEN_FUNC). `import` (TOKEN_IMPORT) is for **file

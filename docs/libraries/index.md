@@ -10,8 +10,8 @@ to the reference doc for each.
 | `io`      | `use io;`       | `printf`, `sprintf`, and a `%d %f %s %t %v %%` format-verb mini-language                                                                   | [io.md](io.md)             |
 | `convert` | `use convert;`  | `int`, `float`, `string`, `bool`, `typeOf` - explicit casts; canonical-only `bool` conversion                                              | [convert.md](convert.md)   |
 | `math`    | `use math;`     | `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`; constants `PI`, `E`                                                          | [math.md](math.md)         |
-| `strings` | `use strings;`  | `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring` (`len` lives in [`core`](core.md)) | [strings.md](strings.md)   |
-| `core`    | *(auto-loaded)* | `len`, `JENNIFER_VERSION`. Pre-imported by the interpreter; writing `use core;` is a runtime error.                                      | [core.md](core.md)         |
+| `strings` | `use strings;`  | `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring`, `split`, `chars`, `join` (`len` lives in [`core`](core.md)) | [strings.md](strings.md)   |
+| `core`    | *(auto-loaded)* | `len` (polymorphic over string/list/map), `has(map, key)`, `JENNIFER_VERSION`. Pre-imported by the interpreter; writing `use core;` is a runtime error. | [core.md](core.md)         |
 
 A quick taste:
 

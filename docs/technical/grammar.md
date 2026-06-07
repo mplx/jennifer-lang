@@ -23,10 +23,12 @@ block       = "{" { statement } "}" ;
 
 statement   = defineStmt
             | assignStmt
+            | indexAssign
             | returnStmt
             | ifStmt
             | whileStmt
             | forStmt
+            | forEachStmt
             | exprStmt ;
 
 returnStmt  = "return" [ expr ] ";" ;
@@ -44,6 +46,10 @@ defineStmt  = "def" [ "const" ] IDENT "as" type [ "init" expr ] ";" ;
 
 assignStmt  = VARREF "=" expr ";" ;
 
+indexAssign = VARREF "[" expr "]" { "[" expr "]" } "=" expr ";" ;
+                                       (* l-value chain: at least one
+                                          [index] suffix; root is a VARREF *)
+
 ifStmt      = "if" "(" expr ")" block
               { "elseif" "(" expr ")" block }
               [ "else" block ] ;
@@ -56,9 +62,22 @@ forStmt     = "for" "(" [ defineStmt | assignStmt | ";" ]
                   ")" block ;
 assignNoSemi = VARREF "=" expr ;       (* same shape as assignStmt without trailing ";" *)
 
+forEachStmt = "for" "(" "def" IDENT "in" expr ")" block ;
+                                       (* iterates list elements (in order)
+                                          or map keys (insertion order);
+                                          the iteration variable is a fresh
+                                          binding in the body's scope *)
+
 exprStmt    = expr ";" ;
 
-type        = "int" | "float" | "string" | "bool" | "null" ;
+type        = primType | listType | mapType ;
+primType    = "int" | "float" | "string" | "bool" | "null" ;
+listType    = "list" "of" type ;
+mapType     = "map" "of" type "to" type ;
+                                       (* recursive; nesting like
+                                          `list of list of int` and
+                                          `map of string to list of int`
+                                          falls out naturally *)
 
 expr        = orExpr ;
 orExpr      = andExpr { "or" andExpr } ;
@@ -68,8 +87,10 @@ compExpr    = addExpr { ("<" | ">" | "<=" | ">=" | "==") addExpr } ;
 addExpr     = mulExpr { ("+" | "-") mulExpr } ;
 mulExpr     = unaryExpr { ("*" | "/" | "div" | "%") unaryExpr } ;
 unaryExpr   = "-" unaryExpr | primary ;
-primary     = INT | FLOAT | STRING | "true" | "false" | "null"
-            | VARREF | call | typeCall | constRef | "(" expr ")" ;
+primary     = ( INT | FLOAT | STRING | "true" | "false" | "null"
+              | VARREF | call | typeCall | constRef | "(" expr ")"
+              | listLit | mapLit )
+              { "[" expr "]" } ;       (* any primary can be index-chained *)
 call        = IDENT "(" [ expr { "," expr } ] ")" ;
 typeCall    = ("int" | "float" | "string" | "bool") "(" [ expr { "," expr } ] ")" ;
                                        (* type keywords usable as calls only when
@@ -78,6 +99,12 @@ typeCall    = ("int" | "float" | "string" | "bool") "(" [ expr { "," expr } ] ")
 constRef    = IDENT ;                  (* bare-IDENT: constant reference; the
                                           parser disambiguates `call` vs
                                           `constRef` by peeking for "(". *)
+listLit     = "[" [ expr { "," expr } [ "," ] ] "]" ;
+mapLit      = "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
+                                       (* `{` is also a block opener; only
+                                          legal as a map literal in
+                                          expression position, where the
+                                          parser is unambiguous *)
 ```
 
 **Semantic notes that aren't expressed in the grammar:**
@@ -128,6 +155,33 @@ constRef    = IDENT ;                  (* bare-IDENT: constant reference; the
   immediately followed by `(`, otherwise as a `ConstRefExpr`. At runtime
   the latter must resolve to a constant in scope; a name that resolves to
   a variable produces a helpful error ("use `$name`").
+- **Lists are array-backed sequences, not Lisp-style linked lists**:
+  `def xs as list of int init [1, 2, 3]`. Element access is `$xs[i]`,
+  0-indexed, in-bounds-checked. Out-of-bounds reads and writes are
+  positioned runtime errors.
+- **Maps preserve insertion order**: iteration via `for (def k in $m)`
+  visits keys in the order they were first inserted; updating an
+  existing key does not move it; appending a new key extends. Reads of
+  missing keys are runtime errors - use `has($m, key)` to test.
+- **Lists and maps are value-typed**: `$ys = $xs;` copies, function
+  parameters bind by copy, and `const` is deep (constness extends to
+  every nested element). Aliasing is impossible; mutations through
+  `$xs[i] = ...` only affect that binding.
+- **Index assignment** (`$xs[i][j] = ...`) walks the chain on a copy of
+  the root binding's value, applies the write, and stores the result
+  back via `env.Assign`. The const-target check fires once against the
+  root binding; deep constness falls out of the value-semantics
+  invariant.
+- **Iteration** (`for (def x in $coll)`) opens a fresh scope per
+  iteration. The loop variable is bound to each element (list) or key
+  (map). The collection is evaluated once at loop entry; concurrent
+  mutation of the original binding during iteration doesn't affect the
+  walk because the iterator works against a snapshot.
+- **`{` is overloaded**: it opens a block in statement position and a
+  map literal in expression position. The parser disambiguates by
+  context; the formatter (which doesn't run the parser) tracks the
+  classification through a small stack so both forms get the right
+  indentation and spacing.
 
 ## Parser (`internal/parser`)
 
@@ -145,10 +199,12 @@ grammar the parser implements is the EBNF above.
 | `Block`       | stmt  | `Stmts []Stmt`                               |
 | `DefineStmt`  | stmt  | `IsConst`, `VarName`, `VarType Type`, `InitExpr Expr` (nil = uninit) |
 | `AssignStmt`  | stmt  | `VarName`, `Value Expr`                      |
+| `IndexAssignStmt` | stmt | `Target *IndexExpr`, `Value Expr` - `$xs[i][j] = ...` |
 | `ReturnStmt`  | stmt  | `Value Expr` (nil for bare `return;`)        |
 | `IfStmt`      | stmt  | `Cond`, `Then *Block`, `ElseIfs []Expr`, `ElseIfBodies []*Block`, `Else *Block` |
 | `WhileStmt`   | stmt  | `Cond`, `Body *Block`                        |
 | `ForStmt`     | stmt  | `Init Stmt`, `Cond Expr`, `Step Stmt`, `Body *Block` (any may be nil) |
+| `ForEachStmt` | stmt  | `VarName`, `Coll Expr`, `Body *Block`        |
 | `ExprStmt`    | stmt  | `Expr`                                       |
 | `IntLit`      | expr  | `Value int64`                                |
 | `FloatLit`    | expr  | `Value float64`                              |
@@ -160,6 +216,9 @@ grammar the parser implements is the EBNF above.
 | `CallExpr`    | expr  | `Callee`, `Args []Expr`                      |
 | `BinaryExpr`  | expr  | `Op BinaryOp`, `Left`, `Right` (comparison/logical ops return bool; `and`/`or` short-circuit at eval time) |
 | `UnaryExpr`   | expr  | `Op UnaryOp` (`OpNeg`/`OpNot`), `Operand` |
+| `ListLit`     | expr  | `Elements []Expr` - `[1, 2, 3]`               |
+| `MapLit`      | expr  | `Keys []Expr`, `Values []Expr` (parallel) - `{"a": 1}` |
+| `IndexExpr`   | expr  | `Target Expr`, `Index Expr` - `$xs[i]`, chained |
 
 Every node embeds a `pos{File, Line, Col}` for error reporting and exposes
 it via `Node.Pos()` (line/col) and `Node.Filename()` (file path). The file

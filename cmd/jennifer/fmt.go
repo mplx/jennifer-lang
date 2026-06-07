@@ -12,14 +12,14 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lexer"
 )
 
-// runFmt formats path's source to stdout per docs/stylespec.md. The
+// runFmt formats path's source to stdout per docs/style-guide.md. The
 // formatter operates on the token stream rather than the AST so it can
 // preserve `import "file.j";` statements verbatim (the preprocessor would
 // otherwise inline them) and any parentheses the user wrote (the AST
 // erases redundant grouping).
 //
 // Known v1 limitation: comments are dropped because the lexer strips them
-// at scan time. This is documented in stylespec.md; preserving comments
+// at scan time. This is documented in style-guide.md; preserving comments
 // would require carrying them as tokens through the lexer.
 func runFmt(path string) int {
 	src, label, absPath, _, ok := loadProgramSource(path)
@@ -82,7 +82,7 @@ const (
 	braceMap   = byte('m')
 )
 
-const fmtIndent = "    " // 4 spaces, per stylespec.md
+const fmtIndent = "    " // 4 spaces, per style-guide.md
 
 func (f *fmtState) emit(t, next lexer.Token) {
 	// Classify `{` before writing it: prev token decides whether this is
