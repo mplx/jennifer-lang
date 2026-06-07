@@ -10,8 +10,8 @@ to the reference doc for each.
 | `io`      | `use io;`       | `printf`, `sprintf`, and a `%d %f %s %t %v %%` format-verb mini-language                                                                   | [io.md](io.md)             |
 | `convert` | `use convert;`  | `int`, `float`, `string`, `bool`, `typeOf` - explicit casts; canonical-only `bool` conversion                                              | [convert.md](convert.md)   |
 | `math`    | `use math;`     | `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`; constants `PI`, `E`                                                          | [math.md](math.md)         |
-| `strings` | `use strings;`  | `len`, `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring` | [strings.md](strings.md)   |
-| `core`    | *(auto-loaded)* | `JENNIFER_VERSION` - the interpreter's build version string. Pre-imported; writing `use core;` is a runtime error.                          | [core.md](core.md)         |
+| `strings` | `use strings;`  | `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring` (`len` lives in [`core`](core.md)) | [strings.md](strings.md)   |
+| `core`    | *(auto-loaded)* | `len`, `JENNIFER_VERSION`. Pre-imported by the interpreter; writing `use core;` is a runtime error.                                      | [core.md](core.md)         |
 
 A quick taste:
 
@@ -24,6 +24,7 @@ printf("Jennifer %s\n", JENNIFER_VERSION);   // auto-loaded from core
 printf("pi is roughly %f\n", PI);
 printf("sqrt(2) = %f\n", sqrt(2));
 printf("upper: %s\n", upper("hello"));
+printf("len: %d\n", len("hello"));           // auto-loaded from core
 ```
 
 ## How libraries are organized

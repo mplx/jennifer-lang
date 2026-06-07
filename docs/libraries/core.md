@@ -24,6 +24,22 @@ than library functions. Reserve membership carefully; almost everything
 new belongs in `io`, `math`, `convert`, `strings`, or a new
 domain-library, not here.
 
+## Functions
+
+| Call         | Returns | Notes                                                       |
+|--------------|---------|-------------------------------------------------------------|
+| `len(s)`     | int     | Rune count of a string (Unicode code points, not bytes). M6 extends `len` to accept lists and maps too. |
+
+`len` is polymorphic - the same name covers every type where "structural
+length" is well-defined. Today that's strings; lists and maps join in
+M6. Passing any other kind (`int`, `float`, `bool`, `null`) is a
+positioned runtime error.
+
+```jennifer
+printf("%d\n", len("hello"));    // 5
+printf("%d\n", len("héllo"));    // 5 (rune count, not byte count)
+```
+
 ## Constants
 
 | Name               | Kind     | Value                                                  |

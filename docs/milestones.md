@@ -183,10 +183,11 @@ of topic-based libraries. `printf`/`sprintf` moved to a new `io` library
   rule made that possible - follows the PHP_VERSION / RUBY_VERSION
   precedent and leaves the bare `VERSION` name free for future
   per-library use.) The rationale: `JENNIFER_VERSION` is structural and
-  universally useful, and the same library will host other structural
-  builtins like `len` (pass 2 of the cleanup moves it from `strings`)
-  and eventually `has`, `PLATFORM`, etc. The "nothing for free" rule
-  still holds for every other library.
+  universally useful, and the same library hosts other structural
+  builtins: pass 2 of the cleanup moved `len` here from `strings`,
+  where it stays polymorphic across strings now and lists/maps in M6.
+  Future inhabitants might include `has`, `PLATFORM`, etc. The
+  "nothing for free" rule still holds for every other library.
 - **Formatter:** `jennifer fmt` - done. Token-stream formatter that
   re-emits canonical source per [docs/stylespec.md](stylespec.md).
   Works at the lexer level (not AST) to preserve `import "file.j";`

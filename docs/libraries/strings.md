@@ -1,8 +1,13 @@
 # `strings` - text utilities
 
-Enable with `use strings;`. Twelve functions for the common things you do
-with strings: length, case conversion, search, trim, replace, repeat, and
+Enable with `use strings;`. Eleven functions for the common things you do
+with strings: case conversion, search, trim, replace, repeat, and
 substring extraction.
+
+> **Looking for `len(s)`?** It lives in the auto-loaded
+> [`core`](core.md) library now, so it's available everywhere without
+> any `use` statement. The same `len` covers strings, lists (M6), and
+> maps (M6) with one polymorphic dispatch.
 
 **String positions are 0-relative.** The first character is at index `0`, not
 `1`. So `indexOf("hello", "h")` returns `0`, `substring("hello", 0, 1)` returns
@@ -21,7 +26,7 @@ same units come out of every function.
 use io;
 use strings;
 
-printf("%d\n", len("hello"));               // 5
+printf("%d\n", len("hello"));               // 5  (core, auto-loaded)
 printf("%s\n", upper("hello"));             // "HELLO"
 printf("%t\n", contains("hello", "ell"));   // true
 printf("%t\n", startsWith("hello", "he"));  // true
@@ -36,7 +41,6 @@ printf("%s\n", substring("hello", 1, 4));   // "ell"
 
 | Call                          | Returns | Notes                                                  |
 |-------------------------------|---------|--------------------------------------------------------|
-| `len(s)`                      | int     | Rune count (Unicode code points)                       |
 | `upper(s)`, `lower(s)`        | string  | Case conversion (Unicode-aware)                        |
 | `contains(s, sub)`            | bool    | Substring search                                       |
 | `startsWith(s, prefix)`       | bool    |                                                        |

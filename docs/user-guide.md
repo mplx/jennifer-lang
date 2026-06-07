@@ -450,8 +450,8 @@ index.
 | `io`      | `use io;`      | `printf`, `sprintf` and the format-verb mini-language           | [libraries/io.md](libraries/io.md)             |
 | `convert` | `use convert;` | `int`, `float`, `string`, `bool`, `typeOf` - explicit casts     | [libraries/convert.md](libraries/convert.md)   |
 | `math`    | `use math;`    | `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`; constants `PI`, `E` | [libraries/math.md](libraries/math.md)         |
-| `strings` | `use strings;` | `len`, `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring` | [libraries/strings.md](libraries/strings.md)   |
-| `core`    | *(auto-loaded)* | `JENNIFER_VERSION` - the interpreter's build version string. No `use` needed; `use core;` is a runtime error. | [libraries/core.md](libraries/core.md)         |
+| `strings` | `use strings;` | `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring` (`len` is in `core`) | [libraries/strings.md](libraries/strings.md)   |
+| `core`    | *(auto-loaded)* | `len`, `JENNIFER_VERSION`. No `use` needed; `use core;` is a runtime error. | [libraries/core.md](libraries/core.md)         |
 
 See [libraries/index.md](libraries/index.md) for a catalog with code
 samples and the library-organization principles.

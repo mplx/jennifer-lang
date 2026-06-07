@@ -24,8 +24,11 @@ import (
 const LibraryName = "strings"
 
 // Install registers strings library functions on an interpreter.
+//
+// `len` used to live here as the rune-count function for strings; it now
+// lives in the auto-loaded `core` library so the same name covers strings,
+// lists, and maps with one polymorphic dispatch (see internal/lib/core).
 func Install(in *interpreter.Interpreter) {
-	in.Register(LibraryName, "len", lenFn)
 	in.Register(LibraryName, "upper", upperFn)
 	in.Register(LibraryName, "lower", lowerFn)
 	in.Register(LibraryName, "contains", containsFn)
@@ -98,18 +101,6 @@ func byteOffsetForRune(s string, i int) (int, error) {
 }
 
 // ---- functions ----
-
-// lenFn returns the rune count of s.
-func lenFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
-	if err := arityN("len", args, 1); err != nil {
-		return interpreter.Null(), err
-	}
-	s, err := requireString("len", args, 0)
-	if err != nil {
-		return interpreter.Null(), err
-	}
-	return interpreter.IntVal(int64(utf8.RuneCountInString(s))), nil
-}
 
 // upperFn returns s with all letters uppercased (Unicode-aware).
 func upperFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {

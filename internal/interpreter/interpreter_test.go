@@ -1464,24 +1464,31 @@ def r as string init `+c.expr+`;
 }
 
 func TestStringsTypeErrors(t *testing.T) {
-	// Non-string operands should error positionally.
+	// `len` lives in the auto-loaded `core` library now (moved from
+	// `strings`), so it's available without `use strings;`. A non-string
+	// argument still errors - just with a different message that names
+	// the polymorphic intent. M6 will extend `len` to accept lists/maps.
 	_, err := run(t, `
-use io;
-use strings;
 def r as int init len(42);
 `)
-	if err == nil || !strings.Contains(err.Error(), "must be string") {
+	if err == nil || !strings.Contains(err.Error(), "len()") {
 		t.Errorf("got %v", err)
 	}
 }
 
-func TestStringsRequiresUse(t *testing.T) {
-	_, err := run(t, `
+func TestLenIsAutoLoaded(t *testing.T) {
+	// `len` is in the `core` library, which is auto-loaded. No `use`
+	// statement is needed - calling `len("hello")` from a bare program
+	// must succeed.
+	out, err := run(t, `
 use io;
-def r as int init len("hello");
+printf("%d", len("hello"));
 `)
-	if err == nil || !strings.Contains(err.Error(), "use strings") {
-		t.Errorf("got %v", err)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "5" {
+		t.Errorf("got %q, want %q", out, "5")
 	}
 }
 

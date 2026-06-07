@@ -29,6 +29,10 @@
 package corelib
 
 import (
+	"fmt"
+	"io"
+	"unicode/utf8"
+
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 	"github.com/mplx/jennifer-lang/internal/version"
 )
@@ -45,4 +49,28 @@ const LibraryName = "core"
 // other libraries.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterConst(LibraryName, "JENNIFER_VERSION", interpreter.StringVal(version.Version))
+	in.Register(LibraryName, "len", lenFn)
+}
+
+// lenFn returns the structural length of its argument. Polymorphic on the
+// types where "length" is well-defined:
+//
+//   - string -> rune count (Unicode code points, not bytes)
+//   - list   -> element count (added in M6)
+//   - map    -> entry count   (added in M6)
+//
+// Any other kind is a positioned runtime error. The signature is the
+// builtin one (args slice + writer); the writer is unused.
+func lenFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("len() expects 1 argument, got %d", len(args))
+	}
+	v := args[0]
+	switch v.Kind {
+	case interpreter.KindString:
+		return interpreter.IntVal(int64(utf8.RuneCountInString(v.Str))), nil
+	// List and map cases land in M6, when KindList / KindMap exist.
+	default:
+		return interpreter.Null(), fmt.Errorf("len() expects a string (M6: list or map), got %s", v.Kind)
+	}
 }
