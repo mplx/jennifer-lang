@@ -102,6 +102,43 @@ nothing here will surprise you.
   then a blank line, then the rest of the program.
 - **Trailing newline** at end of file.
 
+## Editor configuration
+
+Drop the following into a `.editorconfig` file at your project root and
+[any editor with EditorConfig support](https://editorconfig.org/#download)
+will enforce the spacing and file-encoding rules above automatically:
+
+```ini
+# .editorconfig
+root = true
+
+[*.j]
+indent_style = space
+indent_size = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+```
+
+That covers the indentation rule (4 spaces, no tabs), trailing-whitespace
+and final-newline conventions, and pins UTF-8 + LF line endings so
+collaborators on different OSes don't accidentally introduce CRLF
+diffs. `jennifer fmt` re-emits source in the same shape, so the
+EditorConfig settings and the formatter never disagree.
+
+If you keep `.j` files alongside other languages in one repository, add
+a generic fallback as the first block so plain text files don't drift
+either:
+
+```ini
+[*]
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+```
+
 ## Limitations
 
 `jennifer fmt` (v1) operates on the lexer's token stream and re-emits
@@ -133,10 +170,9 @@ for (def i as int init 0; $i <= 8; $i = $i + 1) {
 ```
 
 Everything in this example follows the rules above: K&R braces, 4-space
-indent, spaces around binary operators, unary `-` flush against its
-operand, double-quoted strings, expanded blocks, no blank lines (a
-limitation - see above). `jennifer fmt` will produce this output
-byte-for-byte from any equivalent input.
+indent, spaces around binary operators, double-quoted strings, expanded
+blocks, no blank lines (a limitation - see above). `jennifer fmt` will
+produce this output byte-for-byte from any equivalent input.
 
 The SPDX header (`// SPDX-License-Identifier: ...`) and copyright comment
 that the project's source files carry are stripped by `fmt` today; keep

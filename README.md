@@ -12,6 +12,20 @@ tree-walking evaluator → stdlib).
 
 Jennifer currently targets **Linux**; Windows and macOS support is planned.
 
+## Stability
+
+Jennifer is **pre-1.0**. While the major version stays at `0.x.y`,
+**anything can change at any time** - syntax, semantics, library names,
+function signatures, file formats. We aim for best-effort stability
+between minor versions but make no guarantees: a milestone may rename a
+keyword, retype a builtin, or restructure the standard library when a
+better design is found. Pin to a specific version if you need
+reproducibility; expect to migrate when you upgrade.
+
+Starting with **`1.0.0`**, Jennifer will follow [Semantic
+Versioning](https://semver.org/): breaking changes only on a major
+version bump, additive features on minor, fixes on patch.
+
 ## Quick start
 
 ```sh

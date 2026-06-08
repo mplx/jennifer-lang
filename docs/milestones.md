@@ -95,7 +95,7 @@ Rounds out the "ordinary" feature set:
   moved here from `strings`. See [libraries/core.md](libraries/core.md)
   and [technical/cli.md > Version injection](technical/cli.md#version-injection).
 - **Formatter** - `jennifer fmt` re-emits canonical source per
-  [style-guide.md](style-guide.md). Token-level walker so file imports and
+  [user-guide/style-guide.md](user-guide/style-guide.md). Token-level walker so file imports and
   user-written parentheses survive. See
   [technical/cli.md > Formatter](technical/cli.md#formatter-cmdjenniferfmtgo).
 - **Inspection subcommands** - `jennifer tokens <file>` dumps the lexer
@@ -106,7 +106,7 @@ Rounds out the "ordinary" feature set:
   [technical/lexer.md > Identifier rule](technical/lexer.md#identifier-rule).
 - **Documentation overhaul** - `docs/technical.md` split into
   `docs/technical/<topic>.md`; `docs/lib_*.md` moved to
-  `docs/libraries/`; new `docs/style-guide.md`.
+  `docs/libraries/`; new `docs/user-guide/style-guide.md`.
 
 ---
 
@@ -135,12 +135,12 @@ functions deferred until compound types existed.
   for membership tests; `strings.split`, `strings.chars`,
   `strings.join` finished.
 - **Tooling**: formatter handles `[...]` / `{...}` per
-  [style-guide.md](style-guide.md) (no inner padding, space after `,`/`:`,
+  [user-guide/style-guide.md](user-guide/style-guide.md) (no inner padding, space after `,`/`:`,
   block-vs-map disambiguation via a small brace stack); AST JSON
   emitter handles `ListLit`, `MapLit`, `IndexExpr`, `IndexAssignStmt`,
   `ForEachStmt`.
 
-See [user-guide.md > Lists and maps](user-guide.md#lists-and-maps) for
+See [user-guide/types-and-values.md > Lists and maps](user-guide/types-and-values.md#lists-and-maps) for
 the user-facing tour, and
 [technical/grammar.md](technical/grammar.md) /
 [technical/interpreter.md](technical/interpreter.md) for the
@@ -151,6 +151,7 @@ implementation contract.
 ## M7 - printf modifier
 
 - **(s)printf**: introduce format verb modifiers
+- **user input**: user input like readLine(), readLine(prompt)
 
 ---
 
@@ -160,10 +161,10 @@ The flat-namespace model is fine for the essential libraries today
 (`io`, `convert`, `math`, `strings`, plus the auto-loaded `core`) -
 they're small, names are carefully chosen, collisions are unlikely. It will not scale to domain
 libraries like `regex`, `net`, `bio`, or `crypto`, where the chance of
-two libraries shipping a `len` / `parse` / `encode` is high. M9 settles
+two libraries shipping a `len` / `parse` / `encode` is high. M8 settles
 the policy before the first domain library lands.
 
-**Decision (to confirm at start of M9):** hybrid model. Essential
+**Decision (to confirm at start of M8):** hybrid model. Essential
 libraries stay flat for ergonomics; domain libraries are prefixed
 through a namespace tag set at registration time. Optional aliasing
 lets the user shorten a namespace.
@@ -202,7 +203,7 @@ lets the user shorten a namespace.
   declared, not the library name necessarily (usually they'll match,
   but a library called `crypto_primitives` could expose itself as
   `crypto.` to be brief).
-- **Optional aliasing (defer to M9.1 if scope is tight):**
+- **Optional aliasing (defer to M8.1 if scope is tight):**
   ```jennifer
   use bio as b;
   printf("%d\n", b.translateLen($seq));
@@ -218,7 +219,7 @@ lets the user shorten a namespace.
   conflict with the qualified form. Document the resolution rule
   carefully in `docs/technical/interpreter.md`.
 
-**Docs to write at end of M9:**
+**Docs to write at end of M8:**
 
 - Update `docs/libraries/index.md` with the namespace policy and a
   rule for library authors ("is your library essential or domain?
@@ -226,7 +227,7 @@ lets the user shorten a namespace.
 - Update `docs/technical/grammar.md` EBNF.
 - Update `docs/technical/interpreter.md` Builtins-and-libraries
   section to describe the lookup rule.
-- New section in `docs/style-guide.md`: how to write namespaced calls
+- New section in `docs/user-guide/style-guide.md`: how to write namespaced calls
   (`bio.translate($seq)`, no space around `.`, same as method-call
   paren-hugging).
 - `cmd/jennifer/fmt.go` already preserves `TOKEN_DOT` verbatim;
@@ -240,20 +241,102 @@ continue to work unchanged.
 
 ---
 
-## M09 - Domain libraries
+## M9 - Collection operations
+
+The `list`/`map` types shipped in M6 with literals, indexing, and
+iteration but no manipulation helpers. M9 adds two opt-in libraries
+that cover the rest:
+
+- **`lists` library** (`use lists;`): `push`, `pop`, `first`, `last`,
+  `head`, `tail`, `reverse`, `sort`, `contains`, `concat`, `slice`.
+  All functions return a **new list** (no mutation through reference;
+  matches Jennifer's value semantics) - callers write
+  `$xs = push($xs, item);`. `sort` works on primitive element types;
+  comparator-based sort is deferred until methods are first-class
+  values.
+- **`maps` library** (`use maps;`): `keys`, `values`, `delete`,
+  `merge`. Same pattern - functions return a new map, no in-place
+  mutation. `delete($m, key)` returns a shrunk map; `merge($a, $b)`
+  returns a new map with `$b` overlaying `$a`.
+
+**Sugar: `$xs[] = item;` syntax-level append.** For the 80% case of
+"build a list by appending", introduce a new write target where `[]`
+means "the position just past the end". Mechanically the same as
+`push($xs, item)` but cheaper to write. Reuses index-assign machinery
+(the binding gets rewritten to the extended list); no new keyword. The
+parser learns to accept `LBRACKET RBRACKET` as a special index in
+write position. Reads of `$xs[]` are not valid (no obvious meaning).
+
+**`core.has` stays map-only**, as already documented. List
+membership is `lists.contains($xs, item)` - matches the
+`strings.contains($s, $sub)` shape (haystack first, needle second; PHP's
+`in_array($needle, $haystack)` argument order is famously confusing
+and deliberately not adopted).
+
+**Naming convention** (resolved at start of M9): flat names within
+each library following the existing `strings.contains` /
+`strings.startsWith` style. No `array_*` PHP-style prefix. Once M8
+namespacing lands, qualified `lists.contains($xs, x)` form becomes
+available; until then, `use lists;` + bare `contains` works.
+
+**Why now rather than ship with M6**: M6 already pushed a lot of new
+machinery (parser, runtime, type stamping, formatter rules). Punting
+helpers gave us time to confirm the value-semantics + return-new-list
+shape against real example code (the showcase, wordcount). With that
+validated, M9 is mostly stdlib registration: each function is one Go
+helper. The `$xs[] = item;` sugar is the only language-level change.
+
+**Implementation notes:**
+
+- Each library function is a builtin: `Register("lists", "push", pushFn)`.
+- `pushFn` takes `(list, item) -> list of T` - copies the input list,
+  appends the item, returns it. The caller's assignment writes the
+  result back; the original input is untouched. Cost: O(n) per push,
+  acceptable at Jennifer's scale; copy-on-write is a future optimization.
+- The `$xs[] = item;` sugar parses as a new AST node `AppendStmt {
+  Target *VarExpr, Value Expr }`. Interpreter walks identically to
+  IndexAssignStmt but writes one slot past the end.
+- `sort` uses Go's `sort.Slice` with a kind-aware less function; mixed
+  types in one list error (kind already enforced at element-write
+  time, so this should never happen in practice).
+
+**Docs to update:**
+
+- `docs/libraries/lists.md` (new file) - covers every function with
+  signature, semantics, example, and the "returns new list" rule.
+- `docs/libraries/maps.md` (new file) - same pattern.
+- `docs/libraries/index.md` - add the two new entries to the catalog.
+- `docs/user-guide/imports.md` - mention `lists` / `maps` in the libraries
+  table; cover the `$xs[] = ...;` sugar in the Lists and maps section.
+- `docs/technical/grammar.md` - new EBNF for the append form and
+  new `AppendStmt` AST node.
+- `docs/user-guide/style-guide.md` - no whitespace inside `$xs[]` (consistent
+  with `$xs[0]`).
+- `examples/showcase.j` and/or `examples/wordcount.j` - exercise
+  push/pop/sort/contains so the goldens cover the new surface.
+
+**Exit criterion:** the showcase exercises `push`, `pop`, `sort`,
+`contains`, and the `$xs[]` sugar end-to-end; round-trips through
+`fmt` are stable; `lists` and `maps` libraries both show up in
+`jennifer help`'s "available libraries" error list.
+
+---
+
+## M10 - Domain libraries
 
 - **File library** (`use fs;`)
 - **OS library** (`use os;`)
 - **Regex library** (`use regex;`)
 - **Network library** (`use net;`)
 - **Crypto library** (`use crypto;`)
+- **Random library** (`use random;`)
 
-All M09 libraries are domain libraries and ship with namespaces
+All M10 libraries are domain libraries and ship with namespaces
 (per M8): `fs.read`, `os.getenv`, `regex.match`, `net.dial`,
 `crypto.sha256`. This is the first real test of the namespacing
 convention - if any of these prove awkward (`crypto.sha256` reads
 fine; `fs.read` collides with the urge to call it `readFile`), revisit
-in early M9 before too many call sites lock in.
+in early M10 before too many call sites lock in.
 
 ---
 

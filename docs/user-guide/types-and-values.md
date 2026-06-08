@@ -124,9 +124,106 @@ A few rules worth knowing up front:
   rejects both `$NUMS = ...` and `$NUMS[0] = ...`. Nested const
   lists/maps follow the same rule transitively.
 - **Nesting works**: `list of list of int`,
-  `map of string to list of int`, and so on. There's no depth cap, but
-  4+ levels of nesting is a code smell - reach for a struct once
-  Jennifer has them.
+  `map of string to list of int`, and so on. See
+  [Nested lists and maps](#nested-lists-and-maps) below for the
+  shape rules and when nesting gets too deep.
 - **Empty literals require a declared type**: `[]` and `{}` are valid
   literals but the surrounding `def x as list of T` decides what they
   hold.
+
+### Nested lists and maps
+
+Compound types nest by repeating the keyword. `list of list of int` is a
+list whose elements are themselves lists of ints; `map of string to list
+of int` is a map whose values are lists of ints. There's no depth cap -
+the parser will recurse as far as you nest.
+
+#### The "different dimensions, same type" gotcha
+
+Coming from C or Java, you might expect `int[3][3]` to mean "a 3×3 grid -
+exactly nine ints, fixed shape". **Jennifer does not work that way.**
+
+The declared type only fixes *what each level holds*, not *how many
+elements are at each level*. So all of these are the same `list of list of
+int` type:
+
+```jennifer
+// 2×2 grid - two rows of two columns
+def gridA as list of list of int init [[1, 2], [3, 4]];
+
+// 3×3 grid - three rows of three columns
+def gridB as list of list of int init [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+
+// Jagged - rows have different lengths
+def gridC as list of list of int init [[1], [2, 3], [4, 5, 6]];
+
+// Empty - zero rows
+def gridD as list of list of int init [];
+```
+
+Same declared type, four very different shapes. At runtime each list
+just knows its own length; reading `$gridA[2]` is an out-of-bounds error
+(only indices 0 and 1 exist), reading `$gridC[2][2]` works (the third
+row has three elements), but `$gridC[0][2]` is out of bounds (the
+first row has only one element). **`len($gridC[i])` is the only way to
+ask "how wide is this particular row?"**
+
+If you need a strict shape, enforce it in code:
+
+```jennifer
+func makeGrid(size as int) {
+    def out as list of list of int init [];
+    for (def i as int init 0; $i < $size; $i = $i + 1) {
+        def row as list of int init [];
+        for (def j as int init 0; $j < $size; $j = $j + 1) {
+            $row[] = 0;
+        }
+        $out[] = $row;
+    }
+    return $out;
+}
+```
+
+#### Why 4+ levels of nesting is a code smell
+
+The same flexibility that lets `list of list of int` hold any shape gets
+unreadable fast as you nest deeper. Here's a four-level type holding
+"per game, per player, per character, per inventory slot, the item
+name":
+
+```jennifer
+def saves as list of list of list of list of string init [
+    [[["sword", "shield"], ["bow"]], [["dagger"]]],
+    [[["staff", "amulet"]], [[], ["potion", "rope", "torch"]]]
+];
+
+// What does this even mean?
+$saves[0][1][0][0] = "axe";
+```
+
+Three problems:
+
+1. **No semantic names for the dimensions.** Is index 2 "the character"
+   or "the inventory slot"? You can't tell without going back to read
+   the declaration and counting brackets.
+2. **Bug-prone access.** `$saves[0][1][0][0]` is four indices that all
+   look the same. Off-by-one or off-by-level errors are silent until
+   the program either panics or, worse, modifies the wrong slot.
+3. **Inflexible.** Adding a fifth dimension (per save slot, per timestamp,
+   ...) means rewriting every access site in the program.
+
+The standard fix is a struct or named record, which Jennifer doesn't have
+yet (planned post-M10). Until then, options for the meantime:
+
+- **Wrap access in methods**: `getItem(save, player, character, slot)`
+  reads better than four bare brackets and gives you one place to fix a
+  bug. Internally the function still walks the nested lists, but call
+  sites are self-documenting.
+- **Flatten with composite keys**: `map of string to string` keyed on
+  `"save:0/player:1/char:0/slot:0"` trades index speed for name clarity.
+  Better when the structure is sparse anyway.
+- **Decompose into parallel simpler structures**: one list of save
+  metadata, one map from save-id to inventory, etc.
+
+As a rule of thumb: **one level is normal, two is fine, three is
+uncommon, four is almost always a sign there's a missing abstraction.**

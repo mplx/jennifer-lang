@@ -54,8 +54,10 @@ def result as bool init $gate and expensive();   // expensive() not called
 ```
 
 Mixed `int`/`float` arithmetic promotes the int to float and the result is a
-float (`3 + 0.5` -> `3.5`). `int / int` is integer division; if either
-operand is a float, division is float division.
+float (`3 + 0.5` -> `3.5`). **`/` always returns `float`**, even with two
+int operands (`5 / 2` is `2.5`, not `2`). Use `div` when you want an
+integer quotient: `5 div 2` is `2`. This is Python-3 division, not C/Java
+division.
 
 ## Conditionals and loops
 
