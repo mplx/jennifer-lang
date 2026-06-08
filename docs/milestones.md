@@ -208,7 +208,61 @@ implementation contract.
   as literal when not followed by a key letter) was rejected for being
   context-sensitive in a way that would surprise users when a literal
   happened to look like a modifier name.
-- **user input**: user input like readLine(), readLine(prompt)
+- **user input (stdin)** - three new builtins in the `io` library for
+  reading from stdin one line at a time. Two functions of the same
+  name (arity-dispatched, like `printf`) plus a predicate:
+
+  - `readLine() -> string` - read one line from stdin. Trailing
+    `\r\n` / `\n` are stripped. Calling at end-of-input is a
+    positioned runtime error (`readLine: end of input`); callers must
+    check `eof()` first. A final line without a terminating newline
+    is returned normally; the subsequent call errors.
+  - `readLine(prompt) -> string` - write `prompt` to stdout, flush,
+    then read one line. Same EOF behavior. The prompt is written
+    unconditionally (even when stdin is piped) - explicit beats
+    "silently skip when not a TTY".
+  - `eof() -> bool` - true iff the next `readLine()` would error.
+    Implemented via a one-byte peek on a buffered stdin reader; the
+    true-state is cached.
+
+  Canonical loop idiom:
+
+  ```jennifer
+  use io;
+  while (not eof()) {
+      def line as string init readLine();
+      printf("%s\n", $line);
+  }
+  ```
+
+  **REPL refusal.** The REPL already owns stdin via its line editor,
+  so `readLine`/`eof` error inside the REPL with a clear message
+  (`stdin is owned by the editor`). A proper side-channel for REPL
+  input is a future milestone.
+
+  **Implementation note.** Builtin signature changes from
+  `func(out io.Writer, args []Value)` to
+  `func(ctx BuiltinCtx, args []Value)` where `BuiltinCtx` carries
+  `Out`, `In`, and `InREPL`. Mechanical refactor across the existing
+  ~30 builtins; most just rename `out` to `ctx.Out`.
+
+  **Deferred from M7.**
+
+  - **Byte reads from stdin (`readBytes(n)`).** Waits on `fs.read` -
+    "read N bytes" needs a binary representation Jennifer doesn't
+    have yet (`string` is UTF-8 / rune-counted, so raw bytes can't
+    live there cleanly). The two candidate shapes are (a) a new
+    `bytes` primitive type, or (b) `list of int` with each element
+    in `[0, 255]`. File I/O will hit the exact same question, so the
+    decision is better made once in that milestone than twice now.
+    The existing `eof()` is already byte-level (peeks one byte) and
+    will compose with whatever binary reader lands.
+  - **Reading characters / runes** (`readChars(n)`) - separate
+    design from byte reads; defer for the same reason.
+  - **`lines()` returning the whole stream as a list** - additive;
+    not required by the streaming `readLine()` + `eof()` idiom.
+  - **File handles and any non-stdin source.** Owned by a future
+    `fs` library.
 
 ---
 
