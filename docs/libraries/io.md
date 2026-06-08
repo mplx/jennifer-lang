@@ -162,6 +162,71 @@ printf("%f|sci=true|prec=2\n", 0.00123);     # 1.23e-03
 print it" verb. Use a typed verb plus modifiers when you want to shape
 the output.
 
+## Input from stdin
+
+Three builtins for reading lines from standard input. They are
+**output-symmetric** with `printf` / `sprintf` and intentionally
+minimal - line at a time, with an explicit end-of-input predicate so
+nothing happens implicitly.
+
+### `readLine() -> string`
+
+Read one line from stdin. The trailing `\r\n` or `\n` is stripped; the
+returned string never carries a newline. Calling at end-of-input is a
+positioned runtime error (`readLine: end of input`), so the caller
+must check `eof()` first.
+
+A final line that has no trailing newline is returned normally on the
+call that reaches it; the subsequent call errors.
+
+### `readLine(prompt) -> string`
+
+Same as `readLine()` but writes `prompt` to stdout (no newline added)
+before reading. The prompt is written **unconditionally**, even when
+stdin is piped - explicit beats silently skipping the prompt off a
+non-TTY.
+
+```jennifer
+def name as string init readLine("name: ");
+printf("hi, %s\n", $name);
+```
+
+### `eof() -> bool`
+
+True iff the next `readLine()` would error. Implemented by peeking one
+byte through a buffered reader; the byte stays in the buffer for the
+next read. Once true, `eof()` stays true for the rest of the run.
+
+### Canonical loop
+
+```jennifer
+use io;
+while (not eof()) {
+    def line as string init readLine();
+    printf("[%s]\n", $line);
+}
+```
+
+This is the only pattern the language asks you to learn. There is no
+`for line in stdin` shortcut, no `lines()` that slurps the whole
+stream, and `readLine()` does not return a sentinel value at EOF -
+they were considered and rejected because the existing trio is
+already complete and adding parallels would violate Jennifer's "one
+way per thing" stance.
+
+### REPL limitation
+
+The interactive REPL owns stdin via its line editor, so `readLine`
+and `eof` both refuse inside the REPL with a clear error:
+
+```
+readLine: stdin is owned by the REPL editor
+```
+
+A proper side-channel for REPL input is a future milestone. To play
+with the input functions today, put your program in a `.j` file and
+run it with stdin piped or redirected: `jennifer run prog.j < input.txt`.
+
 ## Float display
 
 Floats always display with a decimal point so the value's type stays visible:

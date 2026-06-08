@@ -143,14 +143,27 @@ What follows is the implementation contract, not the user-facing API.
 Library functions are Go closures registered with the interpreter:
 
 ```go
-type Builtin func(out io.Writer, args []Value) (Value, error)
+type BuiltinCtx struct {
+    Out    io.Writer  // stdout-like effects write here
+    In     io.Reader  // stdin-consuming builtins read here
+    InREPL bool       // true when the call originates from the REPL
+}
+type Builtin func(ctx BuiltinCtx, args []Value) (Value, error)
 
 # In a library package:
 func Install(in *interpreter.Interpreter) {
     in.Register("io", "printf", printf)
     in.Register("io", "sprintf", sprintf)
+    in.Register("io", "readLine", readLine)
+    in.Register("io", "eof", eofFn)
 }
 ```
+
+`BuiltinCtx` replaces an earlier `(out io.Writer, args)` signature at
+M7 to give input-consuming builtins symmetric access to stdin and the
+REPL flag. `Interpreter.In` defaults to `os.Stdin`; the REPL sets
+`Interpreter.InREPL = true` so `readLine` / `eof` refuse rather than
+racing the line editor for input.
 
 `Interpreter.Builtins` stores `builtinEntry{Lib, Fn}` per name. A call to
 `foo(...)` resolves in this order:

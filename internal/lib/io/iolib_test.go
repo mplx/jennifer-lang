@@ -16,11 +16,11 @@ import (
 // stored as `builtinEntry{Lib, Fn}` rather than bare function values; the
 // helpers hide that indirection from each test.
 func callPrintf(in *interpreter.Interpreter, out io.Writer, args []interpreter.Value) (interpreter.Value, error) {
-	return in.Builtins["printf"].Fn(out, args)
+	return in.Builtins["printf"].Fn(interpreter.BuiltinCtx{Out: out}, args)
 }
 
 func callSprintf(in *interpreter.Interpreter, args []interpreter.Value) (interpreter.Value, error) {
-	return in.Builtins["sprintf"].Fn(nil, args)
+	return in.Builtins["sprintf"].Fn(interpreter.BuiltinCtx{}, args)
 }
 
 func TestInstallRegistersBuiltins(t *testing.T) {

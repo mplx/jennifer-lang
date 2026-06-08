@@ -41,6 +41,10 @@ const (
 // editor would do nothing useful on a non-interactive stream anyway.
 func runRepl() int {
 	in := interpreter.New()
+	// Mark this interpreter as REPL-owned so stdin-consuming builtins
+	// (`readLine`, `eof`) refuse rather than fighting the line editor
+	// for input. A proper side channel is a future milestone.
+	in.InREPL = true
 	iolib.Install(in)
 	convert.Install(in)
 	mathlib.Install(in)

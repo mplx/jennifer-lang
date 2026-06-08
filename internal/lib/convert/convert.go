@@ -8,7 +8,6 @@ package convert
 
 import (
 	"fmt"
-	"io"
 	"strconv"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
@@ -40,7 +39,7 @@ func arityOne(name string, args []interpreter.Value) error {
 //   - string -> strconv.ParseInt(base 10, 64-bit); error on bad input
 //   - bool   -> true=1, false=0
 //   - null   -> error
-func intFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func intFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityOne("int", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -71,7 +70,7 @@ func intFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 //   - string -> strconv.ParseFloat(64-bit); error on bad input
 //   - bool   -> true=1.0, false=0.0
 //   - null   -> error
-func floatFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func floatFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityOne("float", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -98,7 +97,7 @@ func floatFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 
 // stringFn implements `string(v)`: returns the value's display form. Never
 // fails (every kind has a defined Display).
-func stringFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func stringFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityOne("string", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -115,7 +114,7 @@ func stringFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) 
 //
 // If you want "nonzero counts as true" semantics, write the comparison
 // explicitly: `def b as bool init $x != 0;`.
-func boolFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func boolFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityOne("bool", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -154,7 +153,7 @@ func boolFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 // typeOfFn returns the runtime kind name of its argument as a string:
 // "null", "int", "float", "string", or "bool". Useful for debugging and
 // runtime introspection.
-func typeOfFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func typeOfFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityOne("typeOf", args); err != nil {
 		return interpreter.Null(), err
 	}

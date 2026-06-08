@@ -12,7 +12,6 @@ package stringslib
 
 import (
 	"fmt"
-	"io"
 	gostrings "strings"
 	"unicode"
 	"unicode/utf8"
@@ -107,7 +106,7 @@ func byteOffsetForRune(s string, i int) (int, error) {
 // ---- functions ----
 
 // upperFn returns s with all letters uppercased (Unicode-aware).
-func upperFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func upperFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("upper", args, 1); err != nil {
 		return interpreter.Null(), err
 	}
@@ -119,7 +118,7 @@ func upperFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 }
 
 // lowerFn returns s with all letters lowercased (Unicode-aware).
-func lowerFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func lowerFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("lower", args, 1); err != nil {
 		return interpreter.Null(), err
 	}
@@ -131,7 +130,7 @@ func lowerFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 }
 
 // containsFn reports whether sub appears anywhere in s.
-func containsFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func containsFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("contains", args, 2); err != nil {
 		return interpreter.Null(), err
 	}
@@ -147,7 +146,7 @@ func containsFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error
 }
 
 // startsWithFn reports whether s begins with prefix.
-func startsWithFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func startsWithFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("startsWith", args, 2); err != nil {
 		return interpreter.Null(), err
 	}
@@ -163,7 +162,7 @@ func startsWithFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, err
 }
 
 // endsWithFn reports whether s ends with suffix.
-func endsWithFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func endsWithFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("endsWith", args, 2); err != nil {
 		return interpreter.Null(), err
 	}
@@ -180,7 +179,7 @@ func endsWithFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error
 
 // indexOfFn returns the rune index of the first occurrence of sub in s, or
 // -1 if sub is not present.
-func indexOfFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func indexOfFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("indexOf", args, 2); err != nil {
 		return interpreter.Null(), err
 	}
@@ -197,7 +196,7 @@ func indexOfFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error)
 }
 
 // trimFn strips leading and trailing whitespace (Unicode-aware).
-func trimFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func trimFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("trim", args, 1); err != nil {
 		return interpreter.Null(), err
 	}
@@ -209,7 +208,7 @@ func trimFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 }
 
 // trimLeftFn strips leading whitespace only.
-func trimLeftFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func trimLeftFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("trimLeft", args, 1); err != nil {
 		return interpreter.Null(), err
 	}
@@ -221,7 +220,7 @@ func trimLeftFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error
 }
 
 // trimRightFn strips trailing whitespace only.
-func trimRightFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func trimRightFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("trimRight", args, 1); err != nil {
 		return interpreter.Null(), err
 	}
@@ -233,7 +232,7 @@ func trimRightFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, erro
 }
 
 // replaceFn returns s with all occurrences of old replaced by new.
-func replaceFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func replaceFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("replace", args, 3); err != nil {
 		return interpreter.Null(), err
 	}
@@ -253,7 +252,7 @@ func replaceFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error)
 }
 
 // repeatFn returns n copies of s concatenated. Negative n is an error.
-func repeatFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func repeatFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("repeat", args, 2); err != nil {
 		return interpreter.Null(), err
 	}
@@ -280,7 +279,7 @@ func repeatFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) 
 // extracts from `start` to the end of the string. Indices are rune-based to
 // match `len` and `indexOf`. Out-of-range indices error explicitly (no
 // silent clamping).
-func substringFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func substringFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if len(args) != 2 && len(args) != 3 {
 		return interpreter.Null(), fmt.Errorf("substring expects 2 or 3 arguments, got %d", len(args))
 	}
@@ -330,7 +329,7 @@ var stringListType = parser.ListType(parser.PrimitiveType(parser.TypeString))
 // `strings.Split` with an empty separator splits on runes; we expose
 // that via the separate `chars` builtin and require a non-empty
 // separator here so the behavior is unambiguous to users.
-func splitFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func splitFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("split", args, 2); err != nil {
 		return interpreter.Null(), err
 	}
@@ -356,7 +355,7 @@ func splitFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 // charsFn returns the runes of s as a list of single-rune strings.
 // Returns an empty list for the empty string. Each entry is one Unicode
 // code point - the same unit `len`, `indexOf`, and `substring` work in.
-func charsFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func charsFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("chars", args, 1); err != nil {
 		return interpreter.Null(), err
 	}
@@ -374,7 +373,7 @@ func charsFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 // joinFn concatenates the strings in `parts` with `sep` between them.
 // `parts` must be a `list of string`; any non-string element is a
 // positioned error rather than silent coercion.
-func joinFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func joinFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityN("join", args, 2); err != nil {
 		return interpreter.Null(), err
 	}

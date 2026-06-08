@@ -30,7 +30,6 @@ package corelib
 
 import (
 	"fmt"
-	"io"
 	"unicode/utf8"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
@@ -61,7 +60,7 @@ func Install(in *interpreter.Interpreter) {
 //   - map    -> entry count
 //
 // Any other kind is a positioned runtime error.
-func lenFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func lenFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if len(args) != 1 {
 		return interpreter.Null(), fmt.Errorf("len() expects 1 argument, got %d", len(args))
 	}
@@ -84,7 +83,7 @@ func lenFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 // Only maps are accepted - "does this list contain this value?" is a
 // different question (linear search; future strings library
 // `contains(haystack, needle)` is the analogous string-side operation).
-func hasFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func hasFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if len(args) != 2 {
 		return interpreter.Null(), fmt.Errorf("has() expects 2 arguments (map, key), got %d", len(args))
 	}

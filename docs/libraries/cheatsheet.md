@@ -19,6 +19,7 @@ flat lookup view, not authoritative.
 | `chars(s)`                    | [strings](strings.md)           | Split `s` into a `list of string`, one entry per Unicode code point.          |
 | `contains(s, sub)`            | [strings](strings.md)           | True if `s` contains the substring `sub`.                                     |
 | `endsWith(s, suffix)`         | [strings](strings.md)           | True if `s` ends with `suffix`.                                               |
+| `eof()`                       | [io](io.md)                     | True iff the next `readLine()` would error. Pair with `while (not eof()) {...}`. |
 | `float(v)`                    | [convert](convert.md)           | Convert to float (int→float, float identity, string parses, bool→1.0/0.0).   |
 | `floor(x)`                    | [math](math.md)                 | Largest int ≤ `x`. Accepts int (identity) or float.                           |
 | `has(m, key)`                 | [core](core.md) *(auto-loaded)* | True if map `m` contains `key`. The non-erroring companion to `$m[key]`.     |
@@ -32,6 +33,8 @@ flat lookup view, not authoritative.
 | `pow(x, y)`                   | [math](math.md)                 | `x` raised to `y`; always float. Errors on NaN/Inf-producing inputs.          |
 | `printf(value)`               | [io](io.md)                     | Write a value's display form to stdout.                                       |
 | `printf(format, args...)`     | [io](io.md)                     | Format-string write to stdout. Verbs: `%d %f %s %t %v %%`; per-verb `\|key=value` modifiers (`pad`, `prec`, `base`, `null=*`, ...). |
+| `readLine()`                  | [io](io.md)                     | Read one line from stdin (trailing newline stripped). Errors at EOF - check `eof()` first. |
+| `readLine(prompt)`            | [io](io.md)                     | Same as `readLine()` but writes `prompt` to stdout first.                     |
 | `repeat(s, n)`                | [strings](strings.md)           | `n` non-negative copies of `s` concatenated.                                  |
 | `replace(s, old, new)`        | [strings](strings.md)           | Replace **all** occurrences of `old` in `s` with `new`.                       |
 | `round(x)`                    | [math](math.md)                 | Round to nearest int (half away from zero).                                   |

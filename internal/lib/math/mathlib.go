@@ -12,7 +12,6 @@ package mathlib
 
 import (
 	"fmt"
-	"io"
 	"math"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
@@ -53,7 +52,7 @@ func arityTwo(name string, args []interpreter.Value) error {
 // absFn returns the absolute value, preserving the operand's type.
 //   - int    -> int
 //   - float  -> float
-func absFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func absFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityOne("abs", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -72,7 +71,7 @@ func absFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 
 // minFn returns the lesser of two numeric values. (int,int) -> int;
 // mixed or (float,float) -> float (matches the `+` promotion rule).
-func minFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func minFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityTwo("min", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -80,7 +79,7 @@ func minFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 }
 
 // maxFn is symmetric with minFn.
-func maxFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func maxFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityTwo("max", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -121,7 +120,7 @@ func cmpPick(a, b interpreter.Value, wantSmaller bool, name string) (interpreter
 }
 
 // sqrtFn returns the square root as a float. Errors on negative input.
-func sqrtFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func sqrtFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityOne("sqrt", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -138,7 +137,7 @@ func sqrtFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 
 // powFn returns x**y as a float (always - avoids "is this int or float"
 // ambiguity). NaN or Infinity results are rejected.
-func powFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func powFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityTwo("pow", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -156,7 +155,7 @@ func powFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 
 // floorFn rounds toward negative infinity. Accepts int (identity) or float
 // (returns int).
-func floorFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func floorFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityOne("floor", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -172,7 +171,7 @@ func floorFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 
 // ceilFn rounds toward positive infinity. Accepts int (identity) or float
 // (returns int).
-func ceilFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func ceilFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityOne("ceil", args); err != nil {
 		return interpreter.Null(), err
 	}
@@ -188,7 +187,7 @@ func ceilFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
 
 // roundFn rounds half-away-from-zero (Go's math.Round). Accepts int
 // (identity) or float (returns int).
-func roundFn(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func roundFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if err := arityOne("round", args); err != nil {
 		return interpreter.Null(), err
 	}

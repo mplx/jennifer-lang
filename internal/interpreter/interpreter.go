@@ -13,10 +13,22 @@ import (
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
 
+// BuiltinCtx is the I/O context the interpreter passes to every builtin.
+// `Out` is where stdout-like effects write (e.g. `printf`); `In` is the
+// reader stdin-consuming builtins read from (e.g. `readLine`); `InREPL`
+// is true when the call originates inside the interactive REPL, so
+// stdin-consuming builtins can refuse rather than racing the line
+// editor for input.
+type BuiltinCtx struct {
+	Out    io.Writer
+	In     io.Reader
+	InREPL bool
+}
+
 // Builtin is a Go-implemented library function callable from Jennifer source.
-// `out` is where stdout-like effects (e.g. printf) write; the interpreter passes
-// its configured writer in. Returning Null() for void-like calls is fine.
-type Builtin func(out io.Writer, args []Value) (Value, error)
+// The interpreter passes a populated BuiltinCtx; functions that don't need
+// I/O can ignore it. Returning Null() for void-like calls is fine.
+type Builtin func(ctx BuiltinCtx, args []Value) (Value, error)
 
 // builtinEntry records a registered builtin and the library that owns it.
 // A call resolves a callee name to its entry; the call is only allowed if
@@ -38,6 +50,8 @@ type libConstantEntry struct {
 // Interpreter walks a parsed Program and runs it.
 type Interpreter struct {
 	Out          io.Writer // defaults to os.Stdout if nil
+	In           io.Reader // defaults to os.Stdin if nil
+	InREPL       bool      // set by the REPL so stdin-consuming builtins refuse
 	Builtins     map[string]builtinEntry
 	LibConstants map[string]libConstantEntry // library-provided constants (math.PI, ...)
 	knownLibs    map[string]bool             // libraries with at least one registered builtin OR constant
@@ -49,6 +63,7 @@ type Interpreter struct {
 func New() *Interpreter {
 	in := &Interpreter{
 		Out:          os.Stdout,
+		In:           os.Stdin,
 		Builtins:     map[string]builtinEntry{},
 		LibConstants: map[string]libConstantEntry{},
 		knownLibs:    map[string]bool{},
@@ -150,6 +165,9 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	if i.Out == nil {
 		i.Out = os.Stdout
 	}
+	if i.In == nil {
+		i.In = os.Stdin
+	}
 	// Imports: every `use NAME;` must refer to a library that has at least
 	// one registered builtin. Silent acceptance of unknown libraries would
 	// hide typos like `use stdio;` (instead of `io`). The `core` library is
@@ -214,6 +232,9 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 	if i.Out == nil {
 		i.Out = os.Stdout
+	}
+	if i.In == nil {
+		i.In = os.Stdin
 	}
 	for _, imp := range prog.Imports {
 		if imp.Name == CoreLibraryName {
@@ -1117,7 +1138,8 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 			}
 			args = append(args, v)
 		}
-		v, err := b.Fn(i.Out, args)
+		ctx := BuiltinCtx{Out: i.Out, In: i.In, InREPL: i.InREPL}
+		v, err := b.Fn(ctx, args)
 		if err != nil {
 			file, line, col := posFor(c)
 			return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}

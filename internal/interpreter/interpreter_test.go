@@ -46,6 +46,60 @@ func run(t *testing.T, src string) (string, error) {
 	return buf.String(), nil
 }
 
+// runWithStdin is the input-capable variant of run: stdin is fed from
+// the given string, captured stdout is returned. Used by the readLine /
+// eof end-to-end tests.
+func runWithStdin(t *testing.T, src, stdin string) (string, error) {
+	t.Helper()
+	prog, err := parser.Parse(src)
+	if err != nil {
+		return "", err
+	}
+	in := interpreter.New()
+	var buf bytes.Buffer
+	in.Out = &buf
+	in.In = strings.NewReader(stdin)
+	iolib.Install(in)
+	convert.Install(in)
+	mathlib.Install(in)
+	stringslib.Install(in)
+	corelib.Install(in)
+	if err := in.Run(prog); err != nil {
+		return buf.String(), err
+	}
+	return buf.String(), nil
+}
+
+func TestReadLineEofLoopEndToEnd(t *testing.T) {
+	out, err := runWithStdin(t, `
+use io;
+while (not eof()) {
+    def line as string init readLine();
+    printf("%s\n", $line);
+}
+`, "alpha\nbeta\ngamma\n")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "alpha\nbeta\ngamma\n" {
+		t.Errorf("got %q", out)
+	}
+}
+
+func TestReadLineWithPromptEndToEnd(t *testing.T) {
+	out, err := runWithStdin(t, `
+use io;
+def name as string init readLine("name: ");
+printf("hi, %s\n", $name);
+`, "Jennifer\n")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "name: hi, Jennifer\n" {
+		t.Errorf("got %q", out)
+	}
+}
+
 func TestHelloProgramPrints42(t *testing.T) {
 	out, err := run(t, `
 use io;

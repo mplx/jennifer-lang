@@ -22,6 +22,8 @@ const LibraryName = "io"
 func Install(in *interpreter.Interpreter) {
 	in.Register(LibraryName, "printf", printf)
 	in.Register(LibraryName, "sprintf", sprintf)
+	in.Register(LibraryName, "readLine", readLine)
+	in.Register(LibraryName, "eof", eofFn)
 }
 
 // printf writes formatted output to stdout. Two forms:
@@ -29,19 +31,19 @@ func Install(in *interpreter.Interpreter) {
 //   - printf(format, args...)       -> format must be string; substitutes verbs (M3)
 //
 // Verbs: %d (int), %f (float), %s (string), %t (bool), %v (any/display), %%.
-func printf(out io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func printf(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	s, err := formatArgs(args)
 	if err != nil {
 		return interpreter.Null(), err
 	}
-	if _, err := io.WriteString(out, s); err != nil {
+	if _, err := io.WriteString(ctx.Out, s); err != nil {
 		return interpreter.Null(), err
 	}
 	return interpreter.Null(), nil
 }
 
 // sprintf is like printf but returns the formatted string instead of writing.
-func sprintf(_ io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+func sprintf(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	s, err := formatArgs(args)
 	if err != nil {
 		return interpreter.Null(), err

@@ -208,9 +208,9 @@ implementation contract.
   as literal when not followed by a key letter) was rejected for being
   context-sensitive in a way that would surprise users when a literal
   happened to look like a modifier name.
-- **user input (stdin)** - three new builtins in the `io` library for
-  reading from stdin one line at a time. Two functions of the same
-  name (arity-dispatched, like `printf`) plus a predicate:
+- **user input (stdin)** - done: three new builtins in the `io`
+  library for reading from stdin one line at a time. Two functions of
+  the same name (arity-dispatched, like `printf`) plus a predicate:
 
   - `readLine() -> string` - read one line from stdin. Trailing
     `\r\n` / `\n` are stripped. Calling at end-of-input is a
