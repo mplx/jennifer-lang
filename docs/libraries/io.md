@@ -36,8 +36,131 @@ printf("%s\n", $msg);   # "1 + 2 = 3"
 | `%%` | -              | literal `%`                    |
 
 Mismatches (wrong verb for the value kind, too few or too many args, dangling
-`%`, unknown verb) all produce runtime errors. A literal `%` in any string
-passed to `printf`/`sprintf` must be doubled to `%%`.
+`%`, unknown verb) all produce runtime errors.
+
+**Escaping the meta-characters:**
+
+- A literal `%` in any string passed to `printf`/`sprintf` must be
+  doubled to `%%`.
+- A literal `|` *immediately after a verb* must be doubled to `||`,
+  because `|` otherwise starts a modifier list (see [Format
+  modifiers](#format-modifiers)). The escape consumes one of the two
+  `|`s; the other appears in the output. Pipes that don't touch a
+  verb are normal characters and need no escaping:
+  `printf("a|b %s||c|d\n", "X")` prints `a|b X|c|d` - the `||` after
+  `%s` is the escape, while the `|`s in `a|b` and `c|d` sit between
+  non-verb characters and pass through unchanged.
+
+## Format modifiers
+
+Each verb (except `%v`) accepts an optional pipe-separated modifier list:
+
+```
+%verb[|key=value]*
+```
+
+Modifiers are **order-independent flags** - `%d|pad=5|fill=0|align=right`
+and `%d|align=right|fill=0|pad=5` produce the same output. The list runs
+left-to-right until it hits a byte that isn't part of a key or value.
+To put a literal `|` immediately after a verb, double it: `||` writes
+one `|` and ends the modifier list (same shape as `%%`). Unknown keys,
+bad values, missing companions (e.g. `group=` without `sep=`), and the
+same key set twice are all runtime errors.
+
+Evaluation order within one verb:
+
+1. **Null check.** If the value is `null` *and* the spec includes a
+   `null=` modifier, the verb-specific render is skipped and the
+   configured replacement is used.
+2. **Verb-specific render.** `mode`, `base`, `prec`, `sci`, `sign`,
+   `group`/`sep`, `case` apply here.
+3. **Layout.** `max` truncates (rune-aware), then `pad`+`fill`+`align`
+   extends. Layout still applies to the null replacement, so columns
+   line up.
+
+### `null=` (shared by `%s`, `%d`, `%f`, `%t`)
+
+| Form                | Output when value is `null`                                |
+|---------------------|------------------------------------------------------------|
+| `null=empty`        | `""`                                                       |
+| `null=null`         | `"null"`                                                   |
+| `null=literal("X")` | `X` - the quoted text, with Jennifer string escapes parsed |
+
+Without a `null=` modifier, a `null` value is still a type-mismatch error
+against any verb except `%v`. `null=` wins over every other modifier on
+its verb: `%s|mode=quote|null=literal("X")` on a null prints `X`, not
+`"X"`.
+
+### `%s` modifiers
+
+| Key      | Values                 | Default | Effect                                        |
+|----------|------------------------|---------|-----------------------------------------------|
+| `pad`    | non-negative integer   | -       | minimum rune width                            |
+| `max`    | non-negative integer   | -       | truncate to N runes                           |
+| `align`  | `left`, `right`        | `left`  | which side gets the pad spaces                |
+| `mode`   | `raw`, `quote`, `escape` | `raw`   | wrap in `"..."` (`quote`) / show escapes (`escape`) |
+| `null`   | see above              | -       | substitute when value is `null`               |
+
+`mode=quote` wraps the string in double quotes and escapes interior
+`\`, `"`, and control bytes. `mode=escape` does the same escaping
+without the wrapping - useful for showing a string's structure in
+debug output.
+
+```jennifer
+printf("[%s|pad=8|align=right]\n", "hi");        # [      hi]
+printf("[%s|max=3]\n", "abcdef");                # [abc]
+printf("%s|mode=quote\n", "a\nb");               # "a\nb"
+```
+
+### `%d` modifiers
+
+| Key      | Values                            | Default    | Effect                                              |
+|----------|-----------------------------------|------------|-----------------------------------------------------|
+| `pad`    | non-negative integer              | -          | minimum width                                       |
+| `fill`   | `0`                               | space      | zero-pad between sign and digits; requires `align=right` (the default) |
+| `align`  | `left`, `right`                   | `right`    | which side gets the pad                             |
+| `base`   | `2`, `8`, `10`, `16`              | `10`       | digit base; hex uses lowercase                      |
+| `sign`   | `negative`, `always`, `space`     | `negative` | sign for non-negative values                        |
+| `group`  | positive integer                  | -          | digit-group size, reading right-to-left             |
+| `sep`    | one of `_`, `,`, `.`, `-`, `:`    | -          | group separator; required with `group=` and vice versa |
+| `null`   | see above                         | -          | substitute when value is `null`                     |
+
+```jennifer
+printf("%d|base=2\n", 5);                                # 101
+printf("%d|base=16|group=4|sep=_\n", 3735928559);        # dead_beef
+printf("%d|pad=5|fill=0|sign=always\n", 42);             # +0042
+```
+
+### `%f` modifiers
+
+| Key      | Values                        | Default    | Effect                                                       |
+|----------|-------------------------------|------------|--------------------------------------------------------------|
+| `prec`   | non-negative integer          | shortest   | fraction digits (or mantissa fraction digits when `sci=true`) |
+| `trim`   | `true`, `false`               | `false`    | strip trailing fraction zeros and the `.` if all zero        |
+| `sci`    | `true`, `false`               | `false`    | force scientific notation (`1.23e+03`)                       |
+| `pad`    | non-negative integer          | -          | minimum width                                                |
+| `align`  | `left`, `right`               | `right`    | which side gets the pad                                      |
+| `sign`   | `negative`, `always`, `space` | `negative` | sign for non-negative values                                 |
+| `null`   | see above                     | -          | substitute when value is `null`                              |
+
+```jennifer
+printf("%f|prec=2\n", 3.14159);              # 3.14
+printf("%f|prec=4|trim=true\n", 3.0);        # 3
+printf("%f|sci=true|prec=2\n", 0.00123);     # 1.23e-03
+```
+
+### `%t` modifiers
+
+| Key      | Values                       | Default | Effect                                  |
+|----------|------------------------------|---------|-----------------------------------------|
+| `case`   | `lower`, `upper`, `title`    | `lower` | `true`/`false`, `TRUE`/`FALSE`, `True`/`False` |
+| `null`   | see above                    | -       | substitute when value is `null`         |
+
+### `%v` modifiers
+
+`%v` takes no modifiers - it is deliberately the "I don't care, just
+print it" verb. Use a typed verb plus modifiers when you want to shape
+the output.
 
 ## Float display
 

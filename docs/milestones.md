@@ -154,8 +154,8 @@ implementation contract.
   so the operator is unambiguous and a Jennifer file can begin with
   `#!/usr/bin/env -S jennifer run`; integer division is now '//', div keyword
   is removed (**BREAKING CHANGE**)
-- **(s)printf format-verb modifiers** - extend each format verb with a
-  pipe-separated, key=value modifier list:
+- **(s)printf format-verb modifiers** - done: each format verb (except
+  `%v`) accepts a pipe-separated, key=value modifier list:
   `%verb[|key=value]*`. Modifiers are flags (order-independent), parsed
   at the verb position when the format string is consumed at runtime.
   Unknown key, bad value, or key-on-wrong-verb is a positioned runtime
@@ -198,6 +198,16 @@ implementation contract.
   (`case=upper|snake|camel|...` on strings, `slice=`, `md=*` on `%s`),
   the `%a` aggregate verb, and `null=sql`/`null=skip`. See
   [technical/rejected.md > printf data-transformation modifiers](technical/rejected.md#printf-data-transformation-modifiers).
+
+  **Breaking change inside the format string:** the `|` immediately
+  after a verb now starts a modifier list. Pre-M7 format strings that
+  used `|` as a literal separator between verbs (`"%d|%d"`,
+  `"%s|%s"`) must be rewritten - either with a different separator
+  (`"%d %d"`) or by doubling the pipe (`"%d||%d"`, which parallels the
+  `%%` escape for a literal `%`). The lookahead alternative (treat `|`
+  as literal when not followed by a key letter) was rejected for being
+  context-sensitive in a way that would surprise users when a literal
+  happened to look like a modifier name.
 - **user input**: user input like readLine(), readLine(prompt)
 
 ---

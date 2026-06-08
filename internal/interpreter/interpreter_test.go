@@ -662,13 +662,13 @@ func boom() {
 }
 def a as bool init false and boom();
 def b as bool init true or boom();
-printf("|%t|%t", $a, $b);
+printf("|%t %t", $a, $b);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if out != "|false|true" {
-		t.Errorf("got %q, want %q", out, "|false|true")
+	if out != "|false true" {
+		t.Errorf("got %q, want %q", out, "|false true")
 	}
 }
 
@@ -700,12 +700,12 @@ def f as float init -0.25;
 def doubleNeg as int init - -7;
 def x as int init 10;
 def neg as int init -$x;
-printf("%d|%f|%d|%d", $i, $f, $doubleNeg, $neg);
+printf("%d %f %d %d", $i, $f, $doubleNeg, $neg);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if out != "-5|-0.25|7|-10" {
+	if out != "-5 -0.25 7 -10" {
 		t.Errorf("got %q", out)
 	}
 }
@@ -715,13 +715,13 @@ func TestUnaryMinusPrecedence(t *testing.T) {
 	// -3 * 2 -> (-3) * 2 -> -6
 	out, err := run(t, `
 use io;
-printf("%d|%d", -3 + 10, -3 * 2);
+printf("%d %d", -3 + 10, -3 * 2);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if out != "7|-6" {
-		t.Errorf("got %q, want %q", out, "7|-6")
+	if out != "7 -6" {
+		t.Errorf("got %q, want %q", out, "7 -6")
 	}
 }
 
@@ -1148,13 +1148,13 @@ use io;
 use math;
 def a as float init pow(2, 10);
 def b as float init pow(2, 0.5);
-printf("%f|%f", $a, $b);
+printf("%f %f", $a, $b);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	// pow(2,10) = 1024.0; pow(2,0.5) = sqrt(2)
-	if !strings.HasPrefix(out, "1024.0|1.41") {
+	if !strings.HasPrefix(out, "1024.0 1.41") {
 		t.Errorf("got %q", out)
 	}
 }
@@ -1197,12 +1197,12 @@ use io;
 use math;
 def pi as float init PI;
 def e as float init E;
-printf("%f|%f", $pi, $e);
+printf("%f %f", $pi, $e);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if !strings.HasPrefix(out, "3.14159") || !strings.Contains(out, "|2.71828") {
+	if !strings.HasPrefix(out, "3.14159") || !strings.Contains(out, " 2.71828") {
 		t.Errorf("got %q", out)
 	}
 }
@@ -1267,12 +1267,12 @@ use io;
 use strings;
 def a as string init upper("hello");
 def b as string init lower("HELLO");
-printf("%s|%s", $a, $b);
+printf("%s %s", $a, $b);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if out != "HELLO|hello" {
+	if out != "HELLO hello" {
 		t.Errorf("got %q", out)
 	}
 }

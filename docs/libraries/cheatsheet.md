@@ -31,13 +31,13 @@ flat lookup view, not authoritative.
 | `min(a, b)`                   | [math](math.md)                 | Smaller of two numbers; mixed int/float promotes to float.                    |
 | `pow(x, y)`                   | [math](math.md)                 | `x` raised to `y`; always float. Errors on NaN/Inf-producing inputs.          |
 | `printf(value)`               | [io](io.md)                     | Write a value's display form to stdout.                                       |
-| `printf(format, args...)`     | [io](io.md)                     | Format-string write to stdout. Verbs: `%d %f %s %t %v %%`.                    |
+| `printf(format, args...)`     | [io](io.md)                     | Format-string write to stdout. Verbs: `%d %f %s %t %v %%`; per-verb `\|key=value` modifiers (`pad`, `prec`, `base`, `null=*`, ...). |
 | `repeat(s, n)`                | [strings](strings.md)           | `n` non-negative copies of `s` concatenated.                                  |
 | `replace(s, old, new)`        | [strings](strings.md)           | Replace **all** occurrences of `old` in `s` with `new`.                       |
 | `round(x)`                    | [math](math.md)                 | Round to nearest int (half away from zero).                                   |
 | `split(s, sep)`               | [strings](strings.md)           | Split `s` on non-empty `sep`; returns `list of string`.                       |
 | `sprintf(value)`              | [io](io.md)                     | Display-form of a value, returned as a string (doesn't write).                |
-| `sprintf(format, args...)`    | [io](io.md)                     | Format-string version of `sprintf`. Same verbs as `printf`.                   |
+| `sprintf(format, args...)`    | [io](io.md)                     | Format-string version of `sprintf`. Same verbs and `\|key=value` modifiers as `printf`.   |
 | `sqrt(x)`                     | [math](math.md)                 | Square root; always float. Errors on negative input.                          |
 | `startsWith(s, prefix)`       | [strings](strings.md)           | True if `s` starts with `prefix`.                                             |
 | `string(v)`                   | [convert](convert.md)           | Convert to string (always succeeds; uses the value's display form).           |

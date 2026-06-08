@@ -187,4 +187,24 @@ printf("typeOf(JENNIFER_VERSION) = %s\n", typeOf(JENNIFER_VERSION));
 printf("=== constants ===\n");
 printf("MAX=%d MAX_RETRIES=%d HTTP_OK=%d PI_APPROX=%f\n", MAX, MAX_RETRIES, HTTP_OK, PI_APPROX);
 
+# --- printf modifiers (M7) ---
+#
+# Per-verb pipe modifiers shape the rendered representation: presentation
+# only, never data transformation. Each example below exercises one or
+# two modifiers so the golden output stays compact.
+printf("=== printf modifiers ===\n");
+printf("%%s pad/align:  [%s|pad=8|align=right]\n", "hi");
+printf("%%s max:        [%s|max=3]\n", "abcdef");
+printf("%%s quote:      %s|mode=quote\n", "say \"hi\"");
+printf("%%d base=2:     %d|base=2\n", 42);
+printf("%%d base=16:    %d|base=16\n", 255);
+printf("%%d group/sep:  %d|group=3|sep=,\n", 1234567);
+printf("%%d sign+fill:  %d|pad=5|fill=0|sign=always\n", 42);
+printf("%%f prec/trim:  %f|prec=4|trim=true\n", 3.14);
+printf("%%f sci:        %f|sci=true|prec=2\n", 0.00123);
+printf("%%t case=upper: %t|case=upper\n", true);
+printf("%%t case=title: %t|case=title\n", false);
+def maybe as null;
+printf("null=literal: [%s|null=literal(\"N/A\")|pad=6|align=right]\n", $maybe);
+
 printf("=== done ===\n");

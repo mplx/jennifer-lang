@@ -100,4 +100,17 @@ src[0]=1 dst[0]=99
 typeOf(JENNIFER_VERSION) = string
 === constants ===
 MAX=5 MAX_RETRIES=3 HTTP_OK=200 PI_APPROX=3.14
+=== printf modifiers ===
+%s pad/align:  [      hi]
+%s max:        [abc]
+%s quote:      "say \"hi\""
+%d base=2:     101010
+%d base=16:    ff
+%d group/sep:  1,234,567
+%d sign+fill:  +0042
+%f prec/trim:  3.14
+%f sci:        1.23e-03
+%t case=upper: TRUE
+%t case=title: False
+null=literal: [   N/A]
 === done ===

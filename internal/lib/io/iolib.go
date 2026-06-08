@@ -9,7 +9,6 @@ package iolib
 import (
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
@@ -92,45 +91,30 @@ func formatString(fmtStr string, args []interpreter.Value) (string, error) {
 			i += 2
 			continue
 		}
+		if !isVerb(verb) {
+			return "", fmt.Errorf("unknown format verb `%%%c`", verb)
+		}
+		spec, after, err := parseFormatSpec(verb, fmtStr, i+2)
+		if err != nil {
+			return "", err
+		}
 		if argIdx >= len(args) {
 			return "", fmt.Errorf("not enough arguments for format string")
 		}
-		v := args[argIdx]
-		switch verb {
-		case 'd':
-			if v.Kind != interpreter.KindInt {
-				return "", fmt.Errorf("`%%d` requires int, got %s", v.Kind)
-			}
-			b.WriteString(strconv.FormatInt(v.Int, 10))
-		case 'f':
-			if v.Kind != interpreter.KindFloat {
-				return "", fmt.Errorf("`%%f` requires float, got %s", v.Kind)
-			}
-			b.WriteString(interpreter.DisplayFloat(v.Float))
-		case 's':
-			if v.Kind != interpreter.KindString {
-				return "", fmt.Errorf("`%%s` requires string, got %s", v.Kind)
-			}
-			b.WriteString(v.Str)
-		case 't':
-			if v.Kind != interpreter.KindBool {
-				return "", fmt.Errorf("`%%t` requires bool, got %s", v.Kind)
-			}
-			if v.Bool {
-				b.WriteString("true")
-			} else {
-				b.WriteString("false")
-			}
-		case 'v':
-			b.WriteString(v.Display())
-		default:
-			return "", fmt.Errorf("unknown format verb `%%%c`", verb)
+		out, err := renderValue(spec, args[argIdx])
+		if err != nil {
+			return "", err
 		}
+		b.WriteString(out)
 		argIdx++
-		i += 2
+		i = after
 	}
 	if argIdx != len(args) {
 		return "", fmt.Errorf("too many arguments for format string (used %d of %d)", argIdx, len(args))
 	}
 	return b.String(), nil
+}
+
+func isVerb(c byte) bool {
+	return c == 'd' || c == 'f' || c == 's' || c == 't' || c == 'v'
 }
