@@ -15,7 +15,7 @@ preprocessed tokens → AST → result):
 - Types: `int`, `string`
 - `def x as int init 5;`, `$var` references, method defs (zero-arg, top
   level), `import "file.j";`, `use io;`, single-arg `printf`
-- Arithmetic `+ - * / %` on ints; comments `//` and `/* */`
+- Arithmetic `+ - * / %` on ints; comments `#` and `/* */`
 - Source-context caret in error messages
 - Golden-file integration test and TinyGo build verified
 
@@ -63,7 +63,7 @@ Rounds out the "ordinary" feature set:
 
 - Logical operators `and`, `or`, `not` (word-based, short-circuit)
 - Unary minus
-- Python-3 division: `/` always returns `float`; new `div` keyword for
+- Python-3 division: `/` always returns `float`; new `div` keyword for 
   floor division (`//` is taken by line comments)
 - Floats always display with a decimal (`5.0`, not `5`) so the type
   stays visible
@@ -150,6 +150,10 @@ implementation contract.
 
 ## M7 - printf modifier
 
+- **line comments + integer division** - done: line comments were moved to `#`
+  so the operator is unambiguous and a Jennifer file can begin with
+  `#!/usr/bin/env -S jennifer run`; integer division is now '//', div keyword
+  is removed (**BREAKING CHANGE**)
 - **(s)printf**: introduce format verb modifiers
 - **user input**: user input like readLine(), readLine(prompt)
 
@@ -366,7 +370,7 @@ Not committed to a milestone yet, but the code should not foreclose them.
 
 ### Deferred from M5
 
-- **Comment preservation in `fmt`.** Lexer would need to carry `//` and
+- **Comment preservation in `fmt`.** Lexer would need to carry `#` and
   `/* */` as tokens (or attach them to following nodes); the formatter
   would then weave them back in.
 - **Blank-line preservation / auto-insertion in `fmt`.** Either keep

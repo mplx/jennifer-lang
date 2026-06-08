@@ -3,7 +3,7 @@
 Save the following as `hello.j`:
 
 ```jennifer
-// hello.j
+# hello.j
 use io;
 
 def x as int init 21;

@@ -44,10 +44,10 @@ Passing any other kind (`int`, `float`, `bool`, `null`) is a positioned
 runtime error.
 
 ```jennifer
-printf("%d\n", len("hello"));      // 5
-printf("%d\n", len("héllo"));      // 5 (rune count)
-printf("%d\n", len([1, 2, 3]));    // 3
-printf("%d\n", len({"a": 1, "b": 2})); // 2
+printf("%d\n", len("hello"));      # 5
+printf("%d\n", len("héllo"));      # 5 (rune count)
+printf("%d\n", len([1, 2, 3]));    # 3
+printf("%d\n", len({"a": 1, "b": 2})); # 2
 ```
 
 ### `has`
@@ -59,7 +59,7 @@ need to test for a key without erroring, use `has`.
 ```jennifer
 def m as map of string to int init {"a": 1};
 if (has($m, "a")) {
-    printf("%d\n", $m["a"]);    // safe to read; we just checked
+    printf("%d\n", $m["a"]);    # safe to read; we just checked
 }
 ```
 

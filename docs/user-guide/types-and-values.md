@@ -40,9 +40,9 @@ are recognized:
 ## Variables and constants
 
 ```jennifer
-def name as int init 5;            // declare and initialize
-def count as int;                  // declare with the zero value of int (0)
-def const MAX as int init 100;     // constant: uppercase name, init required
+def name as int init 5;            # declare and initialize
+def count as int;                  # declare with the zero value of int (0)
+def const MAX as int init 100;     # constant: uppercase name, init required
 ```
 
 Uninitialized variables get the **zero value** of their declared type:
@@ -52,11 +52,11 @@ Uninitialized variables get the **zero value** of their declared type:
 reserved for use-site references that read or assign a variable. So:
 
 ```jennifer
-def x as int init 5;     // def site - bare name
-printf($x);              // use site - $ prefix
-$x = 42;                 // assignment - $ prefix
+def x as int init 5;     # def site - bare name
+printf($x);              # use site - $ prefix
+$x = 42;                 # assignment - $ prefix
 
-def $x as int init 5;    // ERROR: drop the $ here
+def $x as int init 5;    # ERROR: drop the $ here
 ```
 
 Constants don't use `$` anywhere (they're not mutable, so the sigil would have
@@ -64,16 +64,16 @@ no meaning):
 
 ```jennifer
 def const MAX as int init 100;
-printf(MAX);             // use site - bare name
-MAX = 200;               // ERROR: cannot assign to constant
+printf(MAX);             # use site - bare name
+MAX = 200;               # ERROR: cannot assign to constant
 ```
 
 Assignment uses `=`:
 
 ```jennifer
 def x as int init 0;
-$x = 42;          // ok
-$x = "string";    // error: cannot assign string to int variable
+$x = 42;          # ok
+$x = "string";    # error: cannot assign string to int variable
 ```
 
 ## Scoping
@@ -95,19 +95,19 @@ Two compound types let you hold collections of values.
 ```jennifer
 use io;
 
-// A list is an ordered, 0-indexed, mutable sequence.
+# A list is an ordered, 0-indexed, mutable sequence.
 def xs as list of int init [10, 20, 30];
-printf("%d\n", $xs[0]);          // 10
-$xs[1] = 99;                     // index write
-printf("%d\n", len($xs));        // 3
+printf("%d\n", $xs[0]);          # 10
+$xs[1] = 99;                     # index write
+printf("%d\n", len($xs));        # 3
 
-// A map is a key->value lookup. Iteration is in insertion order.
+# A map is a key->value lookup. Iteration is in insertion order.
 def m as map of string to int init {"a": 1, "b": 2};
-printf("%d\n", $m["a"]);         // 1
-$m["c"] = 3;                     // adds new key
-$m["a"] = 99;                    // updates existing
+printf("%d\n", $m["a"]);         # 1
+$m["c"] = 3;                     # adds new key
+$m["a"] = 99;                    # updates existing
 
-// Iterate a list's elements, or a map's keys.
+# Iterate a list's elements, or a map's keys.
 for (def x in $xs) { printf("%d ", $x); }      printf("\n");
 for (def k in $m) { printf("%s ", $k); }       printf("\n");
 ```
@@ -148,16 +148,16 @@ elements are at each level*. So all of these are the same `list of list of
 int` type:
 
 ```jennifer
-// 2×2 grid - two rows of two columns
+# 2×2 grid - two rows of two columns
 def gridA as list of list of int init [[1, 2], [3, 4]];
 
-// 3×3 grid - three rows of three columns
+# 3×3 grid - three rows of three columns
 def gridB as list of list of int init [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
 
-// Jagged - rows have different lengths
+# Jagged - rows have different lengths
 def gridC as list of list of int init [[1], [2, 3], [4, 5, 6]];
 
-// Empty - zero rows
+# Empty - zero rows
 def gridD as list of list of int init [];
 ```
 
@@ -197,7 +197,7 @@ def saves as list of list of list of list of string init [
     [[["staff", "amulet"]], [[], ["potion", "rope", "torch"]]]
 ];
 
-// What does this even mean?
+# What does this even mean?
 $saves[0][1][0][0] = "axe";
 ```
 

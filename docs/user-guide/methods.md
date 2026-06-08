@@ -5,7 +5,7 @@ func greet(name as string) {
     printf("hello, %s\n", $name);
 }
 
-greet("Jennifer");   // call it from top level
+greet("Jennifer");   # call it from top level
 ```
 
 Two keywords, two jobs:
@@ -33,7 +33,7 @@ func fact(n as int) {
     return $n * fact($n - 1);
 }
 
-printf("%d\n", fact(5));    // 120
+printf("%d\n", fact(5));    # 120
 ```
 
 Methods are **hoisted**: all `func NAME() { ... }` declarations are collected

@@ -94,7 +94,7 @@ func TestDivisionAndModulo(t *testing.T) {
 	out, err := run(t, `
 use io;
 func app() {
-    def a as int init 17 div 5;
+    def a as int init 17  // 5;
     def b as int init 17 % 5;
     def c as float init 17 / 5;
     printf($a);
@@ -779,12 +779,12 @@ func TestDivKeyword(t *testing.T) {
 		expr string
 		want string
 	}{
-		{"5 div 2", "2"},
-		{"6 div 2", "3"},
-		// Python-style floor division: -5 div 2 = -3 (toward -inf)
+		{"5  // 2", "2"},
+		{"6  // 2", "3"},
+		// Python-style floor division: -5  // 2 = -3 (toward -inf)
 		// We don't have unary minus on literals via prefix in numeric ctx
 		// without space, but `0 - 5` works.
-		{"(0 - 5) div 2", "-3"},
+		{"(0 - 5)  // 2", "-3"},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
@@ -805,7 +805,7 @@ printf("%d", $r);
 func TestDivOnFloatsReturnsFloatFloor(t *testing.T) {
 	out, err := run(t, `
 use io;
-def r as float init 5.7 div 2.0;
+def r as float init 5.7  // 2.0;
 printf("%f", $r);
 `)
 	if err != nil {
@@ -1007,7 +1007,7 @@ func TestTypeof(t *testing.T) {
 		{`typeOf(true)`, "bool"},
 		{`typeOf(null)`, "null"},
 		{`typeOf(5 / 2)`, "float"},
-		{`typeOf(5 div 2)`, "int"},
+		{`typeOf(5  // 2)`, "int"},
 		{`typeOf(2.5 * 2)`, "float"},
 	}
 	for _, c := range cases {

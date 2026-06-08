@@ -10,17 +10,17 @@ binary small and predictable under TinyGo.
 
 ```go
 type Value struct {
-    Kind    ValueKind  // KindNull | KindInt | KindFloat | KindString |
-                       //  KindBool | KindList | KindMap
+    Kind    ValueKind  # KindNull | KindInt | KindFloat | KindString |
+                       #  KindBool | KindList | KindMap
     Int     int64
     Float   float64
     Str     string
     Bool    bool
-    List    []Value      // KindList: element data
-    Map     []MapEntry   // KindMap:  insertion-ordered entries
-    ElemTyp *parser.Type // KindList: declared element type (stamped)
-    KeyTyp  *parser.Type // KindMap:  declared key type   (stamped)
-    ValTyp  *parser.Type // KindMap:  declared value type (stamped)
+    List    []Value      # KindList: element data
+    Map     []MapEntry   # KindMap:  insertion-ordered entries
+    ElemTyp *parser.Type # KindList: declared element type (stamped)
+    KeyTyp  *parser.Type # KindMap:  declared key type   (stamped)
+    ValTyp  *parser.Type # KindMap:  declared value type (stamped)
 }
 ```
 
@@ -145,7 +145,7 @@ Library functions are Go closures registered with the interpreter:
 ```go
 type Builtin func(out io.Writer, args []Value) (Value, error)
 
-// In a library package:
+# In a library package:
 func Install(in *interpreter.Interpreter) {
     in.Register("io", "printf", printf)
     in.Register("io", "sprintf", sprintf)

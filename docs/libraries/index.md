@@ -24,11 +24,11 @@ use io;
 use math;
 use strings;
 
-printf("Jennifer %s\n", JENNIFER_VERSION);   // auto-loaded from core
+printf("Jennifer %s\n", JENNIFER_VERSION);   # auto-loaded from core
 printf("pi is roughly %f\n", PI);
 printf("sqrt(2) = %f\n", sqrt(2));
 printf("upper: %s\n", upper("hello"));
-printf("len: %d\n", len("hello"));           // auto-loaded from core
+printf("len: %d\n", len("hello"));           # auto-loaded from core
 ```
 
 ## How libraries are organized

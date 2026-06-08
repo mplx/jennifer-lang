@@ -6,7 +6,7 @@ The repository's `examples/` directory holds these plus more (`showcase.j`,
 ## Strings
 
 ```jennifer
-// greeting.j
+# greeting.j
 use io;
 
 def name as string init "Jennifer";
@@ -22,7 +22,7 @@ hello, Jennifer!
 ## FizzBuzz
 
 ```jennifer
-// fizzbuzz.j
+# fizzbuzz.j
 use io;
 
 for (def i as int init 1; $i <= 15; $i = $i + 1) {
@@ -41,7 +41,7 @@ for (def i as int init 1; $i <= 15; $i = $i + 1) {
 ## Factorial (recursion + parameters)
 
 ```jennifer
-// factorial.j
+# factorial.j
 use io;
 
 func fact(n as int) {

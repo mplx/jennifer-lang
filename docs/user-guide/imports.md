@@ -3,8 +3,8 @@
 Two keywords, two mechanisms:
 
 ```jennifer
-use io;                  // library import - enables `io` library (printf, sprintf)
-import "helpers.j";      // file import - splices helpers.j here
+use io;                  # library import - enables `io` library (printf, sprintf)
+import "helpers.j";      # file import - splices helpers.j here
 ```
 
 ## Library imports
@@ -34,9 +34,9 @@ use io;
 use convert;
 use math;
 
-printf("%s\n", typeOf(5 / 2));         // "float"      [convert]
-printf("%d\n", floor(PI * 2.0));       // 6            [math + io]
-printf("%s\n", string(true));          // "true"       [convert]
+printf("%s\n", typeOf(5 / 2));         # "float"      [convert]
+printf("%d\n", floor(PI * 2.0));       # 6            [math + io]
+printf("%s\n", string(true));          # "true"       [convert]
 ```
 
 The per-library docs cover every function in detail along with error cases.
@@ -49,10 +49,10 @@ Relative paths resolve from the directory of the file containing the
 import; absolute paths and subdirectories work:
 
 ```jennifer
-import "helpers.j";          // sibling file
-import "subdir/utils.j";     // subdirectory
-import "../shared/util.j";   // parent dir
-import "/abs/path/lib.j";    // absolute path
+import "helpers.j";          # sibling file
+import "subdir/utils.j";     # subdirectory
+import "../shared/util.j";   # parent dir
+import "/abs/path/lib.j";    # absolute path
 ```
 
 File imports may appear anywhere a statement is allowed, including inside a
@@ -60,7 +60,7 @@ block:
 
 ```jennifer
 use io;
-import "helpers.j";          // ← spliced here; whatever helpers.j contains lands here
+import "helpers.j";          # ← spliced here; whatever helpers.j contains lands here
 printf($helper_value);
 ```
 

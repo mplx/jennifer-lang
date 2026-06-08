@@ -82,8 +82,8 @@ func TestTokenizeNumbersAndOperators(t *testing.T) {
 }
 
 func TestTokenizeComments(t *testing.T) {
-	src := `// line comment
-import /* block */ stdlib; // trailing
+	src := `# line comment
+import /* block */ stdlib; # trailing
 /* multi
    line */
 def`

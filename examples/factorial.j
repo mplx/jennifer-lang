@@ -1,9 +1,9 @@
-// SPDX-License-Identifier: LGPL-3.0-only
-// Copyright (C) 2026 <developer@mplx.eu>
-//
-// factorial.j - recursion + parameters + multi-arg printf.
-// Demonstrates M3 features: method parameters, return values, recursion,
-// and format-string printf.
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 <developer@mplx.eu>
+#
+# factorial.j - recursion + parameters + multi-arg printf.
+# Demonstrates M3 features: method parameters, return values, recursion,
+# and format-string printf.
 use io;
 
 func fact(n as int) {

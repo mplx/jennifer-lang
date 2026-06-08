@@ -26,15 +26,15 @@ same units come out of every function.
 use io;
 use strings;
 
-printf("%d\n", len("hello"));               // 5  (core, auto-loaded)
-printf("%s\n", upper("hello"));             // "HELLO"
-printf("%t\n", contains("hello", "ell"));   // true
-printf("%t\n", startsWith("hello", "he"));  // true
-printf("%d\n", indexOf("hello", "l"));      // 2
-printf("[%s]\n", trim("  hi  "));           // "[hi]"
-printf("%s\n", replace("a-b-c", "-", "/")); // "a/b/c"
-printf("%s\n", repeat("ab", 3));            // "ababab"
-printf("%s\n", substring("hello", 1, 4));   // "ell"
+printf("%d\n", len("hello"));               # 5  (core, auto-loaded)
+printf("%s\n", upper("hello"));             # "HELLO"
+printf("%t\n", contains("hello", "ell"));   # true
+printf("%t\n", startsWith("hello", "he"));  # true
+printf("%d\n", indexOf("hello", "l"));      # 2
+printf("[%s]\n", trim("  hi  "));           # "[hi]"
+printf("%s\n", replace("a-b-c", "-", "/")); # "a/b/c"
+printf("%s\n", repeat("ab", 3));            # "ababab"
+printf("%s\n", substring("hello", 1, 4));   # "ell"
 ```
 
 ## Functions

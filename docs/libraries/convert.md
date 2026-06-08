@@ -8,13 +8,13 @@ converted value or produces a positioned runtime error.
 use io;
 use convert;
 
-def n as int init int("42");        // parse string -> 42
-def f as float init float(5);       // int -> 5.0
-def s as string init string(3.14);  // any -> "3.14"
-def b as bool init bool(0);         // 0 -> false
+def n as int init int("42");        # parse string -> 42
+def f as float init float(5);       # int -> 5.0
+def s as string init string(3.14);  # any -> "3.14"
+def b as bool init bool(0);         # 0 -> false
 
-printf("%s\n", typeOf(5 / 2));      // "float" (after Python 3 / change)
-printf("%s\n", typeOf(5 div 2));    // "int"
+printf("%s\n", typeOf(5 / 2));      # "float" (after Python 3 / change)
+printf("%s\n", typeOf(5 // 2));     # "int"
 ```
 
 ## Behavior summary

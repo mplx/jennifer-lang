@@ -149,6 +149,10 @@ func (l *Lexer) Next() (Token, error) {
 		return Token{Type: TOKEN_STAR, Lexeme: "*", Line: startLine, Col: startCol}, nil
 	case ch == '/':
 		l.advance()
+		if next, ok := l.peek(0); ok && next == '/' {
+			l.advance()
+			return Token{Type: TOKEN_DIV, Lexeme: "//", Line: startLine, Col: startCol}, nil
+		}
 		return Token{Type: TOKEN_SLASH, Lexeme: "/", Line: startLine, Col: startCol}, nil
 	case ch == '%':
 		l.advance()
@@ -197,14 +201,16 @@ func (l *Lexer) skipWhitespaceAndComments() error {
 			l.advance()
 			continue
 		}
-		if ch == '/' {
-			if next, ok := l.peek(1); ok && next == '/' {
-				// line comment
-				for l.pos < len(l.src) && l.src[l.pos] != '\n' {
-					l.advance()
-				}
-				continue
+		if ch == '#' {
+			// `#` line comment - runs to end of line. Lets `#!/usr/bin/env -S
+			// jennifer run` work as a shebang since the kernel reads the line
+			// and the interpreter then sees it as a comment.
+			for l.pos < len(l.src) && l.src[l.pos] != '\n' {
+				l.advance()
 			}
+			continue
+		}
+		if ch == '/' {
 			if next, ok := l.peek(1); ok && next == '*' {
 				startLine, startCol := l.line, l.col
 				l.advance() // /
@@ -224,6 +230,8 @@ func (l *Lexer) skipWhitespaceAndComments() error {
 				}
 				continue
 			}
+			// Note: `//` is no longer a comment - it's the integer-division
+			// operator (see the SLASH/SLASH dispatch in Next()).
 		}
 		return nil
 	}

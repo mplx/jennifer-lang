@@ -17,7 +17,7 @@ func TestInputComplete(t *testing.T) {
 	}{
 		{"empty", "", true},
 		{"whitespace only", "   \n\t", true},
-		{"comment only", "// hi\n", true},
+		{"comment only", "# hi\n", true},
 		{"single statement", "$x = 1;", true},
 		{"missing semicolon", "$x = 1", false},
 		{"unclosed brace", "func f() {", false},

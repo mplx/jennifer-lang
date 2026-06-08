@@ -1,14 +1,14 @@
-// SPDX-License-Identifier: LGPL-3.0-only
-// Copyright (C) 2026 <developer@mplx.eu>
-//
-// showcase.j - exercises every Jennifer language feature and every
-// standard-library function that ships at M5. Used as a golden
-// integration test by cmd/jennifer/examples_test.go.
-//
-// JENNIFER_VERSION (from the auto-loaded `core` library) is
-// intentionally NOT printed - its value depends on git state and would
-// make the golden file non-deterministic. We exercise the constant via
-// typeOf() instead.
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 <developer@mplx.eu>
+#
+# showcase.j - exercises every Jennifer language feature and every
+# standard-library function that ships at M5. Used as a golden
+# integration test by cmd/jennifer/examples_test.go.
+#
+# JENNIFER_VERSION (from the auto-loaded `core` library) is
+# intentionally NOT printed - its value depends on git state and would
+# make the golden file non-deterministic. We exercise the constant via
+# typeOf() instead.
 
 use io;
 use convert;
@@ -16,13 +16,13 @@ use math;
 use strings;
 import "showcase/helpers.j";
 
-// --- Constants: simple, underscored, library-provided ---
+# --- Constants: simple, underscored, library-provided ---
 def const MAX as int init 5;
 def const MAX_RETRIES as int init 3;
 def const HTTP_OK as int init 200;
 def const PI_APPROX as float init 3.14;
 
-// --- Variable definitions: explicit init and zero-value ---
+# --- Variable definitions: explicit init and zero-value ---
 def x as int init 10;
 def y as float init 2.5;
 def name as string init "Jennifer";
@@ -33,18 +33,18 @@ def empty as int;
 printf("=== variables ===\n");
 printf("x=%d y=%f name=%s flag=%t nothing=%v empty=%d\n", $x, $y, $name, $flag, $nothing, $empty);
 
-// --- Arithmetic, including the Python-3 / vs div distinction ---
+# --- Arithmetic, including the Python-3 / vs // distinction ---
 printf("=== arithmetic ===\n");
 printf("10 + 5 = %d\n", 10 + 5);
 printf("10 - 5 = %d\n", 10 - 5);
 printf("10 * 5 = %d\n", 10 * 5);
 printf("10 / 4 = %f\n", 10 / 4);
-printf("10 div 4 = %d\n", 10 div 4);
+printf("10 // 4 = %d\n", 10 // 4);
 printf("10 %% 3 = %d\n", 10 % 3);
 printf("-x = %d\n", -$x);
 printf("int + float = %f\n", 3 + 0.5);
 
-// --- Comparison and logical operators ---
+# --- Comparison and logical operators ---
 printf("=== comparison and logic ===\n");
 printf("5 < 10  = %t\n", 5 < 10);
 printf("5 == 5  = %t\n", 5 == 5);
@@ -53,12 +53,12 @@ printf("true and false = %t\n", true and false);
 printf("true or  false = %t\n", true or false);
 printf("not false      = %t\n", not false);
 
-// --- String concatenation ---
+# --- String concatenation ---
 printf("=== string concat ===\n");
 def greeting as string init "Hello, " + $name + "!";
 printf("%s\n", $greeting);
 
-// --- Control flow ---
+# --- Control flow ---
 printf("=== if / elseif / else ===\n");
 if ($x > 0) {
     printf("x is positive\n");
@@ -80,17 +80,17 @@ for (def j as int init 0; $j < 3; $j = $j + 1) {
     printf("  for j=%d\n", $j);
 }
 
-// --- Methods + recursion + file-imported helper ---
+# --- Methods + recursion + file-imported helper ---
 printf("=== methods ===\n");
 printf("fact(5) = %d\n", fact(5));
 printf("%s\n", greet($name));
 
-// --- io.sprintf ---
+# --- io.sprintf ---
 printf("=== sprintf ===\n");
 def line as string init sprintf("[%d:%s]", 42, "hi");
 printf("%s\n", $line);
 
-// --- convert library ---
+# --- convert library ---
 printf("=== convert ===\n");
 printf("int(3.7)       = %d\n", int(3.7));
 printf("int(\"42\")      = %d\n", int("42"));
@@ -103,7 +103,7 @@ printf("typeOf(\"x\")    = %s\n", typeOf("x"));
 printf("typeOf(true)   = %s\n", typeOf(true));
 printf("typeOf(null)   = %s\n", typeOf(null));
 
-// --- math library ---
+# --- math library ---
 printf("=== math ===\n");
 printf("abs(-7)        = %d\n", abs(-7));
 printf("abs(-3.5)      = %f\n", abs(-3.5));
@@ -120,7 +120,7 @@ printf("=== math constants ===\n");
 printf("typeOf(PI)     = %s\n", typeOf(PI));
 printf("typeOf(E)      = %s\n", typeOf(E));
 
-// --- strings library ---
+# --- strings library ---
 printf("=== strings ===\n");
 def sample as string init "Hello, World";
 printf("len           = %d\n", len($sample));
@@ -142,7 +142,7 @@ printf("split         = %s\n", join(split("a,b,c", ","), "|"));
 printf("chars count   = %d\n", len(chars("héllo")));
 printf("join          = %s\n", join(["x", "y", "z"], "-"));
 
-// --- lists ---
+# --- lists ---
 printf("=== lists ===\n");
 def xs as list of int init [10, 20, 30];
 printf("xs = [%d, %d, %d]\n", $xs[0], $xs[1], $xs[2]);
@@ -158,7 +158,7 @@ for (def elem in $xs) {
     printf("  %d\n", $elem);
 }
 
-// --- maps ---
+# --- maps ---
 printf("=== maps ===\n");
 def scores as map of string to int init {"alice": 90, "bob": 80};
 printf("alice=%d bob=%d\n", $scores["alice"], $scores["bob"]);
@@ -171,7 +171,7 @@ for (def who in $scores) {
     printf("  %s=%d\n", $who, $scores[$who]);
 }
 
-// --- value semantics + deep const ---
+# --- value semantics + deep const ---
 printf("=== value semantics ===\n");
 def src as list of int init [1, 2, 3];
 def dst as list of int init [0];
@@ -179,11 +179,11 @@ $dst = $src;
 $dst[0] = 99;
 printf("src[0]=%d dst[0]=%d\n", $src[0], $dst[0]);
 
-// --- core (auto-loaded): prove JENNIFER_VERSION is wired without baking its value into the golden ---
+# --- core (auto-loaded): prove JENNIFER_VERSION is wired without baking its value into the golden ---
 printf("=== core ===\n");
 printf("typeOf(JENNIFER_VERSION) = %s\n", typeOf(JENNIFER_VERSION));
 
-// --- Constants in expressions ---
+# --- Constants in expressions ---
 printf("=== constants ===\n");
 printf("MAX=%d MAX_RETRIES=%d HTTP_OK=%d PI_APPROX=%f\n", MAX, MAX_RETRIES, HTTP_OK, PI_APPROX);
 

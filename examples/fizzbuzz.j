@@ -1,8 +1,8 @@
-// SPDX-License-Identifier: LGPL-3.0-only
-// Copyright (C) 2026 <developer@mplx.eu>
-//
-// fizzbuzz.j - classic FizzBuzz from 1 to 15.
-// Demonstrates M2 features: for loop, if/elseif/else, comparison, modulo.
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 <developer@mplx.eu>
+#
+# fizzbuzz.j - classic FizzBuzz from 1 to 15.
+# Demonstrates M2 features: for loop, if/elseif/else, comparison, modulo.
 use io;
 
 for (def i as int init 1; $i <= 15; $i = $i + 1) {

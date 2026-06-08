@@ -15,8 +15,8 @@ A hand-written, single-pass scanner.
 | Type keywords             | `INT_TYPE`, `FLOAT_TYPE`, `STRING_TYPE`, `BOOL_TYPE`, `LIST`, `MAP`                                     |
 | Type structure keywords   | `OF`, `TO`                                                                                              |
 | Iteration keyword         | `IN`                                                                                                    |
-| Keyword operators         | `AND`, `OR`, `NOT`, `DIV`                                                                               |
-| Arithmetic operators      | `PLUS` (`+`), `MINUS` (`-`), `STAR` (`*`), `SLASH` (`/`), `PERCENT` (`%`)                               |
+| Keyword operators         | `AND`, `OR`, `NOT`                                                                                      |
+| Arithmetic operators      | `PLUS` (`+`), `MINUS` (`-`), `STAR` (`*`), `SLASH` (`/`), `DIV` (`//`), `PERCENT` (`%`)                 |
 | Comparison operators      | `LT` (`<`), `GT` (`>`), `LE` (`<=`), `GE` (`>=`), `EQ` (`==`)                                           |
 | Assignment                | `ASSIGN` (`=`)                                                                                          |
 | Grouping and punctuation  | `LBRACE` (`{`), `RBRACE` (`}`), `LPAREN` (`(`), `RPAREN` (`)`), `LBRACKET` (`[`), `RBRACKET` (`]`), `SEMI` (`;`), `COMMA` (`,`), `COLON` (`:`), `DOT` (`.`) |
@@ -46,14 +46,18 @@ imported file - see [Interpreter > Errors and positions](interpreter.md#errors-a
 ## Keywords
 
 The lexer's keyword map covers: `def func as init const import use return if
-elseif else while for true false null and or not div int float string bool`.
+elseif else while for true false null and or not int float string bool`.
 Anything else lexed as a word stays a `TOKEN_IDENT`. `define` is **not** a
-keyword and lexes as a plain identifier.
+keyword and lexes as a plain identifier. `div` was removed when `//` took
+over floor division.
 
 ## Comments
 
-`// ...` runs to end of line. `/* ... */` is non-nesting and reports an
-"unterminated block comment" error if unclosed.
+`# ...` runs to end of line. `/* ... */` is non-nesting and reports an
+"unterminated block comment" error if unclosed. `#` was chosen (over the
+C/Java `//` style) so the floor-division operator `//` is unambiguous and
+a Jennifer file can begin with a Unix shebang
+(`#!/usr/bin/env -S jennifer run`).
 
 ## Identifier rule
 

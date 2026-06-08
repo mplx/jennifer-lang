@@ -11,7 +11,7 @@ nothing here will surprise you.
 ## Spacing
 
 - **One space around every binary operator**: `$i = 1 + 2;`, not
-  `$i=1+2;`. Applies to `+ - * / div % < > <= >= == and or` and `=`.
+  `$i=1+2;`. Applies to `+ - * / // % < > <= >= == and or` and `=`.
 - **Unary `-` hugs its operand**: `-5`, `-$x`, `-fact($n - 1)`. No space
   between the `-` and the value it negates.
 - **Word-form unary operators take a space**: `not $ok`, never `not$ok`.
@@ -85,8 +85,9 @@ nothing here will surprise you.
 
 ## Comments
 
-- `// line comment` for short notes that belong on or just above the
-  thing they describe.
+- `# line comment` for short notes that belong on or just above the
+  thing they describe. The very first line may be a shebang
+  (`#!/usr/bin/env -S jennifer run`); the lexer treats it as a comment.
 - `/* block comment */` for longer commentary that doesn't fit one line.
   Block comments don't nest.
 - Comments explain *why*, not *what*. The code already says what.
@@ -144,7 +145,7 @@ insert_final_newline = true
 `jennifer fmt` (v1) operates on the lexer's token stream and re-emits
 canonical source. As a consequence:
 
-- **Comments are dropped.** The lexer strips `//` and `/* */` at scan
+- **Comments are dropped.** The lexer strips `#` and `/* */` at scan
   time. Preserving them would require carrying comments as tokens, which
   is a future enhancement.
 - **Blank lines aren't preserved or inserted.** The formatter packs
@@ -174,7 +175,7 @@ indent, spaces around binary operators, double-quoted strings, expanded
 blocks, no blank lines (a limitation - see above). `jennifer fmt` will
 produce this output byte-for-byte from any equivalent input.
 
-The SPDX header (`// SPDX-License-Identifier: ...`) and copyright comment
+The SPDX header (`# SPDX-License-Identifier: ...`) and copyright comment
 that the project's source files carry are stripped by `fmt` today; keep
 them in version control via your normal workflow and re-apply after a
 reformat until the comment-preservation enhancement lands.

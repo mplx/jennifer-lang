@@ -16,14 +16,12 @@ Rejected because:
 - Python rejected them from the start and the language hasn't suffered.
 - `$i = $i + 1;` is verbose but unambiguous; the readability cost is small.
 
-## Compound assignment (`+=`, `-=`, `*=`, `/=`, `div=`, `%=`)
+## Compound assignment (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`)
 
 Considered as an alternative to `++`/`--`.
 
 Rejected because:
 
-- `div=` reads particularly badly - mashing a word-operator into the
-  assignment-operator family stands out.
 - Several operators to add and remember for marginal ergonomic gain over
   `$x = $x + E;`.
 - Slippery slope: would we also need a string-concat `+=`? An `and=`?

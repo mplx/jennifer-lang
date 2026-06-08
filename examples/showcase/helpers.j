@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: LGPL-3.0-only
-// Copyright (C) 2026 <developer@mplx.eu>
-//
-// helpers.j - imported by ../showcase.j to demonstrate file imports.
-// Two small methods that the showcase calls. Lives in a subdirectory so
-// the examples_test.go walker (which only scans top-level *.j files)
-// doesn't try to run it as a standalone program.
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 <developer@mplx.eu>
+#
+# helpers.j - imported by ../showcase.j to demonstrate file imports.
+# Two small methods that the showcase calls. Lives in a subdirectory so
+# the examples_test.go walker (which only scans top-level *.j files)
+# doesn't try to run it as a standalone program.
 
 func fact(n as int) {
     if ($n <= 1) {

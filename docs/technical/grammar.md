@@ -85,7 +85,7 @@ andExpr     = notExpr { "and" notExpr } ;
 notExpr     = "not" notExpr | compExpr ;
 compExpr    = addExpr { ("<" | ">" | "<=" | ">=" | "==") addExpr } ;
 addExpr     = mulExpr { ("+" | "-") mulExpr } ;
-mulExpr     = unaryExpr { ("*" | "/" | "div" | "%") unaryExpr } ;
+mulExpr     = unaryExpr { ("*" | "/" | "//" | "%") unaryExpr } ;
 unaryExpr   = "-" unaryExpr | primary ;
 primary     = ( INT | FLOAT | STRING | "true" | "false" | "null"
               | VARREF | call | typeCall | constRef | "(" expr ")"
@@ -127,8 +127,11 @@ mapLit      = "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
 - Mixed `int`/`float` arithmetic promotes `int` to `float`; the result is
   `float`. `%` requires int operands. `+` on two `string` values concatenates.
 - **`/` (true division) always returns `float`** (Python 3 semantics). For
-  integer-result division use the `div` keyword: `5 / 2 = 2.5`, `5 div 2 = 2`.
-  `div` on float operands returns the floor as a float (`5.7 div 2.0 = 2.0`).
+  integer-result division use `//`: `5 / 2 = 2.5`, `5 // 2 = 2`.
+  `//` on float operands returns the floor as a float (`5.7 // 2.0 = 2.0`).
+  Line comments are `#` (not `//`), which leaves `//` free for the operator
+  and lets a Jennifer file start with a shebang
+  (`#!/usr/bin/env -S jennifer run`).
 - Floats always display with a `.` so the type stays visible: `5.0` prints as
   `"5.0"`, not `"5"`. See `interpreter.DisplayFloat`.
 - Methods may only be defined at the top level. Variable definitions, assignments,

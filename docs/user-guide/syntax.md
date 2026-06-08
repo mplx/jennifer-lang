@@ -8,13 +8,23 @@ terminated by `;`.
 ## Comments
 
 ```jennifer
-// line comment - runs to end of line
+# line comment - runs to end of line
 
 /* block comment -
    can span multiple lines */
 ```
 
-Block comments don't nest.
+Block comments don't nest. Because `#` starts a line comment, the first
+line of a script may be a Unix shebang and the interpreter will skip it:
+
+```jennifer
+#!/usr/bin/env -S jennifer run
+use io;
+printf("hi\n");
+```
+
+(`env -S` splits the rest of the line into arguments, which is how
+`jennifer run` reaches the interpreter on Linux.)
 
 ## Identifiers
 

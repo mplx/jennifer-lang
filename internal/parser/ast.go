@@ -407,7 +407,7 @@ func (o BinaryOp) String() string {
 	case OpDiv:
 		return "/"
 	case OpFloorDiv:
-		return "div"
+		return "//"
 	case OpMod:
 		return "%"
 	case OpLt:

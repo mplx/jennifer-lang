@@ -9,14 +9,14 @@ produces a positioned runtime error.
 use io;
 use math;
 
-printf("%f\n", PI);                    // 3.141592653589793
-printf("%d\n", abs(0 - 42));           // 42
-printf("%d\n", min(3, 7));             // 3
-printf("%f\n", sqrt(2));               // 1.4142135623730951
-printf("%f\n", pow(2, 10));            // 1024.0
-printf("%d\n", floor(3.7));            // 3
-printf("%d\n", ceil(3.2));             // 4
-printf("%d\n", round(2.5));            // 3 (half away from zero)
+printf("%f\n", PI);                    # 3.141592653589793
+printf("%d\n", abs(0 - 42));           # 42
+printf("%d\n", min(3, 7));             # 3
+printf("%f\n", sqrt(2));               # 1.4142135623730951
+printf("%f\n", pow(2, 10));            # 1024.0
+printf("%d\n", floor(3.7));            # 3
+printf("%d\n", ceil(3.2));             # 4
+printf("%d\n", round(2.5));            # 3 (half away from zero)
 ```
 
 ## Functions

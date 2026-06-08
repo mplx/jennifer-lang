@@ -7,7 +7,7 @@
 | `+`                  | addition (`int`/`float`); also concatenation on `string` |
 | `-`, `*`             | subtraction, multiplication (`int`/`float`)              |
 | `/`                  | **true division - always returns `float`**               |
-| `div`                | floor (integer) division; `int div int → int`            |
+| `//`                 | floor (integer) division; `int // int -> int`            |
 | `%`                  | modulo (`int` only)                                      |
 | unary `-`            | numeric negation (`int`/`float`)                         |
 | `<`, `>`, `<=`, `>=` | numeric comparison; result is `bool`                     |
@@ -16,32 +16,33 @@
 | `not`                | unary logical negation; operand `bool`                   |
 
 **Division has two operators.** `/` always returns a `float` (Python 3
-style). `div` returns the floor, keeping the type when both operands are
+style). `//` returns the floor, keeping the type when both operands are
 ints:
 
 ```jennifer
-5 / 2          // 2.5 (float)
-5 div 2        // 2   (int)
-5.0 / 2.0      // 2.5 (float)
-5.7 div 2.0    // 2.0 (float - floor of a float division)
+5 / 2          # 2.5 (float)
+5 // 2         # 2   (int)
+5.0 / 2.0      # 2.5 (float)
+5.7 // 2.0     # 2.0 (float - floor of a float division)
 ```
 
 So `def x as int init 5 / 2;` is rejected (right side is float). Use
-`5 div 2` for an int result, or `def x as float init 5 / 2;`.
+`5 // 2` for an int result, or `def x as float init 5 / 2;`.
 
-(`//` would have been the Python 3 spelling, but `//` is line-comment syntax
-in Jennifer. The Pascal-style `div` keyword fills the same role.)
+(Line comments are `#`, freeing `//` for the Python-3 floor-division
+operator. The `#` choice also lets Jennifer files start with a shebang:
+`#!/usr/bin/env -S jennifer run`.)
 
 Precedence (low to high): `or`, `and`, `not`, comparison, additive (`+`, `-`),
-multiplicative (`*`, `/`, `div`, `%`), unary `-`. Use parentheses to override:
+multiplicative (`*`, `/`, `//`, `%`), unary `-`. Use parentheses to override:
 `(1 + 2) * 3`. Examples that follow the rules:
 
 ```jennifer
-not 1 == 2                  // not (1 == 2) -> true
-1 > 0 and 2 > 1             // true
-true or false and false     // true or (false and false) -> true
--3 + 10                     // (-3) + 10 -> 7
--3 * 2                      // (-3) * 2 -> -6
+not 1 == 2                  # not (1 == 2) -> true
+1 > 0 and 2 > 1             # true
+true or false and false     # true or (false and false) -> true
+-3 + 10                     # (-3) + 10 -> 7
+-3 * 2                      # (-3) * 2 -> -6
 ```
 
 **`and` and `or` short-circuit.** The right operand is only evaluated when
@@ -50,13 +51,13 @@ has side effects:
 
 ```jennifer
 def gate as bool init false;
-def result as bool init $gate and expensive();   // expensive() not called
+def result as bool init $gate and expensive();   # expensive() not called
 ```
 
 Mixed `int`/`float` arithmetic promotes the int to float and the result is a
 float (`3 + 0.5` -> `3.5`). **`/` always returns `float`**, even with two
-int operands (`5 / 2` is `2.5`, not `2`). Use `div` when you want an
-integer quotient: `5 div 2` is `2`. This is Python-3 division, not C/Java
+int operands (`5 / 2` is `2.5`, not `2`). Use `//` when you want an
+integer quotient: `5 // 2` is `2`. This is Python-3 division, not C/Java
 division.
 
 ## Conditionals and loops
@@ -78,7 +79,7 @@ for (def i as int init 0; $i < 10; $i = $i + 1) {
     printf($i);
 }
 
-// for-each over a list or map.
+# for-each over a list or map.
 for (def x in $xs) {
     printf("%d ", $x);
 }

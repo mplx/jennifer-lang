@@ -8,9 +8,9 @@ share a Go-style format-string mini-language.
 Writes formatted output to standard output. Three calling shapes:
 
 ```jennifer
-printf("hi\n");                              // literal string (no verbs)
-printf($x);                                  // single non-string value, displayed
-printf("you are %d years old!\n", $age);     // format string + arguments
+printf("hi\n");                              # literal string (no verbs)
+printf($x);                                  # single non-string value, displayed
+printf("you are %d years old!\n", $age);     # format string + arguments
 printf("%s = %d, ok=%t\n", "answer", 42, true);
 ```
 
@@ -21,7 +21,7 @@ writing it.
 
 ```jennifer
 def msg as string init sprintf("%d + %d = %d", 1, 2, 3);
-printf("%s\n", $msg);   // "1 + 2 = 3"
+printf("%s\n", $msg);   # "1 + 2 = 3"
 ```
 
 ## Format verbs
