@@ -135,6 +135,7 @@ reference docs are split per library:
 - [libraries/convert.md](../libraries/convert.md) - `int`, `float`, `string`, `bool`, `typeOf`
 - [libraries/math.md](../libraries/math.md) - `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`, `PI`, `E`
 - [libraries/strings.md](../libraries/strings.md) - `len`, `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`/`trimLeft`/`trimRight`, `replace`, `repeat`, `substring`
+- [libraries/os.md](../libraries/os.md) - **namespaced**; `os.platform`, `os.getEnv`, `os.JENNIFER_LF`, `os.JENNIFER_OS`
 - [libraries/core.md](../libraries/core.md) - auto-loaded; `VERSION` (interpreter build version)
 - [libraries/index.md](../libraries/index.md) - catalog and organizing principles
 
@@ -179,6 +180,61 @@ Library-provided **constants** (like `math.PI`) are registered via
 `Interpreter.RegisterConst(lib, name, value)`. Lookup happens in
 `evalExpr`'s `ConstRefExpr` case: user env first, then library constants
 gated on the same `use`-check.
+
+### Namespaced libraries
+
+Domain libraries register through the namespaced API:
+
+```go
+in.RegisterNamespaced("os", "platform", platformFn)
+in.RegisterNamespacedConst("os", "JENNIFER_OS", interpreter.StringVal("linux"))
+```
+
+Both entries are keyed by `(namespace, name)` in `NSBuiltins` /
+`NSConstants`. The library's name doubles as the namespace prefix
+(future libraries may decouple them, but today they always match).
+Registering through the namespaced API also flags the lib in
+`knownNamespaces`.
+
+**Only libraries flagged in `knownNamespaces` may be aliased.**
+`processImports` rejects `use NAME as ALIAS;` for any library that
+registered exclusively through `Register` / `RegisterConst` (the
+flat API) with the message `library NAME has no namespaced
+builtins; ` + "`as ALIAS`" + ` aliasing is meaningless here`. The
+flat libraries (`io`, `convert`, `math`, `strings`, `core`) all
+fall into this category - they have no prefix to rename, and
+silently accepting an `as` clause would create the misleading
+impression of an alias-shaped escape hatch.
+
+`processImports` builds two maps from each `use NAME [as ALIAS];`:
+
+- `nsPrefixes[prefix] = canonicalNamespace` - the prefix that's
+  active at call sites; `prefix == canonical` for `use os;`,
+  `prefix == alias` for `use os as o;`.
+- `nsAliasedAway[canonical] = alias` - records that the canonical
+  name has been shadowed by an alias, so a later `os.foo()` after
+  `use os as o;` errors with a `did you mean ` + "`o`" + `?` hint.
+
+Resolution at a `QualifiedCallExpr` / `QualifiedConstRefExpr` goes
+through `resolveNamespacePrefix(prefix)`:
+
+1. If `prefix` is in `nsPrefixes`, use the canonical namespace it
+   points at.
+2. Else, if `prefix` is in `nsAliasedAway`, emit the "did you mean
+   `<alias>`?" hint.
+3. Else, if `prefix` is the canonical name of a *known* namespaced
+   lib the program forgot to `use`, emit a `requires ` + "`use prefix;`"
+   reminder.
+4. Else, emit `unknown namespace`.
+
+The no-shadowing rule for top-level methods (`checkMethodNoShadow`)
+adds one more clause: a method name that matches an active namespace
+prefix is rejected (`func os() {}` errors after `use os;`, but is
+fine after `use os as o;` because only `o` is reserved as a prefix).
+
+The five essential flat libraries (`io`, `convert`, `math`,
+`strings`, `core`) intentionally do *not* use the namespaced API -
+their names stay bare for ergonomics.
 
 For the user-facing API of each library, follow the links above. Below are
 the implementation-only notes worth knowing as a maintainer.

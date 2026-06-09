@@ -106,6 +106,24 @@ nothing here will surprise you.
 - **Library names**: lowercase, single word where possible (`io`, `math`,
   `strings`, `meta`).
 
+## Namespaced calls
+
+Domain libraries are addressed by `prefix.name(...)`. The dot binds
+tight on both sides, like a method call's `(`:
+
+- **No space around `.`**: `os.platform()`, never `os . platform()`.
+- **The call parens still hug the callee**: `os.platform()`, not
+  `os.platform ()`.
+- **`use lib as alias;` is one space on each side of `as`**:
+  `use bio as b;`, never `use bio  as  b;`.
+
+When you alias a library, the canonical name is freed for ordinary
+identifier use (e.g. you *could* write `func os() { ... }` after
+`use os as o;`). Don't. Reusing a library's canonical name reads as
+"this is a call into the library" at first glance, then surprises
+the reader when it isn't - keep the canonical name out of the
+user-method pool even when aliasing has technically freed it.
+
 ## Strings
 
 - **Prefer double quotes**: `"hello"` over `'hello'`. Both forms parse

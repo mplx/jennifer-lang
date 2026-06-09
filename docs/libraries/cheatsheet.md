@@ -5,7 +5,7 @@ it when you know the *name* and want to know *which library* and *how to
 call it*; use each library's own page when you want to read about a
 topic.
 
-The table covers what ships with the interpreter today (M7). New
+The table covers what ships with the interpreter today. New
 entries land here at the same time as the per-library doc - it's a
 flat lookup view, not authoritative.
 
@@ -30,6 +30,8 @@ flat lookup view, not authoritative.
 | `lower(s)`                    | [strings](strings.md)           | Lowercase `s` (Unicode-aware).                                                |
 | `max(a, b)`                   | [math](math.md)                 | Larger of two numbers; mixed int/float promotes to float.                     |
 | `min(a, b)`                   | [math](math.md)                 | Smaller of two numbers; mixed int/float promotes to float.                    |
+| `os.getEnv(name)`             | [os](os.md)                     | Read environment variable `name`. Unset → empty string, no error.             |
+| `os.platform()`               | [os](os.md)                     | Operating-system name as reported by the runtime (`"linux"` today).            |
 | `pow(x, y)`                   | [math](math.md)                 | `x` raised to `y`; always float. Errors on NaN/Inf-producing inputs.          |
 | `printf(value)`               | [io](io.md)                     | Write a value's display form to stdout.                                       |
 | `printf(format, args...)`     | [io](io.md)                     | Format-string write to stdout. Verbs: `%d %f %s %t %v %%`; per-verb `\|key=value` modifiers (`pad`, `prec`, `base`, `null=*`, ...). |
@@ -58,6 +60,8 @@ flat lookup view, not authoritative.
 |--------------------|---------------------------------|----------|-------------------------------------------------------------|
 | `E`                | [math](math.md)                 | `float`  | Euler's number, 2.718281828459045.                          |
 | `JENNIFER_VERSION` | [core](core.md) *(auto-loaded)* | `string` | The interpreter's build version (e.g. `"0.6.0"`).           |
+| `os.JENNIFER_LF`   | [os](os.md)                     | `string` | Platform line ending. `"\n"` on Linux today.                |
+| `os.JENNIFER_OS`   | [os](os.md)                     | `string` | OS tag (`"linux"` today); same value as `os.platform()`.    |
 | `PI`               | [math](math.md)                 | `float`  | π, 3.141592653589793.                                       |
 
 ## Type-conversion calls

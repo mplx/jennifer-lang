@@ -625,8 +625,8 @@ library a sub-milestone.
 Each domain its own milestone with sub-milestones as needed:
 
 - **ML.** Vector, matrix, stats, ML primitives.
-- **Bioinformatics.** Sequence alignment (Smith–Waterman,
-  Needleman–Wunsch), FASTA/FASTQ parsers, molecule structures.
+- **Bioinformatics.** Sequence alignment (Smith-Waterman,
+  Needleman-Wunsch), FASTA/FASTQ parsers, molecule structures.
 - **Sandbox.** Restricted-capability execution.
 
 Ordered when demand surfaces. WASM libraries (M20.x) may cover

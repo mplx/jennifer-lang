@@ -30,6 +30,9 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 		startObj(b, indent)
 		emitTypeAndPos(b, "ImportStmt", v, indent+1)
 		emitStringField(b, "name", v.Name, indent+1)
+		if v.AsName != "" {
+			emitStringField(b, "as", v.AsName, indent+1)
+		}
 		endObj(b, indent)
 
 	case *parser.MethodDef:
@@ -154,6 +157,21 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 		emitTypeAndPos(b, "CallExpr", v, indent+1)
 		emitStringField(b, "callee", v.Callee, indent+1)
 		emitNodeListField(b, "args", asNodes(v.Args), indent+1)
+		endObj(b, indent)
+
+	case *parser.QualifiedCallExpr:
+		startObj(b, indent)
+		emitTypeAndPos(b, "QualifiedCallExpr", v, indent+1)
+		emitStringField(b, "prefix", v.Prefix, indent+1)
+		emitStringField(b, "callee", v.Callee, indent+1)
+		emitNodeListField(b, "args", asNodes(v.Args), indent+1)
+		endObj(b, indent)
+
+	case *parser.QualifiedConstRefExpr:
+		startObj(b, indent)
+		emitTypeAndPos(b, "QualifiedConstRefExpr", v, indent+1)
+		emitStringField(b, "prefix", v.Prefix, indent+1)
+		emitStringField(b, "name", v.Name, indent+1)
 		endObj(b, indent)
 
 	case *parser.BinaryExpr:

@@ -47,28 +47,48 @@ type libConstantEntry struct {
 	Value Value
 }
 
+// nsKey identifies a namespaced builtin or constant by (namespace,
+// name). Used as a map key so a single map covers `bio.translate`,
+// `os.platform`, etc. without nested maps. The namespace doubles as the
+// owning library's name; the user enables the namespace via
+// `use <lib>;` and addresses callees as `<lib>.name(...)`.
+type nsKey struct {
+	NS   string
+	Name string
+}
+
 // Interpreter walks a parsed Program and runs it.
 type Interpreter struct {
-	Out          io.Writer // defaults to os.Stdout if nil
-	In           io.Reader // defaults to os.Stdin if nil
-	InREPL       bool      // set by the REPL so stdin-consuming builtins refuse
-	Builtins     map[string]builtinEntry
-	LibConstants map[string]libConstantEntry // library-provided constants (math.PI, ...)
-	knownLibs    map[string]bool             // libraries with at least one registered builtin OR constant
-	imported     map[string]bool             // libraries the program has `use`d
-	methods      map[string]*parser.MethodDef
-	global       *Environment // global scope where top-level statements live
+	Out             io.Writer // defaults to os.Stdout if nil
+	In              io.Reader // defaults to os.Stdin if nil
+	InREPL          bool      // set by the REPL so stdin-consuming builtins refuse
+	Builtins        map[string]builtinEntry
+	LibConstants    map[string]libConstantEntry // library-provided constants (math.PI, ...)
+	NSBuiltins      map[nsKey]Builtin           // namespaced builtins: os.platform, bio.translate, ...
+	NSConstants     map[nsKey]Value             // namespaced constants: os.JENNIFER_LF, ...
+	knownLibs       map[string]bool             // libraries with at least one registered builtin OR constant
+	knownNamespaces map[string]bool             // libraries that registered through the namespaced API
+	imported        map[string]bool             // libraries the program has `use`d
+	nsPrefixes      map[string]string           // active call-site prefix -> canonical namespace (after aliasing)
+	nsAliasedAway   map[string]string           // canonical namespace -> alias chosen by `use NAME as ALIAS;`
+	methods         map[string]*parser.MethodDef
+	global          *Environment // global scope where top-level statements live
 }
 
 func New() *Interpreter {
 	in := &Interpreter{
-		Out:          os.Stdout,
-		In:           os.Stdin,
-		Builtins:     map[string]builtinEntry{},
-		LibConstants: map[string]libConstantEntry{},
-		knownLibs:    map[string]bool{},
-		imported:     map[string]bool{},
-		methods:      map[string]*parser.MethodDef{},
+		Out:             os.Stdout,
+		In:              os.Stdin,
+		Builtins:        map[string]builtinEntry{},
+		LibConstants:    map[string]libConstantEntry{},
+		NSBuiltins:      map[nsKey]Builtin{},
+		NSConstants:     map[nsKey]Value{},
+		knownLibs:       map[string]bool{},
+		knownNamespaces: map[string]bool{},
+		imported:        map[string]bool{},
+		nsPrefixes:      map[string]string{},
+		nsAliasedAway:   map[string]string{},
+		methods:         map[string]*parser.MethodDef{},
 	}
 	// `core` is auto-loaded: its builtins and constants are visible without
 	// the user writing `use core;`. The library itself registers via
@@ -98,6 +118,27 @@ func (i *Interpreter) Register(lib, name string, fn Builtin) {
 func (i *Interpreter) RegisterConst(lib, name string, value Value) {
 	i.LibConstants[name] = libConstantEntry{Lib: lib, Value: value}
 	i.knownLibs[lib] = true
+}
+
+// RegisterNamespaced attaches a namespaced builtin. The library
+// name doubles as the namespace prefix: `in.RegisterNamespaced("os",
+// "platform", fn)` makes the function callable as `os.platform()` once
+// the program writes `use os;`. A library may register both flat
+// builtins (via Register) and namespaced builtins, but the essential
+// libraries (io, convert, math, strings, core) intentionally stay flat.
+func (i *Interpreter) RegisterNamespaced(lib, name string, fn Builtin) {
+	i.NSBuiltins[nsKey{NS: lib, Name: name}] = fn
+	i.knownLibs[lib] = true
+	i.knownNamespaces[lib] = true
+}
+
+// RegisterNamespacedConst attaches a namespaced constant. Same
+// gating model as RegisterNamespaced - the constant is reachable only as
+// `<lib>.NAME` and only after `use <lib>;`.
+func (i *Interpreter) RegisterNamespacedConst(lib, name string, value Value) {
+	i.NSConstants[nsKey{NS: lib, Name: name}] = value
+	i.knownLibs[lib] = true
+	i.knownNamespaces[lib] = true
 }
 
 // availableLibsString returns a sorted, comma-separated list of registered
@@ -168,12 +209,42 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	if i.In == nil {
 		i.In = os.Stdin
 	}
-	// Imports: every `use NAME;` must refer to a library that has at least
-	// one registered builtin. Silent acceptance of unknown libraries would
-	// hide typos like `use stdio;` (instead of `io`). The `core` library is
-	// a special case: it's auto-loaded by New(), so an explicit `use core;`
-	// is rejected to keep the source honest about which libraries are
-	// expressly invoked.
+	if err := i.processImports(prog, false); err != nil {
+		return err
+	}
+	// Methods: collect first so call order doesn't matter
+	for _, m := range prog.Methods {
+		if _, exists := i.methods[m.Name]; exists {
+			file, line, col := posFor(m)
+			return &runtimeError{Msg: fmt.Sprintf("method %q is defined more than once", m.Name), File: file, Line: line, Col: col}
+		}
+		if err := i.checkMethodNoShadow(m); err != nil {
+			return err
+		}
+		i.methods[m.Name] = m
+	}
+	i.global = NewEnvironment(nil)
+	_, err := i.execStmts(prog.TopLevel, i.global)
+	return err
+}
+
+// processImports walks `use NAME [as ALIAS];` statements and updates the
+// interpreter's import / namespace tables. Shared by Run (one-shot batch
+// mode) and EvalInteractive (REPL); the `repl` flag tunes a couple of
+// behaviours - the REPL silently re-imports a library a user already
+// `use`d (so re-running a snippet works), while batch mode would too,
+// since `imported` is just a set.
+//
+// Namespace-aware rules:
+//   - `use os;` activates prefix "os" -> namespace "os".
+//   - `use os as o;` activates prefix "o" -> namespace "os" and records
+//     that the canonical name "os" has been aliased. After the alias,
+//     `os.foo()` is rejected with a "did you mean `o`?" hint.
+//   - The prefix has to be unique among active namespaces; two libs
+//     fighting for the same prefix is a positioned error.
+//   - `core` is always auto-loaded; explicit `use core;` is rejected.
+func (i *Interpreter) processImports(prog *parser.Program, repl bool) error {
+	_ = repl // currently unused; kept for documentation symmetry with the REPL path
 	for _, imp := range prog.Imports {
 		if imp.Name == CoreLibraryName {
 			file, line, col := posFor(imp)
@@ -190,29 +261,65 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 			}
 		}
 		i.imported[imp.Name] = true
-	}
-	// Methods: collect first so call order doesn't matter
-	for _, m := range prog.Methods {
-		if _, exists := i.methods[m.Name]; exists {
-			file, line, col := posFor(m)
-			return &runtimeError{Msg: fmt.Sprintf("method %q is defined more than once", m.Name), File: file, Line: line, Col: col}
+		// Namespace bookkeeping. Only libraries that registered through the
+		// namespaced API participate in qualified-call resolution; a
+		// `use math;` for a flat-only library has no namespace effect even
+		// if the user writes the optional `as ALIAS` clause (which would
+		// be pointless for a flat lib).
+		if !i.knownNamespaces[imp.Name] {
+			if imp.AsName != "" {
+				file, line, col := posFor(imp)
+				return &runtimeError{
+					Msg:  fmt.Sprintf("library %q has no namespaced builtins; `as %s` aliasing is meaningless here", imp.Name, imp.AsName),
+					File: file, Line: line, Col: col,
+				}
+			}
+			continue
 		}
-		// No-shadowing rule for methods: a user method may not share a name
-		// with a builtin from a library the program has `use`d. This mirrors
-		// the variable no-shadowing rule. Without the relevant `use`, the
-		// name is free for user code.
-		if b, isBuiltin := i.Builtins[m.Name]; isBuiltin && i.imported[b.Lib] {
-			file, line, col := posFor(m)
+		prefix := imp.Name
+		if imp.AsName != "" {
+			prefix = imp.AsName
+			i.nsAliasedAway[imp.Name] = imp.AsName
+		}
+		if existingNS, taken := i.nsPrefixes[prefix]; taken && existingNS != imp.Name {
+			file, line, col := posFor(imp)
 			return &runtimeError{
-				Msg:  fmt.Sprintf("method %q shadows a builtin from `%s`; rename it or remove `use %s;`", m.Name, b.Lib, b.Lib),
+				Msg:  fmt.Sprintf("namespace prefix %q is already bound to library %q", prefix, existingNS),
 				File: file, Line: line, Col: col,
 			}
 		}
-		i.methods[m.Name] = m
+		i.nsPrefixes[prefix] = imp.Name
 	}
-	i.global = NewEnvironment(nil)
-	_, err := i.execStmts(prog.TopLevel, i.global)
-	return err
+	return nil
+}
+
+// checkMethodNoShadow enforces the no-shadowing rules that apply to a
+// top-level method definition:
+//
+//   - A method may not share its name with a flat builtin from a library
+//     the program has `use`d (the existing rule).
+//   - A method may not share its name with an active namespace prefix
+//     (`func os() {}` is rejected after `use os;` because `os.foo()`
+//     would then collide with a regular call to `os()`).
+//
+// Run() and EvalInteractive() share this so the REPL stays consistent
+// with batch mode.
+func (i *Interpreter) checkMethodNoShadow(m *parser.MethodDef) error {
+	if b, isBuiltin := i.Builtins[m.Name]; isBuiltin && i.imported[b.Lib] {
+		file, line, col := posFor(m)
+		return &runtimeError{
+			Msg:  fmt.Sprintf("method %q shadows a builtin from `%s`; rename it or remove `use %s;`", m.Name, b.Lib, b.Lib),
+			File: file, Line: line, Col: col,
+		}
+	}
+	if _, isPrefix := i.nsPrefixes[m.Name]; isPrefix {
+		file, line, col := posFor(m)
+		return &runtimeError{
+			Msg:  fmt.Sprintf("method %q shadows imported namespace %q", m.Name, m.Name),
+			File: file, Line: line, Col: col,
+		}
+	}
+	return nil
 }
 
 // EvalInteractive runs a parsed Program in REPL mode. It differs from Run in
@@ -236,30 +343,12 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 	if i.In == nil {
 		i.In = os.Stdin
 	}
-	for _, imp := range prog.Imports {
-		if imp.Name == CoreLibraryName {
-			file, line, col := posFor(imp)
-			return Null(), &runtimeError{
-				Msg:  fmt.Sprintf("library %q is automatically available; remove this `use %s;` statement", imp.Name, imp.Name),
-				File: file, Line: line, Col: col,
-			}
-		}
-		if !i.knownLibs[imp.Name] {
-			file, line, col := posFor(imp)
-			return Null(), &runtimeError{
-				Msg:  fmt.Sprintf("unknown library %q (available: %s)", imp.Name, i.availableLibsString()),
-				File: file, Line: line, Col: col,
-			}
-		}
-		i.imported[imp.Name] = true
+	if err := i.processImports(prog, true); err != nil {
+		return Null(), err
 	}
 	for _, m := range prog.Methods {
-		if b, isBuiltin := i.Builtins[m.Name]; isBuiltin && i.imported[b.Lib] {
-			file, line, col := posFor(m)
-			return Null(), &runtimeError{
-				Msg:  fmt.Sprintf("method %q shadows a builtin from `%s`; rename it or remove `use %s;`", m.Name, b.Lib, b.Lib),
-				File: file, Line: line, Col: col,
-			}
+		if err := i.checkMethodNoShadow(m); err != nil {
+			return Null(), err
 		}
 		i.methods[m.Name] = m
 	}
@@ -818,6 +907,10 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 		return i.evalUnary(ex, env)
 	case *parser.CallExpr:
 		return i.evalCall(ex, env)
+	case *parser.QualifiedCallExpr:
+		return i.evalQualifiedCall(ex, env)
+	case *parser.QualifiedConstRefExpr:
+		return i.evalQualifiedConst(ex)
 	case *parser.ListLit:
 		return i.evalListLit(ex, env)
 	case *parser.MapLit:
@@ -1148,4 +1241,76 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 	}
 	file, line, col := posFor(c)
 	return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown function %q", c.Callee), File: file, Line: line, Col: col}
+}
+
+// resolveNamespacePrefix turns the source-level prefix on a qualified
+// reference (`os` in `os.platform()`) into the canonical namespace tag
+// the namespaced-builtin registry is keyed on, applying following rules:
+//
+//   - active prefix: the canonical namespace is returned, no error.
+//   - canonical name that's been aliased away: error with the alias as
+//     a "did you mean?" hint.
+//   - canonical name of a namespaced lib the program hasn't `use`d:
+//     error with the `use <lib>;` reminder.
+//   - anything else: error as an unknown namespace.
+//
+// The caller decorates the returned error with positional info.
+func (i *Interpreter) resolveNamespacePrefix(prefix string) (string, error) {
+	if ns, ok := i.nsPrefixes[prefix]; ok {
+		return ns, nil
+	}
+	if alias, aliased := i.nsAliasedAway[prefix]; aliased {
+		return "", fmt.Errorf("namespace %q is aliased; did you mean `%s`?", prefix, alias)
+	}
+	if i.knownNamespaces[prefix] {
+		return "", fmt.Errorf("namespace %q requires `use %s;`", prefix, prefix)
+	}
+	return "", fmt.Errorf("unknown namespace %q", prefix)
+}
+
+// evalQualifiedCall handles `prefix.callee(args)`. The prefix is
+// resolved to a namespace (alias-aware), then the (namespace, callee)
+// pair is looked up in the namespaced-builtin registry.
+func (i *Interpreter) evalQualifiedCall(c *parser.QualifiedCallExpr, env *Environment) (Value, error) {
+	ns, err := i.resolveNamespacePrefix(c.Prefix)
+	if err != nil {
+		file, line, col := posFor(c)
+		return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+	}
+	fn, ok := i.NSBuiltins[nsKey{NS: ns, Name: c.Callee}]
+	if !ok {
+		file, line, col := posFor(c)
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown function %q in namespace %q", c.Callee, ns), File: file, Line: line, Col: col}
+	}
+	args := make([]Value, 0, len(c.Args))
+	for _, a := range c.Args {
+		v, err := i.evalExpr(a, env)
+		if err != nil {
+			return Value{}, err
+		}
+		args = append(args, v)
+	}
+	ctx := BuiltinCtx{Out: i.Out, In: i.In, InREPL: i.InREPL}
+	v, err := fn(ctx, args)
+	if err != nil {
+		file, line, col := posFor(c)
+		return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+	}
+	return v, nil
+}
+
+// evalQualifiedConst handles `prefix.NAME`. Resolution mirrors
+// evalQualifiedCall; the result is the constant's value.
+func (i *Interpreter) evalQualifiedConst(c *parser.QualifiedConstRefExpr) (Value, error) {
+	ns, err := i.resolveNamespacePrefix(c.Prefix)
+	if err != nil {
+		file, line, col := posFor(c)
+		return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+	}
+	v, ok := i.NSConstants[nsKey{NS: ns, Name: c.Name}]
+	if !ok {
+		file, line, col := posFor(c)
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown constant %q in namespace %q", c.Name, ns), File: file, Line: line, Col: col}
+	}
+	return v, nil
 }

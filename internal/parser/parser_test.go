@@ -256,3 +256,90 @@ func TestParseM6Rejections(t *testing.T) {
 		})
 	}
 }
+
+func TestParseQualifiedCall(t *testing.T) {
+	// `bio.translate($seq)` is a qualified call: prefix.callee(args).
+	src := `use bio; bio.translate($seq);`
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(prog.TopLevel) != 1 {
+		t.Fatalf("expected one stmt, got %d", len(prog.TopLevel))
+	}
+	got := Sprint(prog.TopLevel[0])
+	want := "ExprStmt(QCall(bio.translate, Var($seq)))"
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestParseQualifiedCallZeroArg(t *testing.T) {
+	src := `use os; os.platform();`
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Sprint(prog.TopLevel[0])
+	want := "ExprStmt(QCall(os.platform))"
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestParseQualifiedConstRef(t *testing.T) {
+	src := `use bio; def x as int init bio.STOPS;`
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Sprint(prog.TopLevel[0])
+	want := "Define($x as int = QConst(bio.STOPS))"
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestParseUseWithAlias(t *testing.T) {
+	src := `use bio as b; b.translate($x);`
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(prog.Imports) != 1 {
+		t.Fatalf("imports: got %+v", prog.Imports)
+	}
+	imp := prog.Imports[0]
+	if imp.Name != "bio" || imp.AsName != "b" {
+		t.Errorf("import: got Name=%q AsName=%q, want bio/b", imp.Name, imp.AsName)
+	}
+	if Sprint(imp) != "Import(bio as b)" {
+		t.Errorf("sprint: got %q", Sprint(imp))
+	}
+}
+
+func TestParseQualifiedErrors(t *testing.T) {
+	bad := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{"const-form wants UPPERCASE", `use bio; def x as int init bio.lower;`, "uppercase"},
+		{"method name with underscore", `use bio; bio.my_call();`, "may not contain"},
+		{"alias with underscore", `use bio as b_alias;`, "may not contain"},
+		{"missing IDENT after dot", `use bio; bio.();`, "after `.`"},
+		{"missing IDENT after as", `use bio as ;`, "after `as`"},
+	}
+	for _, c := range bad {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := Parse(c.src)
+			if err == nil {
+				t.Errorf("expected error, got nil")
+				return
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("error %q does not contain %q", err.Error(), c.want)
+			}
+		})
+	}
+}

@@ -12,6 +12,7 @@ import (
 	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
 	mathlib "github.com/mplx/jennifer-lang/internal/lib/math"
 	corelib "github.com/mplx/jennifer-lang/internal/lib/core"
+	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
 	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
@@ -26,6 +27,7 @@ func newReplInterp() (*interpreter.Interpreter, *bytes.Buffer) {
 	convert.Install(in)
 	mathlib.Install(in)
 	stringslib.Install(in)
+	oslib.Install(in)
 	corelib.Install(in)
 	return in, &buf
 }
@@ -112,5 +114,25 @@ func TestEvalInteractiveBuiltinShadowStillRejected(t *testing.T) {
 	}
 	if _, err := in.EvalInteractive(prog); err == nil {
 		t.Fatal("expected builtin-shadow error, got nil")
+	}
+}
+
+func TestEvalInteractiveQualifiedCall(t *testing.T) {
+	in, buf := newReplInterp()
+	evalLine(t, in, "use io;")
+	evalLine(t, in, "use os;")
+	evalLine(t, in, `printf("%s\n", os.platform());`)
+	if got := buf.String(); got == "" || got[len(got)-1] != '\n' {
+		t.Errorf("expected platform output ending in newline, got %q", got)
+	}
+}
+
+func TestEvalInteractiveAliasedQualifiedCall(t *testing.T) {
+	in, buf := newReplInterp()
+	evalLine(t, in, "use io;")
+	evalLine(t, in, "use os as o;")
+	evalLine(t, in, `printf("%s", o.JENNIFER_LF);`)
+	if got := buf.String(); got != "\n" && got != "\r\n" {
+		t.Errorf("expected platform line ending, got %q", got)
 	}
 }

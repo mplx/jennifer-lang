@@ -15,7 +15,10 @@ punctuation that match the corresponding token's lexeme.
 
 ```ebnf
 program     = { useStmt | methodDef | statement } EOF ;
-useStmt     = "use" IDENT ";" ;                     (* library import *)
+useStmt     = "use" IDENT [ "as" IDENT ] ";" ;      (* library import; the
+                                                       optional "as ALIAS"
+                                                       renames the namespace
+                                                       at the use site *)
 methodDef   = "func" IDENT "(" [ paramList ] ")" block ;
 paramList   = param { "," param } ;
 param       = IDENT "as" type ;
@@ -88,17 +91,26 @@ addExpr     = mulExpr { ("+" | "-") mulExpr } ;
 mulExpr     = unaryExpr { ("*" | "/" | "//" | "%") unaryExpr } ;
 unaryExpr   = "-" unaryExpr | primary ;
 primary     = ( INT | FLOAT | STRING | "true" | "false" | "null"
-              | VARREF | call | typeCall | constRef | "(" expr ")"
+              | VARREF | qualifiedCall | qualifiedConstRef
+              | call | typeCall | constRef | "(" expr ")"
               | listLit | mapLit )
               { "[" expr "]" } ;       (* any primary can be index-chained *)
 call        = IDENT "(" [ expr { "," expr } ] ")" ;
+qualifiedCall      = IDENT "." IDENT "(" [ expr { "," expr } ] ")" ;
+qualifiedConstRef  = IDENT "." IDENT ;
+                                       (* qualifiedCall / qualifiedConstRef:
+                                          IDENT "." IDENT, then `(` decides which.
+                                          Resolved against the namespaced-builtin
+                                          / constant registry, gated by `use lib;`
+                                          (or alias-aware equivalent). *)
 typeCall    = ("int" | "float" | "string" | "bool") "(" [ expr { "," expr } ] ")" ;
                                        (* type keywords usable as calls only when
                                           immediately followed by `(`; resolved as
                                           convert-library builtins at runtime *)
 constRef    = IDENT ;                  (* bare-IDENT: constant reference; the
                                           parser disambiguates `call` vs
-                                          `constRef` by peeking for "(". *)
+                                          `qualifiedCall` vs `constRef` by
+                                          peeking for "." / "(". *)
 listLit     = "[" [ expr { "," expr } [ "," ] ] "]" ;
 mapLit      = "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
                                        (* `{` is also a block opener; only
@@ -196,7 +208,7 @@ grammar the parser implements is the EBNF above.
 | Node          | Kind  | Fields                                       |
 |---------------|-------|----------------------------------------------|
 | `Program`     | root  | `Imports []*ImportStmt`, `Methods []*MethodDef`, `TopLevel []Stmt` |
-| `ImportStmt`  | stmt  | `Name`                                       |
+| `ImportStmt`  | stmt  | `Name`, `AsName` (empty unless `use NAME as ALIAS;`) |
 | `MethodDef`   | stmt  | `Name`, `Params []Param`, `Body *Block`      |
 | `Param`       | -     | `Name`, `Type`                               |
 | `Block`       | stmt  | `Stmts []Stmt`                               |
@@ -217,6 +229,8 @@ grammar the parser implements is the EBNF above.
 | `VarExpr`     | expr  | `Name` (no `$`) - mutable-variable reference  |
 | `ConstRefExpr`| expr  | `Name` - bare-IDENT reference; interpreter expects it to resolve to a constant |
 | `CallExpr`    | expr  | `Callee`, `Args []Expr`                      |
+| `QualifiedCallExpr`     | expr | `Prefix`, `Callee`, `Args []Expr` |
+| `QualifiedConstRefExpr` | expr | `Prefix`, `Name` |
 | `BinaryExpr`  | expr  | `Op BinaryOp`, `Left`, `Right` (comparison/logical ops return bool; `and`/`or` short-circuit at eval time) |
 | `UnaryExpr`   | expr  | `Op UnaryOp` (`OpNeg`/`OpNot`), `Operand` |
 | `ListLit`     | expr  | `Elements []Expr` - `[1, 2, 3]`               |

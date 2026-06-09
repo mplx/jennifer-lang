@@ -15,6 +15,7 @@ to the reference doc for each.
 | `convert` | `use convert;`  | `int`, `float`, `string`, `bool`, `typeOf` - explicit casts; canonical-only `bool` conversion                                              | [convert.md](convert.md)   |
 | `math`    | `use math;`     | `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`; constants `PI`, `E`                                                          | [math.md](math.md)         |
 | `strings` | `use strings;`  | `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring`, `split`, `chars`, `join` (`len` lives in [`core`](core.md)) | [strings.md](strings.md)   |
+| `os`      | `use os;`       | `os.platform`, `os.getEnv`, `os.JENNIFER_LF`, `os.JENNIFER_OS`) | [os.md](os.md) |
 | `core`    | *(auto-loaded)* | `len` (polymorphic over string/list/map), `has(map, key)`, `JENNIFER_VERSION`. Pre-imported by the interpreter; writing `use core;` is a runtime error. | [core.md](core.md)         |
 
 A quick taste:
@@ -30,6 +31,34 @@ printf("sqrt(2) = %f\n", sqrt(2));
 printf("upper: %s\n", upper("hello"));
 printf("len: %d\n", len("hello"));           # auto-loaded from core
 ```
+
+## Flat vs namespaced libraries
+
+Jennifer ships two flavours of library, distinguished at registration
+time:
+
+- **Essential / flat libraries** (`io`, `convert`, `math`, `strings`,
+  auto-loaded `core`). Their builtins are bare names: `printf(...)`,
+  `upper(...)`, `PI`. Five small libraries with carefully chosen names,
+  collision risk is low, and the bare form keeps everyday programs
+  readable.
+- **Domain / namespaced libraries**.
+  Builtins are addressed as `lib.name(...)` / `lib.NAME`. The
+  namespace prevents a domain library from polluting the bare-name
+  pool and lets two libraries safely register a common verb
+  (`net.parse` and `regex.parse` would not collide).
+
+**Rule for library authors:** if your library could ship a name that
+another library might also want (`parse`, `read`, `encode`, `len`),
+use the namespaced API. If your library is genuinely essential and
+its names are unmistakable (`printf`, `sqrt`), the flat API is fine
+- but the bar is high; in doubt, choose namespaced.
+
+Aliasing (`use lib as alias;`) is a **rename**, not an addition:
+after the alias the canonical name no longer resolves at call sites
+(it errors with a "did you mean *alias*?" hint). The canonical name
+is also freed for use as an ordinary identifier in user code, just
+like Python's `import foo as bar`.
 
 ## How libraries are organized
 

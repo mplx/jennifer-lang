@@ -16,6 +16,7 @@ import (
 	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
 	mathlib "github.com/mplx/jennifer-lang/internal/lib/math"
 	corelib "github.com/mplx/jennifer-lang/internal/lib/core"
+	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
 	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
@@ -136,6 +137,7 @@ func runProgramOutput(path, src string) (string, error) {
 	convert.Install(in)
 	mathlib.Install(in)
 	stringslib.Install(in)
+	oslib.Install(in)
 	corelib.Install(in)
 	if err := in.Run(prog); err != nil {
 		return "", err
@@ -233,6 +235,26 @@ func TestFmtSpacingRules(t *testing.T) {
 			"block brace still expands",
 			`func f() { return; }`,
 			"func f() {\n    return;\n}\n",
+		},
+		{
+			"qualified call hugs the dot",
+			`os . platform (  );`,
+			"os.platform();\n",
+		},
+		{
+			"qualified call with args",
+			`bio . translate ( $seq );`,
+			"bio.translate($seq);\n",
+		},
+		{
+			"qualified constant reference",
+			`def x as int init bio . STOPS ;`,
+			"def x as int init bio.STOPS;\n",
+		},
+		{
+			"use with alias",
+			`use bio   as   b ;`,
+			"use bio as b;\n",
 		},
 	}
 	for _, c := range cases {

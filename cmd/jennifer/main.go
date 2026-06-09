@@ -16,6 +16,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/io"
 	"github.com/mplx/jennifer-lang/internal/lib/math"
 	"github.com/mplx/jennifer-lang/internal/lib/core"
+	"github.com/mplx/jennifer-lang/internal/lib/os"
 	"github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
@@ -76,7 +77,7 @@ func main() {
 const (
 	licenseID   = "LGPL-3.0-only"
 	copyright   = "Copyright (C) 2026 <developer@mplx.eu>"
-	description = "jennifer — Jennifer programming language interpreter"
+	description = "jennifer - Jennifer programming language interpreter"
 )
 
 func usage() {
@@ -160,6 +161,7 @@ func runFile(path string) int {
 	convert.Install(in)
 	mathlib.Install(in)
 	stringslib.Install(in)
+	oslib.Install(in)
 	corelib.Install(in)
 	if err := in.Run(prog); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %s\n", label, err.Error())

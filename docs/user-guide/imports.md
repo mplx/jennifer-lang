@@ -20,6 +20,7 @@ index.
 | `convert` | `use convert;`   | `int`, `float`, `string`, `bool`, `typeOf` - explicit casts                                               | [libraries/convert.md](../libraries/convert.md) |
 | `math`    | `use math;`      | `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`; constants `PI`, `E`                         | [libraries/math.md](../libraries/math.md)   |
 | `strings` | `use strings;`   | `upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring`, `split`, `chars`, `join` | [libraries/strings.md](../libraries/strings.md) |
+| `os`      | `use os;`        | `os.platform`, `os.getEnv`, `os.JENNIFER_LF`, `os.JENNIFER_OS` | [libraries/os.md](../libraries/os.md)       |
 | `core`    | *(auto-loaded)*  | `len`, `has(map, key)`, `JENNIFER_VERSION`. No `use` needed; writing `use core;` is a runtime error.      | [libraries/core.md](../libraries/core.md)   |
 
 See [libraries/index.md](../libraries/index.md) for a fuller catalog and
@@ -40,6 +41,71 @@ printf("%s\n", string(true));          # "true"       [convert]
 ```
 
 The per-library docs cover every function in detail along with error cases.
+
+### Namespaced libraries and aliasing
+
+Jennifer ships two flavours of library. Flat libraries (`io`,
+`convert`, `math`, `strings`, the auto-loaded `core`) register
+their names at the top level - you call `printf(...)`, `upper(...)`,
+reference `PI`. Namespaced libraries register their names behind a
+prefix - the prefix is the library's name:
+
+```jennifer
+use io;
+use os;
+
+printf("on %s\n", os.platform());     # qualified call
+printf("OS:  %s\n", os.JENNIFER_OS);  # qualified constant
+```
+
+A qualified reference is always `prefix.name(...)` for a call or
+`prefix.NAME` for a constant. No spaces around the dot.
+
+#### `use NAME as ALIAS;` aliasing
+
+The optional `as ALIAS` clause renames the namespace at the use
+site:
+
+```jennifer
+use os as o;
+
+printf("on %s\n", o.platform());      # only o. resolves
+printf("on %s\n", os.platform());     # ERROR: did you mean `o`?
+```
+
+**Aliasing is only available for namespaced libraries.** It would
+be meaningless for a flat library - there's no prefix to rename -
+so the interpreter rejects it explicitly:
+
+```jennifer
+use math as m;
+# ERROR: library "math" has no namespaced builtins;
+#        `as m` aliasing is meaningless here
+```
+
+If you find yourself wanting to alias a flat library, you're
+probably trying to solve a name collision that doesn't actually
+exist (flat builtins don't ship duplicate names) - drop the `as`
+and use the canonical form.
+
+The rest of the aliasing semantics for namespaced libraries:
+
+- **Rename, not addition.** After `use os as o;` only `o.`
+  resolves; `os.foo()` errors with a "did you mean `o`?" hint.
+  Matches Python's `import foo as bar` shadowing of `foo`.
+- **Canonical name freed.** The aliased canonical name (`os`
+  above) is freed for ordinary identifier use - you *could* write
+  `func os() { ... }` after `use os as o;`. The
+  [style guide](style-guide.md#namespaced-calls) recommends
+  against it - it reads as a library call at first glance and
+  surprises the reader.
+- **Without aliasing, the prefix is reserved.** Bare `use os;`
+  reserves `os` as a namespace prefix for the rest of the program;
+  `func os() {}` then errors with `shadows imported namespace 'os'`.
+- **Repeating an `use` is a silent no-op** in both batch mode and
+  the REPL - useful so re-running the same input doesn't produce a
+  redefinition error. Pick one form (`use os;` or `use os as o;`)
+  per program and stick with it.
 
 ## File imports
 

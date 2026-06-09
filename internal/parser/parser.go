@@ -133,8 +133,13 @@ func (p *parser) parseProgram() (*Program, error) {
 	}
 }
 
-// parseImport parses a `use NAME;` library import. (File imports are handled
-// by the preprocessor and never reach the parser.)
+// parseImport parses a `use NAME;` or `use NAME as ALIAS;` library import.
+// (File imports are handled by the preprocessor and never reach the parser.)
+//
+// The optional `as ALIAS` clause renames the namespace at the use site: after
+// `use bio as b;`, only `b.translate(...)` resolves; `bio.` errors with a
+// "did you mean `b`?" hint. The alias follows the same identifier rule as
+// any other Jennifer name (letters only, no `_`).
 func (p *parser) parseImport() (*ImportStmt, error) {
 	use, _ := p.match(lexer.TOKEN_USE)
 	name, err := p.expect(lexer.TOKEN_IDENT, "after `use`")
@@ -144,10 +149,21 @@ func (p *parser) parseImport() (*ImportStmt, error) {
 	if containsUnderscore(name.Lexeme) {
 		return nil, &ParseError{Msg: fmt.Sprintf("library name %q may not contain `_`", name.Lexeme), File: name.File, Line: name.Line, Col: name.Col}
 	}
+	imp := &ImportStmt{pos: pos{File: use.File, Line: use.Line, Col: use.Col}, Name: name.Lexeme}
+	if _, ok := p.match(lexer.TOKEN_AS); ok {
+		alias, err := p.expect(lexer.TOKEN_IDENT, "after `as` in `use`")
+		if err != nil {
+			return nil, err
+		}
+		if containsUnderscore(alias.Lexeme) {
+			return nil, &ParseError{Msg: fmt.Sprintf("library alias %q may not contain `_`", alias.Lexeme), File: alias.File, Line: alias.Line, Col: alias.Col}
+		}
+		imp.AsName = alias.Lexeme
+	}
 	if _, err := p.expect(lexer.TOKEN_SEMI, "after `use` statement"); err != nil {
 		return nil, err
 	}
-	return &ImportStmt{pos: pos{File: use.File, Line: use.Line, Col: use.Col}, Name: name.Lexeme}, nil
+	return imp, nil
 }
 
 func (p *parser) parseMethodDef() (*MethodDef, error) {
@@ -894,6 +910,60 @@ func (p *parser) parseCallTail(callee lexer.Token) (Expr, error) {
 	return &CallExpr{pos: pos{File: callee.File, Line: callee.Line, Col: callee.Col}, Callee: callee.Lexeme, Args: args}, nil
 }
 
+// parseQualifiedTail parses the `. IDENT (args)?` portion of a qualified
+// reference, having already consumed the prefix IDENT (passed as
+// `prefix`). When followed by `(`, returns a QualifiedCallExpr;
+// otherwise a QualifiedConstRefExpr. The post-DOT name follows the
+// regular method-name rule (letters only, no `_`); qualified constants
+// follow the constant-name rule (`[A-Z]+(_[A-Z]+)*`). The interpreter
+// resolves (prefix, name) against the namespaced-builtin / constant
+// registry, gated by `use prefix;` (or the alias-aware equivalent).
+func (p *parser) parseQualifiedTail(prefix lexer.Token) (Expr, error) {
+	p.advance() // consume DOT
+	name, err := p.expect(lexer.TOKEN_IDENT, "after `.` in qualified call")
+	if err != nil {
+		return nil, err
+	}
+	if p.check(lexer.TOKEN_LPAREN) {
+		if containsUnderscore(name.Lexeme) {
+			return nil, &ParseError{Msg: fmt.Sprintf("method name %q may not contain `_` (use camelCase)", name.Lexeme), File: name.File, Line: name.Line, Col: name.Col}
+		}
+		p.advance() // consume LPAREN
+		var args []Expr
+		if !p.check(lexer.TOKEN_RPAREN) {
+			for {
+				arg, err := p.parseExpr()
+				if err != nil {
+					return nil, err
+				}
+				args = append(args, arg)
+				if _, ok := p.match(lexer.TOKEN_COMMA); !ok {
+					break
+				}
+			}
+		}
+		if _, err := p.expect(lexer.TOKEN_RPAREN, "to close qualified call argument list"); err != nil {
+			return nil, err
+		}
+		return &QualifiedCallExpr{
+			pos:    pos{File: prefix.File, Line: prefix.Line, Col: prefix.Col},
+			Prefix: prefix.Lexeme,
+			Callee: name.Lexeme,
+			Args:   args,
+		}, nil
+	}
+	// Qualified constant reference: prefix.NAME. Same constant-name rule
+	// as bare constants - uppercase chunks separated by single `_`.
+	if !isValidConstName(name.Lexeme) {
+		return nil, &ParseError{Msg: fmt.Sprintf("qualified constant name %q must be uppercase [A-Z]+ with single `_` separators", name.Lexeme), File: name.File, Line: name.Line, Col: name.Col}
+	}
+	return &QualifiedConstRefExpr{
+		pos:    pos{File: prefix.File, Line: prefix.Line, Col: prefix.Col},
+		Prefix: prefix.Lexeme,
+		Name:   name.Lexeme,
+	}, nil
+}
+
 // parseUnaryMinus handles the `-EXPR` prefix form. It sits between
 // multiplicative and primary so that `-x * 2` parses as `(-x) * 2`.
 // Right-associative: `--x` is `-(-x)`.
@@ -970,10 +1040,15 @@ func (p *parser) parsePrimaryAtom() (Expr, error) {
 		p.advance()
 		return &VarExpr{pos: pos{File: t.File, Line: t.Line, Col: t.Col}, Name: t.Lexeme}, nil
 	case lexer.TOKEN_IDENT:
-		// A bare IDENT in expression context is either a function call
-		// (`name(...)`) or a constant reference (`MAX`). Look at the next
-		// token to decide.
+		// A bare IDENT in expression context is either:
+		//   - a qualified call/constant `prefix.name(...)` / `prefix.NAME`,
+		//   - a function call `name(...)`,
+		//   - or a constant reference `MAX`.
+		// The token immediately after the IDENT decides.
 		p.advance()
+		if p.check(lexer.TOKEN_DOT) {
+			return p.parseQualifiedTail(t)
+		}
 		if !p.check(lexer.TOKEN_LPAREN) {
 			return &ConstRefExpr{pos: pos{File: t.File, Line: t.Line, Col: t.Col}, Name: t.Lexeme}, nil
 		}

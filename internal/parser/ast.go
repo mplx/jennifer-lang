@@ -146,9 +146,14 @@ type Program struct {
 
 // ---- Statements ----
 
+// ImportStmt is a `use NAME;` or `use NAME as ALIAS;` library import. AsName
+// is empty for the plain form. When AsName is set, only `ALIAS.` resolves
+// qualified calls into the library's namespace; the canonical NAME is
+// shadowed at the use site (matches Python's `import foo as bar`).
 type ImportStmt struct {
 	pos
-	Name string
+	Name   string
+	AsName string // empty when there's no `as ALIAS` clause
 }
 
 func (*ImportStmt) stmtNode() {}
@@ -378,6 +383,29 @@ type CallExpr struct {
 
 func (*CallExpr) exprNode() {}
 
+// QualifiedCallExpr is a namespaced call: `IDENT . IDENT ( args )`. The
+// Prefix is the use-site identifier (the library's namespace or its
+// alias if `use lib as alias;` was set). The interpreter looks up
+// (Prefix, Callee) against the namespaced-builtin registry.
+type QualifiedCallExpr struct {
+	pos
+	Prefix string
+	Callee string
+	Args   []Expr
+}
+
+func (*QualifiedCallExpr) exprNode() {}
+
+// QualifiedConstRefExpr is a namespaced constant reference: `IDENT . IDENT`
+// without a following `(`. Resolution mirrors QualifiedCallExpr.
+type QualifiedConstRefExpr struct {
+	pos
+	Prefix string
+	Name   string
+}
+
+func (*QualifiedConstRefExpr) exprNode() {}
+
 type BinaryOp int
 
 const (
@@ -494,6 +522,9 @@ func Sprint(n Node) string {
 		}
 		return s + "}"
 	case *ImportStmt:
+		if v.AsName != "" {
+			return fmt.Sprintf("Import(%s as %s)", v.Name, v.AsName)
+		}
 		return fmt.Sprintf("Import(%s)", v.Name)
 	case *MethodDef:
 		params := ""
@@ -580,6 +611,14 @@ func Sprint(n Node) string {
 			s += ", " + Sprint(a)
 		}
 		return s + ")"
+	case *QualifiedCallExpr:
+		s := fmt.Sprintf("QCall(%s.%s", v.Prefix, v.Callee)
+		for _, a := range v.Args {
+			s += ", " + Sprint(a)
+		}
+		return s + ")"
+	case *QualifiedConstRefExpr:
+		return fmt.Sprintf("QConst(%s.%s)", v.Prefix, v.Name)
 	case *BinaryExpr:
 		return fmt.Sprintf("(%s %s %s)", Sprint(v.Left), v.Op, Sprint(v.Right))
 	case *UnaryExpr:
