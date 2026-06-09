@@ -269,28 +269,34 @@ lets the user shorten a namespace.
   conflict with the qualified form. Document the resolution rule
   carefully in `docs/technical/interpreter.md`.
 
-### Deferred from M8
+**Demo library: `os` minimal slice.** Alongside the namespace
+machinery, M8 ships the first real namespaced library so a Jennifer
+program can exercise the feature without test-only registrations.
+Scope is intentionally tiny:
 
-- **File-import aliasing** (`import "templateengine.j" as jinja;`).
-  Today `import "file.j";` is a textual splice at the preprocessor
-  level - the imported file's defs/methods become globals, with no
-  module boundary. Adding `as jinja` implies namespaced user methods,
-  which Jennifer doesn't have any infrastructure for. Either
-  (a) prefix-splice (rewrite tokens so `render` becomes
-  `jinja.render`; fragile under cross-file references), or (b) real
-  modules with per-file environments and explicit exports - its own
-  milestone. M8's system-library namespacing works because builtins
-  are registered through a Go API that already has a `lib` tag;
-  file imports have no equivalent and would need to invent one. File
-  imports stay unnamespaced until a dedicated modules milestone.
+- `os.platform() -> string` - `"linux"` today. Zero-arg
+  namespaced call.
+- `os.getEnv(name) -> string` - read an environment variable,
+  empty string when unset. Exercises a namespaced call with an
+  argument (parser path `IDENT.IDENT(STRING)`).
+- `os.JENNIFER_LF` - `"\n"` today (becomes `"\r\n"` on Windows
+  when cross-platform support lands).
+- `os.JENNIFER_OS` - `"linux"`.
 
-**Test strategy.** No real namespaced library is shipped in M8 (all
-five essentials stay flat), so tests register **synthetic** namespaced
-builtins inline through the public Go API
-(`in.RegisterNamespaced("bio", "translate", fn)`). The parser sees a
-qualified call as `bio.translate(...)` regardless of whether the
-namespace points at real code, so this covers the full pipeline
-without a stub package on disk. Concretely:
+Two functions and two constants. Exercises namespaced zero-arg
+calls, namespaced calls with arguments, namespaced constants, and
+`use os as o;` aliasing in one place. The full `os` library
+expands in M13.1 (args, exit code, the rest of the `JENNIFER_*`
+constants).
+
+**Test strategy.** The shipping `os` slice handles end-to-end
+coverage; parser, interpreter, and unit tests additionally register
+**synthetic** namespaced builtins inline through the public Go API
+(`in.RegisterNamespaced("bio", "translate", fn)`) so namespaces other
+than `os` are exercised without requiring more shipping code. The
+parser sees a qualified call as `bio.translate(...)` regardless of
+whether the namespace points at real code, so this covers the full
+pipeline without a stub package on disk. Concretely:
 
 - **Parser:** `QualifiedCallExpr` parses `IDENT.IDENT(...)`; table-driven
   cases include qualified constant refs (`bio.STOPS`) and rejection of
@@ -319,6 +325,9 @@ without a stub package on disk. Concretely:
 - Update `docs/libraries/index.md` with the namespace policy and a
   rule for library authors ("is your library essential or domain?
   if domain, set a namespace").
+- Add `docs/libraries/os.md` for the minimal `os` slice shipping
+  in M8 (covers `os.platform()`, `os.getEnv(name)`, `os.JENNIFER_LF`,
+  `os.JENNIFER_OS`); expanded again in M13.1.
 - Update `docs/technical/grammar.md` EBNF.
 - Update `docs/technical/interpreter.md` Builtins-and-libraries
   section to describe the lookup rule.
@@ -328,11 +337,12 @@ without a stub package on disk. Concretely:
 - `cmd/jennifer/fmt.go` already preserves `TOKEN_DOT` verbatim;
   verify the formatter handles it cleanly with a small test.
 
-**Exit criterion:** a synthetic example library can register itself
-under a namespace, be `use`d, and be called via `lib.fn(...)`; the
-parser, interpreter, REPL, AST JSON dump, and formatter all handle
-the qualified form correctly; the five existing essential libraries
-continue to work unchanged.
+**Exit criterion:** the shipping `os` slice can be `use`d (with and
+without aliasing) and exercises both qualified calls and qualified
+constants; synthetic namespaced builtins prove the mechanism
+generalises; the parser, interpreter, REPL, AST JSON dump, and
+formatter all handle the qualified form correctly; the five
+existing flat essential libraries continue to work unchanged.
 
 ---
 
@@ -417,72 +427,266 @@ helper. The `$xs[] = item;` sugar is the only language-level change.
 
 ---
 
-## M10 - Domain libraries
+The next phase splits into three arcs: Phase A finishes the
+language so libraries have something to stand on, Phase B ships
+the foundational libraries that every Jennifer program needs,
+Phase C ships I/O libraries, and Phase D ships the higher-level
+ecosystem (Jennifer-coded libraries, the module system that
+unblocks them, crypto, a server). Phase E (WASM and specialised
+domains) is the long horizon.
 
-- **File library** (`use fs;`)
-- **OS library** (`use os;`)
-- **Regex library** (`use regex;`)
-- **Network library** (`use net;`)
-- **Crypto library** (`use crypto;`)
-- **Random library** (`use random;`)
-
-All M10 libraries are domain libraries and ship with namespaces
-(per M8): `fs.read`, `os.getenv`, `regex.match`, `net.dial`,
-`crypto.sha256`. This is the first real test of the namespacing
-convention - if any of these prove awkward (`crypto.sha256` reads
-fine; `fs.read` collides with the urge to call it `readFile`), revisit
-in early M10 before too many call sites lock in.
+The library milestones use sub-numbering (M13.1, M13.2, ...) so
+each library ships and is reviewed independently. This is the
+first time we use sub-milestones; the practice is justified
+because each library is small enough to land in a single sitting
+once the language foundation is in place.
 
 ---
 
-## Future directions
+**Phase A: language completion (M10-M12).** These three milestones
+close the biggest daily-use gaps and add the foundational types every
+later library needs.
 
-### Mid-term goals
+## M10 - Control-flow completion
 
-- **CI/CD:** Github Actions pipeline for automatic testing and release
-- **Packages** for Debian and Archlinux
-- **Pages** - create github pages
+- `break;` and `continue;` inside `while`/`for`/`for-each`/`repeat`.
+- `repeat { } until (cond);` post-test loop. New keywords `repeat`
+  and `until`. `until` makes condition inversion explicit, matching
+  the word-operator style (`and`/`or`/`not`); `do { } while ...`
+  considered and rejected.
+- `exit;` and `exit EXPR;`. Process exit; integer expression sets
+  the OS exit code on top-level execution. Distinct from `return`
+  (which stays method-scoped).
+- Bundled: printf `%s|align=center` while the modifier table is
+  being touched anyway.
 
-### Long-term goals
+## M11 - Bytes and bit operators
 
-Not committed to a milestone yet, but the code should not foreclose them.
+- New primitive type `bytes` - **mutable** byte sequence with
+  `list`-like semantics. Indexing yields `int` in `[0, 255]`;
+  index-assign writes `$b[i] = 0xff;` (out-of-range writes are
+  positioned runtime errors). Append via the same `$b[] = byte;`
+  sugar M9 introduces for lists. **Value semantics** like lists:
+  `$a = $b;` deep-copies, so passing bytes into a method can't
+  surprise the caller. `const` is deep. `len($b)` returns the
+  count. Rune-aware ops stay in `strings`; byte-level ops live
+  here. (Mutable was chosen over immutable to fit real
+  buffer-shaped workflows - I/O, hashing-while-streaming,
+  in-place encrypt/decrypt - without forcing an allocate-new
+  loop for each transformation.)
+- New `bytes <-> string` codecs (UTF-8 by default; lossless
+  re-encoding lives in the future `encoding` library).
+- New operators `& | ^ ~ << >>` on `int` - promoted to syntax,
+  not library calls. Library form would parallel arithmetic
+  (`bitand` vs `+`) and violate "one way per thing."
+- **Non-decimal integer literals**: hex `0xff` / `0xDEAD_BEEF`,
+  octal `0o755`, binary `0b1010_0110`. All three lex as `int`
+  (same kind, same operators); `_` accepted as a digit separator
+  in any position except leading or trailing. Decimal literals
+  also gain the `_` separator (`1_000_000`). Lexer-only change,
+  no new runtime semantics. Lands here because byte and bit work
+  without hex is the wrong default for the milestone.
+- Resolves the M7-deferred stdin builtins that waited on the
+  binary representation: `io.readBytes(n) -> bytes` (exact n;
+  partial result at EOF, then `eof()` is true) and `io.readChars(n)
+  -> string` (n runes, decoded from stdin's UTF-8). M7's `eof()`
+  composes with both unchanged.
 
-- **Cross-platform support.** Today Jennifer targets Linux only. Windows and
-  macOS are planned. When touching filesystem, paths, line endings, or
-  process behavior, prefer portable stdlib helpers (`path/filepath`, not
-  hardcoded `/`); avoid Linux-only assumptions.
-- **McFly OS kernel integration.** A long-term goal is to embed the Jennifer
-  interpreter into **McFly OS**, an experimental OS also
-  written in TinyGo. This reinforces the TinyGo-friendliness discipline: no
-  `reflect`-heavy code, no goroutines in the core, no heavy stdlib
-  dependencies, and no hard dependencies on a hosted runtime (ambient stdin,
-  network, dynamic linking).
-- **Inline Assembler**
+## M12 - Structs / records
 
-### Deferred from M5
+- New `def struct Name { field as type, ... };` syntax (working
+  name; revisited at start of M12).
+- Literals: `Name{ field: expr, ... }`. Field access: `$p.field`.
+  Value semantics like lists/maps - `def $q as Name init $p;`
+  copies. `const` is deep.
+- Unblocks every library that wants to return composite data
+  (file info, time values, network endpoints, http request /
+  response).
 
-- **Comment preservation in `fmt`.** Lexer would need to carry `#` and
-  `/* */` as tokens (or attach them to following nodes); the formatter
-  would then weave them back in.
-- **Blank-line preservation / auto-insertion in `fmt`.** Either keep
+---
+
+**Phase B: foundational libraries (M13.x).** Small, frequently-used
+libraries grouped under M13 with sub-numbering; each sub-milestone
+ships one library independently.
+
+## M13.1 - `os`
+
+Expands the M8 demo slice (`os.platform()`, `os.getEnv(name)`,
+`os.JENNIFER_LF`, `os.JENNIFER_OS` already ship there). Adds:
+process args (`os.args -> list of string`), exit code
+(`os.exit(n)`), and the rest of the `JENNIFER_*` constants
+(`os.JENNIFER_BUILD`, `os.JENNIFER_PLATFORM`,
+`os.JENNIFER_ARCHITECTURE`).
+
+## M13.2 - `random`
+
+Non-crypto pseudo-random. `random.rand()` returns float in
+`[0, 1)`. `random.randInt(lo, hi)`. `random.seed(n)` for
+reproducibility. Crypto-grade random ships separately in M17.
+
+## M13.3 - `time`
+
+New `time` value type. `time.now()`, formatting, parsing,
+arithmetic on durations. Larger than other M13 entries because
+the type is new; may split into M13.3.x if scope demands.
+
+## M13.4 - `hash` and `crc`
+
+Common digests over `bytes` (MD5, SHA-1, SHA-256, CRC32,
+CRC64). Pure compute, no dependencies. Crypto-relevant primitives
+that don't require key material live here; key-based crypto goes
+in M17.
+
+## M13.5 - `encoding`
+
+`encoding.isAscii`, `encoding.lenBytes`, `encoding.lenRunes`,
+`encoding.toBytes($s, $codec)`, `encoding.toString($bytes,
+$codec)`, hex / base64 helpers. Operates at the `bytes <->
+string` boundary.
+
+---
+
+**Phase C: I/O libraries (M14.x).** System libraries that touch the
+OS or do significant compute.
+
+## M14.1 - `fs`
+
+File I/O. `fs.read`, `fs.write` for `string` and `bytes`,
+`fs.stat` returning a struct, directory walk. Requires M11
+(bytes) and M12 (structs). Brings the M7-deferred file handles
+and any non-stdin input source (`fs.open(path) -> handle`,
+`handle.readLine()`, etc.) under one library.
+
+## M14.2 - `net`
+
+Sockets. Plain TCP and UDP first; TLS deferred to its own
+sub-milestone. The first place a real `bytes` round-trip
+matters.
+
+## M14.3 - `regex`
+
+Regular expressions over `string`. Large standalone milestone;
+pure string processing, no other dependencies.
+
+---
+
+**Phase D: higher-level and Jennifer-coded libraries (M15-M18).**
+
+## M15 - Module system for Jennifer-coded libraries
+
+Real modules so `.j` libraries get namespaces, scope, and
+explicit exports. Lands the form M8 deferred
+(`import "templateengine.j" as ninja;` with a real module
+boundary; today `import "x.j";` is a textual splice with no
+namespace). File imports stay as textual splice for inline
+composition (same source file); library distribution moves to
+modules.
+
+## M16.x - Jennifer-coded essentials
+
+Built atop the existing system libraries. Sub-milestones in
+priority order:
+
+- **M16.1 - `http`** (client) - atop `net`.
+- **M16.2 - `json`** - data interchange ubiquity.
+- **M16.3 - `csv`** - simple, useful early.
+- **M16.4 - `yaml`, `xml`, `markdown`, `pretty`** - one or more
+  sub-milestones depending on scope when planned.
+
+## M17 - `crypto`
+
+Symmetric and asymmetric primitives, key derivation,
+crypto-grade random. System library; TinyGo-safe primitives
+only. Hashes already shipped in M13.4.
+
+## M18 - `httpd`
+
+Pure Jennifer HTTP server atop `net`. The point where Jennifer
+becomes useful for serving content.
+
+---
+
+**Phase E: WASM and specialised domains (M19+).** Not committed to a
+timeline; recorded so the design doesn't foreclose them.
+
+## M19 - WASM runtime embedding
+
+Wazero or similar inside the interpreter binary. TinyGo-size
+cost evaluated honestly before commitment. Without M19, no WASM
+libraries.
+
+## M20.x - WASM libraries
+
+If M19 ships, sandboxed plugins via `use wasm:libname;`. Each
+library a sub-milestone.
+
+## M21+ - Specialised domains
+
+Each domain its own milestone with sub-milestones as needed:
+
+- **ML.** Vector, matrix, stats, ML primitives.
+- **Bioinformatics.** Sequence alignment (Smith–Waterman,
+  Needleman–Wunsch), FASTA/FASTQ parsers, molecule structures.
+- **Sandbox.** Restricted-capability execution.
+
+Ordered when demand surfaces. WASM libraries (M20.x) may cover
+some of this space first.
+
+---
+
+## Path to 1.0.0 distribution (parallel track)
+
+Not milestone-gated; items can be picked up between language
+milestones. The earlier this track makes Jennifer visible, the
+sooner breaking changes feed into a real audience before 1.0.0
+locks the API.
+
+- **CI.** GitHub Actions running `go test ./...` and
+  `tinygo build` on every push and PR.
+- **Tagged releases.** Prebuilt binaries on GitHub releases.
+  Linux/amd64 first, then arm64; macOS and Windows after
+  cross-platform support lands.
+- **Debian package** (`.deb`). Hosted from a GitHub release
+  artifact initially.
+- **Arch.** AUR `jennifer-bin` (prebuilt) and `jennifer-git`
+  (source) packages.
+- **Documentation site.** GitHub Pages driven from `docs/`
+  (mdBook or similar; needs a design pass).
+- **Optional later:** Homebrew tap, Snap, Nix package.
+
+---
+
+## Long horizon (recorded, not scheduled)
+
+- **Cross-platform support.** Today Jennifer targets Linux only.
+  Windows and macOS are planned. When touching filesystem, paths,
+  line endings, or process behavior, prefer portable stdlib
+  helpers (`path/filepath`, not hardcoded `/`); avoid Linux-only
+  assumptions.
+- **McFly OS kernel integration.** Embed the Jennifer interpreter
+  into **McFly OS**, an experimental OS also written in TinyGo.
+  Reinforces the TinyGo-friendliness discipline: no
+  `reflect`-heavy code, no goroutines in the core, no heavy
+  stdlib dependencies, and no hard dependencies on a hosted
+  runtime (ambient stdin, network, dynamic linking).
+- **FCGI.** `use FCGI as web;` library when `net` and `httpd`
+  mature. Lets Jennifer host CGI / FastCGI workloads end-to-end.
+- **Inline assembler.**
+- **`fmt` comment preservation.** Today the lexer drops `#` and
+  `/* */` comments; the formatter would need to carry them as
+  tokens (or attach them to following nodes) and weave them back
+  in. Deferred from M5.
+- **`fmt` blank-line preservation or auto-insertion.** Either keep
   user blank lines as a side channel during lexing, or insert them
-  automatically between logical groups (imports vs methods vs top-level
-  code, method-to-method).
+  automatically between logical groups (imports vs. methods vs.
+  top-level code, method-to-method). Deferred from M5.
 - **Binary AST cache (`.jc` files).** Pre-parsed loading for big
-  programs and McFly OS embedding. Its own milestone - file-format
-  design, versioning, and TinyGo-safe serialization are enough work to
-  merit dedicated treatment. The text JSON form via `jennifer ast` is
-  the placeholder until then.
-
-### Deferred from M7
-
-- **Byte reads from stdin** (`readBytes(n)`) - waits on `fs.read` to
-  settle the binary-data representation (new `bytes` primitive vs.
-  `list of int` with elements in `[0, 255]`). `eof()` is already
-  byte-level and will compose with whichever shape wins.
-- **`readChars(n)`** - separate design from byte reads; defer for
-  the same reason.
-- **`lines()` returning the whole stream as a list** - additive,
-  not required by the streaming `readLine()` + `eof()` idiom.
-- **File handles and non-stdin sources** - owned by a future `fs`
-  library.
+  programs and McFly OS embedding. Its own milestone when it
+  lands - file-format design, versioning, and TinyGo-safe
+  serialization are enough work to merit dedicated treatment. The
+  text JSON form via `jennifer ast` is the placeholder until then.
+  Deferred from M5.
+- **`io.lines() -> list of string`.** Slurp the whole stdin into a
+  list. Additive on top of the streaming `readLine()` + `eof()`
+  idiom; nice-to-have for tiny scripts, not blocking. Deferred from
+  M7.

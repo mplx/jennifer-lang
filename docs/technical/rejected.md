@@ -96,3 +96,38 @@ always starts a modifier list. To write a literal `|` in that
 position, double it (`||`), parallel to the `%%` escape for a
 literal `%`. The rule is uniform and easy to remember; the migration
 cost was small (five test strings in this repo).
+
+## Implicit `use NAME;` fallback chain (M8+)
+
+Considered during the M8-and-beyond roadmap discussion: have
+`use http;` search the system libraries first, then any installed
+WASM libraries, then a `http.j` on the file-import path, taking the
+first one found. Same call-site spelling regardless of where the
+implementation actually lives.
+
+Rejected because:
+
+- **It violates "explicit over implicit."** Two programs with the
+  same source text would resolve `use http;` to different
+  implementations depending on what's installed in the environment.
+  At the call site (`http.get(...)`) the reader has no way to tell
+  which `http` is in scope.
+- **Silent precedence shifts break things.** Installing a WASM
+  `http` package would shadow a (slower / different-flavoured)
+  system `http`. The user's program would change behaviour with no
+  source edit and no visible diff.
+- **Debuggability suffers.** "Why does `http.get` behave this way?"
+  becomes "which `http` did the resolver pick this time?" - a
+  question that depends on the environment, not the code.
+
+The chosen rule is explicit prefixes - the load source is visible
+at the `use` site:
+
+- `use net;` → system library only.
+- `use wasm:libname;` → WASM library (when that milestone lands).
+- `import "path/foo.j";` → file import (textual splice today;
+  module-aware when M15 lands).
+
+Users who genuinely want one entry point can write a tiny
+Jennifer-coded shim that picks an implementation explicitly;
+that's a per-program decision, not a language-wide default.
