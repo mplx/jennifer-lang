@@ -34,6 +34,28 @@ is the keyword behind `return [EXPR];` (see [grammar.md](grammar.md)).
 `STRING` carries the value *with* escape sequences already processed and *without*
 surrounding quotes.
 
+## Whitespace handling
+
+Spaces, tabs and newlines are discarded between tokens; they only
+ever advance `Line` / `Col` for position tracking. There is no
+indentation-significant mode and no off-side rule. The user-facing
+consequence is documented in
+[user-guide/syntax.md > Tokens and whitespace](../user-guide/syntax.md#tokens-and-whitespace);
+the rule is load-bearing for `jennifer fmt`, which trusts that
+re-emitting the token stream with canonical spacing produces a
+semantically identical program.
+
+The only place whitespace is *retained* is inside string literals -
+`readString` reads byte-by-byte until the closing quote, so a literal
+space, tab, or even a raw `\n` between the quotes becomes part of
+the string value. Escape sequences (`\n`, `\t`, ...) are the
+conventional spelling; raw multi-line literals work too but aren't
+the canonical form `fmt` produces.
+
+Comments are also whitespace-like for parsing purposes: `# ...` to
+end of line and `/* ... */` are skipped after they're recognised,
+producing no token. See [Comments](#comments) below.
+
 ## Position tracking
 
 Every token records `Line` and `Col` (both 1-based) and `File` (the absolute

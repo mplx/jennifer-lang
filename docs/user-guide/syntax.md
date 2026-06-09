@@ -2,8 +2,84 @@
 
 ## Tokens and whitespace
 
-Whitespace (spaces, tabs, newlines) is **not** significant. Statements are
-terminated by `;`.
+**Whitespace (spaces, tabs, newlines) is not significant anywhere in
+Jennifer.** The lexer skips it between tokens and never reads it from
+inside one. Statements are terminated by `;`, blocks by matched `{` /
+`}` - never by indentation or line breaks. The same program can be
+written across many lines or jammed onto one, and it parses the same:
+
+```jennifer
+# canonical form
+use io;
+def x as int init 21;
+printf("%d\n", $x + $x);
+```
+
+```jennifer
+# all three statements on one line - same program
+use io; def x as int init 21; printf("%d\n", $x + $x);
+```
+
+```jennifer
+# split across many lines - also the same program
+use   io
+;
+def
+    x
+        as
+            int
+                init
+                    21 ;
+printf (
+    "%d\n"
+    ,
+    $x
+        +
+            $x
+)
+;
+```
+
+The same flexibility applies to qualified (namespaced) calls.
+All three of these print the host OS and are accepted by the parser:
+
+```jennifer
+use io;
+use os;
+
+printf(os.JENNIFER_OS);            # canonical - tight everywhere
+printf( os.JENNIFER_OS );          # ugly - spaces inside the call parens
+printf   (   os     . JENNIFER_OS  );   # uglier - spaces around `.` too
+```
+
+The third form parses fine because the `.` between `os` and
+`JENNIFER_OS` is just another token boundary - the lexer doesn't
+care that there are spaces around it. **`jennifer fmt` rewrites all
+three into the canonical form**, so you'll only ever see the first
+one after a format pass. The
+[style guide](style-guide.md#namespaced-calls) makes "no space
+around `.`" explicit, but it's a style rule, not a syntax rule.
+
+A few practical consequences worth knowing up front:
+
+- `jennifer fmt` is the enforcement layer for style. The
+  [style guide](style-guide.md) describes the canonical shape (one
+  space around binary operators, no space inside `(` / `[` / `{`,
+  K&R braces, tight `.` in qualified calls, ...) and `fmt` re-emits
+  any well-formed source in exactly that shape. You're never
+  *required* to write canonical form; you just won't see anything
+  else after `fmt`.
+- The first line may be a `#!` shebang because `#` starts a line
+  comment; everything from `#` to the next `\n` is whitespace as far
+  as the parser is concerned.
+- **Inside a string literal, whitespace *is* literal content.** A
+  space or tab between the quotes is part of the string value; an
+  actual newline between the quotes is a literal newline in the
+  value (though the conventional spelling is the `\n` escape -
+  multi-line literals work but aren't the canonical form).
+
+Indentation and blank lines never change the meaning of a program;
+they only change how it reads.
 
 ## Comments
 

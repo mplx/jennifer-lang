@@ -197,152 +197,55 @@ See:
 
 ## M8 - System library namespacing
 
-The flat-namespace model is fine for the essential libraries today
-(`io`, `convert`, `math`, `strings`, plus the auto-loaded `core`) -
-they're small, names are carefully chosen, collisions are unlikely. It will not scale to domain
-libraries like `regex`, `net`, `bio`, or `crypto`, where the chance of
-two libraries shipping a `len` / `parse` / `encode` is high. M8 settles
-the policy before the first domain library lands.
+**Status:** done.
 
-**Decision (to confirm at start of M8):** hybrid model. Essential
-libraries stay flat for ergonomics; domain libraries are prefixed
-through a namespace tag set at registration time. Optional aliasing
-lets the user shorten a namespace.
+A hybrid namespace model so domain libraries can ship without
+polluting the bare-name pool, plus the first real namespaced
+library (`os`) so the machinery has a non-synthetic exercise.
 
-**Concrete plan:**
+- **Hybrid model.** Essential libraries (`io`, `convert`, `math`,
+  `strings`, auto-loaded `core`) stay flat - their builtins are
+  bare names. Domain libraries register through a new namespaced
+  API (`RegisterNamespaced` / `RegisterNamespacedConst`) and are
+  addressed by `prefix.name(...)` / `prefix.NAME`. The library's
+  name doubles as the namespace prefix.
+- **Qualified calls and constants.** New AST nodes
+  `QualifiedCallExpr` and `QualifiedConstRefExpr`; parsed as
+  `IDENT "." IDENT` (then `(` decides). Lookup is keyed by
+  `(namespace, name)` and gated by `use lib;`.
+- **`use NAME as ALIAS;` aliasing.** Optional `as` clause on
+  `use`. Rename-not-addition: after `use bio as b;` only `b.`
+  resolves, `bio.foo()` errors with a "did you mean `b`?" hint;
+  the canonical name `bio` is freed for ordinary identifier use.
+  Matches Python's `import foo as bar`. Aliasing is rejected for
+  flat libraries (`use math as m;` errors as meaningless).
+- **Namespace prefix is a reserved identifier.** After bare
+  `use bio;`, `func bio() {}` errors with `shadows imported
+  namespace 'bio'`. After `use bio as b;`, only `b` is reserved.
+- **No migration.** The change is purely additive; all five flat
+  essentials continue to work unchanged.
+- **Demo library `os` (minimal slice).** First namespaced
+  library: `os.platform() -> string`, `os.getEnv(name) -> string`,
+  `os.JENNIFER_LF`, `os.JENNIFER_OS`. Two functions plus two
+  constants - enough to exercise namespaced zero-arg calls,
+  namespaced calls with arguments, namespaced constants, and
+  aliasing end-to-end. Expands in M13.1.
 
-- **Library declares a namespace at install time.**
-  ```go
-  // internal/lib/io/iolib.go - essential, no namespace
-  in.Register("io", "printf", printf)
-  // internal/lib/bio/biolib.go - domain library
-  in.RegisterNamespaced("bio", "translate", translate)
-  ```
-  Internally: extend `builtinEntry` with an optional `Namespace string`.
-  Empty namespace = flat lookup (current behavior).
-- **Syntax: qualified calls via `.`.**
-  The lexer already reserves `TOKEN_DOT`. Add a grammar production:
-  ```ebnf
-  qualifiedCall = IDENT "." IDENT "(" [ args ] ")" ;
-  ```
-  `primary` accepts `qualifiedCall` alongside the existing `call`. A
-  bare `IDENT` immediately followed by `.` and another `IDENT` and `(`
-  is parsed as a qualified call; otherwise the existing call /
-  constant-ref disambiguation applies.
-- **New AST node:** `QualifiedCallExpr { Namespace, Callee, Args }`.
-- **Lookup rule:** at the call site, the interpreter resolves
-  `bio.translate(...)` as "find a builtin whose `Namespace == "bio"`
-  and whose `Name == "translate"`, registered under a library the
-  program has `use`d." A bare `translate(...)` finds only the
-  flat-registered builtins (and user-defined methods).
-- **Constants get the same treatment.** A namespaced library exposing
-  a constant uses `bio.STOPS`; flat-registered constants like `PI`
-  stay bare.
-- **`use bio;` is unchanged at the source level** - the user still
-  imports by library name. The namespace is whatever the library
-  declared, not the library name necessarily (usually they'll match,
-  but a library called `crypto_primitives` could expose itself as
-  `crypto.` to be brief).
-- **Aliasing is a rename, not an addition.**
-  ```jennifer
-  use bio as b;
-  printf("%d\n", b.translateLen($seq));
-  bio.translateLen($seq);   # error: unknown namespace `bio`
-  ```
-  After `use bio as b;`, only `b.` resolves. `bio.` errors with a
-  "did you mean `b`?" hint. Matches Python's `import foo as bar`
-  shadowing of `foo`; matches Jennifer's "one way per thing" stance.
-  Adds an `AsName` to `ImportStmt`.
-- **Namespace name as a reserved identifier.** A bare `use bio;`
-  reserves `bio` as a namespace-prefix identifier - `func bio() {}`
-  is then rejected with `shadows imported namespace 'bio'`. With
-  `use bio as b;`, only `b` is reserved, freeing `bio` as a regular
-  method name. Style guide will note "don't reuse a library's
-  canonical name even when aliased - it's confusing"; soft rule,
-  not enforced.
-- **Migration of existing libraries:** none. All five essentials stay
-  flat. The change is additive; existing source keeps working
-  unchanged.
-- **No-shadowing rule:** scoped to a namespace. `bio.len` does NOT
-  collide with `strings.len`. A user method named `translate` collides
-  with `bio.translate` only if it's referenced bare; it does not
-  conflict with the qualified form. Document the resolution rule
-  carefully in `docs/technical/interpreter.md`.
-
-**Demo library: `os` minimal slice.** Alongside the namespace
-machinery, M8 ships the first real namespaced library so a Jennifer
-program can exercise the feature without test-only registrations.
-Scope is intentionally tiny:
-
-- `os.platform() -> string` - `"linux"` today. Zero-arg
-  namespaced call.
-- `os.getEnv(name) -> string` - read an environment variable,
-  empty string when unset. Exercises a namespaced call with an
-  argument (parser path `IDENT.IDENT(STRING)`).
-- `os.JENNIFER_LF` - `"\n"` today (becomes `"\r\n"` on Windows
-  when cross-platform support lands).
-- `os.JENNIFER_OS` - `"linux"`.
-
-Two functions and two constants. Exercises namespaced zero-arg
-calls, namespaced calls with arguments, namespaced constants, and
-`use os as o;` aliasing in one place. The full `os` library
-expands in M13.1 (args, exit code, the rest of the `JENNIFER_*`
-constants).
-
-**Test strategy.** The shipping `os` slice handles end-to-end
-coverage; parser, interpreter, and unit tests additionally register
-**synthetic** namespaced builtins inline through the public Go API
-(`in.RegisterNamespaced("bio", "translate", fn)`) so namespaces other
-than `os` are exercised without requiring more shipping code. The
-parser sees a qualified call as `bio.translate(...)` regardless of
-whether the namespace points at real code, so this covers the full
-pipeline without a stub package on disk. Concretely:
-
-- **Parser:** `QualifiedCallExpr` parses `IDENT.IDENT(...)`; table-driven
-  cases include qualified constant refs (`bio.STOPS`) and rejection of
-  qualified-assign (`bio.x = 1` is a parse error).
-- **Interpreter:** register synthetic namespaced builtins, then
-  exercise lookup hits, lookup misses, `use bio as b;` makes `b.`
-  resolve and `bio.` error with a "did you mean `b`?" hint, the
-  namespace-identifier reservation rule (`func bio() {}` errors after
-  bare `use bio;`, passes after aliased `use bio as b;`), `use`-gating
-  before any qualified call is allowed, and dot-separated constants.
-- **Formatter:** round-trip a program containing qualified calls;
-  verify no space around `.`.
-- **AST JSON dump:** emit `QualifiedCallExpr` for a synthetic source.
-- **REPL:** `EvalInteractive` path through a qualified call; multi-line
-  continuation crossing a `.` boundary.
-- **End-to-end:** one test in `cmd/jennifer/examples_test.go` (or a
-  new `namespace_test.go`) registers a test-only namespaced library
-  and runs a small source string; no `examples/*.j` golden file
-  required.
-- **Regression:** the five shipping essentials act as the "namespaces
-  don't break flat builtins" sanity suite - their existing tests
-  must keep passing unchanged.
-
-**Docs to write at end of M8:**
-
-- Update `docs/libraries/index.md` with the namespace policy and a
-  rule for library authors ("is your library essential or domain?
-  if domain, set a namespace").
-- Add `docs/libraries/os.md` for the minimal `os` slice shipping
-  in M8 (covers `os.platform()`, `os.getEnv(name)`, `os.JENNIFER_LF`,
-  `os.JENNIFER_OS`); expanded again in M13.1.
-- Update `docs/technical/grammar.md` EBNF.
-- Update `docs/technical/interpreter.md` Builtins-and-libraries
-  section to describe the lookup rule.
-- New section in `docs/user-guide/style-guide.md`: how to write namespaced calls
-  (`bio.translate($seq)`, no space around `.`, same as method-call
-  paren-hugging).
-- `cmd/jennifer/fmt.go` already preserves `TOKEN_DOT` verbatim;
-  verify the formatter handles it cleanly with a small test.
-
-**Exit criterion:** the shipping `os` slice can be `use`d (with and
-without aliasing) and exercises both qualified calls and qualified
-constants; synthetic namespaced builtins prove the mechanism
-generalises; the parser, interpreter, REPL, AST JSON dump, and
-formatter all handle the qualified form correctly; the five
-existing flat essential libraries continue to work unchanged.
+See:
+- [libraries/os.md](libraries/os.md) - the shipping demo library.
+- [libraries/index.md](libraries/index.md) - flat vs namespaced
+  policy and the rule for library authors.
+- [user-guide/imports.md > Namespaced libraries and aliasing](user-guide/imports.md#namespaced-libraries-and-aliasing) -
+  user-facing reference for `use NAME [as ALIAS];` and qualified
+  calls.
+- [user-guide/style-guide.md > Namespaced calls](user-guide/style-guide.md#namespaced-calls) -
+  spacing convention around `.`.
+- [technical/grammar.md](technical/grammar.md) - EBNF for
+  `qualifiedCall` / `qualifiedConstRef` and the `use ... as ...`
+  shape; AST table entries for the new nodes.
+- [technical/interpreter.md > Namespaced libraries (M8)](technical/interpreter.md#namespaced-libraries-m8) -
+  registration API, `nsPrefixes` / `nsAliasedAway` resolution
+  tables, no-shadowing rule for namespace prefixes.
 
 ---
 
