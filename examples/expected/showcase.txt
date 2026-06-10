@@ -77,6 +77,11 @@ substring 7..  = World
 split         = a|b|c
 chars count   = 5
 join          = x-y-z
+=== os ===
+typeOf(os.platform())  = string
+typeOf(os.JENNIFER_OS) = string
+typeOf(os.JENNIFER_LF) = string
+getEnv unset           = []
 === lists ===
 xs = [10, 20, 30]
 len(xs) = 3
@@ -113,4 +118,7 @@ MAX=5 MAX_RETRIES=3 HTTP_OK=200 PI_APPROX=3.14
 %t case=upper: TRUE
 %t case=title: False
 null=literal: [   N/A]
+|| escape:    X|then
+=== empty containers ===
+len(emptyList) = 0, len(emptyMap) = 0
 === done ===

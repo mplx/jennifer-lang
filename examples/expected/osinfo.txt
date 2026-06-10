@@ -1,2 +1,6 @@
-platform: linux
-OS tag:   linux
+bare prefix:
+  os.platform()       = linux
+  os.JENNIFER_OS      = linux
+aliased prefix (`use os as o;`):
+  o.platform()        = linux
+  o.JENNIFER_OS       = linux

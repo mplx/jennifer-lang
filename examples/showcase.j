@@ -2,7 +2,7 @@
 # Copyright (C) 2026 <developer@mplx.eu>
 #
 # showcase.j - exercises every Jennifer language feature and every
-# standard-library function that ships at M5. Used as a golden
+# standard-library function that ships through M8. Used as a golden
 # integration test by cmd/jennifer/examples_test.go.
 #
 # JENNIFER_VERSION (from the auto-loaded `core` library) is
@@ -14,6 +14,7 @@ use io;
 use convert;
 use math;
 use strings;
+use os;
 import "showcase/helpers.j";
 
 # --- Constants: simple, underscored, library-provided ---
@@ -142,6 +143,21 @@ printf("split         = %s\n", join(split("a,b,c", ","), "|"));
 printf("chars count   = %d\n", len(chars("héllo")));
 printf("join          = %s\n", join(["x", "y", "z"], "-"));
 
+# --- os library (M8: first namespaced library) ---
+#
+# Every name lives behind the `os.` prefix. The actual *values* of
+# os.platform() / os.JENNIFER_OS / os.JENNIFER_LF depend on the host
+# OS (Jennifer ships Linux-only today, but Windows and macOS are on
+# the roadmap), so we only assert their runtime *kinds* here - same
+# pattern that keeps JENNIFER_VERSION out of the golden file. The
+# platform-pinned demo lives in examples/osinfo.j. `os.getEnv` of a
+# deliberately unset variable returns the empty string portably.
+printf("=== os ===\n");
+printf("typeOf(os.platform())  = %s\n", typeOf(os.platform()));
+printf("typeOf(os.JENNIFER_OS) = %s\n", typeOf(os.JENNIFER_OS));
+printf("typeOf(os.JENNIFER_LF) = %s\n", typeOf(os.JENNIFER_LF));
+printf("getEnv unset           = [%s]\n", os.getEnv("JENNIFER_SHOWCASE_NONEXISTENT_VAR"));
+
 # --- lists ---
 printf("=== lists ===\n");
 def xs as list of int init [10, 20, 30];
@@ -188,10 +204,11 @@ printf("=== constants ===\n");
 printf("MAX=%d MAX_RETRIES=%d HTTP_OK=%d PI_APPROX=%f\n", MAX, MAX_RETRIES, HTTP_OK, PI_APPROX);
 
 # --- printf modifiers (M7) ---
-#
-# Per-verb pipe modifiers shape the rendered representation: presentation
-# only, never data transformation. Each example below exercises one or
-# two modifiers so the golden output stays compact.
+/* Per-verb pipe modifiers shape the rendered representation:
+   presentation only, never data transformation. Each example below
+   exercises one or two modifiers so the golden output stays compact.
+   This is a block comment - the line comments elsewhere in this
+   file use the # form; both are valid (block comments don't nest). */
 printf("=== printf modifiers ===\n");
 printf("%%s pad/align:  [%s|pad=8|align=right]\n", "hi");
 printf("%%s max:        [%s|max=3]\n", "abcdef");
@@ -206,5 +223,16 @@ printf("%%t case=upper: %t|case=upper\n", true);
 printf("%%t case=title: %t|case=title\n", false);
 def maybe as null;
 printf("null=literal: [%s|null=literal(\"N/A\")|pad=6|align=right]\n", $maybe);
+# `||` is the literal-pipe escape after a verb, parallel to `%%`.
+printf("|| escape:    %s||then\n", "X");
+
+# --- empty container literals (M6) ---
+#
+# `[]` / `{}` are valid literals; their element/key/value type comes
+# from the declared variable type at the def site.
+def emptyList as list of int init [];
+def emptyMap as map of string to int init {};
+printf("=== empty containers ===\n");
+printf("len(emptyList) = %d, len(emptyMap) = %d\n", len($emptyList), len($emptyMap));
 
 printf("=== done ===\n");
