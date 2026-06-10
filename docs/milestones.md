@@ -229,7 +229,7 @@ library (`os`) so the machinery has a non-synthetic exercise.
   `os.JENNIFER_LF`, `os.JENNIFER_OS`. Two functions plus two
   constants - enough to exercise namespaced zero-arg calls,
   namespaced calls with arguments, namespaced constants, and
-  aliasing end-to-end. Expands in M13.1.
+  aliasing end-to-end. Expands in M15.1.
 
 See:
 - [libraries/os.md](libraries/os.md) - the shipping demo library.
@@ -305,15 +305,20 @@ See:
 
 ---
 
-The next phase splits into three arcs: Phase A finishes the
-language so libraries have something to stand on, Phase B ships
-the foundational libraries that every Jennifer program needs,
-Phase C ships I/O libraries, and Phase D ships the higher-level
-ecosystem (Jennifer-coded libraries, the module system that
-unblocks them, crypto, a server). Phase E (WASM and specialised
-domains) is the long horizon.
+The next phase splits into four arcs after two architectural
+prerequisites: M10 lands the namespace-first library architecture
+that the rest of the standard library will be built on; Phase A
+(M11-M13) finishes the language so libraries have something to
+stand on; M14 closes the lexer-side gap (`fmt` losing comments
+and shebangs) so the first wave of struct-using libraries can
+ship with doc-comments intact; Phase B (M15.x) ships the
+foundational libraries that every Jennifer program needs;
+Phase C (M16.x) ships I/O libraries; Phase D (M17-M20) ships the
+higher-level ecosystem (Jennifer-coded libraries, the module
+system that unblocks them, crypto, a server). Phase E (WASM and
+specialised domains) is the long horizon.
 
-The library milestones use sub-numbering (M13.1, M13.2, ...) so
+The library milestones use sub-numbering (M15.1, M15.2, ...) so
 each library ships and is reviewed independently. This is the
 first time we use sub-milestones; the practice is justified
 because each library is small enough to land in a single sitting
@@ -321,11 +326,129 @@ once the language foundation is in place.
 
 ---
 
-**Phase A: language completion (M10-M12).** These three milestones
+## M10 - Namespace-first library architecture
+
+**Status:** planned.
+
+A pre-language-completion milestone that promotes namespacing from
+"opt-in for domain libraries" to "the default for every library,"
+keeping global names as the carefully-curated exception. Pre-1.0
+is the window for this kind of API-shape correction; once
+foundational libraries (M15.x) and the rest of the stdlib start
+landing on top of the current split, every later breaking change
+becomes more disruptive.
+
+- **Registration API rename (BREAKING for embedders, not for
+  Jennifer programs).** `in.Register(lib, name, fn)` and
+  `in.RegisterConst(lib, name, value)` are renamed to
+  `in.RegisterGlobal(...)` and `in.RegisterGlobalConst(...)` to
+  make their role explicit: "expose this name globally as well as
+  under the library's namespace." All current callers are
+  mechanically updated. The namespaced API
+  (`RegisterNamespaced` / `RegisterNamespacedConst`) keeps its
+  name and remains the recommended default.
+- **Every library gets a namespace prefix.** `core`, `io`,
+  `convert`, `math` join the namespaced pool. Every name is
+  reachable as `lib.name` regardless of whether it's also global.
+- **`math` migrates to namespaced-only** (**BREAKING** for
+  programs). `sqrt`, `pow`, `abs`, `min`, `max`, `floor`, `ceil`,
+  `round`, `PI`, `E` move behind `math.`. The verb names
+  (`min`, `max`, `abs`, `pow`) collide with any future numeric
+  domain library; the M9 strings migration set the precedent and
+  this aligns math with it. No name is also exposed globally.
+  M10 also folds the planned non-crypto random helpers into
+  `math` rather than giving them their own library:
+  `math.rand()` returns float in `[0, 1)`,
+  `math.randInt(lo, hi)` returns an int in `[lo, hi]`, and
+  `math.randSeed(n)` sets the deterministic seed. Three
+  functions don't justify a separate `random` library under the
+  new "five or more functions / constants to deserve a separate
+  library" threshold (raised below); pseudo-random fits the
+  pure-numeric charter of `math` exactly. The
+  cryptographically-secure variant still ships in M19 `crypto`,
+  keyed off the same charter ("anything that needs key
+  material") that already separates `hash` from `crypto`.
+- **`convert` migrates to namespaced-only** (**BREAKING** for
+  programs). `int(v)`, `float(v)`, `string(v)`, `bool(v)`,
+  `typeOf(v)` move behind `convert.`. The four type-name calls
+  are especially error-prone as bare functions because they look
+  like type annotations; namespacing them removes the ambiguity.
+- **`io.printf` / `io.sprintf` decision deferred to start of
+  M10.** Either both stay global (highest-traffic functions in
+  the language, terms of art with no plausible collision) or
+  both migrate to namespaced-only (a third breaking change after
+  M9's strings move; cleaner end state). Picked when M10 begins
+  so we have one more turn of feedback first.
+- **`core` keeps `len` and `JENNIFER_VERSION` global** via
+  `RegisterGlobal` / `RegisterGlobalConst`. They're also
+  reachable as `core.len` / `core.JENNIFER_VERSION`. These two
+  are the entire ongoing global set unless `io.printf` is added
+  in the deferred-decision above. The bar for adding more is
+  "polymorphic structural primitive that spans types" - high by
+  design.
+- **Alias-with-globals = error.** Today
+  `use os; use os as o;` activates both prefixes. Once a library
+  carries any `RegisterGlobal` names, multiple `use NAME [as
+  ALIAS];` for the same canonical library is rejected with
+  `library 'X' already in scope`. The escape hatch is "don't
+  expose globals from a library that needs multiple aliases" -
+  which in practice is no library, because globals are
+  vanishingly rare. Aliasing remains a *rename*; the canonical
+  prefix is still freed for ordinary identifier use after
+  `use X as Y;`.
+- **`use NAME [as ALIAS];` rule for flat-only libraries
+  disappears.** Today `use math as m;` errors with "math has no
+  namespaced builtins; `as m` is meaningless here." After M10
+  every library is namespaced, so the rejection rule has no
+  surface to fire on - removed.
+- **Library-author guidance updated.** The
+  `docs/libraries/index.md` "flat vs namespaced" framing is
+  retired. The new rule is "every library is namespaced; only
+  `core` ships globals via `RegisterGlobal`." Future libraries
+  (or PRs that propose extending the global set) cite this
+  policy. The "deserves its own library" threshold is raised
+  from M8's "3+" to **"5+ functions or constants"**: anything
+  with fewer than five distinct names folds into the most
+  related existing library instead. The three non-crypto
+  random helpers (`rand`, `randInt`, `randSeed`) are the first
+  case the new rule catches; they move into `math` (above)
+  instead of getting their own library. The rule lives in the
+  same section.
+- **Examples + docs sweep.** Every `.j` example exercising
+  `math.*`, `convert.*`, and (if migrated) `io.*` is updated;
+  showcase.j, wordcount.j, and the user guide get their bare
+  references retired.
+- **File-splice keyword renamed `import` → `include`**
+  (**BREAKING**). `include "x.j";` is the textual-splice form;
+  the `import` keyword is freed so M17's real module system can
+  use it without a second migration. Parallels PHP's
+  `include`/`require` for splicing vs `use` for namespaces and
+  matches the C/PHP reader expectation that "`include` =
+  literal paste, `import` = module boundary." Mixing-mistake
+  diagnostics adjust accordingly:
+  - `import "x.j";` → "use `include \"x.j\";` for textual file
+    splicing; the `import` keyword is reserved for the module
+    system landing in M17."
+  - `include foo;` (unquoted) → "file splice takes a string
+    literal: `include \"foo.j\";`"
+  - `include "foo.go";` → "include path \"foo.go\" must end with
+    `.j`"
+  - `use "foo.j";` continues to error with its existing hint.
+  The eight `.j` files in the repo that use `import` migrate to
+  `include` in the same change.
+
+This milestone is intentionally small in implementation surface
+(registry rename + per-library `Install()` rewrites + alias
+collision rule) but large in API shape. No new language features
+land here - that's M11.
+
+---
+
+**Phase A: language completion (M11-M13).** These three milestones
 close the biggest daily-use gaps and add the foundational types every
 later library needs.
 
-## M10 - Control-flow completion
+## M11 - Control-flow completion
 
 - `break;` and `continue;` inside `while`/`for`/`for-each`/`repeat`.
 - `repeat { } until (cond);` post-test loop. New keywords `repeat`
@@ -337,8 +460,15 @@ later library needs.
   (which stays method-scoped).
 - Bundled: printf `%s|align=center` while the modifier table is
   being touched anyway.
+- Bundled: printf `%a` aggregate verb for lists and maps (deferred
+  from M7; unblocked by M6's compound types and M9's collection
+  libraries). Renders a list/map in a configurable shape so
+  `printf("%a\n", $xs);` does the right thing without the caller
+  building the string by hand. Modifier shape (separators,
+  bracket characters, recursion depth, the `null=skip` element
+  mode that only makes sense for `%a`) settled at start of M11.
 
-## M11 - Bytes and bit operators
+## M12 - Bytes and bit operators
 
 - New primitive type `bytes` - **mutable** byte sequence with
   `list`-like semantics. Indexing yields `int` in `[0, 255]`;
@@ -352,8 +482,18 @@ later library needs.
   buffer-shaped workflows - I/O, hashing-while-streaming,
   in-place encrypt/decrypt - without forcing an allocate-new
   loop for each transformation.)
-- New `bytes <-> string` codecs (UTF-8 by default; lossless
-  re-encoding lives in the future `encoding` library).
+- New `bytes <-> string` codecs land in `convert` as
+  `convert.bytesFromString($s, $codec)` and
+  `convert.stringFromBytes($b, $codec)`. Two-argument shape
+  follows `convert.int(v)` / `convert.float(v)` (one input, one
+  output) with `$codec` selecting the encoding (`"utf-8"` by
+  default; further codecs ship with the `encoding` library in
+  M15.4). The pair lives in `convert` because bytes ↔ string
+  *is* a value transformation across kinds, which is `convert`'s
+  charter; the codec-introspection helpers
+  (`isAscii`, `lenBytes`, `lenRunes`, hex, base64) stay in
+  `encoding` because their concern is the byte stream's shape,
+  not the conversion itself.
 - New operators `& | ^ ~ << >>` on `int` - promoted to syntax,
   not library calls. Library form would parallel arithmetic
   (`bitand` vs `+`) and violate "one way per thing."
@@ -370,12 +510,12 @@ later library needs.
   -> string` (n runes, decoded from stdin's UTF-8). M7's `eof()`
   composes with both unchanged.
 
-## M12 - Structs / records
+## M13 - Structs / records
 
 - New `def struct Name { field as type, ... };` syntax (working
-  name; revisited at start of M12).
+  name; revisited at start of M13).
 - Literals: `Name{ field: expr, ... }`. Field access: `$p.field`.
-  Value semantics like lists/maps - `def $q as Name init $p;`
+  Value semantics like lists/maps - `def q as Name init $p;`
   copies. `const` is deep.
 - Unblocks every library that wants to return composite data
   (file info, time values, network endpoints, http request /
@@ -383,122 +523,369 @@ later library needs.
 
 ---
 
-**Phase B: foundational libraries (M13.x).** Small, frequently-used
-libraries grouped under M13 with sub-numbering; each sub-milestone
-ships one library independently.
+## M14 - Lexer comment + blank-line preservation
 
-## M13.1 - `os`
+A side-channel for comments and blank lines so `jennifer fmt`
+stops dropping the file's documentation. Closes the two
+M5-deferred items together because the same machinery covers
+both.
 
-Expands the M8 demo slice (`os.platform()`, `os.getEnv(name)`,
-`os.JENNIFER_LF`, `os.JENNIFER_OS` already ship there). Adds:
-process args (`os.args -> list of string`), exit code
-(`os.exit(n)`), and the rest of the `JENNIFER_*` constants
-(`os.JENNIFER_BUILD`, `os.JENNIFER_PLATFORM`,
-`os.JENNIFER_ARCHITECTURE`).
+- **Lexer carries comments as tokens** (`TOKEN_COMMENT_LINE`,
+  `TOKEN_COMMENT_BLOCK`, `TOKEN_COMMENT_SHEBANG`). The first
+  line's `#!` form is its own kind so `fmt` can re-emit it
+  verbatim at the file head without re-deriving the rule.
+- **Lexer carries one `TOKEN_BLANK_LINE` per run of
+  newlines.** Consecutive blanks collapse to one token (matches
+  the style rule "never more than one consecutive blank line").
+- **Parser ignores both kinds** at statement boundaries, the
+  same way it ignores whitespace today. No grammar change.
+- **AST carries attachments**, not the comment tokens
+  themselves. Each statement-level AST node grows two slots:
+  `LeadingComments []Comment` (comments and blanks immediately
+  before it) and `TrailingComment *Comment` (a same-line
+  end-of-line comment if any). Attachment runs during parsing
+  via a small look-around; the formatter consumes them.
+- **`jennifer fmt` re-emits**: shebang at file head; leading
+  comment block before its attached node with original
+  blank-line spacing; trailing same-line comment on the
+  statement's line. Comments inside an expression
+  (`printf(/* note */ $x)`) are out of scope - they attach to
+  the statement, not to mid-expression positions.
+- **`jennifer ast`** gains optional `--with-comments` flag so
+  the JSON dump includes the attachment slots; off by default
+  to keep the existing test suite stable.
+- **No language change.** Comments are still purely
+  informational; the runtime never sees them. This milestone is
+  pure pipeline plumbing.
+- **Style guide updates.** The two "Limitations" bullets in
+  `style-guide.md` (comments dropped, blank lines not
+  preserved) are removed. The "Source file conventions" section
+  notes that shebang, header comments, and inline `# why` notes
+  all survive a `fmt` round-trip.
 
-## M13.2 - `random`
-
-Non-crypto pseudo-random. `random.rand()` returns float in
-`[0, 1)`. `random.randInt(lo, hi)`. `random.seed(n)` for
-reproducibility. Crypto-grade random ships separately in M17.
-
-## M13.3 - `time`
-
-New `time` value type. `time.now()`, formatting, parsing,
-arithmetic on durations. Larger than other M13 entries because
-the type is new; may split into M13.3.x if scope demands.
-
-## M13.4 - `hash` and `crc`
-
-Common digests over `bytes` (MD5, SHA-1, SHA-256, CRC32,
-CRC64). Pure compute, no dependencies. Crypto-relevant primitives
-that don't require key material live here; key-based crypto goes
-in M17.
-
-## M13.5 - `encoding`
-
-`encoding.isAscii`, `encoding.lenBytes`, `encoding.lenRunes`,
-`encoding.toBytes($s, $codec)`, `encoding.toString($bytes,
-$codec)`, hex / base64 helpers. Operates at the `bytes <->
-string` boundary.
+Lands here, between M13 (structs) and the M15.x library batch,
+so the first wave of struct-using libraries can ship with
+doc-comments that `fmt` will preserve.
 
 ---
 
-**Phase C: I/O libraries (M14.x).** System libraries that touch the
+**Phase B: foundational libraries (M15.x).** Small, frequently-used
+libraries grouped under M15 with sub-numbering; each sub-milestone
+ships one library independently.
+
+## M15.1 - `os`
+
+Expands the M8 demo slice (`os.platform()`, `os.getEnv(name)`,
+`os.JENNIFER_LF`, `os.JENNIFER_OS` already ship there). One large
+update covering process metadata, the `JENNIFER_*` constant set,
+and the external-program execution surface. Depends on M13
+(structs) for the result and handle types.
+
+**Process metadata.**
+
+- `os.args -> list of string` - command-line arguments passed to
+  the running program (index 0 is the program name, by convention).
+- Constants `os.JENNIFER_BUILD`, `os.JENNIFER_PLATFORM`,
+  `os.JENNIFER_ARCHITECTURE` round out the `JENNIFER_*` set
+  introduced in M8.
+
+Process exit stays on the language statement `exit EXPR;` (M11),
+not in `os` - see
+[rejected.md > `os.exit(n)`](technical/rejected.md#osexitn).
+
+**External-program execution.**
+
+Two result structs, one process handle struct, four functions:
+
+- `def struct os.Result { exitCode as int, stdout as string,
+  stderr as string };` - what a command produced.
+- `def struct os.Process { ... };` - opaque handle for an async
+  child. Field shape (pid, internal state) settled at start of
+  M15.1; users interact through the function API below, not the
+  fields directly.
+
+**Argument-list form, no shell.** Every variant takes the command
+as a `list of string` (argv-style: program name plus arguments).
+This avoids the shell-injection footguns of a single concatenated
+command string. If a user genuinely wants shell parsing they pass
+`["sh", "-c", $cmd]` explicitly - making the shell hop visible at
+the call site.
+
+- `os.run(argv) -> os.Result` - **blocking**. Runs the command to
+  completion, captures stdout and stderr into the result, returns
+  the exit code. The interpreter's stdin is not passed through
+  (deferred; explicit stdin variant lands in a later sub-milestone
+  if demand surfaces).
+- `os.spawn(argv) -> os.Process` - **non-blocking**. Starts the
+  command and returns immediately with a handle. Streams are
+  buffered internally; the caller drains them through
+  `os.wait` / `os.poll`.
+- `os.wait(p as os.Process) -> os.Result` - block until `$p`
+  terminates, then return its `os.Result`. Subsequent waits on
+  the same handle return the same result (idempotent).
+- `os.poll(p as os.Process) -> bool` - `true` once `$p` has
+  terminated and an `os.wait` will return immediately. Pure
+  predicate, no side effects.
+- `os.kill(p as os.Process)` - request termination of `$p`
+  (SIGTERM on POSIX). A subsequent `os.wait` returns the result
+  the OS reports for a terminated child. Signal variants beyond
+  SIGTERM are out of scope for M15.1.
+
+Errors at the boundary (program not found, not executable,
+permission denied, fork/exec failure) are positioned runtime
+errors at the `os.run` / `os.spawn` site, matching the
+"strict at boundaries" stance. Non-zero exit codes are **not**
+errors - they're values in `os.Result.exitCode`; the caller
+decides whether to branch on them.
+
+## M15.2 - `time`
+
+One library covering both date and time concerns through a single
+zone-aware instant type, plus a separate span type for differences.
+Splits into two sub-milestones because formatting and parsing carry
+their own design surface (timezone names, locale-shaped output);
+the core type plus arithmetic ships first so other M15 / M16
+libraries can rely on it.
+
+**One-type rationale.** Splitting `date` / `time` / `datetime`
+(the Java pre-`java.time`, Python `datetime`/`date`/`time`,
+JavaScript-`Date`-plus-libraries problem) front-loads
+conversion code into every library that crosses the boundary.
+Every program that needs a calendar date eventually needs a
+time-of-day, and vice versa. Granularity (date-only,
+time-of-day-only) is a property of formatting and parsing, not
+of the value's type.
+
+Unix timestamps are **not** a separate type; they're a
+constructor (`time.fromUnix(n)`) and accessor
+(`$t.unix() -> int`). Same shape for ISO 8601 strings and any
+other wire format added in M15.2.2.
+
+### M15.2.1 - core type, arithmetic, Unix
+
+- `def struct time.Time { ... };` - opaque struct representing
+  an instant on the wall-clock timeline with nanosecond
+  precision and zone awareness. Fields are private API; users
+  interact through the function set below. (Re-using the M13
+  struct machinery; `time.Time` is just a struct that the
+  library happens to ship and on which the library defines
+  operators.)
+- `def struct time.Duration { ... };` - a span. Subtracting two
+  `time.Time` produces a `Duration`; adding a `Duration` to a
+  `Time` produces a `Time`.
+- `time.now() -> time.Time` - current instant in the local
+  zone.
+- `time.utc() -> time.Time` - current instant in UTC.
+- `time.fromUnix(seconds as int) -> time.Time`,
+  `time.fromUnixMillis(ms as int) -> time.Time`,
+  `time.fromUnixNanos(ns as int) -> time.Time` - constructors
+  from common Unix integer encodings.
+- Accessors as plain functions:
+  `time.unix($t) -> int`, `time.unixMillis($t) -> int`,
+  `time.unixNanos($t) -> int`; calendar accessors
+  `time.year($t)`, `time.month($t)`, `time.day($t)`,
+  `time.hour($t)`, `time.minute($t)`, `time.second($t)`,
+  `time.nanosecond($t)`, `time.weekday($t)`. (Jennifer has no
+  methods on structs - see
+  [rejected.md > Methods on structs](technical/rejected.md#methods-on-structs)
+  for why; every library exposes accessors as
+  `lib.name(struct)`, not `$struct.name()`.)
+- Arithmetic: `time.add($t, $d) -> time.Time`,
+  `time.sub($t1, $t2) -> time.Duration`,
+  `time.before($a, $b) -> bool`, `time.after($a, $b) -> bool`,
+  `time.equal($a, $b) -> bool`. Operator overloading is not
+  in the language; these are explicit function calls.
+- Duration constructors mirror the `fromUnix` shape so
+  constructor and accessor never collide:
+  `time.fromSeconds(n)`, `time.fromMilliseconds(n)`,
+  `time.fromMinutes(n)`, `time.fromHours(n)`. Duration
+  accessors return the span as the requested unit:
+  `time.seconds($d)`, `time.milliseconds($d)`,
+  `time.minutes($d)`, `time.hours($d)`.
+
+### M15.2.2 - formatting, parsing, timezones
+
+- `time.format($t, layout as string) -> string` - layout
+  language settled at the start of M15.2.2 (`strftime`-style
+  vs Go's reference-time style; the former wins on
+  familiarity, the latter on copy-paste reliability).
+- `time.parse(s as string, layout as string) -> time.Time` -
+  strict parse, positioned error on mismatch.
+- `time.iso(t)` / `time.fromIso(s)` - ISO 8601 round-trip;
+  the common case shouldn't need a format string.
+- Timezone handling:
+  `time.zone(name as string) -> time.Zone`,
+  `time.inZone($t, $z) -> time.Time`. Zone name uses the
+  IANA database (`"Europe/Vienna"`, `"America/Los_Angeles"`).
+  TinyGo footprint of the tz database evaluated honestly
+  before commitment; if too heavy, ship only fixed offsets
+  in M15.2.2 and defer IANA loading until embedding decisions
+  settle.
+
+## M15.3 - `hash` and `crc`
+
+Common digests over `bytes` (MD5, SHA-1, SHA-256, CRC32, CRC64).
+Pure compute, no external dependencies. Crypto-relevant primitives
+that don't require key material live here; key-based crypto goes
+in M19.
+
+**One-shot API.** Whole-input digests for the common case where
+the data fits in memory:
+
+- `hash.md5($bytes) -> bytes`, `hash.sha1($bytes) -> bytes`,
+  `hash.sha256($bytes) -> bytes`, `crc.crc32($bytes) -> bytes`,
+  `crc.crc64($bytes) -> bytes`. Output is the raw digest as
+  `bytes` - users hex/base64-encode it through `encoding` when
+  they need a string representation.
+
+**Streaming API.** For inputs larger than memory (files,
+streams), one primitive per algorithm:
+
+- `hash.streamMd5() -> hash.Stream`, `hash.streamSha256()`,
+  `crc.streamCrc32()`, ... - each returns an opaque stream
+  handle (struct from M13).
+- `hash.update($stream, $bytes)` feeds the next chunk.
+- `hash.finalize($stream) -> bytes` returns the final digest;
+  the stream is consumed and further `update` calls error.
+- File hashing is the documented three-line idiom: open the
+  file via `fs`, read chunks, feed to a stream, finalize. The
+  `hash` library does *not* ship a `hash.md5File(path)`
+  convenience - that would pull `fs` into the dependency
+  graph and create a parallel API for what the streaming
+  primitive already does.
+
+**No convenience wrappers** (`hash.md5String($s)`,
+`hash.md5Hex($bytes)`, ...). Stance #1 "one way per thing":
+strings go through `convert.bytesFromString` first, hex
+encoding goes through `encoding.hex` afterwards. The composition
+reads at the call site instead of multiplying out the verb names.
+
+**Struct hashing is deferred.** Hashing a struct requires a
+stable byte serialization (field order, padding, null handling)
+which is its own design problem. Users serialize through the
+relevant library (`json`, `csv`, future `cbor`) and hash the
+resulting bytes; the `hash` library has no opinion on struct
+layout.
+
+## M15.4 - `encoding`
+
+`encoding.isAscii`, `encoding.lenBytes`, `encoding.lenRunes`,
+hex / base64 helpers, and the lossless re-encoding codecs
+beyond UTF-8. Operates on the byte stream's shape (introspection
+and re-encoding); the cross-kind `bytes <-> string` codec pair
+itself lives in `convert` as `convert.bytesFromString` /
+`convert.stringFromBytes` (shipped with the `bytes` type in
+M12).
+
+---
+
+**Phase C: I/O libraries (M16.x).** System libraries that touch the
 OS or do significant compute.
 
-## M14.1 - `fs`
+## M16.1 - `fs`
 
 File I/O. `fs.read`, `fs.write` for `string` and `bytes`,
 `fs.stat` returning a struct, directory walk. Requires M11
-(bytes) and M12 (structs). Brings the M7-deferred file handles
+(bytes) and M13 (structs). Brings the M7-deferred file handles
 and any non-stdin input source (`fs.open(path) -> handle`,
 `handle.readLine()`, etc.) under one library.
 
-## M14.2 - `net`
+## M16.2 - `net`
 
 Sockets. Plain TCP and UDP first; TLS deferred to its own
 sub-milestone. The first place a real `bytes` round-trip
 matters.
 
-## M14.3 - `regex`
+## M16.3 - `regex`
 
 Regular expressions over `string`. Large standalone milestone;
 pure string processing, no other dependencies.
 
 ---
 
-**Phase D: higher-level and Jennifer-coded libraries (M15-M18).**
+**Phase D: higher-level and Jennifer-coded libraries (M17-M20).**
 
-## M15 - Module system for Jennifer-coded libraries
+## M17 - Module system for Jennifer-coded libraries
 
-Real modules so `.j` libraries get namespaces, scope, and
-explicit exports. Lands the form M8 deferred
-(`import "templateengine.j" as ninja;` with a real module
-boundary; today `import "x.j";` is a textual splice with no
-namespace). File imports stay as textual splice for inline
-composition (same source file); library distribution moves to
-modules.
+Real modules so Jennifer-coded libraries get namespaces, scope,
+and explicit exports. Adopts "**module**" as the canonical
+wording for a distributable `.j` library (matches Python, ES2015,
+Rust); "bundle" deliberately not used because it overloads the
+JS build-output term. The `include "x.j";` keyword (renamed in
+M10) stays as the textual-splice form for inline composition
+inside one source tree; library distribution moves to modules
+via `import`.
 
-## M16.x - Jennifer-coded essentials
+- **Source tree separation.** A new top-level `modules/` directory
+  holds Jennifer-coded modules; system (Go-built) libraries stay
+  in `internal/lib/*/`. The split is load-bearing for distro
+  packaging: system libraries are baked into the interpreter
+  binary, so a Debian package only ships `/usr/bin/jennifer`;
+  modules are data files that ship to a system module dir
+  (`/usr/share/jennifer/modules/` or `/var/lib/jennifer/modules/`,
+  decided at packaging time) and are loadable without
+  recompilation. The directory exists from M17; the modules
+  shipped in M18.x land directly in it.
+- **`import "modules/foo.j" as foo;` syntax.** A real module
+  boundary - the imported file's top-level names live behind the
+  `foo.` prefix at the call site, the same shape as a namespaced
+  system library. Aliasing rules match `use NAME as ALIAS;`.
+- **Module resolution.** A search path with explicit precedence:
+  the current source file's directory first, then any
+  `-I` directories passed on the command line, then the system
+  module dir. No implicit fallback to system libraries - a
+  `use NAME;` always means a system library, `import "..." as ...;`
+  always means a module file. Matches the explicit-prefix rule
+  recorded in
+  [rejected.md > Implicit `use NAME;` fallback chain](technical/rejected.md#implicit-use-name-fallback-chain-m8).
+- **Module-level exports** ship with the milestone: top-level
+  `def` and `func` are exported by default; a leading `private`
+  marker (or similar; settled at start of M17) hides them. Same
+  visibility rule top-to-bottom; no per-file export list.
 
-Built atop the existing system libraries. Sub-milestones in
-priority order:
+## M18.x - Jennifer-coded modules
 
-- **M16.1 - `http`** (client) - atop `net`.
-- **M16.2 - `json`** - data interchange ubiquity.
-- **M16.3 - `csv`** - simple, useful early.
-- **M16.4 - `yaml`, `xml`, `markdown`, `pretty`** - one or more
+Built atop the existing system libraries. Each one ships as a
+Jennifer **module** under `modules/` (the directory introduced in
+M17); none of them are compiled into the interpreter binary.
+Sub-milestones in priority order:
+
+- **M18.1 - `http`** (client) - atop `net`.
+- **M18.2 - `json`** - data interchange ubiquity.
+- **M18.3 - `csv`** - simple, useful early.
+- **M18.4 - `yaml`, `xml`, `markdown`, `pretty`** - one or more
   sub-milestones depending on scope when planned.
 
-## M17 - `crypto`
+## M19 - `crypto`
 
 Symmetric and asymmetric primitives, key derivation,
 crypto-grade random. System library; TinyGo-safe primitives
-only. Hashes already shipped in M13.4.
+only. Hashes already shipped in M15.3.
 
-## M18 - `httpd`
+## M20 - `httpd`
 
-Pure Jennifer HTTP server atop `net`. The point where Jennifer
-becomes useful for serving content.
+Pure-Jennifer HTTP server atop `net`. Ships as a module under
+`modules/httpd.j` (same packaging shape as the M18 modules), not
+baked into the interpreter. The point where Jennifer becomes
+useful for serving content.
 
 ---
 
-**Phase E: WASM and specialised domains (M19+).** Not committed to a
+**Phase E: WASM and specialised domains (M21+).** Not committed to a
 timeline; recorded so the design doesn't foreclose them.
 
-## M19 - WASM runtime embedding
+## M21 - WASM runtime embedding
 
 Wazero or similar inside the interpreter binary. TinyGo-size
-cost evaluated honestly before commitment. Without M19, no WASM
+cost evaluated honestly before commitment. Without M21, no WASM
 libraries.
 
-## M20.x - WASM libraries
+## M22.x - WASM libraries
 
-If M19 ships, sandboxed plugins via `use wasm:libname;`. Each
+If M21 ships, sandboxed plugins via `use wasm:libname;`. Each
 library a sub-milestone.
 
-## M21+ - Specialised domains
+## M23+ - Specialised domains
 
 Each domain its own milestone with sub-milestones as needed:
 
@@ -507,7 +894,7 @@ Each domain its own milestone with sub-milestones as needed:
   Needleman-Wunsch), FASTA/FASTQ parsers, molecule structures.
 - **Sandbox.** Restricted-capability execution.
 
-Ordered when demand surfaces. WASM libraries (M20.x) may cover
+Ordered when demand surfaces. WASM libraries (M22.x) may cover
 some of this space first.
 
 ---
@@ -550,14 +937,6 @@ locks the API.
 - **FCGI.** `use FCGI as web;` library when `net` and `httpd`
   mature. Lets Jennifer host CGI / FastCGI workloads end-to-end.
 - **Inline assembler.**
-- **`fmt` comment preservation.** Today the lexer drops `#` and
-  `/* */` comments; the formatter would need to carry them as
-  tokens (or attach them to following nodes) and weave them back
-  in. Deferred from M5.
-- **`fmt` blank-line preservation or auto-insertion.** Either keep
-  user blank lines as a side channel during lexing, or insert them
-  automatically between logical groups (imports vs. methods vs.
-  top-level code, method-to-method). Deferred from M5.
 - **Binary AST cache (`.jc` files).** Pre-parsed loading for big
   programs and McFly OS embedding. Its own milestone when it
   lands - file-format design, versioning, and TinyGo-safe

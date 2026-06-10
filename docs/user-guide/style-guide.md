@@ -42,8 +42,11 @@ nothing here will surprise you.
 
 ## Braces
 
-- **K&R: opening brace on the same line**, separated by one space:
-  `func fact(n as int) {`, `if ($x > 0) {`, `else {`.
+- **1TBS (one true brace style): opening brace on the same line**
+  for *everything* - methods and control flow alike - separated by
+  one space: `func fact(n as int) {`, `if ($x > 0) {`, `else {`.
+  (Jennifer uses the uniformly-same-line variant that Java, Go,
+  Rust, and the Linux kernel also use.)
 - **`}` on its own line**, except for the `} else {` / `} elseif (...) {`
   cascade, where `else`/`elseif` continues on the same line as the
   preceding `}`.
@@ -154,6 +157,11 @@ user-method pool even when aliasing has technically freed it.
 - **`use` and `import` statements come first**, before any methods or
   top-level statements. Group `use` lines together, then `import` lines,
   then a blank line, then the rest of the program.
+- **Blank line after a leading comment block.** If the file opens with
+  a header comment (SPDX line, copyright, file description, shebang),
+  leave one blank line between the comment block and the first code
+  line. Files that start directly with code (no header) start on
+  line 1 - no leading blank.
 - **Trailing newline** at end of file.
 
 ## Editor configuration
@@ -223,7 +231,7 @@ for (def i as int init 0; $i <= 8; $i = $i + 1) {
 }
 ```
 
-Everything in this example follows the rules above: K&R braces, 4-space
+Everything in this example follows the rules above: 1TBS braces, 4-space
 indent, spaces around binary operators, double-quoted strings, expanded
 blocks, no blank lines (a limitation - see above). `jennifer fmt` will
 produce this output byte-for-byte from any equivalent input.

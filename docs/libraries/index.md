@@ -111,3 +111,7 @@ Three practical constraints reinforce the count/mass rule:
 For implementation notes on how libraries register themselves with the
 interpreter (`Register`, `RegisterConst`, the `use`-gated lookup),
 see [../technical/interpreter.md > Builtins and libraries](../technical/interpreter.md#builtins-and-libraries).
+
+For canonical terminology (library vs module, function vs method,
+list vs array, ...), see [../glossary.md](../glossary.md). This page
+uses the terms in that table.

@@ -65,7 +65,7 @@ A few practical consequences worth knowing up front:
 - `jennifer fmt` is the enforcement layer for style. The
   [style guide](style-guide.md) describes the canonical shape (one
   space around binary operators, no space inside `(` / `[` / `{`,
-  K&R braces, tight `.` in qualified calls, ...) and `fmt` re-emits
+  1TBS braces, tight `.` in qualified calls, ...) and `fmt` re-emits
   any well-formed source in exactly that shape. You're never
   *required* to write canonical form; you just won't see anything
   else after `fmt`.

@@ -15,20 +15,12 @@ printf("os tag:   %s\n", os.JENNIFER_OS);
 printf("line:     %s",   os.JENNIFER_LF);
 ```
 
-`os` is namespaced, so `use os as o;` is permitted and renames the
-prefix to `o.` at the use site. The mechanics, the rule that
-aliasing is only available for namespaced libraries, and the
-canonical-name-shadowing behaviour are documented once in
-[user-guide/imports.md > Namespaced libraries and aliasing](../user-guide/imports.md#namespaced-libraries-and-aliasing)
-(language angle) and
-[technical/interpreter.md > Namespaced libraries](../technical/interpreter.md#namespaced-libraries)
-(implementation angle) - they're not repeated here.
-
 Currently ships a deliberately tiny slice so the language can demonstrate
 namespaced calls, namespaced constants, and `use os as ALIAS;`
 aliasing end-to-end. The library expands in
-[M13.1](../milestones.md#m131---os) (`os.args`, `os.exit(n)`, the rest
-of the `JENNIFER_*` constants).
+[M15.1](../milestones.md#m151---os) (`os.args` and the rest of the
+`JENNIFER_*` constants). Process exit is the language statement
+`exit EXPR;`, not an `os` function.
 
 ## Functions
 

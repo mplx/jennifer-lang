@@ -15,6 +15,7 @@
 # until then, this example is the deliberate home for printing the
 # actual host-OS values; showcase.j only typeOf()s them so it stays
 # portable.
+
 use io;
 use os;
 use os as o;

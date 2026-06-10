@@ -164,6 +164,55 @@ For the common "build a list by appending" pattern, the language
 ships a write-only target that means "the position just past the end
 of the list":
 
+> **Deliberate exception to "one way per thing".** Jennifer's design
+> stance #1 normally rejects sugar that creates a parallel API, and
+> `$xs[] = item;` and `$xs = lists.push($xs, item);` *do* compile to
+> the same operation. The reasoning that puts the bracket form in
+> the language anyway - and that distinguishes it from rejected
+> sugar like `$i++` (see
+> [docs/technical/rejected.md](../technical/rejected.md)):
+>
+> 1. **`$xs[]` re-uses an existing operator slot; it is not a new
+>    operator.** `$xs[i] = item;` already targets a list position
+>    via the `[...]` index-write syntax. `$xs[] = item;` extends
+>    that same operator to one position the existing syntax didn't
+>    cover - "just past the end" - by passing an empty index. No
+>    new token is introduced. Compare `$i++`: that proposed a
+>    *new* operator (`++`) competing with the canonical
+>    `$i = $i + 1;`. The bracket form has no new token to learn,
+>    no precedence to memorize, and no parse rule that wouldn't
+>    exist anyway.
+> 2. **Index-write semantics, not function-call semantics.**
+>    `$xs[i] = item;` mutates the binding's list in place.
+>    `$xs[] = item;` extends that in-place behaviour to the
+>    append position, where the function-call form
+>    (`$xs = lists.push($xs, item);`) needs an explicit
+>    reassignment to commit the new list back into the binding.
+>    So the bracket form isn't a "shortcut for `lists.push`" so
+>    much as the index-write syntax growing one more legal
+>    position. The two forms have genuinely different shapes:
+>    one is a write statement that mutates a binding, the other
+>    is an expression that returns a new list.
+> 3. **Write-only; no expression-context footgun.** `$xs[]`
+>    cannot appear on the right-hand side of any expression -
+>    reading "the element just past the end" has no meaning and
+>    is rejected at parse time. `$i++`'s real problem was that
+>    pre/post forms differ only in expression context, which is
+>    where the bugs hid. `$xs[]` has no expression context to
+>    hide in, so the analogous footgun cannot exist.
+>
+> What this means for `lists.push`: it stays in the language and
+> is canonical for any context that needs the post-append list as
+> an expression value (passing it into another call, chaining
+> transformations). The two spellings are not parallel APIs that
+> do the same thing in the same context; they fit different
+> syntactic positions - the bracket form for the in-place write
+> statement, the function form for the expression value. That's
+> also why the same argument doesn't license a `bytes.push`
+> removal once `$b[] = byte;` ships: any future code that needs
+> "a new bytes value with this byte appended" as an expression
+> still wants the function form.
+
 ```jennifer
 def xs as list of int init [];
 $xs[] = 10;
@@ -270,7 +319,7 @@ Three problems:
    ...) means rewriting every access site in the program.
 
 The standard fix is a struct or named record, which Jennifer doesn't have
-yet (planned post-M10). Until then, options for the meantime:
+yet (planned post-M11). Until then, options for the meantime:
 
 - **Wrap access in methods**: `getItem(save, player, character, slot)`
   reads better than four bare brackets and gives you one place to fix a

@@ -57,6 +57,9 @@ reasons trace back to one of the seven below. The same list appears in
   with the reasoning so they don't come back.
 - [TinyGo notes](tinygo.md) - the constraints TinyGo imposes and how the
   codebase respects them.
+- [Glossary](../glossary.md) - canonical project terminology
+  (function/method, library/module, list/array, ...). The terms
+  this file uses match it.
 
 ## Pipeline
 

@@ -4,6 +4,7 @@
 # factorial.j - recursion + parameters + multi-arg printf.
 # Demonstrates M3 features: method parameters, return values, recursion,
 # and format-string printf.
+
 use io;
 
 func fact(n as int) {

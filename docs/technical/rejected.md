@@ -65,18 +65,6 @@ Rejected for the modifier system because:
   anywhere a string goes. Folding it into `%s` modifiers would lock
   markdown output to print sites.
 
-What lives in M7 instead: presentation-only modifiers per verb -
-`pad`, `max`, `align`, `mode=raw|quote|escape` for `%s`; `pad`,
-`fill`, `base`, `sign`, `group`, `sep` for `%d`; `prec`, `trim`,
-`sci`, `sign`, `pad`, `align` for `%f`; `case=upper|lower|title` for
-`%t` (true/false isn't really a transformation - it's the verb's
-choice of rendering); a shared `null=empty|null|literal(STR)`. See
-[milestones.md > M7](../milestones.md#m7---printf-modifier).
-
-Also deferred to a later milestone (not rejected, just out of M7
-scope): the `%a` aggregate verb for lists and maps and the
-`null=skip` mode that only makes sense with `%a`.
-
 ## printf literal-pipe lookahead
 
 Considered during M7 as a way to soften the breaking change to pre-M7
@@ -96,6 +84,86 @@ always starts a modifier list. To write a literal `|` in that
 position, double it (`||`), parallel to the `%%` escape for a
 literal `%`. The rule is uniform and easy to remember; the migration
 cost was small (five test strings in this repo).
+
+## Methods on structs
+
+Considered during M15.2 (`time` library) planning: let structs
+declare methods that receive `self` implicitly, so accessors and
+small operations on a struct value read as `$t.year()` instead of
+`time.year($t)`. The trigger was the time library's many calendar
+accessors; the same shape would later cover `hash.Stream.update`,
+`os.Process.kill`, and every other library that holds onto state
+behind a struct.
+
+Rejected because:
+
+- **It's the start of object orientation, not a syntactic shortcut.**
+  Methods carry an implicit `self` binding and re-open the question
+  of polymorphism, dispatch (single? double?), inheritance vs
+  composition, interfaces / traits, visibility modifiers, and
+  constructors. Once any one of those is shipped the others
+  become a "why not also" thread. Jennifer is procedural with
+  value types; the small, explicit shape is the language's
+  identity, not a placeholder for an OO upgrade.
+- **It invalidates every shipped library's call shape.** Today
+  `lists.push($xs, x)`, `maps.has($m, k)`, `strings.upper($s)`,
+  `hash.update($s, $b)`, `os.run($argv)` are all
+  `lib.verb(receiver, args...)`. Adding `$receiver.verb(args...)`
+  alongside would force each library to choose - or worse, ship
+  both spellings and create the parallel-API problem stance #1
+  rejects. Picking method-form everywhere would mean rewriting
+  every library and every example.
+- **Stances #1 and #2 already cover the ergonomics complaint.**
+  "One way per thing" - if methods exist the function form
+  becomes the second way. "Explicit over implicit" - the
+  function call shows the library name at the call site; the
+  method form hides it behind dispatch on `$receiver`'s type.
+  The cost of `time.year($t)` vs `$t.year()` is one extra word;
+  the cost of OO is a different language.
+
+The chosen rule: structs have field access only. Operations on
+struct values live as functions in the owning library
+(`time.year($t)`, `hash.update($s, $b)`, `os.kill($p)`). If
+ergonomics ever genuinely justify a receiver syntax, the
+language change is large enough to merit its own milestone with
+its own rejected.md trail of what the OO surface would *not*
+include.
+
+## `os.exit(n)`
+
+Considered during the M11 / M15.1 planning: ship process exit as
+both the language statement `exit EXPR;` (M11) and as a library
+function `os.exit(n)` (planned for M15.1). The argument for keeping
+both was that the language statement might be redefined under a
+future embedding (McFly OS, a WASM sandbox) to mean "return from the
+interpreter," while `os.exit(n)` would always mean "kill the host
+process" with no possibility of redefinition. Same argument as C's
+`exit()` vs `_exit()`.
+
+Rejected because:
+
+- **They collapse to the same thing today.** On a hosted OS the two
+  forms have identical observable behaviour - same exit code, same
+  stdout flush, same termination. Two spellings for one behaviour
+  violates Jennifer's "one way per thing" stance immediately, in
+  exchange for a divergence that hasn't been needed yet.
+- **The embedding case is hypothetical.** McFly OS embedding and a
+  WASM-sandbox build are long-horizon items; designing the public
+  API for them now locks in a duplicate that the actual embeddings
+  may not even want (an embedded host might redefine `exit EXPR;`
+  *and* `os.exit(n)` the same way, leaving the distinction useless
+  but still in the language).
+- **The statement form is the right home.** Process exit is
+  control-flow, parallel to `return;`: terminating execution from
+  any reachable point. Wrapping the same primitive in a library
+  function would read as "call into the OS" when it's actually
+  "stop running." The statement form keeps the intent visible.
+
+The chosen rule: `exit EXPR;` (and bare `exit;`) is the only
+spelling. If a future embedding does need a "always kill the host"
+escape hatch, it ships then with a name that says what it does
+(`os.kill()`, `os.hardExit()`), not as a near-duplicate of the
+existing statement.
 
 ## Implicit `use NAME;` fallback chain (M8+)
 
@@ -126,7 +194,7 @@ at the `use` site:
 - `use net;` → system library only.
 - `use wasm:libname;` → WASM library (when that milestone lands).
 - `import "path/foo.j";` → file import (textual splice today;
-  module-aware when M15 lands).
+  module-aware when M17 lands).
 
 Users who genuinely want one entry point can write a tiny
 Jennifer-coded shim that picks an implementation explicitly;

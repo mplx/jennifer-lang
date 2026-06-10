@@ -65,5 +65,9 @@ same list appears in [README.md](../../README.md) and
   standard library (`io`, `convert`, `math`, `strings`, `core`).
 - [docs/technical/](../technical/index.md) - interpreter internals for
   contributors.
+- [docs/glossary.md](../glossary.md) - canonical project terminology.
+  When two words could plausibly name the same concept (function vs
+  method, library vs module, list vs array), this page picks the one
+  the project uses everywhere.
 - [docs/milestones.md](../milestones.md) - what's shipped, what's
   planned.

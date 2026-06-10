@@ -3,6 +3,7 @@
 #
 # hello.j - the canonical first Jennifer program.
 # Prints 42.
+
 use io;
 
 def x as int init 21;

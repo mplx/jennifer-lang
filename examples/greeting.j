@@ -2,6 +2,7 @@
 # Copyright (C) 2026 <developer@mplx.eu>
 #
 # greeting.j - strings, escape sequences, multiple printf calls.
+
 use io;
 
 def name as string init "Jennifer";
