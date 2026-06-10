@@ -253,62 +253,55 @@ See:
 
 **Status:** done.
 
-The `list`/`map` types shipped in M6 with literals, indexing, and
-iteration but no manipulation helpers. M9 adds two namespaced
-libraries plus a small piece of language sugar for the common
-append case.
+Two new namespaced libraries cover the M6-deferred list/map
+manipulation helpers, a small append sugar shortens the common
+write pattern, and two follow-on breaking changes tidy up the
+flat-vs-namespaced split.
 
 - **`lists` library** (`use lists;`, namespaced). `lists.push`,
   `lists.pop`, `lists.first`, `lists.last`, `lists.head`,
   `lists.tail`, `lists.reverse`, `lists.sort`, `lists.contains`,
-  `lists.concat`, `lists.slice`. Every function returns a **new
-  list** - the input is never mutated, callers write
-  `$xs = lists.push($xs, item);`. `sort` accepts numeric, string, or
-  bool elements (mixed int/float promotes; other mixes error).
-  Comparator-based sort is deferred until methods are first-class
-  values.
+  `lists.concat`, `lists.slice`. Non-mutating - every function
+  returns a new list. `sort` accepts numeric, string, or bool
+  elements (mixed int/float promotes; other mixes error);
+  comparator-based sort is deferred until methods are first-class.
 - **`maps` library** (`use maps;`, namespaced). `maps.keys`,
   `maps.values`, `maps.has`, `maps.delete`, `maps.merge`. Same
-  value-semantics shape. `maps.delete` of a missing key errors
-  (strict at boundaries, matching `$m[missing]`); `maps.merge`
-  layers the second arg over the first.
-- **BREAKING:** `has()` moved out of `core` and into `maps` as
-  `maps.has(m, key)`. Programs that called bare `has(...)` now
-  need `use maps;` and the qualified form. Rationale: `has` was
-  the only non-polymorphic name in core - it only ever worked on
-  maps - so it fits the M8 rule that domain-specific names live in
-  their domain library. `len` stays in core because it really is
-  polymorphic across string / list / map.
-- **Namespaced, not flat.** Both libraries collide with `strings`
-  (`contains`) and future libraries on common verbs (`parse`,
-  `delete`, ...). Per M8's library-author rule, domain libraries
-  with collision-prone names take a namespace; flat APIs stay
-  reserved for the five essentials.
-- **`core.has` stays map-only.** List membership goes through
-  `lists.contains($xs, item)`, haystack-first like
-  `strings.contains` - PHP's `in_array(needle, haystack)` order is
-  deliberately not adopted.
-- **Sugar: `$xs[] = item;`** - write-only target meaning "the
-  position just past the end of the list". Equivalent to
-  `$xs = lists.push($xs, item);` but cheaper to write. Reads of
-  `$xs[]` and chained forms like `$xs[0][]` are parse errors;
-  non-list targets error at runtime. New AST node `AppendStmt`;
-  fmt re-emits the form unchanged.
+  shape. `maps.delete` of a missing key errors (strict at
+  boundaries, matching `$m[missing]`); `maps.merge` layers the
+  second arg over the first.
+- **Sugar: `$xs[] = item;`** - write-only target meaning "just past
+  the end of the list". Equivalent to
+  `$xs = lists.push($xs, item);`. Reads of `$xs[]` and chained
+  forms (`$xs[0][]`) are parse errors; non-list targets error at
+  runtime. New AST node `AppendStmt`.
+- **BREAKING:** `has()` moved from `core` to `maps` as
+  `maps.has(m, key)`. Bare `has(...)` callers now need
+  `use maps;` and the qualified form. `has` was the only
+  non-polymorphic name in core; `len` stays because it genuinely
+  spans string / list / map.
+- **BREAKING:** `strings` library moved from flat to namespaced.
+  `upper(s)` → `strings.upper(s)`, `contains(s, sub)` →
+  `strings.contains(s, sub)`, etc. across all 15 functions.
+  `use strings;` itself is unchanged. The M8 library-author rule
+  named exactly these collision-prone verbs (`contains`, `split`,
+  `replace`, `join`); acting on it now keeps callers off the wrong
+  shape before more libraries arrive. After M9 the remaining flat
+  libraries are `io`, `convert`, `math`, and auto-loaded `core`.
 
 See:
-- [libraries/lists.md](libraries/lists.md) / [libraries/maps.md](libraries/maps.md) -
-  function-by-function reference.
-- [libraries/index.md](libraries/index.md) - catalog and the
-  flat-vs-namespaced rule the M9 design follows.
+- [libraries/lists.md](libraries/lists.md) /
+  [libraries/maps.md](libraries/maps.md) - function reference for
+  each new library.
+- [libraries/strings.md](libraries/strings.md) - now namespaced
+  (M9 migration note at top).
+- [libraries/index.md](libraries/index.md) - updated flat-vs-namespaced
+  catalog and the library-author rule.
 - [user-guide/imports.md](user-guide/imports.md) and
   [user-guide/types-and-values.md > The `$xs[]` append sugar](user-guide/types-and-values.md#the-xs-append-sugar) -
-  user-facing reference for `use lists;` / `use maps;` and the
-  append form.
-- [user-guide/style-guide.md](user-guide/style-guide.md) -
-  no-whitespace-inside-`[]` style rule applies to the append form
-  too.
-- [technical/grammar.md](technical/grammar.md) - EBNF for
-  `appendStmt`; AST table entry for `AppendStmt`.
+  user-facing reference.
+- [technical/grammar.md](technical/grammar.md) - EBNF and AST entry
+  for `AppendStmt`.
 
 ---
 

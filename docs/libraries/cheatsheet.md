@@ -16,15 +16,15 @@ flat lookup view, not authoritative.
 | `abs(x)`                      | [math](math.md)                 | Absolute value of `x` (int→int, float→float).                                 |
 | `bool(v)`                     | [convert](convert.md)           | Canonical conversion to `bool` (`0`/`1`, `0.0`/`1.0`, `"true"`/`"false"`).    |
 | `ceil(x)`                     | [math](math.md)                 | Smallest int ≥ `x`. Accepts int (identity) or float.                          |
-| `chars(s)`                    | [strings](strings.md)           | Split `s` into a `list of string`, one entry per Unicode code point.          |
-| `contains(s, sub)`            | [strings](strings.md)           | True if `s` contains the substring `sub`.                                     |
-| `endsWith(s, suffix)`         | [strings](strings.md)           | True if `s` ends with `suffix`.                                               |
+| `strings.chars(s)`            | [strings](strings.md)           | Split `s` into a `list of string`, one entry per Unicode code point.          |
+| `strings.contains(s, sub)`    | [strings](strings.md)           | True if `s` contains the substring `sub`.                                     |
+| `strings.endsWith(s, suffix)` | [strings](strings.md)           | True if `s` ends with `suffix`.                                               |
 | `eof()`                       | [io](io.md)                     | True if and only if the next `readLine()` would error. Pair with `while (not eof()) {...}`. |
 | `float(v)`                    | [convert](convert.md)           | Convert to float (int→float, float identity, string parses, bool→1.0/0.0).   |
 | `floor(x)`                    | [math](math.md)                 | Largest int ≤ `x`. Accepts int (identity) or float.                           |
-| `indexOf(s, sub)`             | [strings](strings.md)           | Rune index of first `sub` in `s`, or `-1` if absent.                          |
+| `strings.indexOf(s, sub)`     | [strings](strings.md)           | Rune index of first `sub` in `s`, or `-1` if absent.                          |
 | `int(v)`                      | [convert](convert.md)           | Convert to int (float truncates toward zero, string parses, bool→1/0).       |
-| `join(parts, sep)`            | [strings](strings.md)           | Concatenate `list of string` `parts` separated by `sep`. Inverse of `split`. |
+| `strings.join(parts, sep)`    | [strings](strings.md)           | Concatenate `list of string` `parts` separated by `sep`. Inverse of `strings.split`. |
 | `len(v)`                      | [core](core.md) *(auto-loaded)* | Structural length: rune count (string), element count (list), entry count (map). |
 | `lists.concat(a, b)`          | [lists](lists.md)               | New list with `a`'s elements followed by `b`'s.                               |
 | `lists.contains(xs, item)`    | [lists](lists.md)               | True if `item` appears in `xs` (haystack, needle).                            |
@@ -37,7 +37,7 @@ flat lookup view, not authoritative.
 | `lists.slice(xs, start[, end])` | [lists](lists.md)             | New sublist `[start, end)`; `end` defaults to `len(xs)`.                      |
 | `lists.sort(xs)`              | [lists](lists.md)               | New ascending-sorted list. Numeric / string / bool elements; mixed errors.    |
 | `lists.tail(xs, n)`           | [lists](lists.md)               | New list of the last `n` elements.                                            |
-| `lower(s)`                    | [strings](strings.md)           | Lowercase `s` (Unicode-aware).                                                |
+| `strings.lower(s)`            | [strings](strings.md)           | Lowercase `s` (Unicode-aware).                                                |
 | `maps.delete(m, key)`         | [maps](maps.md)                 | New map without `key`. Missing key errors (strict at boundaries).             |
 | `maps.has(m, key)`            | [maps](maps.md)                 | True if map `m` contains `key`. The non-erroring companion to `$m[key]`.     |
 | `maps.keys(m)`                | [maps](maps.md)                 | List of keys in insertion order.                                              |
@@ -52,22 +52,22 @@ flat lookup view, not authoritative.
 | `printf(format, args...)`     | [io](io.md)                     | Format-string write to stdout. Verbs: `%d %f %s %t %v %%`; per-verb `\|key=value` modifiers (`pad`, `prec`, `base`, `null=*`, ...). |
 | `readLine()`                  | [io](io.md)                     | Read one line from stdin (trailing newline stripped). Errors at EOF - check `eof()` first. |
 | `readLine(prompt)`            | [io](io.md)                     | Same as `readLine()` but writes `prompt` to stdout first.                     |
-| `repeat(s, n)`                | [strings](strings.md)           | `n` non-negative copies of `s` concatenated.                                  |
-| `replace(s, old, new)`        | [strings](strings.md)           | Replace **all** occurrences of `old` in `s` with `new`.                       |
+| `strings.repeat(s, n)`        | [strings](strings.md)           | `n` non-negative copies of `s` concatenated.                                  |
+| `strings.replace(s, old, new)` | [strings](strings.md)          | Replace **all** occurrences of `old` in `s` with `new`.                       |
 | `round(x)`                    | [math](math.md)                 | Round to nearest int (half away from zero).                                   |
-| `split(s, sep)`               | [strings](strings.md)           | Split `s` on non-empty `sep`; returns `list of string`.                       |
+| `strings.split(s, sep)`       | [strings](strings.md)           | Split `s` on non-empty `sep`; returns `list of string`.                       |
 | `sprintf(value)`              | [io](io.md)                     | Display-form of a value, returned as a string (doesn't write).                |
 | `sprintf(format, args...)`    | [io](io.md)                     | Format-string version of `sprintf`. Same verbs and `\|key=value` modifiers as `printf`.   |
 | `sqrt(x)`                     | [math](math.md)                 | Square root; always float. Errors on negative input.                          |
-| `startsWith(s, prefix)`       | [strings](strings.md)           | True if `s` starts with `prefix`.                                             |
+| `strings.startsWith(s, prefix)` | [strings](strings.md)         | True if `s` starts with `prefix`.                                             |
 | `string(v)`                   | [convert](convert.md)           | Convert to string (always succeeds; uses the value's display form).           |
-| `substring(s, start)`         | [strings](strings.md)           | Rune-indexed slice of `s` from `start` to end.                                |
-| `substring(s, start, end)`    | [strings](strings.md)           | Rune-indexed slice; **exclusive** `end`.                                      |
-| `trim(s)`                     | [strings](strings.md)           | Strip leading and trailing Unicode whitespace.                                |
-| `trimLeft(s)`                 | [strings](strings.md)           | Strip leading whitespace.                                                     |
-| `trimRight(s)`                | [strings](strings.md)           | Strip trailing whitespace.                                                    |
+| `strings.substring(s, start)` | [strings](strings.md)           | Rune-indexed slice of `s` from `start` to end.                                |
+| `strings.substring(s, start, end)` | [strings](strings.md)      | Rune-indexed slice; **exclusive** `end`.                                      |
+| `strings.trim(s)`             | [strings](strings.md)           | Strip leading and trailing Unicode whitespace.                                |
+| `strings.trimLeft(s)`         | [strings](strings.md)           | Strip leading whitespace.                                                     |
+| `strings.trimRight(s)`        | [strings](strings.md)           | Strip trailing whitespace.                                                    |
 | `typeOf(v)`                   | [convert](convert.md)           | Runtime kind as string (`"int"`, `"float"`, `"string"`, `"bool"`, `"null"`, `"list"`, `"map"`). |
-| `upper(s)`                    | [strings](strings.md)           | Uppercase `s` (Unicode-aware).                                                |
+| `strings.upper(s)`            | [strings](strings.md)           | Uppercase `s` (Unicode-aware).                                                |
 
 ## Constants
 

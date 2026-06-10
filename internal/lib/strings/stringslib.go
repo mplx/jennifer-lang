@@ -25,25 +25,32 @@ const LibraryName = "strings"
 
 // Install registers strings library functions on an interpreter.
 //
+// **M9: strings is namespaced.** Every name lives behind the `strings.`
+// prefix - call as `strings.upper(s)`, `strings.contains(s, sub)`, etc.
+// Pre-M9 the library was flat; the M9 hybrid model relocates collision-
+// prone verbs (`contains`, `split`, `replace`, ...) under their domain
+// library so they don't pollute the bare-name pool. Same rule that
+// drove `lists`, `maps`, and `os` into namespaced form.
+//
 // `len` used to live here as the rune-count function for strings; it now
 // lives in the auto-loaded `core` library so the same name covers strings,
 // lists, and maps with one polymorphic dispatch (see internal/lib/core).
 func Install(in *interpreter.Interpreter) {
-	in.Register(LibraryName, "upper", upperFn)
-	in.Register(LibraryName, "lower", lowerFn)
-	in.Register(LibraryName, "contains", containsFn)
-	in.Register(LibraryName, "startsWith", startsWithFn)
-	in.Register(LibraryName, "endsWith", endsWithFn)
-	in.Register(LibraryName, "indexOf", indexOfFn)
-	in.Register(LibraryName, "trim", trimFn)
-	in.Register(LibraryName, "trimLeft", trimLeftFn)
-	in.Register(LibraryName, "trimRight", trimRightFn)
-	in.Register(LibraryName, "replace", replaceFn)
-	in.Register(LibraryName, "repeat", repeatFn)
-	in.Register(LibraryName, "substring", substringFn)
-	in.Register(LibraryName, "split", splitFn)
-	in.Register(LibraryName, "chars", charsFn)
-	in.Register(LibraryName, "join", joinFn)
+	in.RegisterNamespaced(LibraryName, "upper", upperFn)
+	in.RegisterNamespaced(LibraryName, "lower", lowerFn)
+	in.RegisterNamespaced(LibraryName, "contains", containsFn)
+	in.RegisterNamespaced(LibraryName, "startsWith", startsWithFn)
+	in.RegisterNamespaced(LibraryName, "endsWith", endsWithFn)
+	in.RegisterNamespaced(LibraryName, "indexOf", indexOfFn)
+	in.RegisterNamespaced(LibraryName, "trim", trimFn)
+	in.RegisterNamespaced(LibraryName, "trimLeft", trimLeftFn)
+	in.RegisterNamespaced(LibraryName, "trimRight", trimRightFn)
+	in.RegisterNamespaced(LibraryName, "replace", replaceFn)
+	in.RegisterNamespaced(LibraryName, "repeat", repeatFn)
+	in.RegisterNamespaced(LibraryName, "substring", substringFn)
+	in.RegisterNamespaced(LibraryName, "split", splitFn)
+	in.RegisterNamespaced(LibraryName, "chars", charsFn)
+	in.RegisterNamespaced(LibraryName, "join", joinFn)
 }
 
 // ---- helpers ----

@@ -15,7 +15,7 @@ use maps;
 
 # --- Split the input into a list of words ---
 def sentence as string init "the quick brown fox jumps over the lazy dog the quick fox";
-def words as list of string init split($sentence, " ");
+def words as list of string init strings.split($sentence, " ");
 
 printf("=== input ===\n");
 printf("sentence: %s\n", $sentence);
@@ -56,7 +56,7 @@ printf("\nmost frequent: %s (%d)\n", $topWord, $topCount);
 # --- Render as an ASCII bar chart ---
 printf("\n=== histogram ===\n");
 for (def w in $counts) {
-    printf("  %s : %s (%d)\n", $w, repeat("#", $counts[$w]), $counts[$w]);
+    printf("  %s : %s (%d)\n", $w, strings.repeat("#", $counts[$w]), $counts[$w]);
 }
 
 # --- Nested: list of map-of-string-to-int, aggregate per key ---

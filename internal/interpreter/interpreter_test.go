@@ -1328,8 +1328,8 @@ func TestStringsCaseConversion(t *testing.T) {
 	out, err := run(t, `
 use io;
 use strings;
-def a as string init upper("hello");
-def b as string init lower("HELLO");
+def a as string init strings.upper("hello");
+def b as string init strings.lower("HELLO");
 printf("%s %s", $a, $b);
 `)
 	if err != nil {
@@ -1342,13 +1342,13 @@ printf("%s %s", $a, $b);
 
 func TestStringsSearchPredicates(t *testing.T) {
 	cases := []struct{ expr, want string }{
-		{`contains("hello world", "world")`, "true"},
-		{`contains("hello", "z")`, "false"},
-		{`startsWith("hello", "he")`, "true"},
-		{`startsWith("hello", "lo")`, "false"},
-		{`endsWith("hello", "lo")`, "true"},
-		{`endsWith("hello", "he")`, "false"},
-		{`contains("", "")`, "true"}, // empty is always contained
+		{`strings.contains("hello world", "world")`, "true"},
+		{`strings.contains("hello", "z")`, "false"},
+		{`strings.startsWith("hello", "he")`, "true"},
+		{`strings.startsWith("hello", "lo")`, "false"},
+		{`strings.endsWith("hello", "lo")`, "true"},
+		{`strings.endsWith("hello", "he")`, "false"},
+		{`strings.contains("", "")`, "true"}, // empty is always contained
 	}
 	for _, c := range cases {
 		out, err := run(t, `
@@ -1369,10 +1369,10 @@ printf("%t", $r);
 
 func TestStringsIndexOf(t *testing.T) {
 	cases := []struct{ expr, want string }{
-		{`indexOf("hello", "l")`, "2"},
-		{`indexOf("hello", "z")`, "-1"},
-		{`indexOf("hello", "")`, "0"},
-		{`indexOf("héllo", "l")`, "2"}, // rune index, not byte (é is 2 bytes)
+		{`strings.indexOf("hello", "l")`, "2"},
+		{`strings.indexOf("hello", "z")`, "-1"},
+		{`strings.indexOf("hello", "")`, "0"},
+		{`strings.indexOf("héllo", "l")`, "2"}, // rune index, not byte (é is 2 bytes)
 	}
 	for _, c := range cases {
 		out, err := run(t, `
@@ -1393,11 +1393,11 @@ printf("%d", $r);
 
 func TestStringsTrim(t *testing.T) {
 	cases := []struct{ expr, want string }{
-		{`trim("   hello   ")`, "hello"},
-		{`trim("\t\nhello\n")`, "hello"},
-		{`trim("nothing")`, "nothing"},
-		{`trimLeft("   hello   ")`, "hello   "},
-		{`trimRight("   hello   ")`, "   hello"},
+		{`strings.trim("   hello   ")`, "hello"},
+		{`strings.trim("\t\nhello\n")`, "hello"},
+		{`strings.trim("nothing")`, "nothing"},
+		{`strings.trimLeft("   hello   ")`, "hello   "},
+		{`strings.trimRight("   hello   ")`, "   hello"},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
@@ -1418,10 +1418,10 @@ printf("[%s]", $r);
 
 func TestStringsReplace(t *testing.T) {
 	cases := []struct{ expr, want string }{
-		{`replace("hello world", "world", "Jennifer")`, "hello Jennifer"},
-		{`replace("a-b-c", "-", "/")`, "a/b/c"}, // replace all
-		{`replace("xyz", "q", "?")`, "xyz"},     // no occurrence -> unchanged
-		{`replace("", "x", "y")`, ""},
+		{`strings.replace("hello world", "world", "Jennifer")`, "hello Jennifer"},
+		{`strings.replace("a-b-c", "-", "/")`, "a/b/c"}, // replace all
+		{`strings.replace("xyz", "q", "?")`, "xyz"},     // no occurrence -> unchanged
+		{`strings.replace("", "x", "y")`, ""},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
@@ -1442,9 +1442,9 @@ printf("%s", $r);
 
 func TestStringsRepeat(t *testing.T) {
 	cases := []struct{ expr, want string }{
-		{`repeat("ab", 3)`, "ababab"},
-		{`repeat("x", 0)`, ""},
-		{`repeat("", 5)`, ""},
+		{`strings.repeat("ab", 3)`, "ababab"},
+		{`strings.repeat("x", 0)`, ""},
+		{`strings.repeat("", 5)`, ""},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
@@ -1467,7 +1467,7 @@ func TestStringsRepeatNegativeErrors(t *testing.T) {
 	_, err := run(t, `
 use io;
 use strings;
-def r as string init repeat("x", 0 - 1);
+def r as string init strings.repeat("x", 0 - 1);
 `)
 	if err == nil || !strings.Contains(err.Error(), "negative count") {
 		t.Errorf("got %v", err)
@@ -1476,16 +1476,16 @@ def r as string init repeat("x", 0 - 1);
 
 func TestStringsSubstring(t *testing.T) {
 	cases := []struct{ expr, want string }{
-		{`substring("hello", 0, 5)`, "hello"},
-		{`substring("hello", 1, 4)`, "ell"},
-		{`substring("hello", 0, 0)`, ""},
-		{`substring("hello", 5, 5)`, ""},   // at end
-		{`substring("héllo", 0, 2)`, "hé"}, // rune-indexed
+		{`strings.substring("hello", 0, 5)`, "hello"},
+		{`strings.substring("hello", 1, 4)`, "ell"},
+		{`strings.substring("hello", 0, 0)`, ""},
+		{`strings.substring("hello", 5, 5)`, ""},   // at end
+		{`strings.substring("héllo", 0, 2)`, "hé"}, // rune-indexed
 		// Optional end - omit to mean "to the end of the string".
-		{`substring("hello", 0)`, "hello"},
-		{`substring("hello", 2)`, "llo"},
-		{`substring("hello", 5)`, ""},
-		{`substring("héllo", 2)`, "llo"}, // 2-arg form, rune-indexed
+		{`strings.substring("hello", 0)`, "hello"},
+		{`strings.substring("hello", 2)`, "llo"},
+		{`strings.substring("hello", 5)`, ""},
+		{`strings.substring("héllo", 2)`, "llo"}, // 2-arg form, rune-indexed
 	}
 	for _, c := range cases {
 		out, err := run(t, `
@@ -1506,13 +1506,13 @@ printf("[%s]", $r);
 
 func TestStringsSubstringErrors(t *testing.T) {
 	cases := []struct{ expr, want string }{
-		{`substring("hello", 0 - 1, 3)`, "is negative"},
-		{`substring("hello", 0, 99)`, "out of range"},
-		{`substring("hello", 4, 2)`, "before start"},
-		{`substring("hello")`, "2 or 3 arguments"},          // arity: too few
-		{`substring("hello", 1, 2, 3)`, "2 or 3 arguments"}, // arity: too many
-		{`substring("hello", 99)`, "out of range"},          // 2-arg form, out of range
-		{`substring("hello", 0 - 1)`, "is negative"},        // 2-arg form, negative
+		{`strings.substring("hello", 0 - 1, 3)`, "is negative"},
+		{`strings.substring("hello", 0, 99)`, "out of range"},
+		{`strings.substring("hello", 4, 2)`, "before start"},
+		{`strings.substring("hello")`, "2 or 3 arguments"},          // arity: too few
+		{`strings.substring("hello", 1, 2, 3)`, "2 or 3 arguments"}, // arity: too many
+		{`strings.substring("hello", 99)`, "out of range"},          // 2-arg form, out of range
+		{`strings.substring("hello", 0 - 1)`, "is negative"},        // 2-arg form, negative
 	}
 	for _, c := range cases {
 		_, err := run(t, `

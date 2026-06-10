@@ -298,7 +298,7 @@ func TestStringsSplit(t *testing.T) {
 	out, err := run(t, `
 use io;
 use strings;
-def parts as list of string init split("a,b,c", ",");
+def parts as list of string init strings.split("a,b,c", ",");
 printf("%d %s %s %s\n", len($parts), $parts[0], $parts[1], $parts[2]);
 `)
 	if err != nil {
@@ -313,7 +313,7 @@ func TestStringsChars(t *testing.T) {
 	out, err := run(t, `
 use io;
 use strings;
-def cs as list of string init chars("héllo");
+def cs as list of string init strings.chars("héllo");
 printf("%d %s %s\n", len($cs), $cs[0], $cs[1]);
 `)
 	if err != nil {
@@ -329,7 +329,7 @@ func TestStringsJoin(t *testing.T) {
 use io;
 use strings;
 def parts as list of string init ["a", "b", "c"];
-printf("%s\n", join($parts, "-"));
+printf("%s\n", strings.join($parts, "-"));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -344,8 +344,8 @@ func TestStringsSplitJoinRoundTrip(t *testing.T) {
 use io;
 use strings;
 def src as string init "alpha,beta,gamma";
-def parts as list of string init split($src, ",");
-printf("%s\n", join($parts, ","));
+def parts as list of string init strings.split($src, ",");
+printf("%s\n", strings.join($parts, ","));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)

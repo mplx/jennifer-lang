@@ -52,7 +52,7 @@ Rejected for the modifier system because:
   becomes a candidate modifier and the format-string spec swallows the
   rest of the standard library.
 - **Parallel API to the libraries.** `%s|case=upper` is already
-  `upper($s)`. Two ways to do the same thing breaks Jennifer's "one
+  `strings.upper($s)`. Two ways to do the same thing breaks Jennifer's "one
   way per thing" stance and means every future string helper has to
   decide whether to ship as a function, a modifier, or both.
 - **Domain leakage.** `null=sql` picks one application domain to bake

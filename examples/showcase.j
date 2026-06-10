@@ -127,25 +127,25 @@ printf("typeOf(E)      = %s\n", typeOf(E));
 printf("=== strings ===\n");
 def sample as string init "Hello, World";
 printf("len           = %d\n", len($sample));
-printf("upper         = %s\n", upper($sample));
-printf("lower         = %s\n", lower($sample));
-printf("contains      = %t\n", contains($sample, "World"));
-printf("startsWith    = %t\n", startsWith($sample, "Hello"));
-printf("endsWith      = %t\n", endsWith($sample, "World"));
-printf("indexOf       = %d\n", indexOf($sample, "World"));
-printf("indexOf miss  = %d\n", indexOf($sample, "zzz"));
-printf("trim          = [%s]\n", trim("  ab  "));
-printf("trimLeft      = [%s]\n", trimLeft("  ab  "));
-printf("trimRight     = [%s]\n", trimRight("  ab  "));
-printf("replace       = %s\n", replace($sample, "World", "Jennifer"));
-printf("repeat        = %s\n", repeat("ab", 3));
-printf("substring 0..5 = %s\n", substring($sample, 0, 5));
-printf("substring 7..  = %s\n", substring($sample, 7));
-printf("split         = %s\n", join(split("a,b,c", ","), "|"));
-printf("chars count   = %d\n", len(chars("héllo")));
-printf("join          = %s\n", join(["x", "y", "z"], "-"));
+printf("upper         = %s\n", strings.upper($sample));
+printf("lower         = %s\n", strings.lower($sample));
+printf("contains      = %t\n", strings.contains($sample, "World"));
+printf("startsWith    = %t\n", strings.startsWith($sample, "Hello"));
+printf("endsWith      = %t\n", strings.endsWith($sample, "World"));
+printf("indexOf       = %d\n", strings.indexOf($sample, "World"));
+printf("indexOf miss  = %d\n", strings.indexOf($sample, "zzz"));
+printf("trim          = [%s]\n", strings.trim("  ab  "));
+printf("trimLeft      = [%s]\n", strings.trimLeft("  ab  "));
+printf("trimRight     = [%s]\n", strings.trimRight("  ab  "));
+printf("replace       = %s\n", strings.replace($sample, "World", "Jennifer"));
+printf("repeat        = %s\n", strings.repeat("ab", 3));
+printf("substring 0..5 = %s\n", strings.substring($sample, 0, 5));
+printf("substring 7..  = %s\n", strings.substring($sample, 7));
+printf("split         = %s\n", strings.join(strings.split("a,b,c", ","), "|"));
+printf("chars count   = %d\n", len(strings.chars("héllo")));
+printf("join          = %s\n", strings.join(["x", "y", "z"], "-"));
 
-# --- os library (M8: first namespaced library) ---
+# --- os library (M8) ---
 #
 # Every name lives behind the `os.` prefix. The actual *values* of
 # os.platform() / os.JENNIFER_OS / os.JENNIFER_LF depend on the host
