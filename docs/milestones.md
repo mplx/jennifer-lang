@@ -330,147 +330,96 @@ once the language foundation is in place.
 
 **Status:** done.
 
-A pre-language-completion milestone that promotes namespacing from
-"opt-in for domain libraries" to "the default for every library,"
-keeping global names as the carefully-curated exception. Pre-1.0
-is the window for this kind of API-shape correction; once
-foundational libraries (M15.x) and the rest of the stdlib start
-landing on top of the current split, every later breaking change
-becomes more disruptive.
+A pre-language-completion API-shape correction: every library is
+now namespaced, with bare-name globals reserved as a narrow
+`core`-only exception. Small implementation surface, large API
+shape; pre-1.0 is the window for this kind of change.
 
-- **Registration API rename (BREAKING for embedders, not for
-  Jennifer programs).** `in.Register(lib, name, fn)` and
-  `in.RegisterConst(lib, name, value)` are renamed to
-  `in.RegisterGlobal(...)` and `in.RegisterGlobalConst(...)` to
-  make their role explicit: "expose this name globally as well as
-  under the library's namespace." All current callers are
-  mechanically updated. The namespaced API
-  (`RegisterNamespaced` / `RegisterNamespacedConst`) keeps its
-  name and remains the recommended default.
-- **Every library gets a namespace prefix.** `core`, `io`,
-  `convert`, `math` join the namespaced pool. Every name is
-  reachable as `lib.name` regardless of whether it's also global.
-- **`math` migrates to namespaced-only** (**BREAKING** for
-  programs). `sqrt`, `pow`, `abs`, `min`, `max`, `floor`, `ceil`,
-  `round`, `PI`, `E` move behind `math.`. The verb names
-  (`min`, `max`, `abs`, `pow`) collide with any future numeric
-  domain library; the M9 strings migration set the precedent and
-  this aligns math with it. No name is also exposed globally.
-  M10 also folds the planned non-crypto random helpers into
-  `math` rather than giving them their own library:
-  `math.rand()` returns float in `[0, 1)`,
-  `math.randInt(lo, hi)` returns an int in `[lo, hi]`, and
-  `math.randSeed(n)` sets the deterministic seed. Three
-  functions don't justify a separate `random` library under the
-  new "five or more functions / constants to deserve a separate
-  library" threshold (raised below); pseudo-random fits the
-  pure-numeric charter of `math` exactly. The
-  cryptographically-secure variant still ships in M19 `crypto`,
-  keyed off the same charter ("anything that needs key
-  material") that already separates `hash` from `crypto`.
-- **`convert` migrates to namespaced-only** (**BREAKING** for
-  programs). The four conversion callees are renamed `toInt`,
-  `toFloat`, `toString`, `toBool` so they don't collide with the
-  type keywords (`int`, `float`, `string`, `bool`); pre-M10
-  `int("42")` becomes `convert.toInt("42")`. The `to`-prefixed
-  verb also reads as English at the call site ("convert to
-  int"). `typeOf` keeps its name - it doesn't collide and the
-  intent is already clear. `convert` is the only library where
-  the M10 namespacing happened alongside a verb rename; every
-  other library kept its M9 / pre-M10 names.
-- **All `io` builtins migrate to namespaced-only**
-  (**BREAKING** for programs). `io.printf`, `io.sprintf`,
-  `io.readLine`, `io.eof` - the highest-traffic surface in the
-  language. The "stay global, terms of art" alternative was
-  considered and rejected at M10 kickoff: keeping io flat would
-  mean two reader paths for "where does this name come from?"
-  (`printf` is a global from io; `math.sqrt` is namespaced from
-  math) instead of one. After M10 the rule is uniform - every
-  call into a library carries the library name at the call site.
-- **`core` keeps `len` and `JENNIFER_VERSION` global only** via
-  `RegisterGlobal` / `RegisterGlobalConst`. There is **no**
-  `core.len` / `core.JENNIFER_VERSION` qualified form - shipping
-  the same name two ways would violate stance #1. The exposure
-  is asymmetric on purpose: `core` is the auto-loaded escape
-  hatch, and its two names earn the exemption from "every call
-  carries its library name" precisely by staying short. These
-  two are the entire ongoing global set. The bar for adding more
-  is "polymorphic structural primitive that spans types" - high
-  by design.
-- **Per-library global storage + three globals-publishing
-  rules.** Global registrations are kept per-library in
-  `globalFnsByLib` / `globalConstsByLib` (lib -> name -> value),
-  *not* in the resolution map at Install time. `processImports`
-  promotes the activated library's entries into the resolution
-  map and runs three checks before doing so:
-  1. **Duplicate `use` of a globals-publishing library** is
-     rejected with `library 'NAME' already in scope` (REPL
-     silently no-ops a repeat).
-  2. **Aliasing a globals-only library** (`use NAME as ALIAS;`
-     where the library has no namespaced names) is rejected
-     with `library 'NAME' has no namespaced names; \`as ALIAS\`
-     aliasing is meaningless here` - the alias has nothing to
-     rename. Same shape as the pre-M10 flat-only check, but
-     gated on globals-only rather than namespaced-absent.
-  3. **Two libraries publishing the same global name** are
-     rejected at the second `use` with `library "B" collides
-     with already-active library "A" on global "VER"`. The
-     per-library storage is what makes this detectable - and
-     also what makes the single-library import work correctly
-     when two libraries happen to share a global name (the
-     user just picks one).
-  In practice all three rules are forward-looking: `core` is
-  the only library with globals today, and it's auto-loaded
-  and can't be `use`d. They exist so a hypothetical future
-  globals-publishing library stays well-behaved by
-  construction.
-- **`use NAME [as ALIAS];` rule for flat-only libraries
-  disappears for the general case.** Pre-M10 `use math as m;`
-  errored with "math has no namespaced builtins; `as m` is
-  meaningless here." After M10 every domain library is
-  namespaced, so the rejection rule no longer fires for them.
-  A specialised version of the rule is kept for
-  globals-only libraries (rule 2 above).
+- **BREAKING:** `io`, `math`, `convert` migrate to
+  namespaced-only. `printf(x)` → `io.printf(x)`,
+  `sqrt(x)` → `math.sqrt(x)`, etc. The "io is special, keep
+  it flat" alternative was considered and rejected at kickoff
+  to keep a uniform "every call carries its library name"
+  rule. `strings`, `lists`, `maps`, `os` were already
+  namespaced (M9/M8).
+- **BREAKING:** `convert`'s four conversion callees are renamed
+  to `convert.toInt`, `convert.toFloat`, `convert.toString`,
+  `convert.toBool` so they don't collide with the type
+  keywords (`int`, `float`, `string`, `bool`); `convert.typeOf`
+  keeps its name. The `to`-prefix also reads as English
+  ("convert to int") at the call site.
+- **BREAKING:** file-splice keyword `import` → `include`.
+  `include "x.j";` is the textual splice; the `import`
+  keyword is reserved for the M17 module system and produces
+  a migration-hint error today. Mixing-mistake diagnostics
+  updated.
+- **BREAKING for embedders:** registration API renamed.
+  `Register` / `RegisterConst` → `RegisterGlobal` /
+  `RegisterGlobalConst`, making their role explicit ("expose
+  this name globally"). The namespaced API
+  (`RegisterNamespaced` / `RegisterNamespacedConst`) keeps
+  its name and is the recommended default. Per-library
+  storage (`globalFnsByLib`, `globalConstsByLib`) so two
+  libraries with the same global name can no longer silently
+  overwrite each other at Install time; the resolution map
+  is populated by `processImports` when a library activates.
+- **`math` absorbs the planned non-crypto random helpers**:
+  `math.rand()`, `math.randInt(lo, hi)`, `math.randSeed(n)`.
+  Three functions don't justify their own library under the
+  new threshold (next bullet); pseudo-random fits `math`'s
+  pure-numeric charter. The crypto-grade variant still ships
+  in M19 `crypto`. The originally planned M14.2 `random`
+  library is removed.
+- **`core` is the only library publishing bare-name globals.**
+  `len` and `JENNIFER_VERSION` only - no `core.len` /
+  `core.JENNIFER_VERSION` qualified form, because shipping the
+  same name two ways violates stance #1. `core` is the
+  auto-loaded escape hatch, and its asymmetric exposure is
+  the whole point.
+- **Three globals-publishing rules in `processImports`**, all
+  forward-looking (inert today since `core` is the only
+  globals-publishing library and can't be `use`d):
+  1. Duplicate `use` of a globals-publishing library is
+     rejected (`library 'X' already in scope`); REPL no-ops a
+     repeat.
+  2. `use X as Y;` where `X` has globals but no namespaced
+     names is rejected as meaningless.
+  3. Two active libraries publishing the same global name are
+     rejected at the second `use`
+     (`library "B" collides with already-active library "A"
+     on global "VER"`). The pre-M10 flat-only-alias-meaningless
+     check is removed for the general case but kept as rule 2.
 - **Library-author guidance updated.** The
   `docs/libraries/index.md` "flat vs namespaced" framing is
-  retired. The new rule is "every library is namespaced; only
-  `core` ships globals via `RegisterGlobal`." Future libraries
-  (or PRs that propose extending the global set) cite this
-  policy. The "deserves its own library" threshold is raised
-  from M8's "3+" to **"5+ functions or constants"**: anything
-  with fewer than five distinct names folds into the most
-  related existing library instead. The three non-crypto
-  random helpers (`rand`, `randInt`, `randSeed`) are the first
-  case the new rule catches; they move into `math` (above)
-  instead of getting their own library. The rule lives in the
-  same section.
-- **Examples + docs sweep.** Every `.j` example exercising
-  `math.*`, `convert.*`, and (if migrated) `io.*` is updated;
-  showcase.j, wordcount.j, and the user guide get their bare
-  references retired.
-- **File-splice keyword renamed `import` → `include`**
-  (**BREAKING**). `include "x.j";` is the textual-splice form;
-  the `import` keyword is freed so M17's real module system can
-  use it without a second migration. Parallels PHP's
-  `include`/`require` for splicing vs `use` for namespaces and
-  matches the C/PHP reader expectation that "`include` =
-  literal paste, `import` = module boundary." Mixing-mistake
-  diagnostics adjust accordingly:
-  - `import "x.j";` → "use `include \"x.j\";` for textual file
-    splicing; the `import` keyword is reserved for the module
-    system landing in M17."
-  - `include foo;` (unquoted) → "file splice takes a string
-    literal: `include \"foo.j\";`"
-  - `include "foo.go";` → "include path \"foo.go\" must end with
-    `.j`"
-  - `use "foo.j";` continues to error with its existing hint.
-  The eight `.j` files in the repo that use `import` migrate to
-  `include` in the same change.
+  retired; the new policy is "every library is namespaced;
+  only `core` ships globals via `RegisterGlobal`." The
+  "deserves its own library" threshold is raised from M8's
+  "3+" to **"5+ functions or constants"**: anything smaller
+  folds into the most-related existing library. The non-crypto
+  random helpers (3 functions) are the first case the new rule
+  caught.
 
-This milestone is intentionally small in implementation surface
-(registry rename + per-library `Install()` rewrites + alias
-collision rule) but large in API shape. No new language features
-land here - that's M11.
+See:
+- [libraries/io.md](libraries/io.md),
+  [libraries/math.md](libraries/math.md),
+  [libraries/convert.md](libraries/convert.md),
+  [libraries/core.md](libraries/core.md) - migrated library
+  references.
+- [libraries/index.md](libraries/index.md) - retired
+  flat-vs-namespaced framing; new library-author policy and
+  5+ threshold.
+- [user-guide/imports.md](user-guide/imports.md) - `use` and
+  `include` keyword reference; namespaced-call and aliasing
+  rules.
+- [user-guide/types-and-values.md](user-guide/types-and-values.md) -
+  `convert.toInt` / `convert.toFloat` example placement in the
+  "explicit conversions" section.
+- [technical/rejected.md](technical/rejected.md) - "Methods
+  on structs" (M14.3 trigger; recorded here in M10's wake
+  because M10's review touched the same call-shape question)
+  and other related rejected alternatives.
+
+No new language features land here - that's M11.
 
 ---
 

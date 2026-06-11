@@ -1,6 +1,6 @@
 # Jennifer Programming Language
 
-**Milestone 9**
+**Milestone 10**
 
 Jennifer is a small, experimental, interpreted programming language. The
 interpreter is written in Go and the shipping binary is produced with
@@ -40,8 +40,8 @@ and [docs/technical/](docs/technical/index.md).
 2. **Explicit over implicit.** Sigils mark use-site references (`$x`),
    `def` carries the type, libraries are imported per topic
    (`use io;`; nothing auto-loads except `core`), conditions must be
-   `bool` (no truthiness), conversions are spelled out (`int(v)`,
-   `float(v)`). Nothing important hides.
+   `bool` (no truthiness), conversions are spelled out
+   (`convert.toInt(v)`, `convert.toFloat(v)`). Nothing important hides.
 3. **Presentation, not transformation, in format strings.** `printf`
    verb modifiers shape how a value is rendered (`%d|base=2`,
    `%f|prec=4`). Transforming the value itself (`upper`, `substring`,
