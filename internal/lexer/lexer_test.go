@@ -9,7 +9,7 @@ func TestTokenizeSimpleProgram(t *testing.T) {
 	src := `use io;
 func app() {
     def x as int init 21;
-    printf($x + $x);
+    io.printf($x + $x);
 }`
 	toks, err := Tokenize(src)
 	if err != nil {
@@ -19,7 +19,9 @@ func app() {
 		TOKEN_USE, TOKEN_IDENT, TOKEN_SEMI,
 		TOKEN_FUNC, TOKEN_IDENT, TOKEN_LPAREN, TOKEN_RPAREN, TOKEN_LBRACE,
 		TOKEN_DEFINE, TOKEN_IDENT, TOKEN_AS, TOKEN_INT_TYPE, TOKEN_INIT, TOKEN_INT, TOKEN_SEMI,
-		TOKEN_IDENT, TOKEN_LPAREN, TOKEN_VARREF, TOKEN_PLUS, TOKEN_VARREF, TOKEN_RPAREN, TOKEN_SEMI,
+		// `io.printf` lexes as IDENT DOT IDENT after M10's namespace-first migration.
+		TOKEN_IDENT, TOKEN_DOT, TOKEN_IDENT,
+		TOKEN_LPAREN, TOKEN_VARREF, TOKEN_PLUS, TOKEN_VARREF, TOKEN_RPAREN, TOKEN_SEMI,
 		TOKEN_RBRACE, TOKEN_EOF,
 	}
 	if len(toks) != len(want) {
@@ -83,7 +85,7 @@ func TestTokenizeNumbersAndOperators(t *testing.T) {
 
 func TestTokenizeComments(t *testing.T) {
 	src := `# line comment
-import /* block */ stdlib; # trailing
+include /* block */ stdlib; # trailing
 /* multi
    line */
 def`
@@ -91,7 +93,7 @@ def`
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	want := []TokenType{TOKEN_IMPORT, TOKEN_IDENT, TOKEN_SEMI, TOKEN_DEFINE, TOKEN_EOF}
+	want := []TokenType{TOKEN_INCLUDE, TOKEN_IDENT, TOKEN_SEMI, TOKEN_DEFINE, TOKEN_EOF}
 	if len(toks) != len(want) {
 		t.Fatalf("got %d tokens, want %d: %v", len(toks), len(want), toks)
 	}
@@ -123,7 +125,7 @@ func TestTokenizeRejectsUnterminatedString(t *testing.T) {
 func TestTokenizeM6Tokens(t *testing.T) {
 	src := `def xs as list of int init [1, 2, 3];
 def m as map of string to int init {"a": 1};
-for (def x in $xs) { printf($x); }`
+for (def x in $xs) { io.printf($x); }`
 	toks, err := Tokenize(src)
 	if err != nil {
 		t.Fatalf("lex: %v", err)

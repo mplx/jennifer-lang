@@ -13,5 +13,5 @@ func fact(n as int) {
 }
 
 for (def i as int init 0; $i <= 8; $i = $i + 1) {
-    printf("%d! = %d\n", $i, fact($i));
+    io.printf("%d! = %d\n", $i, fact($i));
 }

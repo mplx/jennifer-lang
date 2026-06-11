@@ -12,7 +12,7 @@ func TestParseHelloProgram(t *testing.T) {
 	src := `use io;
 func app() {
     def x as int init 21;
-    printf($x + $x);
+    io.printf($x + $x);
 }`
 	prog, err := Parse(src)
 	if err != nil {
@@ -31,7 +31,7 @@ func app() {
 	if got := Sprint(body.Stmts[0]); got != "Define($x as int = Int(21))" {
 		t.Errorf("define: got %s", got)
 	}
-	if got := Sprint(body.Stmts[1]); got != "ExprStmt(Call(printf, (Var($x) + Var($x))))" {
+	if got := Sprint(body.Stmts[1]); got != "ExprStmt(QCall(io.printf, (Var($x) + Var($x))))" {
 		t.Errorf("call: got %s", got)
 	}
 }
@@ -63,13 +63,13 @@ func TestParseParenGrouping(t *testing.T) {
 }
 
 func TestParseStringLiteralCall(t *testing.T) {
-	src := `func app() { printf("hi"); }`
+	src := `func app() { io.printf("hi"); }`
 	prog, err := Parse(src)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
 	got := Sprint(prog.Methods[0].Body.Stmts[0])
-	if got != `ExprStmt(Call(printf, Str("hi")))` {
+	if got != `ExprStmt(QCall(io.printf, Str("hi")))` {
 		t.Errorf("got %s", got)
 	}
 }
@@ -84,7 +84,7 @@ func TestDefRejectsDollarAtDefinitionSite(t *testing.T) {
 }
 
 func TestFuncIntroducesMethod(t *testing.T) {
-	src := `func app() { printf(1); }`
+	src := `func app() { io.printf(1); }`
 	p, err := Parse(src)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
@@ -364,7 +364,7 @@ func TestParseAppendFormRejectsRead(t *testing.T) {
 	cases := []struct {
 		name, src, want string
 	}{
-		{"bare read", `printf($xs[]);`, "append form"},
+		{"bare read", `io.printf($xs[]);`, "append form"},
 		{"read in expression", `def y as int init $xs[] + 1;`, "append form"},
 		{"$xs[] without =", `$xs[];`, "write-only"},
 	}

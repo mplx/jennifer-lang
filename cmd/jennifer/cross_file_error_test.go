@@ -37,8 +37,8 @@ func TestCrossFileRuntimeError(t *testing.T) {
 	mainPath := filepath.Join(dir, "main.j")
 
 	// boom.j divides by zero - the runtime error should originate here.
-	libSrc := "use io;\nfunc boom() {\n    printf(1 / 0);\n}\n"
-	mainSrc := "import \"boom.j\";\nboom();\n"
+	libSrc := "use io;\nfunc boom() {\n    io.printf(1 / 0);\n}\n"
+	mainSrc := "include \"boom.j\";\nboom();\n"
 
 	if err := os.WriteFile(libPath, []byte(libSrc), 0o644); err != nil {
 		t.Fatal(err)
@@ -74,7 +74,7 @@ func TestCrossFileParseError(t *testing.T) {
 
 	// broken.j is syntactically invalid (missing semicolon + truncated stmt).
 	libSrc := "func broken() {\n    $x = \n}\n"
-	mainSrc := "import \"broken.j\";\nbroken();\n"
+	mainSrc := "include \"broken.j\";\nbroken();\n"
 
 	if err := os.WriteFile(libPath, []byte(libSrc), 0o644); err != nil {
 		t.Fatal(err)

@@ -2,7 +2,7 @@
 
 ```jennifer
 func greet(name as string) {
-    printf("hello, %s\n", $name);
+    io.printf("hello, %s\n", $name);
 }
 
 greet("Jennifer");   # call it from top level
@@ -33,7 +33,7 @@ func fact(n as int) {
     return $n * fact($n - 1);
 }
 
-printf("%d\n", fact(5));    # 120
+io.printf("%d\n", fact(5));    # 120
 ```
 
 Methods are **hoisted**: all `func NAME() { ... }` declarations are collected
@@ -46,7 +46,7 @@ body). Method bodies inherit the global scope, so top-level variables are
 visible inside methods (subject to the no-shadowing rule).
 
 **Methods cannot shadow imported builtins.** If you write `use io;` and
-then `func printf() { ... }`, the program is rejected:
+then `func io.printf() { ... }`, the program is rejected:
 
 ```
 runtime error at 2:1: method "printf" shadows a builtin from `io`;

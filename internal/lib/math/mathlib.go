@@ -13,6 +13,8 @@ package mathlib
 import (
 	"fmt"
 	"math"
+	mathrand "math/rand"
+	"sync"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 )
@@ -21,18 +23,23 @@ import (
 const LibraryName = "math"
 
 // Install registers math library functions and constants on an interpreter.
+// Every name lives behind the `math.` prefix (M10+).
 func Install(in *interpreter.Interpreter) {
-	in.Register(LibraryName, "abs", absFn)
-	in.Register(LibraryName, "min", minFn)
-	in.Register(LibraryName, "max", maxFn)
-	in.Register(LibraryName, "sqrt", sqrtFn)
-	in.Register(LibraryName, "pow", powFn)
-	in.Register(LibraryName, "floor", floorFn)
-	in.Register(LibraryName, "ceil", ceilFn)
-	in.Register(LibraryName, "round", roundFn)
+	in.RegisterNamespaced(LibraryName, "abs", absFn)
+	in.RegisterNamespaced(LibraryName, "min", minFn)
+	in.RegisterNamespaced(LibraryName, "max", maxFn)
+	in.RegisterNamespaced(LibraryName, "sqrt", sqrtFn)
+	in.RegisterNamespaced(LibraryName, "pow", powFn)
+	in.RegisterNamespaced(LibraryName, "floor", floorFn)
+	in.RegisterNamespaced(LibraryName, "ceil", ceilFn)
+	in.RegisterNamespaced(LibraryName, "round", roundFn)
 
-	in.RegisterConst(LibraryName, "PI", interpreter.FloatVal(math.Pi))
-	in.RegisterConst(LibraryName, "E", interpreter.FloatVal(math.E))
+	in.RegisterNamespaced(LibraryName, "rand", randFn)
+	in.RegisterNamespaced(LibraryName, "randInt", randIntFn)
+	in.RegisterNamespaced(LibraryName, "randSeed", randSeedFn)
+
+	in.RegisterNamespacedConst(LibraryName, "PI", interpreter.FloatVal(math.Pi))
+	in.RegisterNamespacedConst(LibraryName, "E", interpreter.FloatVal(math.E))
 }
 
 func arityOne(name string, args []interpreter.Value) error {
@@ -199,4 +206,57 @@ func roundFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 		return interpreter.Null(), fmt.Errorf("round(): requires int or float, got %s", v.Kind)
 	}
 	return interpreter.IntVal(int64(math.Round(v.Float))), nil
+}
+
+// Non-crypto pseudo-random helpers. Shared seeded source; protected with a
+// mutex so concurrent interpreter instances don't race even though Jennifer
+// itself has no concurrency primitives. The default source is
+// time-of-startup-seeded by Go's math/rand global init; randSeed() makes
+// it deterministic.
+var (
+	randMu  sync.Mutex
+	randSrc = mathrand.New(mathrand.NewSource(1))
+)
+
+// randFn returns a float in [0, 1).
+func randFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 0 {
+		return interpreter.Null(), fmt.Errorf("rand expects 0 arguments, got %d", len(args))
+	}
+	randMu.Lock()
+	defer randMu.Unlock()
+	return interpreter.FloatVal(randSrc.Float64()), nil
+}
+
+// randIntFn returns an int in [lo, hi] inclusive. Requires lo <= hi.
+func randIntFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityTwo("randInt", args); err != nil {
+		return interpreter.Null(), err
+	}
+	if args[0].Kind != interpreter.KindInt || args[1].Kind != interpreter.KindInt {
+		return interpreter.Null(), fmt.Errorf("randInt(): requires int operands, got %s and %s", args[0].Kind, args[1].Kind)
+	}
+	lo, hi := args[0].Int, args[1].Int
+	if lo > hi {
+		return interpreter.Null(), fmt.Errorf("randInt(%d, %d): lo must be <= hi", lo, hi)
+	}
+	randMu.Lock()
+	defer randMu.Unlock()
+	// Int63n needs span > 0; we add 1 because the range is inclusive.
+	span := hi - lo + 1
+	return interpreter.IntVal(lo + randSrc.Int63n(span)), nil
+}
+
+// randSeedFn sets the deterministic seed.
+func randSeedFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityOne("randSeed", args); err != nil {
+		return interpreter.Null(), err
+	}
+	if args[0].Kind != interpreter.KindInt {
+		return interpreter.Null(), fmt.Errorf("randSeed(): requires int operand, got %s", args[0].Kind)
+	}
+	randMu.Lock()
+	defer randMu.Unlock()
+	randSrc = mathrand.New(mathrand.NewSource(args[0].Int))
+	return interpreter.Null(), nil
 }

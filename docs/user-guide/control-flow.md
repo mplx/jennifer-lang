@@ -64,11 +64,11 @@ division.
 
 ```jennifer
 if ($n == 0) {
-    printf("zero");
+    io.printf("zero");
 } elseif ($n < 10) {
-    printf("small");
+    io.printf("small");
 } else {
-    printf("large");
+    io.printf("large");
 }
 
 while ($i < 5) {
@@ -76,15 +76,15 @@ while ($i < 5) {
 }
 
 for (def i as int init 0; $i < 10; $i = $i + 1) {
-    printf($i);
+    io.printf($i);
 }
 
 # for-each over a list or map.
 for (def x in $xs) {
-    printf("%d ", $x);
+    io.printf("%d ", $x);
 }
 for (def k in $m) {
-    printf("%s=%d ", $k, $m[$k]);
+    io.printf("%s=%d ", $k, $m[$k]);
 }
 ```
 
@@ -102,9 +102,9 @@ variable decides whether you can still see it after the loop.**
 # Loop-local: declare inside the for-init. The iterator lives only for
 # the duration of the loop.
 for (def i as int init 0; $i < 10; $i = $i + 1) {
-    printf("%d\n", $i);
+    io.printf("%d\n", $i);
 }
-printf("%d\n", $i);   # ERROR: `i` not in scope here
+io.printf("%d\n", $i);   # ERROR: `i` not in scope here
 ```
 
 ```jennifer
@@ -113,9 +113,9 @@ printf("%d\n", $i);   # ERROR: `i` not in scope here
 # condition false (10 here).
 def i as int;
 for ($i = 0; $i < 10; $i = $i + 1) {
-    printf("%d\n", $i);
+    io.printf("%d\n", $i);
 }
-printf("%d\n", $i);   # ok - prints 10
+io.printf("%d\n", $i);   # ok - prints 10
 ```
 
 The loop-local form is the [recommended style](style-guide.md#loops);

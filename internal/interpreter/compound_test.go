@@ -13,8 +13,8 @@ func TestListBasic(t *testing.T) {
 	out, err := run(t, `
 use io;
 def xs as list of int init [10, 20, 30];
-printf("%d %d %d\n", $xs[0], $xs[1], $xs[2]);
-printf("%d\n", len($xs));
+io.printf("%d %d %d\n", $xs[0], $xs[1], $xs[2]);
+io.printf("%d\n", len($xs));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -29,7 +29,7 @@ func TestListIndexWrite(t *testing.T) {
 use io;
 def xs as list of int init [1, 2, 3];
 $xs[1] = 99;
-printf("%d %d %d\n", $xs[0], $xs[1], $xs[2]);
+io.printf("%d %d %d\n", $xs[0], $xs[1], $xs[2]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -74,7 +74,7 @@ func TestNestedListIndexWrite(t *testing.T) {
 use io;
 def g as list of list of int init [[1, 2], [3, 4]];
 $g[0][1] = 99;
-printf("%d %d %d %d\n", $g[0][0], $g[0][1], $g[1][0], $g[1][1]);
+io.printf("%d %d %d %d\n", $g[0][0], $g[0][1], $g[1][0], $g[1][1]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -88,8 +88,8 @@ func TestMapBasic(t *testing.T) {
 	out, err := run(t, `
 use io;
 def m as map of string to int init {"a": 1, "b": 2};
-printf("%d %d\n", $m["a"], $m["b"]);
-printf("%d\n", len($m));
+io.printf("%d %d\n", $m["a"], $m["b"]);
+io.printf("%d\n", len($m));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -116,7 +116,7 @@ def m as map of string to int init {"a": 1};
 $m["b"] = 2;
 $m["c"] = 3;
 $m["a"] = 99;
-printf("%d %d %d\n", $m["a"], $m["b"], $m["c"]);
+io.printf("%d %d %d\n", $m["a"], $m["b"], $m["c"]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -131,9 +131,9 @@ func TestForEachList(t *testing.T) {
 use io;
 def xs as list of int init [10, 20, 30];
 for (def x in $xs) {
-    printf("%d ", $x);
+    io.printf("%d ", $x);
 }
-printf("\n");
+io.printf("\n");
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -148,9 +148,9 @@ func TestForEachMapIteratesKeysInInsertionOrder(t *testing.T) {
 use io;
 def m as map of string to int init {"first": 1, "second": 2, "third": 3};
 for (def k in $m) {
-    printf("%s=%d ", $k, $m[$k]);
+    io.printf("%s=%d ", $k, $m[$k]);
 }
-printf("\n");
+io.printf("\n");
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -169,9 +169,9 @@ def m as map of string to int init {"a": 1, "b": 2};
 $m["a"] = 99;
 $m["c"] = 3;
 for (def k in $m) {
-    printf("%s ", $k);
+    io.printf("%s ", $k);
 }
-printf("\n");
+io.printf("\n");
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -219,7 +219,7 @@ def xs as list of int init [1, 2, 3];
 def ys as list of int init [0];
 $ys = $xs;
 $ys[0] = 99;
-printf("%d %d\n", $xs[0], $ys[0]);
+io.printf("%d %d\n", $xs[0], $ys[0]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -240,7 +240,7 @@ func mutate(ys as list of int) {
     return $ys[0];
 }
 def r as int init mutate($xs);
-printf("returned=%d original=%d\n", $r, $xs[0]);
+io.printf("returned=%d original=%d\n", $r, $xs[0]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -255,7 +255,7 @@ func TestZeroValueList(t *testing.T) {
 	out, err := run(t, `
 use io;
 def xs as list of int;
-printf("%d\n", len($xs));
+io.printf("%d\n", len($xs));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -269,7 +269,7 @@ func TestZeroValueMap(t *testing.T) {
 	out, err := run(t, `
 use io;
 def m as map of string to int;
-printf("%d\n", len($m));
+io.printf("%d\n", len($m));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -284,7 +284,7 @@ func TestHasMap(t *testing.T) {
 use io;
 use maps;
 def m as map of string to int init {"a": 1};
-printf("%t %t\n", maps.has($m, "a"), maps.has($m, "b"));
+io.printf("%t %t\n", maps.has($m, "a"), maps.has($m, "b"));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -299,7 +299,7 @@ func TestStringsSplit(t *testing.T) {
 use io;
 use strings;
 def parts as list of string init strings.split("a,b,c", ",");
-printf("%d %s %s %s\n", len($parts), $parts[0], $parts[1], $parts[2]);
+io.printf("%d %s %s %s\n", len($parts), $parts[0], $parts[1], $parts[2]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -314,7 +314,7 @@ func TestStringsChars(t *testing.T) {
 use io;
 use strings;
 def cs as list of string init strings.chars("héllo");
-printf("%d %s %s\n", len($cs), $cs[0], $cs[1]);
+io.printf("%d %s %s\n", len($cs), $cs[0], $cs[1]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -329,7 +329,7 @@ func TestStringsJoin(t *testing.T) {
 use io;
 use strings;
 def parts as list of string init ["a", "b", "c"];
-printf("%s\n", strings.join($parts, "-"));
+io.printf("%s\n", strings.join($parts, "-"));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -345,7 +345,7 @@ use io;
 use strings;
 def src as string init "alpha,beta,gamma";
 def parts as list of string init strings.split($src, ",");
-printf("%s\n", strings.join($parts, ","));
+io.printf("%s\n", strings.join($parts, ","));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)

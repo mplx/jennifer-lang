@@ -10,9 +10,9 @@ other libraries' bare names.
 use io;
 use os;
 
-printf("platform: %s\n", os.platform());
-printf("os tag:   %s\n", os.JENNIFER_OS);
-printf("line:     %s",   os.JENNIFER_LF);
+io.printf("platform: %s\n", os.platform());
+io.printf("os tag:   %s\n", os.JENNIFER_OS);
+io.printf("line:     %s",   os.JENNIFER_LF);
 ```
 
 Currently ships a deliberately tiny slice so the language can demonstrate

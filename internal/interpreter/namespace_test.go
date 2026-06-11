@@ -64,7 +64,7 @@ func TestNamespaceBuiltinResolves(t *testing.T) {
 	out, err := runNS(t, `
 use io;
 use os;
-printf("%s\n", os.platform());
+io.printf("%s\n", os.platform());
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -80,7 +80,7 @@ func TestNamespacedConstResolves(t *testing.T) {
 	out, err := runNS(t, `
 use io;
 use bio;
-printf("%d\n", bio.STOPS);
+io.printf("%d\n", bio.STOPS);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -94,7 +94,7 @@ func TestNamespacedCallWithArg(t *testing.T) {
 	out, err := runNS(t, `
 use io;
 use bio;
-printf("%s\n", bio.translate("ATG"));
+io.printf("%s\n", bio.translate("ATG"));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -138,8 +138,8 @@ func TestAliasMakesPrefixUsable(t *testing.T) {
 	out, err := runNS(t, `
 use io;
 use bio as b;
-printf("%s\n", b.translate("X"));
-printf("%d\n", b.STOPS);
+io.printf("%s\n", b.translate("X"));
+io.printf("%d\n", b.STOPS);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -182,10 +182,10 @@ func TestUserMethodMayUseCanonicalNameAfterAlias(t *testing.T) {
 use io;
 use bio as b;
 func bio() {
-    printf("custom bio call\n");
+    io.printf("custom bio call\n");
 }
 bio();
-printf("%s\n", b.translate("Y"));
+io.printf("%s\n", b.translate("Y"));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -195,14 +195,20 @@ printf("%s\n", b.translate("Y"));
 	}
 }
 
-func TestNamespaceAsRejectedForFlatLib(t *testing.T) {
-	// `math` is flat-only; an `as` clause on it is meaningless.
-	_, err := runNS(t, `use math as m;`)
-	if err == nil {
-		t.Fatalf("expected error, got nil")
+func TestMathAliasingWorks(t *testing.T) {
+	// After M10 every library is namespaced (including math), so
+	// `use math as m;` is a valid rename. The pre-M10 "flat-only,
+	// alias meaningless" rejection rule was removed in M10.
+	out, err := runNS(t, `
+use io;
+use math as m;
+io.printf("%f\n", m.PI);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
 	}
-	if !strings.Contains(err.Error(), "meaningless") {
-		t.Errorf("err = %v", err)
+	if !strings.HasPrefix(out, "3.14") {
+		t.Errorf("got %q", out)
 	}
 }
 
@@ -211,7 +217,7 @@ func TestNamespacedConstantInExpressions(t *testing.T) {
 use io;
 use bio;
 def total as int init bio.STOPS * 2 + 1;
-printf("%d\n", $total);
+io.printf("%d\n", $total);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -225,12 +231,128 @@ func TestOsJenniferConstants(t *testing.T) {
 	out, err := runNS(t, `
 use io;
 use os;
-printf("%s", os.JENNIFER_LF);
+io.printf("%s", os.JENNIFER_LF);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if out != "\n" && out != "\r\n" {
 		t.Errorf("os.JENNIFER_LF was %q (expected \\n or \\r\\n)", out)
+	}
+}
+
+// ---- Globals collision and alias-meaningless tests (M10 hardening) ----
+
+// twoGlobalsInterp registers two synthetic libraries `alfa` and `beta`,
+// each publishing a `VER` constant via RegisterGlobalConst, plus a
+// globals-only `solo` library with no namespaced names. Tests use this
+// to exercise the M10 cross-library-collision and alias-meaningless
+// rules without shipping bogus libraries in the standard set.
+func twoGlobalsInterp() *interpreter.Interpreter {
+	in, _ := newNSInterp()
+	in.RegisterGlobalConst("alfa", "VER", interpreter.StringVal("alfa-1"))
+	in.RegisterGlobalConst("beta", "VER", interpreter.StringVal("beta-2"))
+	in.RegisterGlobalConst("solo", "ONLY", interpreter.StringVal("solo-only"))
+	return in
+}
+
+func runWithExtraGlobals(t *testing.T, src string) (string, error) {
+	t.Helper()
+	prog, err := parser.Parse(src)
+	if err != nil {
+		return "", err
+	}
+	in := twoGlobalsInterp()
+	var buf bytes.Buffer
+	in.Out = &buf
+	if err := in.Run(prog); err != nil {
+		return buf.String(), err
+	}
+	return buf.String(), nil
+}
+
+// Single-library import of a globals-publishing lib resolves the global
+// to that library's value. Other libraries' globals stay invisible.
+func TestSingleGlobalsLibResolves(t *testing.T) {
+	out, err := runWithExtraGlobals(t, `
+use io;
+use alfa;
+io.printf("%s\n", VER);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "alfa-1\n" {
+		t.Errorf("got %q, want %q", out, "alfa-1\n")
+	}
+}
+
+// Symmetric: importing `beta` alone resolves `VER` to beta's value.
+// This is the regression check for the pre-fix bug where late-registered
+// libraries silently overwrote earlier ones in the resolution map.
+func TestOtherSingleGlobalsLibResolves(t *testing.T) {
+	out, err := runWithExtraGlobals(t, `
+use io;
+use beta;
+io.printf("%s\n", VER);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "beta-2\n" {
+		t.Errorf("got %q, want %q", out, "beta-2\n")
+	}
+}
+
+// Importing both libraries that publish the same global is the
+// collision case from the M10 hardening. The second `use` errors.
+func TestTwoLibsPublishingSameGlobalCollides(t *testing.T) {
+	_, err := runWithExtraGlobals(t, `
+use io;
+use alfa;
+use beta;
+`)
+	if err == nil {
+		t.Fatal("expected collision error, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "collides") || !strings.Contains(msg, `"VER"`) {
+		t.Errorf("error should mention collision and the global name, got: %v", err)
+	}
+	// Both library names should appear so the user can pick which to drop.
+	if !strings.Contains(msg, "alfa") || !strings.Contains(msg, "beta") {
+		t.Errorf("error should name both libraries, got: %v", err)
+	}
+}
+
+// Aliasing a globals-only library is meaningless - there is no
+// namespace prefix to rename. Reject upfront at the `use` statement.
+func TestAliasOfGlobalsOnlyLibraryIsMeaningless(t *testing.T) {
+	_, err := runWithExtraGlobals(t, `
+use solo as foo;
+`)
+	if err == nil {
+		t.Fatal("expected alias-meaningless error, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "no namespaced names") || !strings.Contains(msg, "meaningless") {
+		t.Errorf("error should mention no-namespaced-names + meaningless, got: %v", err)
+	}
+}
+
+// A globals-only library imported without `as ALIAS` works fine; the
+// global is reachable as a bare name, and no namespace prefix is
+// reserved.
+func TestGlobalsOnlyLibraryWithoutAliasWorks(t *testing.T) {
+	out, err := runWithExtraGlobals(t, `
+use io;
+use solo;
+io.printf("%s\n", ONLY);
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "solo-only\n" {
+		t.Errorf("got %q", out)
 	}
 }

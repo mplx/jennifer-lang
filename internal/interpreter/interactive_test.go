@@ -101,7 +101,7 @@ func TestEvalInteractiveImportPersists(t *testing.T) {
 	// First input enables io. Second input - in a separate call - should still
 	// be able to call printf because the import survives across calls.
 	evalLine(t, in, "use io;")
-	evalLine(t, in, `printf("ok\n");`)
+	evalLine(t, in, `io.printf("ok\n");`)
 	if got := buf.String(); got != "ok\n" {
 		t.Errorf("expected printf output to persist, got %q", got)
 	}
@@ -110,9 +110,10 @@ func TestEvalInteractiveImportPersists(t *testing.T) {
 }
 
 func TestEvalInteractiveBuiltinShadowStillRejected(t *testing.T) {
+	// `core` is auto-loaded and exposes `len` as a global, so defining
+	// `func len()` in the REPL shadows a live builtin and is rejected.
 	in, _ := newReplInterp()
-	evalLine(t, in, "use io;")
-	prog, err := parser.Parse("func printf() { return 1; }")
+	prog, err := parser.Parse("func len() { return 1; }")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestEvalInteractiveQualifiedCall(t *testing.T) {
 	in, buf := newReplInterp()
 	evalLine(t, in, "use io;")
 	evalLine(t, in, "use os;")
-	evalLine(t, in, `printf("%s\n", os.platform());`)
+	evalLine(t, in, `io.printf("%s\n", os.platform());`)
 	if got := buf.String(); got == "" || got[len(got)-1] != '\n' {
 		t.Errorf("expected platform output ending in newline, got %q", got)
 	}
@@ -135,7 +136,7 @@ func TestEvalInteractiveAliasedQualifiedCall(t *testing.T) {
 	in, buf := newReplInterp()
 	evalLine(t, in, "use io;")
 	evalLine(t, in, "use os as o;")
-	evalLine(t, in, `printf("%s", o.JENNIFER_LF);`)
+	evalLine(t, in, `io.printf("%s", o.JENNIFER_LF);`)
 	if got := buf.String(); got != "\n" && got != "\r\n" {
 		t.Errorf("expected platform line ending, got %q", got)
 	}

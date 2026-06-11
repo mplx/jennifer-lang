@@ -164,24 +164,24 @@ func TestEditorCtrlDOnNonEmptyDeletes(t *testing.T) {
 
 func TestEditorHistoryUpDown(t *testing.T) {
 	h := newReplHistory()
-	h.Add("printf(1);")
-	h.Add("printf(2);")
-	h.Add("printf(3);")
+	h.Add("io.printf(1);")
+	h.Add("io.printf(2);")
+	h.Add("io.printf(3);")
 
-	// Press Up three times to step back to the oldest, Enter -> "printf(1);"
+	// Press Up three times to step back to the oldest, Enter -> "io.printf(1);"
 	line, err := editWith(t, h, "\x1b[A\x1b[A\x1b[A\r")
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if line != "printf(1);" {
-		t.Errorf("got %q, want %q", line, "printf(1);")
+	if line != "io.printf(1);" {
+		t.Errorf("got %q, want %q", line, "io.printf(1);")
 	}
 
-	// Up twice goes back 2 (printf(2);), Down once steps forward by 1
-	// (toward the present) -> the most recent entry "printf(3);".
+	// Up twice goes back 2 (io.printf(2);), Down once steps forward by 1
+	// (toward the present) -> the most recent entry "io.printf(3);".
 	line, _ = editWith(t, h, "\x1b[A\x1b[A\x1b[B\r")
-	if line != "printf(3);" {
-		t.Errorf("got %q, want %q", line, "printf(3);")
+	if line != "io.printf(3);" {
+		t.Errorf("got %q, want %q", line, "io.printf(3);")
 	}
 }
 

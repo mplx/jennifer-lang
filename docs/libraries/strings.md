@@ -37,15 +37,15 @@ what you'd guess - the same units come out of every function.
 use io;
 use strings;
 
-printf("%d\n", len("hello"));                       # 5  (core, auto-loaded)
-printf("%s\n", strings.upper("hello"));             # "HELLO"
-printf("%t\n", strings.contains("hello", "ell"));   # true
-printf("%t\n", strings.startsWith("hello", "he"));  # true
-printf("%d\n", strings.indexOf("hello", "l"));      # 2
-printf("[%s]\n", strings.trim("  hi  "));           # "[hi]"
-printf("%s\n", strings.replace("a-b-c", "-", "/")); # "a/b/c"
-printf("%s\n", strings.repeat("ab", 3));            # "ababab"
-printf("%s\n", strings.substring("hello", 1, 4));   # "ell"
+io.printf("%d\n", len("hello"));                       # 5  (core, auto-loaded)
+io.printf("%s\n", strings.upper("hello"));             # "HELLO"
+io.printf("%t\n", strings.contains("hello", "ell"));   # true
+io.printf("%t\n", strings.startsWith("hello", "he"));  # true
+io.printf("%d\n", strings.indexOf("hello", "l"));      # 2
+io.printf("[%s]\n", strings.trim("  hi  "));           # "[hi]"
+io.printf("%s\n", strings.replace("a-b-c", "-", "/")); # "a/b/c"
+io.printf("%s\n", strings.repeat("ab", 3));            # "ababab"
+io.printf("%s\n", strings.substring("hello", 1, 4));   # "ell"
 ```
 
 ## Functions

@@ -4,3 +4,6 @@ bare prefix:
 aliased prefix (`use os as o;`):
   o.platform()        = linux
   o.JENNIFER_OS       = linux
+aliased prefix (`use os as convert;`):
+  o.platform()        = linux
+  o.JENNIFER_OS       = linux

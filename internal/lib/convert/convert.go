@@ -16,13 +16,19 @@ import (
 // LibraryName is the Jennifer name programs `use` to enable these functions.
 const LibraryName = "convert"
 
-// Install registers convert library functions on an interpreter.
+// Install registers convert library functions on an interpreter. Every
+// name is namespaced behind `convert.` (M10+). The four conversion
+// callees are named `toInt`, `toFloat`, `toString`, `toBool` so they
+// don't collide with the type keywords (`int`, `float`, ...); the
+// `to`-prefixed verb also reads as English at the call site
+// (`convert.toInt("42")`). `typeOf` stays as-is - it doesn't have a
+// keyword collision and the name carries its own intent.
 func Install(in *interpreter.Interpreter) {
-	in.Register(LibraryName, "int", intFn)
-	in.Register(LibraryName, "float", floatFn)
-	in.Register(LibraryName, "string", stringFn)
-	in.Register(LibraryName, "bool", boolFn)
-	in.Register(LibraryName, "typeOf", typeOfFn)
+	in.RegisterNamespaced(LibraryName, "toInt", toIntFn)
+	in.RegisterNamespaced(LibraryName, "toFloat", toFloatFn)
+	in.RegisterNamespaced(LibraryName, "toString", toStringFn)
+	in.RegisterNamespaced(LibraryName, "toBool", toBoolFn)
+	in.RegisterNamespaced(LibraryName, "typeOf", typeOfFn)
 }
 
 // arityOne returns an error if args doesn't contain exactly one value.
@@ -33,14 +39,14 @@ func arityOne(name string, args []interpreter.Value) error {
 	return nil
 }
 
-// intFn implements `int(v)`:
+// toIntFn implements `convert.toInt(v)`:
 //   - int    -> identity
 //   - float  -> truncate toward zero (Go's int64 cast)
 //   - string -> strconv.ParseInt(base 10, 64-bit); error on bad input
 //   - bool   -> true=1, false=0
 //   - null   -> error
-func intFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
-	if err := arityOne("int", args); err != nil {
+func toIntFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityOne("toInt", args); err != nil {
 		return interpreter.Null(), err
 	}
 	v := args[0]
@@ -52,7 +58,7 @@ func intFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Valu
 	case interpreter.KindString:
 		n, err := strconv.ParseInt(v.Str, 10, 64)
 		if err != nil {
-			return interpreter.Null(), fmt.Errorf("int(%q): not a valid integer", v.Str)
+			return interpreter.Null(), fmt.Errorf("toInt(%q): not a valid integer", v.Str)
 		}
 		return interpreter.IntVal(n), nil
 	case interpreter.KindBool:
@@ -61,17 +67,17 @@ func intFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Valu
 		}
 		return interpreter.IntVal(0), nil
 	}
-	return interpreter.Null(), fmt.Errorf("int(): cannot convert %s to int", v.Kind)
+	return interpreter.Null(), fmt.Errorf("toInt(): cannot convert %s to int", v.Kind)
 }
 
-// floatFn implements `float(v)`:
+// toFloatFn implements `convert.toFloat(v)`:
 //   - int    -> convert
 //   - float  -> identity
 //   - string -> strconv.ParseFloat(64-bit); error on bad input
 //   - bool   -> true=1.0, false=0.0
 //   - null   -> error
-func floatFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
-	if err := arityOne("float", args); err != nil {
+func toFloatFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityOne("toFloat", args); err != nil {
 		return interpreter.Null(), err
 	}
 	v := args[0]
@@ -83,7 +89,7 @@ func floatFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 	case interpreter.KindString:
 		f, err := strconv.ParseFloat(v.Str, 64)
 		if err != nil {
-			return interpreter.Null(), fmt.Errorf("float(%q): not a valid float", v.Str)
+			return interpreter.Null(), fmt.Errorf("toFloat(%q): not a valid float", v.Str)
 		}
 		return interpreter.FloatVal(f), nil
 	case interpreter.KindBool:
@@ -92,19 +98,19 @@ func floatFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 		}
 		return interpreter.FloatVal(0.0), nil
 	}
-	return interpreter.Null(), fmt.Errorf("float(): cannot convert %s to float", v.Kind)
+	return interpreter.Null(), fmt.Errorf("toFloat(): cannot convert %s to float", v.Kind)
 }
 
-// stringFn implements `string(v)`: returns the value's display form. Never
-// fails (every kind has a defined Display).
-func stringFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
-	if err := arityOne("string", args); err != nil {
+// toStringFn implements `convert.toString(v)`: returns the value's
+// display form. Never fails (every kind has a defined Display).
+func toStringFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityOne("toString", args); err != nil {
 		return interpreter.Null(), err
 	}
 	return interpreter.StringVal(args[0].Display()), nil
 }
 
-// boolFn implements `bool(v)` with strict canonical-only conversions:
+// toBoolFn implements `convert.toBool(v)` with strict canonical-only conversions:
 //
 //   - bool   -> identity
 //   - int    -> 0 = false, 1 = true; any other int errors
@@ -114,8 +120,8 @@ func stringFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 //
 // If you want "nonzero counts as true" semantics, write the comparison
 // explicitly: `def b as bool init $x != 0;`.
-func boolFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
-	if err := arityOne("bool", args); err != nil {
+func toBoolFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityOne("toBool", args); err != nil {
 		return interpreter.Null(), err
 	}
 	v := args[0]
@@ -129,7 +135,7 @@ func boolFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 		case 1:
 			return interpreter.BoolVal(true), nil
 		}
-		return interpreter.Null(), fmt.Errorf("bool(%d): only 0 and 1 are accepted (use `$x != 0` for truthiness)", v.Int)
+		return interpreter.Null(), fmt.Errorf("toBool(%d): only 0 and 1 are accepted (use `$x != 0` for truthiness)", v.Int)
 	case interpreter.KindFloat:
 		switch v.Float {
 		case 0:
@@ -137,7 +143,7 @@ func boolFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 		case 1:
 			return interpreter.BoolVal(true), nil
 		}
-		return interpreter.Null(), fmt.Errorf("bool(%s): only 0.0 and 1.0 are accepted (use `$x != 0.0` for truthiness)", interpreter.DisplayFloat(v.Float))
+		return interpreter.Null(), fmt.Errorf("toBool(%s): only 0.0 and 1.0 are accepted (use `$x != 0.0` for truthiness)", interpreter.DisplayFloat(v.Float))
 	case interpreter.KindString:
 		switch v.Str {
 		case "true":
@@ -145,9 +151,9 @@ func boolFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 		case "false":
 			return interpreter.BoolVal(false), nil
 		}
-		return interpreter.Null(), fmt.Errorf("bool(%q): only \"true\" or \"false\" are accepted", v.Str)
+		return interpreter.Null(), fmt.Errorf("toBool(%q): only \"true\" or \"false\" are accepted", v.Str)
 	}
-	return interpreter.Null(), fmt.Errorf("bool(): cannot convert %s to bool", v.Kind)
+	return interpreter.Null(), fmt.Errorf("toBool(): cannot convert %s to bool", v.Kind)
 }
 
 // typeOfFn returns the runtime kind name of its argument as a string:

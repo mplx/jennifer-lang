@@ -11,15 +11,17 @@ import (
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 )
 
-// callReadLine and callEof invoke the registered builtins with a
-// fully-populated BuiltinCtx. Each test calls resetInputForTest first
-// so the package-level buffered reader doesn't leak state across cases.
+// callReadLine and callEof invoke the registered namespaced builtins
+// with a fully-populated BuiltinCtx. Each test calls resetInputForTest
+// first so the package-level buffered reader doesn't leak state across
+// cases. After M10 the io library is namespaced, so the lookup goes
+// through the interpreter's namespaced lookup helper.
 func callReadLine(in *interpreter.Interpreter, ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
-	return in.Builtins["readLine"].Fn(ctx, args)
+	return in.LookupNamespacedBuiltin("io", "readLine")(ctx, args)
 }
 
 func callEof(in *interpreter.Interpreter, ctx interpreter.BuiltinCtx) (interpreter.Value, error) {
-	return in.Builtins["eof"].Fn(ctx, nil)
+	return in.LookupNamespacedBuiltin("io", "eof")(ctx, nil)
 }
 
 func TestReadLineSingleLine(t *testing.T) {
@@ -186,7 +188,7 @@ func TestEofStickyOnceTrue(t *testing.T) {
 }
 
 func TestReadEofLoop(t *testing.T) {
-	// End-to-end shape: while (not eof()) { readLine() } over three lines.
+	// End-to-end shape: while (not io.eof()) { io.readLine() } over three lines.
 	resetInputForTest()
 	in := interpreter.New()
 	Install(in)
@@ -259,7 +261,7 @@ func TestEofArgumentError(t *testing.T) {
 	Install(in)
 	ctx := interpreter.BuiltinCtx{Out: &bytes.Buffer{}, In: strings.NewReader("")}
 
-	_, err := in.Builtins["eof"].Fn(ctx, []interpreter.Value{interpreter.IntVal(1)})
+	_, err := in.LookupNamespacedBuiltin("io", "eof")(ctx, []interpreter.Value{interpreter.IntVal(1)})
 	if err == nil || !strings.Contains(err.Error(), "no arguments") {
 		t.Errorf("got %v", err)
 	}

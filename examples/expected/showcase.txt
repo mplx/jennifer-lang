@@ -34,30 +34,30 @@ Hi, Jennifer!
 === sprintf ===
 [42:hi]
 === convert ===
-int(3.7)       = 3
-int("42")      = 42
-float(5)       = 5.0
-string(42)     = 42
-bool(1)        = true
-bool("true")   = true
-typeOf(3.14)   = float
-typeOf("x")    = string
-typeOf(true)   = bool
-typeOf(null)   = null
+convert.toInt(3.7)       = 3
+convert.toInt("42")      = 42
+convert.toFloat(5)       = 5.0
+convert.toString(42)     = 42
+convert.toBool(1)        = true
+convert.toBool("true")   = true
+convert.typeOf(3.14)   = float
+convert.typeOf("x")    = string
+convert.typeOf(true)   = bool
+convert.typeOf(null)   = null
 === math ===
-abs(-7)        = 7
-abs(-3.5)      = 3.5
-min(3, 7)      = 3
-max(3.5, 2.5)  = 3.5
-sqrt(16)       = 4.0
-pow(2, 10)     = 1024.0
-floor(3.7)     = 3
-ceil(3.2)      = 4
-round(2.5)     = 3
-round(-2.5)    = -3
+math.abs(-7)        = 7
+math.abs(-3.5)      = 3.5
+math.min(3, 7)      = 3
+math.max(3.5, 2.5)  = 3.5
+math.sqrt(16)       = 4.0
+math.pow(2, 10)     = 1024.0
+math.floor(3.7)     = 3
+math.ceil(3.2)      = 4
+math.round(2.5)     = 3
+math.round(-2.5)    = -3
 === math constants ===
-typeOf(PI)     = float
-typeOf(E)      = float
+convert.typeOf(math.PI) = float
+convert.typeOf(math.E)  = float
 === strings ===
 len           = 12
 upper         = HELLO, WORLD
@@ -78,9 +78,9 @@ split         = a|b|c
 chars count   = 5
 join          = x-y-z
 === os ===
-typeOf(os.platform())  = string
-typeOf(os.JENNIFER_OS) = string
-typeOf(os.JENNIFER_LF) = string
+convert.typeOf(os.platform())  = string
+convert.typeOf(os.JENNIFER_OS) = string
+convert.typeOf(os.JENNIFER_LF) = string
 getEnv unset           = []
 === lists ===
 xs = [10, 20, 30]
@@ -116,7 +116,7 @@ merged: alice=100 dave=60
 === value semantics ===
 src[0]=1 dst[0]=99
 === core ===
-typeOf(JENNIFER_VERSION) = string
+convert.typeOf(JENNIFER_VERSION) = string
 === constants ===
 MAX=5 MAX_RETRIES=3 HTTP_OK=200 PI_APPROX=3.14
 === printf modifiers ===

@@ -18,11 +18,11 @@ import (
 // the emitter itself stays hand-rolled for TinyGo.
 func TestAstJSONIsValid(t *testing.T) {
 	cases := []string{
-		`use io; printf("hi\n");`,
-		`def x as int init 21; printf($x + $x);`,
+		`use io; io.printf("hi\n");`,
+		`def x as int init 21; io.printf($x + $x);`,
 		`func fact(n as int) { if ($n == 0) { return 1; } return $n * fact($n - 1); }`,
-		`def const MAX_RETRIES as int init 3; printf(MAX_RETRIES);`,
-		`for (def i as int init 0; $i < 3; $i = $i + 1) { printf($i); }`,
+		`def const MAX_RETRIES as int init 3; io.printf(MAX_RETRIES);`,
+		`for (def i as int init 0; $i < 3; $i = $i + 1) { io.printf($i); }`,
 		`def xs as list of int init [1, 2, 3]; def y as int init $xs[0];`,
 		`def m as map of string to int init {"a": 1, "b": 2};`,
 		`def g as list of list of int init [[1, 2], [3, 4]]; $g[0][1] = 99;`,
@@ -45,7 +45,7 @@ func TestAstJSONIsValid(t *testing.T) {
 // TestAstJSONShape checks a few key fields on a known-shape program so a
 // future refactor that drops or renames a field is caught here.
 func TestAstJSONShape(t *testing.T) {
-	prog, err := parser.Parse(`use io; def x as int init 42; printf($x);`)
+	prog, err := parser.Parse(`use io; def x as int init 42; io.printf($x);`)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestAstJSONShape(t *testing.T) {
 		`"type": "DefineStmt"`, `"varName": "x"`, `"varType": "int"`,
 		`"type": "IntLit"`, `"value": 42`,
 		`"type": "ExprStmt"`,
-		`"type": "CallExpr"`, `"callee": "printf"`,
+		`"type": "QualifiedCallExpr"`, `"prefix": "io"`, `"callee": "printf"`,
 		`"type": "VarExpr"`, `"name": "x"`,
 	}
 	for _, want := range mustContain {
@@ -109,7 +109,7 @@ for (def x in $xs) { return; }
 // token-type names: every kind we expect to see in real programs has a
 // String() that doesn't fall through to the "TokenType(N)" fallback.
 func TestTokenDumpCoversAllKinds(t *testing.T) {
-	src := `use io; def const MAX as int init 1; func f() { if (true) { return; } } $x = -1.5; printf("hi");`
+	src := `use io; def const MAX as int init 1; func f() { if (true) { return; } } $x = -1.5; io.printf("hi");`
 	tokens, err := lexer.TokenizeWithFile(src, "<test>")
 	if err != nil {
 		t.Fatalf("lex: %v", err)

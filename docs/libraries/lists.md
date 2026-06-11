@@ -13,7 +13,7 @@ def xs as list of int init [3, 1, 4, 1, 5];
 $xs = lists.push($xs, 9);          # append item
 $xs = lists.pop($xs);              # drop last
 $xs = lists.sort($xs);             # sort ascending
-printf("first=%d last=%d\n", lists.first($xs), lists.last($xs));
+io.printf("first=%d last=%d\n", lists.first($xs), lists.last($xs));
 ```
 
 For the common "append to a list as you build it" pattern, the

@@ -46,7 +46,7 @@ func writeTmp(t *testing.T, files map[string]string) string {
 }
 
 func TestPassesThroughLibraryImports(t *testing.T) {
-	src := `use io; func app() { printf(1); }`
+	src := `use io; func app() { io.printf(1); }`
 	toks, err := lexer.Tokenize(src)
 	if err != nil {
 		t.Fatalf("lex: %v", err)
@@ -60,10 +60,10 @@ func TestPassesThroughLibraryImports(t *testing.T) {
 	}
 }
 
-func TestFileImportSplices(t *testing.T) {
+func TestFileIncludeSplices(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
 		"helpers.j": `def bonus as int init 7;`,
-		"main.j":    `func app() { import "helpers.j"; printf($bonus); }`,
+		"main.j":    `func app() { include "helpers.j"; io.printf($bonus); }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -75,17 +75,12 @@ func TestFileImportSplices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preproc: %v", err)
 	}
-	// After splicing, no DOT tokens should remain (no file-import-shaped sequences left).
-	for _, tk := range out {
-		if tk.Type == lexer.TOKEN_DOT {
-			t.Errorf("DOT token survived preprocessing: %v", tk)
-		}
-	}
-	// We expect: def app ( ) { def bonus as int init 7 ; printf ( $bonus ) ; } EOF
+	// We expect: func app ( ) { def bonus as int init 7 ; io.printf ( $bonus ) ; } EOF
+	// (`io.printf` is `IDENT DOT IDENT` after M10's namespace migration.)
 	wantTypes := []lexer.TokenType{
 		lexer.TOKEN_FUNC, lexer.TOKEN_IDENT, lexer.TOKEN_LPAREN, lexer.TOKEN_RPAREN, lexer.TOKEN_LBRACE,
 		lexer.TOKEN_DEFINE, lexer.TOKEN_IDENT, lexer.TOKEN_AS, lexer.TOKEN_INT_TYPE, lexer.TOKEN_INIT, lexer.TOKEN_INT, lexer.TOKEN_SEMI,
-		lexer.TOKEN_IDENT, lexer.TOKEN_LPAREN, lexer.TOKEN_VARREF, lexer.TOKEN_RPAREN, lexer.TOKEN_SEMI,
+		lexer.TOKEN_IDENT, lexer.TOKEN_DOT, lexer.TOKEN_IDENT, lexer.TOKEN_LPAREN, lexer.TOKEN_VARREF, lexer.TOKEN_RPAREN, lexer.TOKEN_SEMI,
 		lexer.TOKEN_RBRACE, lexer.TOKEN_EOF,
 	}
 	if !typesEqual(tokenTypes(out), wantTypes) {
@@ -96,8 +91,8 @@ func TestFileImportSplices(t *testing.T) {
 func TestNestedFileImports(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
 		"a.j":    `def a as int init 1;`,
-		"b.j":    `import "a.j"; def b as int init 2;`,
-		"main.j": `func app() { import "b.j"; printf($a + $b); }`,
+		"b.j":    `include "a.j"; def b as int init 2;`,
+		"main.j": `func app() { include "b.j"; io.printf($a + $b); }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -140,9 +135,9 @@ func TestNestedFileImports(t *testing.T) {
 
 func TestDetectsCircularImport(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
-		"a.j":    `import "b.j"; def a as int init 1;`,
-		"b.j":    `import "a.j"; def b as int init 2;`,
-		"main.j": `func app() { import "a.j"; }`,
+		"a.j":    `include "b.j"; def a as int init 1;`,
+		"b.j":    `include "a.j"; def b as int init 2;`,
+		"main.j": `func app() { include "a.j"; }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)
@@ -157,7 +152,7 @@ func TestDetectsCircularImport(t *testing.T) {
 }
 
 func TestRejectsNonJExtension(t *testing.T) {
-	src := `func app() { import "foo.go"; }`
+	src := `func app() { include "foo.go"; }`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, ".", "")
 	if err == nil {
@@ -168,29 +163,45 @@ func TestRejectsNonJExtension(t *testing.T) {
 	}
 }
 
-func TestRejectsOldUnquotedFileImport(t *testing.T) {
-	src := `func app() { import foo.j; }`
+func TestRejectsUnquotedFileSplice(t *testing.T) {
+	src := `func app() { include foo.j; }`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, ".", "")
 	if err == nil {
-		t.Fatal("expected error for old unquoted file-import syntax")
+		t.Fatal("expected error for unquoted file splice")
 	}
 	if !strings.Contains(err.Error(), "string literal") {
 		t.Errorf("error should suggest string literal: %v", err)
 	}
 }
 
-func TestRejectsOldLibraryImport(t *testing.T) {
-	// Pre-split, `import stdlib;` was the way to enable the printf builtin.
-	// Now imports are file-only; the preprocessor should redirect to `use`.
-	src := `import io; func app() {}`
+func TestRejectsIncludeOfLibraryName(t *testing.T) {
+	// `include foo;` (no quoted path) looks like a library import; the
+	// preprocessor suggests `use foo;` instead.
+	src := `include io; func app() {}`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, ".", "")
 	if err == nil {
-		t.Fatal("expected error for `import io;`")
+		t.Fatal("expected error for `include io;`")
 	}
 	if !strings.Contains(err.Error(), "use io") {
 		t.Errorf("error should suggest `use io;`: %v", err)
+	}
+}
+
+func TestImportKeywordReserved(t *testing.T) {
+	// After M10 the pre-M10 spelling `import "x.j";` is rejected with a
+	// migration hint pointing at `include`. The `import` keyword itself
+	// is reserved for the M17 module system.
+	src := `func app() { import "foo.j"; }`
+	toks, _ := lexer.Tokenize(src)
+	_, err := Process(toks, ".", "")
+	if err == nil {
+		t.Fatal("expected `import` reserved-keyword error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "include") || !strings.Contains(msg, "reserved") {
+		t.Errorf("error should redirect to `include` and mention reservation: %v", err)
 	}
 }
 
@@ -201,14 +212,14 @@ func TestRejectsUseForFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for `use foo.j;`")
 	}
-	if !strings.Contains(err.Error(), `import "foo.j"`) {
-		t.Errorf("error should suggest `import \"foo.j\";`: %v", err)
+	if !strings.Contains(err.Error(), `include "foo.j"`) {
+		t.Errorf("error should suggest `include \"foo.j\";`: %v", err)
 	}
 }
 
 func TestMissingFile(t *testing.T) {
 	dir := t.TempDir()
-	src := `func app() { import "nope.j"; }`
+	src := `func app() { include "nope.j"; }`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, dir, "")
 	if err == nil {
@@ -219,10 +230,10 @@ func TestMissingFile(t *testing.T) {
 	}
 }
 
-func TestImportAtTopLevel(t *testing.T) {
+func TestIncludeAtTopLevel(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
-		"top.j":  `func helper() { printf(1); }`,
-		"main.j": `use io; import "top.j"; func app() { helper(); }`,
+		"top.j":  `func helper() { io.printf(1); }`,
+		"main.j": `use io; include "top.j"; func app() { helper(); }`,
 	})
 	mainPath := filepath.Join(dir, "main.j")
 	src, _ := os.ReadFile(mainPath)

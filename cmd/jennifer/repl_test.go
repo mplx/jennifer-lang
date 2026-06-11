@@ -21,7 +21,7 @@ func TestInputComplete(t *testing.T) {
 		{"single statement", "$x = 1;", true},
 		{"missing semicolon", "$x = 1", false},
 		{"unclosed brace", "func f() {", false},
-		{"unclosed paren", "printf(1 + 2", false},
+		{"unclosed paren", "io.printf(1 + 2", false},
 		{"closed block ends statement", "if (true) { $x = 1; }", true},
 		{"open then closed brace", "func f() {\n  return 1;\n}", true},
 		{"trailing semi after block", "func f() { return 1; };", true},

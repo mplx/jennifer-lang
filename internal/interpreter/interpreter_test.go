@@ -82,9 +82,9 @@ func runWithStdin(t *testing.T, src, stdin string) (string, error) {
 func TestReadLineEofLoopEndToEnd(t *testing.T) {
 	out, err := runWithStdin(t, `
 use io;
-while (not eof()) {
-    def line as string init readLine();
-    printf("%s\n", $line);
+while (not io.eof()) {
+    def line as string init io.readLine();
+    io.printf("%s\n", $line);
 }
 `, "alpha\nbeta\ngamma\n")
 	if err != nil {
@@ -98,8 +98,8 @@ while (not eof()) {
 func TestReadLineWithPromptEndToEnd(t *testing.T) {
 	out, err := runWithStdin(t, `
 use io;
-def name as string init readLine("name: ");
-printf("hi, %s\n", $name);
+def name as string init io.readLine("name: ");
+io.printf("hi, %s\n", $name);
 `, "Jennifer\n")
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -114,7 +114,7 @@ func TestHelloProgramPrints42(t *testing.T) {
 use io;
 func app() {
     def x as int init 21;
-    printf($x + $x);
+    io.printf($x + $x);
 }`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -128,7 +128,7 @@ func TestStringLiteralPrints(t *testing.T) {
 	out, err := run(t, `
 use io;
 func app() {
-    printf("hello, jennifer\n");
+    io.printf("hello, jennifer\n");
 }`)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -143,7 +143,7 @@ func TestArithmeticPrecedence(t *testing.T) {
 use io;
 func app() {
     def r as int init 2 + 3 * 4;
-    printf($r);
+    io.printf($r);
 }`)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -160,11 +160,11 @@ func app() {
     def a as int init 17  // 5;
     def b as int init 17 % 5;
     def c as float init 17 / 5;
-    printf($a);
-    printf(" ");
-    printf($b);
-    printf(" ");
-    printf($c);
+    io.printf($a);
+    io.printf(" ");
+    io.printf($b);
+    io.printf(" ");
+    io.printf($c);
 }`)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -191,7 +191,7 @@ func TestTopLevelStatementsRun(t *testing.T) {
 	out, err := run(t, `
 use io;
 def x as int init 21;
-printf($x + $x);
+io.printf($x + $x);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -205,7 +205,7 @@ func TestMethodSeesGlobals(t *testing.T) {
 	out, err := run(t, `
 use io;
 def greeting as string init "hello";
-func show() { printf($greeting); }
+func show() { io.printf($greeting); }
 show();
 `)
 	if err != nil {
@@ -229,7 +229,7 @@ f();
 }
 
 func TestErrorOnPrintfWithoutImport(t *testing.T) {
-	_, err := run(t, `func app() { printf(1); }`)
+	_, err := run(t, `func app() { io.printf(1); }`)
 	if err == nil || !strings.Contains(err.Error(), "use io") {
 		t.Errorf("expected use-io error, got %v", err)
 	}
@@ -256,7 +256,7 @@ func app() { def x as int init "nope"; }`)
 func TestErrorOnUndefinedVar(t *testing.T) {
 	_, err := run(t, `
 use io;
-func app() { printf($missing); }`)
+func app() { io.printf($missing); }`)
 	if err == nil || !strings.Contains(err.Error(), `undefined variable "missing"`) {
 		t.Errorf("expected undefined-var error, got %v", err)
 	}
@@ -280,14 +280,17 @@ func app() {}`)
 	}
 }
 
-func TestUserMethodCannotShadowIOBuiltin(t *testing.T) {
-	// With `use io;`, defining `func printf()` is a shadowing error.
+func TestUserMethodCannotShadowCoreGlobal(t *testing.T) {
+	// `core` is auto-loaded and exposes `len` as a global; defining
+	// `func len()` therefore shadows a live builtin and errors.
+	// (Pre-M10 the same rule applied to `printf` from `io`; M10 moved
+	// every domain library behind a namespace prefix, so the only
+	// remaining globals are `core`'s structural primitives.)
 	_, err := run(t, `
-use io;
-func printf() {}
-printf();
+func len() {}
+len();
 `)
-	if err == nil || !strings.Contains(err.Error(), "shadows a builtin from `io`") {
+	if err == nil || !strings.Contains(err.Error(), "shadows a builtin from `core`") {
 		t.Errorf("expected shadowing error, got %v", err)
 	}
 }
@@ -310,7 +313,7 @@ func TestReturnValue(t *testing.T) {
 	out, err := run(t, `
 use io;
 func answer() { return 42; }
-printf(answer());
+io.printf(answer());
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -324,7 +327,7 @@ func TestReturnBare(t *testing.T) {
 	out, err := run(t, `
 use io;
 func nothing() { return; }
-printf(nothing());
+io.printf(nothing());
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -338,11 +341,11 @@ func TestReturnEndsMethodEarly(t *testing.T) {
 	out, err := run(t, `
 use io;
 func early() {
-    printf("a");
+    io.printf("a");
     return 1;
-    printf("b");
+    io.printf("b");
 }
-printf(early());
+io.printf(early());
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -363,7 +366,7 @@ func find() {
     }
     return 99;
 }
-printf(find());
+io.printf(find());
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -379,7 +382,7 @@ func TestParamsAddTwoInts(t *testing.T) {
 	out, err := run(t, `
 use io;
 func add(a as int, b as int) { return $a + $b; }
-printf(add(3, 4));
+io.printf(add(3, 4));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -418,7 +421,7 @@ func fact(n as int) {
     if ($n == 0) { return 1; }
     return $n * fact($n - 1);
 }
-printf(fact(7));
+io.printf(fact(7));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -434,7 +437,7 @@ func TestParamSeesGlobalsThroughChain(t *testing.T) {
 use io;
 def greeting as string init "hi ";
 func greet(name as string) {
-    printf($greeting + $name);
+    io.printf($greeting + $name);
 }
 greet("Jennifer");
 `)
@@ -450,7 +453,7 @@ func TestConstReferenceBare(t *testing.T) {
 	out, err := run(t, `
 use io;
 def const MAX as int init 100;
-printf("%d", MAX);
+io.printf("%d", MAX);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -469,7 +472,7 @@ func TestConstNameWithUnderscore(t *testing.T) {
 use io;
 def const MAX_RETRIES as int init 3;
 def const HTTP_OK as int init 200;
-printf("%d %d", MAX_RETRIES, HTTP_OK);
+io.printf("%d %d", MAX_RETRIES, HTTP_OK);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -484,7 +487,7 @@ func TestConstInExpression(t *testing.T) {
 use io;
 def const MAX as int init 10;
 def y as int init MAX + 5;
-printf("%d", $y);
+io.printf("%d", $y);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -498,7 +501,7 @@ func TestBareVariableRefErrorsHelpfully(t *testing.T) {
 	_, err := run(t, `
 use io;
 def x as int init 5;
-printf("%d", x);
+io.printf("%d", x);
 `)
 	if err == nil || !strings.Contains(err.Error(), "use `$x`") {
 		t.Errorf("expected $-prefix hint, got %v", err)
@@ -508,7 +511,7 @@ printf("%d", x);
 func TestBareUndefinedNameError(t *testing.T) {
 	_, err := run(t, `
 use io;
-printf("%d", NOPE);
+io.printf("%d", NOPE);
 `)
 	if err == nil || !strings.Contains(err.Error(), "undefined name") {
 		t.Errorf("expected undefined-name error, got %v", err)
@@ -526,16 +529,21 @@ func bad($x as int) { return $x; }
 }
 
 func TestUserMethodCanReuseBuiltinNameWithoutImportingLib(t *testing.T) {
-	// Without `use io;`, the name is free - the user's printf is the only one.
+	// Without `use os;`, the name `platform` (which `os` would expose as a
+	// namespaced builtin) is free for ordinary use. (M10+ note: domain
+	// libraries no longer expose bare-name globals, so the more common
+	// pre-M10 case "`func printf()` allowed when io isn't imported" is
+	// trivially true; this test now exercises the namespace-prefix path
+	// instead.)
 	out, err := run(t, `
-func printf() {}
-printf();
+func platform() {}
+platform();
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if out != "" {
-		t.Errorf("got %q, want empty (user printf is a no-op)", out)
+		t.Errorf("got %q, want empty (user platform is a no-op)", out)
 	}
 }
 
@@ -547,7 +555,7 @@ use io;
 func app() {
     def a as float init 1.5;
     def b as float init 2.5;
-    printf($a + $b);
+    io.printf($a + $b);
 }`)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -564,7 +572,7 @@ func app() {
     def a as int init 3;
     def b as float init 0.5;
     def r as float init $a + $b;
-    printf($r);
+    io.printf($r);
 }`)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -580,7 +588,7 @@ use io;
 func app() {
     def a as string init "hello, ";
     def b as string init "world";
-    printf($a + $b);
+    io.printf($a + $b);
 }`)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -596,9 +604,9 @@ use io;
 func app() {
     def t as bool init true;
     def f as bool init false;
-    printf($t);
-    printf(" ");
-    printf($f);
+    io.printf($t);
+    io.printf(" ");
+    io.printf($f);
 }`)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -613,7 +621,7 @@ func TestM2NullLiteral(t *testing.T) {
 use io;
 func app() {
     def n as null init null;
-    printf($n);
+    io.printf($n);
 }`)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -631,13 +639,13 @@ func app() {
     def f as float;
     def s as string;
     def b as bool;
-    printf($i);
-    printf(" ");
-    printf($f);
-    printf(" ");
-    printf($s);
-    printf(" ");
-    printf($b);
+    io.printf($i);
+    io.printf(" ");
+    io.printf($f);
+    io.printf(" ");
+    io.printf($s);
+    io.printf(" ");
+    io.printf($b);
 }`)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -669,7 +677,7 @@ func TestLogicalNotAndOr(t *testing.T) {
 		out, err := run(t, `
 use io;
 def r as bool init `+c.expr+`;
-printf("%t", $r);
+io.printf("%t", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: err %v", c.expr, err)
@@ -701,7 +709,7 @@ func TestLogicalPrecedence(t *testing.T) {
 		out, err := run(t, `
 use io;
 def r as bool init `+c.expr+`;
-printf("%t", $r);
+io.printf("%t", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: err %v", c.expr, err)
@@ -720,12 +728,12 @@ func TestLogicalShortCircuit(t *testing.T) {
 	out, err := run(t, `
 use io;
 func boom() {
-    printf("BOOM");
+    io.printf("BOOM");
     return true;
 }
 def a as bool init false and boom();
 def b as bool init true or boom();
-printf("|%t %t", $a, $b);
+io.printf("|%t %t", $a, $b);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -763,7 +771,7 @@ def f as float init -0.25;
 def doubleNeg as int init - -7;
 def x as int init 10;
 def neg as int init -$x;
-printf("%d %f %d %d", $i, $f, $doubleNeg, $neg);
+io.printf("%d %f %d %d", $i, $f, $doubleNeg, $neg);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -778,7 +786,7 @@ func TestUnaryMinusPrecedence(t *testing.T) {
 	// -3 * 2 -> (-3) * 2 -> -6
 	out, err := run(t, `
 use io;
-printf("%d %d", -3 + 10, -3 * 2);
+io.printf("%d %d", -3 + 10, -3 * 2);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -815,7 +823,7 @@ func TestSlashAlwaysReturnsFloat(t *testing.T) {
 		out, err := run(t, `
 use io;
 def r as float init `+c.expr+`;
-printf("%f", $r);
+io.printf("%f", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: err %v", c.expr, err)
@@ -853,7 +861,7 @@ func TestDivKeyword(t *testing.T) {
 		out, err := run(t, `
 use io;
 def r as int init `+c.expr+`;
-printf("%d", $r);
+io.printf("%d", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: err %v", c.expr, err)
@@ -869,7 +877,7 @@ func TestDivOnFloatsReturnsFloatFloor(t *testing.T) {
 	out, err := run(t, `
 use io;
 def r as float init 5.7  // 2.0;
-printf("%f", $r);
+io.printf("%f", $r);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -886,7 +894,7 @@ func TestFloatDisplayAlwaysHasDot(t *testing.T) {
 	out, err := run(t, `
 use io;
 def x as float init 5.0;
-printf("%f", $x);
+io.printf("%f", $x);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -903,18 +911,18 @@ func TestConvertInt(t *testing.T) {
 		expr string
 		want string
 	}{
-		{`int("42")`, "42"},
-		{`int(3.7)`, "3"}, // truncate
-		{`int(true)`, "1"},
-		{`int(false)`, "0"},
-		{`int(99)`, "99"}, // identity
+		{`convert.toInt("42")`, "42"},
+		{`convert.toInt(3.7)`, "3"}, // truncate
+		{`convert.toInt(true)`, "1"},
+		{`convert.toInt(false)`, "0"},
+		{`convert.toInt(99)`, "99"}, // identity
 	}
 	for _, c := range cases {
 		out, err := run(t, `
 use io;
 use convert;
 def r as int init `+c.expr+`;
-printf("%d", $r);
+io.printf("%d", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: err %v", c.expr, err)
@@ -931,8 +939,8 @@ func TestConvertIntErrors(t *testing.T) {
 		expr string
 		want string
 	}{
-		{`int("abc")`, "not a valid integer"},
-		{`int(null)`, "cannot convert null"},
+		{`convert.toInt("abc")`, "not a valid integer"},
+		{`convert.toInt(null)`, "cannot convert null"},
 	}
 	for _, c := range cases {
 		_, err := run(t, `
@@ -951,17 +959,17 @@ func TestConvertFloat(t *testing.T) {
 		expr string
 		want string
 	}{
-		{`float(5)`, "5.0"},
-		{`float("3.14")`, "3.14"},
-		{`float(true)`, "1.0"},
-		{`float(false)`, "0.0"},
+		{`convert.toFloat(5)`, "5.0"},
+		{`convert.toFloat("3.14")`, "3.14"},
+		{`convert.toFloat(true)`, "1.0"},
+		{`convert.toFloat(false)`, "0.0"},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
 use io;
 use convert;
 def r as float init `+c.expr+`;
-printf("%f", $r);
+io.printf("%f", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: err %v", c.expr, err)
@@ -978,18 +986,18 @@ func TestConvertString(t *testing.T) {
 		expr string
 		want string
 	}{
-		{`string(42)`, "42"},
-		{`string(3.14)`, "3.14"},
-		{`string(true)`, "true"},
-		{`string(null)`, "null"},
-		{`string("hi")`, "hi"},
+		{`convert.toString(42)`, "42"},
+		{`convert.toString(3.14)`, "3.14"},
+		{`convert.toString(true)`, "true"},
+		{`convert.toString(null)`, "null"},
+		{`convert.toString("hi")`, "hi"},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
 use io;
 use convert;
 def r as string init `+c.expr+`;
-printf("%s", $r);
+io.printf("%s", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: err %v", c.expr, err)
@@ -1007,21 +1015,21 @@ func TestConvertBool(t *testing.T) {
 		expr string
 		want string
 	}{
-		{`bool("true")`, "true"},
-		{`bool("false")`, "false"},
-		{`bool(0)`, "false"},
-		{`bool(1)`, "true"},
-		{`bool(0.0)`, "false"},
-		{`bool(1.0)`, "true"},
-		{`bool(true)`, "true"},   // identity
-		{`bool(false)`, "false"}, // identity
+		{`convert.toBool("true")`, "true"},
+		{`convert.toBool("false")`, "false"},
+		{`convert.toBool(0)`, "false"},
+		{`convert.toBool(1)`, "true"},
+		{`convert.toBool(0.0)`, "false"},
+		{`convert.toBool(1.0)`, "true"},
+		{`convert.toBool(true)`, "true"},   // identity
+		{`convert.toBool(false)`, "false"}, // identity
 	}
 	for _, c := range cases {
 		out, err := run(t, `
 use io;
 use convert;
 def r as bool init `+c.expr+`;
-printf("%t", $r);
+io.printf("%t", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: err %v", c.expr, err)
@@ -1039,13 +1047,13 @@ func TestConvertBoolErrors(t *testing.T) {
 		expr string
 		want string // substring of error
 	}{
-		{`bool("maybe")`, `only "true" or "false"`},
-		{`bool(5)`, "only 0 and 1"},
-		{`bool(0 - 1)`, "only 0 and 1"}, // -1 must error too
-		{`bool(123)`, "only 0 and 1"},
-		{`bool(1.5)`, "only 0.0 and 1.0"},
-		{`bool(2.0)`, "only 0.0 and 1.0"},
-		{`bool(null)`, "cannot convert null"},
+		{`convert.toBool("maybe")`, `only "true" or "false"`},
+		{`convert.toBool(5)`, "only 0 and 1"},
+		{`convert.toBool(0 - 1)`, "only 0 and 1"}, // -1 must error too
+		{`convert.toBool(123)`, "only 0 and 1"},
+		{`convert.toBool(1.5)`, "only 0.0 and 1.0"},
+		{`convert.toBool(2.0)`, "only 0.0 and 1.0"},
+		{`convert.toBool(null)`, "cannot convert null"},
 	}
 	for _, c := range cases {
 		_, err := run(t, `
@@ -1064,21 +1072,21 @@ func TestTypeof(t *testing.T) {
 		expr string
 		want string
 	}{
-		{`typeOf(5)`, "int"},
-		{`typeOf(3.14)`, "float"},
-		{`typeOf("hi")`, "string"},
-		{`typeOf(true)`, "bool"},
-		{`typeOf(null)`, "null"},
-		{`typeOf(5 / 2)`, "float"},
-		{`typeOf(5  // 2)`, "int"},
-		{`typeOf(2.5 * 2)`, "float"},
+		{`convert.typeOf(5)`, "int"},
+		{`convert.typeOf(3.14)`, "float"},
+		{`convert.typeOf("hi")`, "string"},
+		{`convert.typeOf(true)`, "bool"},
+		{`convert.typeOf(null)`, "null"},
+		{`convert.typeOf(5 / 2)`, "float"},
+		{`convert.typeOf(5  // 2)`, "int"},
+		{`convert.typeOf(2.5 * 2)`, "float"},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
 use io;
 use convert;
 def r as string init `+c.expr+`;
-printf("%s", $r);
+io.printf("%s", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: err %v", c.expr, err)
@@ -1093,7 +1101,7 @@ printf("%s", $r);
 func TestConvertRequiresUse(t *testing.T) {
 	_, err := run(t, `
 use io;
-def r as int init int("42");
+def r as int init convert.toInt("42");
 `)
 	if err == nil || !strings.Contains(err.Error(), "use convert") {
 		t.Errorf("expected use-convert hint, got %v", err)
@@ -1101,13 +1109,15 @@ def r as int init int("42");
 }
 
 func TestTypeNameAsBareReferenceErrors(t *testing.T) {
-	// `int` alone (not followed by `(`) in expression position should error.
+	// Type keywords have no expression-position meaning after M10 - bare
+	// or call form. The parser points the user at the namespaced
+	// convert call.
 	_, err := run(t, `
 use io;
 use convert;
 def r as int init int;
 `)
-	if err == nil || !strings.Contains(err.Error(), "called as a conversion") {
+	if err == nil || !strings.Contains(err.Error(), "type names belong after `as`") {
 		t.Errorf("expected hint, got %v", err)
 	}
 }
@@ -1116,16 +1126,16 @@ def r as int init int;
 
 func TestMathAbs(t *testing.T) {
 	cases := []struct{ expr, want string }{
-		{"abs(5)", "5"},
-		{"abs(0 - 5)", "5"},
-		{"abs(0)", "0"},
+		{"math.abs(5)", "5"},
+		{"math.abs(0 - 5)", "5"},
+		{"math.abs(0)", "0"},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
 use io;
 use math;
 def r as int init `+c.expr+`;
-printf("%d", $r);
+io.printf("%d", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: %v", c.expr, err)
@@ -1141,8 +1151,8 @@ func TestMathAbsFloat(t *testing.T) {
 	out, err := run(t, `
 use io;
 use math;
-def r as float init abs(-3.14);
-printf("%f", $r);
+def r as float init math.abs(-3.14);
+io.printf("%f", $r);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -1154,20 +1164,20 @@ printf("%f", $r);
 
 func TestMathMinMax(t *testing.T) {
 	cases := []struct{ expr, want, typ string }{
-		{"min(3, 7)", "3", "int"},
-		{"min(7, 3)", "3", "int"},
-		{"max(3, 7)", "7", "int"},
-		{"max(7, 3)", "7", "int"},
-		{"min(3, 2.5)", "2.5", "float"}, // mixed -> float
-		{"max(3, 2.5)", "3.0", "float"}, // mixed -> float (int promoted)
-		{"min(1.0, 2.0)", "1.0", "float"},
+		{"math.min(3, 7)", "3", "int"},
+		{"math.min(7, 3)", "3", "int"},
+		{"math.max(3, 7)", "7", "int"},
+		{"math.max(7, 3)", "7", "int"},
+		{"math.min(3, 2.5)", "2.5", "float"}, // mixed -> float
+		{"math.max(3, 2.5)", "3.0", "float"}, // mixed -> float (int promoted)
+		{"math.min(1.0, 2.0)", "1.0", "float"},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
 use io;
 use math;
 def r as `+c.typ+` init `+c.expr+`;
-printf("%v", $r);
+io.printf("%v", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: %v", c.expr, err)
@@ -1183,8 +1193,8 @@ func TestMathSqrt(t *testing.T) {
 	out, err := run(t, `
 use io;
 use math;
-def r as float init sqrt(16);
-printf("%f", $r);
+def r as float init math.sqrt(16);
+io.printf("%f", $r);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -1198,7 +1208,7 @@ func TestMathSqrtNegativeErrors(t *testing.T) {
 	_, err := run(t, `
 use io;
 use math;
-def r as float init sqrt(0 - 1);
+def r as float init math.sqrt(0 - 1);
 `)
 	if err == nil || !strings.Contains(err.Error(), "undefined for negative") {
 		t.Errorf("got %v", err)
@@ -1209,14 +1219,14 @@ func TestMathPow(t *testing.T) {
 	out, err := run(t, `
 use io;
 use math;
-def a as float init pow(2, 10);
-def b as float init pow(2, 0.5);
-printf("%f %f", $a, $b);
+def a as float init math.pow(2, 10);
+def b as float init math.pow(2, 0.5);
+io.printf("%f %f", $a, $b);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	// pow(2,10) = 1024.0; pow(2,0.5) = sqrt(2)
+	// math.pow(2,10) = 1024.0; math.pow(2,0.5) = math.sqrt(2)
 	if !strings.HasPrefix(out, "1024.0 1.41") {
 		t.Errorf("got %q", out)
 	}
@@ -1224,25 +1234,25 @@ printf("%f %f", $a, $b);
 
 func TestMathFloorCeilRound(t *testing.T) {
 	cases := []struct{ expr, want string }{
-		{"floor(3.7)", "3"},
-		{"floor(3.2)", "3"},
-		{"floor(0 - 3.2)", "-4"}, // toward -inf
-		{"ceil(3.2)", "4"},
-		{"ceil(3.7)", "4"},
-		{"ceil(0 - 3.7)", "-3"},
-		{"round(2.5)", "3"}, // half away from zero
-		{"round(2.4)", "2"},
-		{"round(0 - 2.5)", "-3"},
-		{"floor(5)", "5"}, // int passes through
-		{"ceil(5)", "5"},
-		{"round(5)", "5"},
+		{"math.floor(3.7)", "3"},
+		{"math.floor(3.2)", "3"},
+		{"math.floor(0 - 3.2)", "-4"}, // toward -inf
+		{"math.ceil(3.2)", "4"},
+		{"math.ceil(3.7)", "4"},
+		{"math.ceil(0 - 3.7)", "-3"},
+		{"math.round(2.5)", "3"}, // half away from zero
+		{"math.round(2.4)", "2"},
+		{"math.round(0 - 2.5)", "-3"},
+		{"math.floor(5)", "5"}, // int passes through
+		{"math.ceil(5)", "5"},
+		{"math.round(5)", "5"},
 	}
 	for _, c := range cases {
 		out, err := run(t, `
 use io;
 use math;
 def r as int init `+c.expr+`;
-printf("%d", $r);
+io.printf("%d", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: %v", c.expr, err)
@@ -1258,9 +1268,9 @@ func TestMathConstants(t *testing.T) {
 	out, err := run(t, `
 use io;
 use math;
-def pi as float init PI;
-def e as float init E;
-printf("%f %f", $pi, $e);
+def pi as float init math.PI;
+def e as float init math.E;
+io.printf("%f %f", $pi, $e);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -1271,21 +1281,23 @@ printf("%f %f", $pi, $e);
 }
 
 func TestMathConstantRequiresUse(t *testing.T) {
+	// Math is namespaced (M10+); without `use math;` the `math` prefix
+	// is unknown.
 	_, err := run(t, `
 use io;
-def r as float init PI;
+def r as float init math.PI;
 `)
-	if err == nil || !strings.Contains(err.Error(), "use math") {
+	if err == nil || !strings.Contains(err.Error(), "math") {
 		t.Errorf("got %v", err)
 	}
 }
 
 func TestMathArityErrors(t *testing.T) {
 	cases := []struct{ expr, want string }{
-		{"abs()", "expects 1 argument"},
-		{"abs(1, 2)", "expects 1 argument"},
-		{"min(1)", "expects 2 arguments"},
-		{"pow(1)", "expects 2 arguments"},
+		{"math.abs()", "expects 1 argument"},
+		{"math.abs(1, 2)", "expects 1 argument"},
+		{"math.min(1)", "expects 2 arguments"},
+		{"math.pow(1)", "expects 2 arguments"},
 	}
 	for _, c := range cases {
 		_, err := run(t, `
@@ -1312,7 +1324,7 @@ func TestStringsLen(t *testing.T) {
 use io;
 use strings;
 def r as int init `+c.expr+`;
-printf("%d", $r);
+io.printf("%d", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: %v", c.expr, err)
@@ -1330,7 +1342,7 @@ use io;
 use strings;
 def a as string init strings.upper("hello");
 def b as string init strings.lower("HELLO");
-printf("%s %s", $a, $b);
+io.printf("%s %s", $a, $b);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -1355,7 +1367,7 @@ func TestStringsSearchPredicates(t *testing.T) {
 use io;
 use strings;
 def r as bool init `+c.expr+`;
-printf("%t", $r);
+io.printf("%t", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: %v", c.expr, err)
@@ -1379,7 +1391,7 @@ func TestStringsIndexOf(t *testing.T) {
 use io;
 use strings;
 def r as int init `+c.expr+`;
-printf("%d", $r);
+io.printf("%d", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: %v", c.expr, err)
@@ -1404,7 +1416,7 @@ func TestStringsTrim(t *testing.T) {
 use io;
 use strings;
 def r as string init `+c.expr+`;
-printf("[%s]", $r);
+io.printf("[%s]", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: %v", c.expr, err)
@@ -1428,7 +1440,7 @@ func TestStringsReplace(t *testing.T) {
 use io;
 use strings;
 def r as string init `+c.expr+`;
-printf("%s", $r);
+io.printf("%s", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: %v", c.expr, err)
@@ -1451,7 +1463,7 @@ func TestStringsRepeat(t *testing.T) {
 use io;
 use strings;
 def r as string init `+c.expr+`;
-printf("[%s]", $r);
+io.printf("[%s]", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: %v", c.expr, err)
@@ -1492,7 +1504,7 @@ func TestStringsSubstring(t *testing.T) {
 use io;
 use strings;
 def r as string init `+c.expr+`;
-printf("[%s]", $r);
+io.printf("[%s]", $r);
 `)
 		if err != nil {
 			t.Errorf("%s: %v", c.expr, err)
@@ -1545,7 +1557,7 @@ func TestLenIsAutoLoaded(t *testing.T) {
 	// must succeed.
 	out, err := run(t, `
 use io;
-printf("%d", len("hello"));
+io.printf("%d", len("hello"));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -1577,7 +1589,7 @@ func TestM2Comparisons(t *testing.T) {
 use io;
 func app() {
     def r as bool init `+c.expr+`;
-    printf($r);
+    io.printf($r);
 }`)
 		if err != nil {
 			t.Errorf("expr %s: err %v", c.expr, err)
@@ -1598,11 +1610,11 @@ use io;
 func app() {
     def n as int init ` + itoa(n) + `;
     if ($n == 0) {
-        printf("zero");
+        io.printf("zero");
     } elseif ($n < 10) {
-        printf("small");
+        io.printf("small");
     } else {
-        printf("large");
+        io.printf("large");
     }
 }`
 	}
@@ -1629,7 +1641,7 @@ func app() {
         $sum = $sum + $i;
         $i = $i + 1;
     }
-    printf($sum);
+    io.printf($sum);
 }`)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -1647,7 +1659,7 @@ func app() {
     for (def i as int init 1; $i <= 5; $i = $i + 1) {
         $sum = $sum + $i;
     }
-    printf($sum);
+    io.printf($sum);
 }`)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -1662,7 +1674,7 @@ func TestM2ForInitVarNotVisibleOutside(t *testing.T) {
 use io;
 func app() {
     for (def i as int init 0; $i < 1; $i = $i + 1) { }
-    printf($i);
+    io.printf($i);
 }`)
 	if err == nil || !strings.Contains(err.Error(), `undefined variable "i"`) {
 		t.Errorf("expected $i undefined after loop, got %v", err)
@@ -1717,7 +1729,7 @@ func app() {
     if (true) {
         def y as int init 1;
     }
-    printf($y);
+    io.printf($y);
 }`)
 	if err == nil || !strings.Contains(err.Error(), `undefined variable "y"`) {
 		t.Errorf("expected $y to be out of scope, got %v", err)
@@ -1728,7 +1740,7 @@ func TestM2ConditionMustBeBool(t *testing.T) {
 	_, err := run(t, `
 use io;
 func app() {
-    if (1) { printf("x"); }
+    if (1) { io.printf("x"); }
 }`)
 	if err == nil || !strings.Contains(err.Error(), "must be bool") {
 		t.Errorf("expected bool-required error, got %v", err)

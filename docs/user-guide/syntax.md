@@ -12,12 +12,12 @@ written across many lines or jammed onto one, and it parses the same:
 # canonical form
 use io;
 def x as int init 21;
-printf("%d\n", $x + $x);
+io.printf("%d\n", $x + $x);
 ```
 
 ```jennifer
 # all three statements on one line - same program
-use io; def x as int init 21; printf("%d\n", $x + $x);
+use io; def x as int init 21; io.printf("%d\n", $x + $x);
 ```
 
 ```jennifer
@@ -47,8 +47,8 @@ All three of these print the host OS and are accepted by the parser:
 use io;
 use os;
 
-printf(os.JENNIFER_OS);            # canonical - tight everywhere
-printf( os.JENNIFER_OS );          # ugly - spaces inside the call parens
+io.printf(os.JENNIFER_OS);            # canonical - tight everywhere
+io.printf( os.JENNIFER_OS );          # ugly - spaces inside the call parens
 printf   (   os     . JENNIFER_OS  );   # uglier - spaces around `.` too
 ```
 
@@ -96,7 +96,7 @@ line of a script may be a Unix shebang and the interpreter will skip it:
 ```jennifer
 #!/usr/bin/env -S jennifer run
 use io;
-printf("hi\n");
+io.printf("hi\n");
 ```
 
 (`env -S` splits the rest of the line into arguments, which is how

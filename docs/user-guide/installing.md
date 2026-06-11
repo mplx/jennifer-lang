@@ -26,7 +26,7 @@ auto-loaded - it's in scope in every program without any `use` statement.
 You can also pipe source in on stdin by passing `-` as the filename:
 
 ```sh
-echo 'use io; printf("hi\n");' | ./jennifer run -
+echo 'use io; io.printf("hi\n");' | ./jennifer run -
 ./jennifer run - < program.j
 cat program.j | ./jennifer run -
 ```
@@ -48,7 +48,7 @@ type :quit (or Ctrl-D) to exit; :help for help
 >>> def x as int init 21;
 >>> $x + $x;
 42
->>> printf("hi\n");
+>>> io.printf("hi\n");
 hi
 >>> func dbl(n as int) {
 ...   return $n * 2;

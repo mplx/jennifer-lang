@@ -177,8 +177,8 @@ func TestFmtSpacingRules(t *testing.T) {
 		},
 		{
 			"call sites hug paren",
-			`printf( "hi" );`,
-			"printf(\"hi\");\n",
+			`io.printf( "hi" );`,
+			"io.printf(\"hi\");\n",
 		},
 		{
 			"keyword if takes space before paren",
@@ -187,8 +187,8 @@ func TestFmtSpacingRules(t *testing.T) {
 		},
 		{
 			"for header keeps semicolons inline",
-			`for(def i as int init 0;$i<3;$i=$i+1){printf("x");}`,
-			"for (def i as int init 0; $i < 3; $i = $i + 1) {\n    printf(\"x\");\n}\n",
+			`for(def i as int init 0;$i<3;$i=$i+1){io.printf("x");}`,
+			"for (def i as int init 0; $i < 3; $i = $i + 1) {\n    io.printf(\"x\");\n}\n",
 		},
 		{
 			"else cuddles closing brace",

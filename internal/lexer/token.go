@@ -24,8 +24,9 @@ const (
 	TOKEN_AS
 	TOKEN_INIT
 	TOKEN_CONST
-	TOKEN_IMPORT // file import: `import "name.j";`
-	TOKEN_USE    // library import: `use io;`
+	TOKEN_INCLUDE // textual file splice: `include "name.j";` (M10+)
+	TOKEN_IMPORT  // reserved word, no live syntax (M10+ moved file splice to `include`; reserved for the M17 module system)
+	TOKEN_USE     // library import: `use io;`
 	TOKEN_RETURN
 	TOKEN_IF
 	TOKEN_ELSEIF
@@ -92,6 +93,7 @@ var tokenNames = map[TokenType]string{
 	TOKEN_AS:          "AS",
 	TOKEN_INIT:        "INIT",
 	TOKEN_CONST:       "CONST",
+	TOKEN_INCLUDE:     "INCLUDE",
 	TOKEN_IMPORT:      "IMPORT",
 	TOKEN_USE:         "USE",
 	TOKEN_RETURN:      "RETURN",
@@ -172,8 +174,9 @@ var keywords = map[string]TokenType{
 	"as":     TOKEN_AS,
 	"init":   TOKEN_INIT,
 	"const":  TOKEN_CONST,
-	"import": TOKEN_IMPORT,
-	"use":    TOKEN_USE,
+	"include": TOKEN_INCLUDE,
+	"import":  TOKEN_IMPORT,
+	"use":     TOKEN_USE,
 	"return": TOKEN_RETURN,
 	"if":     TOKEN_IF,
 	"elseif": TOKEN_ELSEIF,

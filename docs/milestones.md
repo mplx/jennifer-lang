@@ -328,7 +328,7 @@ once the language foundation is in place.
 
 ## M10 - Namespace-first library architecture
 
-**Status:** planned.
+**Status:** done.
 
 A pre-language-completion milestone that promotes namespacing from
 "opt-in for domain libraries" to "the default for every library,"
@@ -369,38 +369,68 @@ becomes more disruptive.
   keyed off the same charter ("anything that needs key
   material") that already separates `hash` from `crypto`.
 - **`convert` migrates to namespaced-only** (**BREAKING** for
-  programs). `int(v)`, `float(v)`, `string(v)`, `bool(v)`,
-  `typeOf(v)` move behind `convert.`. The four type-name calls
-  are especially error-prone as bare functions because they look
-  like type annotations; namespacing them removes the ambiguity.
-- **`io.printf` / `io.sprintf` decision deferred to start of
-  M10.** Either both stay global (highest-traffic functions in
-  the language, terms of art with no plausible collision) or
-  both migrate to namespaced-only (a third breaking change after
-  M9's strings move; cleaner end state). Picked when M10 begins
-  so we have one more turn of feedback first.
-- **`core` keeps `len` and `JENNIFER_VERSION` global** via
-  `RegisterGlobal` / `RegisterGlobalConst`. They're also
-  reachable as `core.len` / `core.JENNIFER_VERSION`. These two
-  are the entire ongoing global set unless `io.printf` is added
-  in the deferred-decision above. The bar for adding more is
-  "polymorphic structural primitive that spans types" - high by
-  design.
-- **Alias-with-globals = error.** Today
-  `use os; use os as o;` activates both prefixes. Once a library
-  carries any `RegisterGlobal` names, multiple `use NAME [as
-  ALIAS];` for the same canonical library is rejected with
-  `library 'X' already in scope`. The escape hatch is "don't
-  expose globals from a library that needs multiple aliases" -
-  which in practice is no library, because globals are
-  vanishingly rare. Aliasing remains a *rename*; the canonical
-  prefix is still freed for ordinary identifier use after
-  `use X as Y;`.
+  programs). The four conversion callees are renamed `toInt`,
+  `toFloat`, `toString`, `toBool` so they don't collide with the
+  type keywords (`int`, `float`, `string`, `bool`); pre-M10
+  `int("42")` becomes `convert.toInt("42")`. The `to`-prefixed
+  verb also reads as English at the call site ("convert to
+  int"). `typeOf` keeps its name - it doesn't collide and the
+  intent is already clear. `convert` is the only library where
+  the M10 namespacing happened alongside a verb rename; every
+  other library kept its M9 / pre-M10 names.
+- **All `io` builtins migrate to namespaced-only**
+  (**BREAKING** for programs). `io.printf`, `io.sprintf`,
+  `io.readLine`, `io.eof` - the highest-traffic surface in the
+  language. The "stay global, terms of art" alternative was
+  considered and rejected at M10 kickoff: keeping io flat would
+  mean two reader paths for "where does this name come from?"
+  (`printf` is a global from io; `math.sqrt` is namespaced from
+  math) instead of one. After M10 the rule is uniform - every
+  call into a library carries the library name at the call site.
+- **`core` keeps `len` and `JENNIFER_VERSION` global only** via
+  `RegisterGlobal` / `RegisterGlobalConst`. There is **no**
+  `core.len` / `core.JENNIFER_VERSION` qualified form - shipping
+  the same name two ways would violate stance #1. The exposure
+  is asymmetric on purpose: `core` is the auto-loaded escape
+  hatch, and its two names earn the exemption from "every call
+  carries its library name" precisely by staying short. These
+  two are the entire ongoing global set. The bar for adding more
+  is "polymorphic structural primitive that spans types" - high
+  by design.
+- **Per-library global storage + three globals-publishing
+  rules.** Global registrations are kept per-library in
+  `globalFnsByLib` / `globalConstsByLib` (lib -> name -> value),
+  *not* in the resolution map at Install time. `processImports`
+  promotes the activated library's entries into the resolution
+  map and runs three checks before doing so:
+  1. **Duplicate `use` of a globals-publishing library** is
+     rejected with `library 'NAME' already in scope` (REPL
+     silently no-ops a repeat).
+  2. **Aliasing a globals-only library** (`use NAME as ALIAS;`
+     where the library has no namespaced names) is rejected
+     with `library 'NAME' has no namespaced names; \`as ALIAS\`
+     aliasing is meaningless here` - the alias has nothing to
+     rename. Same shape as the pre-M10 flat-only check, but
+     gated on globals-only rather than namespaced-absent.
+  3. **Two libraries publishing the same global name** are
+     rejected at the second `use` with `library "B" collides
+     with already-active library "A" on global "VER"`. The
+     per-library storage is what makes this detectable - and
+     also what makes the single-library import work correctly
+     when two libraries happen to share a global name (the
+     user just picks one).
+  In practice all three rules are forward-looking: `core` is
+  the only library with globals today, and it's auto-loaded
+  and can't be `use`d. They exist so a hypothetical future
+  globals-publishing library stays well-behaved by
+  construction.
 - **`use NAME [as ALIAS];` rule for flat-only libraries
-  disappears.** Today `use math as m;` errors with "math has no
-  namespaced builtins; `as m` is meaningless here." After M10
-  every library is namespaced, so the rejection rule has no
-  surface to fire on - removed.
+  disappears for the general case.** Pre-M10 `use math as m;`
+  errored with "math has no namespaced builtins; `as m` is
+  meaningless here." After M10 every domain library is
+  namespaced, so the rejection rule no longer fires for them.
+  A specialised version of the rule is kept for
+  globals-only libraries (rule 2 above).
 - **Library-author guidance updated.** The
   `docs/libraries/index.md` "flat vs namespaced" framing is
   retired. The new rule is "every library is namespaced; only
@@ -485,7 +515,7 @@ later library needs.
 - New `bytes <-> string` codecs land in `convert` as
   `convert.bytesFromString($s, $codec)` and
   `convert.stringFromBytes($b, $codec)`. Two-argument shape
-  follows `convert.int(v)` / `convert.float(v)` (one input, one
+  follows `convert.toInt(v)` / `convert.toFloat(v)` (one input, one
   output) with `$codec` selecting the encoding (`"utf-8"` by
   default; further codecs ship with the `encoding` library in
   M15.4). The pair lives in `convert` because bytes ↔ string

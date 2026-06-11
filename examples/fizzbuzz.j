@@ -8,13 +8,13 @@ use io;
 
 for (def i as int init 1; $i <= 15; $i = $i + 1) {
     if ($i % 15 == 0) {
-        printf("FizzBuzz\n");
+        io.printf("FizzBuzz\n");
     } elseif ($i % 3 == 0) {
-        printf("Fizz\n");
+        io.printf("Fizz\n");
     } elseif ($i % 5 == 0) {
-        printf("Buzz\n");
+        io.printf("Buzz\n");
     } else {
-        printf($i);
-        printf("\n");
+        io.printf($i);
+        io.printf("\n");
     }
 }

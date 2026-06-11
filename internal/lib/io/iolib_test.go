@@ -12,29 +12,26 @@ import (
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 )
 
-// callPrintf and callSprintf invoke the registered builtins. Builtins are now
-// stored as `builtinEntry{Lib, Fn}` rather than bare function values; the
-// helpers hide that indirection from each test.
+// callPrintf and callSprintf invoke the registered namespaced builtins.
+// After M10 every io builtin lives under the `io.` namespace, so we
+// go through the interpreter's namespaced lookup helper rather than
+// the flat Builtins map.
 func callPrintf(in *interpreter.Interpreter, out io.Writer, args []interpreter.Value) (interpreter.Value, error) {
-	return in.Builtins["printf"].Fn(interpreter.BuiltinCtx{Out: out}, args)
+	return in.LookupNamespacedBuiltin("io", "printf")(interpreter.BuiltinCtx{Out: out}, args)
 }
 
 func callSprintf(in *interpreter.Interpreter, args []interpreter.Value) (interpreter.Value, error) {
-	return in.Builtins["sprintf"].Fn(interpreter.BuiltinCtx{}, args)
+	return in.LookupNamespacedBuiltin("io", "sprintf")(interpreter.BuiltinCtx{}, args)
 }
 
 func TestInstallRegistersBuiltins(t *testing.T) {
 	in := interpreter.New()
 	Install(in)
-	b, ok := in.Builtins["printf"]
-	if !ok {
-		t.Fatal("printf not registered after Install")
+	if in.LookupNamespacedBuiltin("io", "printf") == nil {
+		t.Fatal("io.printf not registered after Install")
 	}
-	if b.Lib != "io" {
-		t.Errorf("printf registered under lib %q, want %q", b.Lib, "io")
-	}
-	if _, ok := in.Builtins["sprintf"]; !ok {
-		t.Fatal("sprintf not registered after Install")
+	if in.LookupNamespacedBuiltin("io", "sprintf") == nil {
+		t.Fatal("io.sprintf not registered after Install")
 	}
 }
 
@@ -54,11 +51,11 @@ func TestPrintfSingleArgDisplay(t *testing.T) {
 	for _, c := range cases {
 		var buf bytes.Buffer
 		if _, err := callPrintf(in, &buf, []interpreter.Value{c.v}); err != nil {
-			t.Errorf("printf(%v): %v", c.v, err)
+			t.Errorf("io.printf(%v): %v", c.v, err)
 			continue
 		}
 		if buf.String() != c.want {
-			t.Errorf("printf(%v): got %q, want %q", c.v, buf.String(), c.want)
+			t.Errorf("io.printf(%v): got %q, want %q", c.v, buf.String(), c.want)
 		}
 	}
 }
@@ -80,11 +77,11 @@ func TestPrintfFormatString(t *testing.T) {
 	for _, c := range cases {
 		var buf bytes.Buffer
 		if _, err := callPrintf(in, &buf, c.args); err != nil {
-			t.Errorf("printf(%v): %v", c.args, err)
+			t.Errorf("io.printf(%v): %v", c.args, err)
 			continue
 		}
 		if buf.String() != c.want {
-			t.Errorf("printf(%v): got %q, want %q", c.args, buf.String(), c.want)
+			t.Errorf("io.printf(%v): got %q, want %q", c.args, buf.String(), c.want)
 		}
 	}
 }
@@ -109,11 +106,11 @@ func TestPrintfFormatErrors(t *testing.T) {
 		var buf bytes.Buffer
 		_, err := callPrintf(in, &buf, c.args)
 		if err == nil {
-			t.Errorf("printf(%v): expected error, got nil", c.args)
+			t.Errorf("io.printf(%v): expected error, got nil", c.args)
 			continue
 		}
 		if !strings.Contains(err.Error(), c.want) {
-			t.Errorf("printf(%v): error %q does not contain %q", c.args, err.Error(), c.want)
+			t.Errorf("io.printf(%v): error %q does not contain %q", c.args, err.Error(), c.want)
 		}
 	}
 }

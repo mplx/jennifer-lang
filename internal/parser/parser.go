@@ -6,6 +6,7 @@ package parser
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/mplx/jennifer-lang/internal/lexer"
 )
@@ -1097,18 +1098,22 @@ func (p *parser) parsePrimaryAtom() (Expr, error) {
 		}
 		return p.parseCallTail(t)
 	case lexer.TOKEN_INT_TYPE, lexer.TOKEN_FLOAT_TYPE, lexer.TOKEN_STRING_TYPE, lexer.TOKEN_BOOL_TYPE:
-		// Type-name-as-function: `int(v)`, `float(v)`, `string(v)`, `bool(v)`.
-		// These are calls to the `convert` library. Only valid here if
-		// immediately followed by `(` - bare type keywords are still type
-		// references handled by parseType.
-		if p.peekN(1).Type != lexer.TOKEN_LPAREN {
-			return nil, &ParseError{
-				Msg:  fmt.Sprintf("type name %q can only appear in expression position when called as a conversion: %s(...)", t.Lexeme, t.Lexeme),
-				File: t.File, Line: t.Line, Col: t.Col,
-			}
+		// Type keywords have no expression-position meaning. The pre-M10
+		// `int(v)` / `float(v)` / `string(v)` / `bool(v)` conversion-call
+		// shortcut moved to the convert library under names that avoid
+		// the keyword collision: `convert.toInt(v)`, `convert.toFloat(v)`,
+		// `convert.toString(v)`, `convert.toBool(v)`.
+		hint := ""
+		if p.peekN(1).Type == lexer.TOKEN_LPAREN {
+			toName := "to" + strings.ToUpper(t.Lexeme[:1]) + t.Lexeme[1:]
+			hint = fmt.Sprintf(" (the bare-call form was removed in M10; use `convert.%s(...)` instead)", toName)
+		} else {
+			hint = " (type names belong after `as` in a declaration)"
 		}
-		p.advance() // consume the type keyword
-		return p.parseCallTail(t)
+		return nil, &ParseError{
+			Msg:  fmt.Sprintf("type name %q cannot appear in expression position%s", t.Lexeme, hint),
+			File: t.File, Line: t.Line, Col: t.Col,
+		}
 	case lexer.TOKEN_LPAREN:
 		p.advance()
 		e, err := p.parseExpr()

@@ -68,6 +68,16 @@ type Interpreter struct {
 	NSConstants     map[nsKey]Value             // namespaced constants: os.JENNIFER_LF, ...
 	knownLibs       map[string]bool             // libraries with at least one registered builtin OR constant
 	knownNamespaces map[string]bool             // libraries that registered through the namespaced API
+	libsWithGlobals map[string]bool             // libraries that registered any RegisterGlobal name (M10+)
+
+	// Per-library registries for globals. RegisterGlobal* writes here at
+	// Install time; processImports copies an activated library's entries
+	// into the resolution maps (Builtins / LibConstants) and runs
+	// collision detection against already-active libraries. Keyed
+	// lib -> name -> value so two libraries registering the same global
+	// name don't silently overwrite each other.
+	globalFnsByLib    map[string]map[string]Builtin
+	globalConstsByLib map[string]map[string]Value
 	imported        map[string]bool             // libraries the program has `use`d
 	nsPrefixes      map[string]string           // active call-site prefix -> canonical namespace (after aliasing)
 	nsAliasedAway   map[string]string           // canonical namespace -> alias chosen by `use NAME as ALIAS;`
@@ -83,8 +93,11 @@ func New() *Interpreter {
 		LibConstants:    map[string]libConstantEntry{},
 		NSBuiltins:      map[nsKey]Builtin{},
 		NSConstants:     map[nsKey]Value{},
-		knownLibs:       map[string]bool{},
-		knownNamespaces: map[string]bool{},
+		knownLibs:         map[string]bool{},
+		knownNamespaces:   map[string]bool{},
+		libsWithGlobals:   map[string]bool{},
+		globalFnsByLib:    map[string]map[string]Builtin{},
+		globalConstsByLib: map[string]map[string]Value{},
 		imported:        map[string]bool{},
 		nsPrefixes:      map[string]string{},
 		nsAliasedAway:   map[string]string{},
@@ -104,28 +117,57 @@ func New() *Interpreter {
 // `use core;` without importing the library package and creating a cycle.
 const CoreLibraryName = "core"
 
-// Register attaches a builtin function under the given Jennifer library name.
-// Libraries call this at install time; programs make those builtins callable
-// by writing `use <lib>;`.
-func (i *Interpreter) Register(lib, name string, fn Builtin) {
-	i.Builtins[name] = builtinEntry{Lib: lib, Fn: fn}
+// RegisterGlobal attaches a builtin function under the given Jennifer
+// library name AND exposes it as a bare-name global. After M10 this is
+// the high-bar API: it's reserved for `core`'s polymorphic structural
+// primitives (`len`, `JENNIFER_VERSION`).
+//
+// Storage is per-library: the entry goes into `globalFnsByLib[lib][name]`,
+// not directly into the global resolution map. processImports copies
+// the entry into the resolution map (Builtins) when the library is
+// activated by `use lib;`, and runs collision detection against any
+// already-active library publishing the same global. The library
+// that calls RegisterGlobal also receives a duplicate-`use` collision
+// rule (see processImports) - any later `use NAME [as ALIAS];` after
+// the first is rejected with "library already in scope."
+//
+// Exception: if the library is already imported when RegisterGlobal
+// runs (auto-loaded `core` at startup), the entry is also written
+// directly into the resolution map so the names are immediately live.
+func (i *Interpreter) RegisterGlobal(lib, name string, fn Builtin) {
+	if i.globalFnsByLib[lib] == nil {
+		i.globalFnsByLib[lib] = map[string]Builtin{}
+	}
+	i.globalFnsByLib[lib][name] = fn
 	i.knownLibs[lib] = true
+	i.libsWithGlobals[lib] = true
+	if i.imported[lib] {
+		i.Builtins[name] = builtinEntry{Lib: lib, Fn: fn}
+	}
 }
 
-// RegisterConst attaches a library-provided constant under the given Jennifer
-// library name. Programs reference it as a bare identifier (e.g. `PI`); the
-// reference is only allowed after `use <lib>;`.
-func (i *Interpreter) RegisterConst(lib, name string, value Value) {
-	i.LibConstants[name] = libConstantEntry{Lib: lib, Value: value}
+// RegisterGlobalConst attaches a library-provided constant under the given
+// Jennifer library name AND exposes it globally as a bare uppercase
+// identifier (e.g. `JENNIFER_VERSION`). Same M10 high bar as
+// RegisterGlobal; same per-library storage and collision-at-use semantics.
+func (i *Interpreter) RegisterGlobalConst(lib, name string, value Value) {
+	if i.globalConstsByLib[lib] == nil {
+		i.globalConstsByLib[lib] = map[string]Value{}
+	}
+	i.globalConstsByLib[lib][name] = value
 	i.knownLibs[lib] = true
+	i.libsWithGlobals[lib] = true
+	if i.imported[lib] {
+		i.LibConstants[name] = libConstantEntry{Lib: lib, Value: value}
+	}
 }
 
 // RegisterNamespaced attaches a namespaced builtin. The library
 // name doubles as the namespace prefix: `in.RegisterNamespaced("os",
 // "platform", fn)` makes the function callable as `os.platform()` once
-// the program writes `use os;`. A library may register both flat
-// builtins (via Register) and namespaced builtins, but the essential
-// libraries (io, convert, math, strings, core) intentionally stay flat.
+// the program writes `use os;`. This is the M10 default; almost every
+// library uses this and only `core` adds dual RegisterGlobal exposure
+// on top.
 func (i *Interpreter) RegisterNamespaced(lib, name string, fn Builtin) {
 	i.NSBuiltins[nsKey{NS: lib, Name: name}] = fn
 	i.knownLibs[lib] = true
@@ -139,6 +181,14 @@ func (i *Interpreter) RegisterNamespacedConst(lib, name string, value Value) {
 	i.NSConstants[nsKey{NS: lib, Name: name}] = value
 	i.knownLibs[lib] = true
 	i.knownNamespaces[lib] = true
+}
+
+// LookupNamespacedBuiltin returns the registered builtin for
+// (namespace, name) or nil if none is registered. Test-only convenience
+// so libraries with namespaced builtins can be exercised end-to-end
+// without exporting the internal nsKey type.
+func (i *Interpreter) LookupNamespacedBuiltin(ns, name string) Builtin {
+	return i.NSBuiltins[nsKey{NS: ns, Name: name}]
 }
 
 // availableLibsString returns a sorted, comma-separated list of registered
@@ -244,7 +294,16 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 //     fighting for the same prefix is a positioned error.
 //   - `core` is always auto-loaded; explicit `use core;` is rejected.
 func (i *Interpreter) processImports(prog *parser.Program, repl bool) error {
-	_ = repl // currently unused; kept for documentation symmetry with the REPL path
+	// alreadyImported snapshots `imported` at entry. In batch mode it's empty;
+	// in REPL it's whatever earlier inputs already activated. The
+	// alias-with-globals rule (M10) uses this to silently no-op a repeated
+	// `use lib;` in the REPL while still erroring on the in-source
+	// duplicate (`use io; use io;` in one batch program).
+	alreadyImported := make(map[string]bool, len(i.imported))
+	for k := range i.imported {
+		alreadyImported[k] = true
+	}
+	seenThisRun := map[string]bool{}
 	for _, imp := range prog.Imports {
 		if imp.Name == CoreLibraryName {
 			file, line, col := posFor(imp)
@@ -260,20 +319,75 @@ func (i *Interpreter) processImports(prog *parser.Program, repl bool) error {
 				File: file, Line: line, Col: col,
 			}
 		}
-		i.imported[imp.Name] = true
-		// Namespace bookkeeping. Only libraries that registered through the
-		// namespaced API participate in qualified-call resolution; a
-		// `use math;` for a flat-only library has no namespace effect even
-		// if the user writes the optional `as ALIAS` clause (which would
-		// be pointless for a flat lib).
-		if !i.knownNamespaces[imp.Name] {
-			if imp.AsName != "" {
+		// M10 alias-with-globals rule: if the library exposes any
+		// RegisterGlobal name, a second `use NAME [as ALIAS];` (in the same
+		// batch program) collides on the globals. The first wins; the second
+		// is rejected with a positioned error. In the REPL we silently
+		// no-op a repeat so re-running a snippet still works.
+		duplicate := seenThisRun[imp.Name] || (alreadyImported[imp.Name] && !repl)
+		if i.libsWithGlobals[imp.Name] && duplicate {
+			file, line, col := posFor(imp)
+			return &runtimeError{
+				Msg:  fmt.Sprintf("library %q already in scope (it exposes global names; only one `use %s [as ALIAS];` is allowed)", imp.Name, imp.Name),
+				File: file, Line: line, Col: col,
+			}
+		}
+		seenThisRun[imp.Name] = true
+		// In the REPL, if this library has already been activated in an
+		// earlier input we still want the prefix binding to stay - skip the
+		// re-registration so we don't double-error or wipe an alias.
+		if repl && alreadyImported[imp.Name] {
+			continue
+		}
+		// M10 globals-publishing rules. Two checks before activation:
+		//   1. "Alias on a globals-only library is meaningless." If the
+		//      library has globals but no namespaced names, `as ALIAS`
+		//      has nothing to rename - reject upfront rather than letting
+		//      `ALIAS.NAME` fail later at the call site with a confusing
+		//      message.
+		//   2. "Two libraries cannot publish the same global." If
+		//      activating this library would shadow a global already
+		//      owned by an active library, reject with a positioned
+		//      collision error. In practice `core` is the only library
+		//      with globals today, so this is forward-looking; any
+		//      future second `RegisterGlobal*`-using library trips here
+		//      if it picks a name `core` already owns.
+		if i.libsWithGlobals[imp.Name] {
+			if imp.AsName != "" && !i.knownNamespaces[imp.Name] {
 				file, line, col := posFor(imp)
 				return &runtimeError{
-					Msg:  fmt.Sprintf("library %q has no namespaced builtins; `as %s` aliasing is meaningless here", imp.Name, imp.AsName),
+					Msg:  fmt.Sprintf("library %q has no namespaced names; `as %s` aliasing is meaningless here", imp.Name, imp.AsName),
 					File: file, Line: line, Col: col,
 				}
 			}
+			if other, name, hit := i.findGlobalCollision(imp.Name); hit {
+				file, line, col := posFor(imp)
+				return &runtimeError{
+					Msg:  fmt.Sprintf("library %q collides with already-active library %q on global %q (only one library may publish a given global name)", imp.Name, other, name),
+					File: file, Line: line, Col: col,
+				}
+			}
+		}
+		i.imported[imp.Name] = true
+		// Copy the activated library's globals into the resolution maps.
+		// Doing this here (rather than at Register time) is what makes the
+		// single-library-imported case work: each library's globals are
+		// kept per-library at registration and only the imported one
+		// becomes visible.
+		for name, fn := range i.globalFnsByLib[imp.Name] {
+			i.Builtins[name] = builtinEntry{Lib: imp.Name, Fn: fn}
+		}
+		for name, val := range i.globalConstsByLib[imp.Name] {
+			i.LibConstants[name] = libConstantEntry{Lib: imp.Name, Value: val}
+		}
+		// Namespace bookkeeping. After M10 every library is namespaced, so
+		// every `use` activates a prefix; the flat-only escape hatch is gone.
+		// (Exception: a globals-only library activates no namespace prefix -
+		// caught above when AsName is set; the bare-`use` case just skips
+		// this block because there's nothing in NSBuiltins / NSConstants
+		// for the library and a `prefix.NAME` reference will fail with the
+		// usual "unknown namespaced reference" error.)
+		if !i.knownNamespaces[imp.Name] {
 			continue
 		}
 		prefix := imp.Name
@@ -291,6 +405,39 @@ func (i *Interpreter) processImports(prog *parser.Program, repl bool) error {
 		i.nsPrefixes[prefix] = imp.Name
 	}
 	return nil
+}
+
+// findGlobalCollision checks whether any global name published by `lib`
+// is also published by an already-imported library. Returns
+// (collidingLib, globalName, true) on the first collision; ("", "",
+// false) if none. Used by processImports to reject conflicting
+// `use NAME;` activations before they wire up the resolution maps.
+func (i *Interpreter) findGlobalCollision(lib string) (string, string, bool) {
+	check := func(name string) (string, bool) {
+		for other := range i.imported {
+			if other == lib {
+				continue
+			}
+			if _, has := i.globalConstsByLib[other][name]; has {
+				return other, true
+			}
+			if _, has := i.globalFnsByLib[other][name]; has {
+				return other, true
+			}
+		}
+		return "", false
+	}
+	for name := range i.globalConstsByLib[lib] {
+		if other, hit := check(name); hit {
+			return other, name, true
+		}
+	}
+	for name := range i.globalFnsByLib[lib] {
+		if other, hit := check(name); hit {
+			return other, name, true
+		}
+	}
+	return "", "", false
 }
 
 // checkMethodNoShadow enforces the no-shadowing rules that apply to a

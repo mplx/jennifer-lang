@@ -6,6 +6,6 @@
 use io;
 
 def name as string init "Jennifer";
-printf("hello, ");
-printf($name);
-printf("!\n");
+io.printf("hello, ");
+io.printf($name);
+io.printf("!\n");

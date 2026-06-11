@@ -71,7 +71,7 @@ reserved for use-site references that read or assign a variable. So:
 
 ```jennifer
 def x as int init 5;     # def site - bare name
-printf($x);              # use site - $ prefix
+io.printf($x);              # use site - $ prefix
 $x = 42;                 # assignment - $ prefix
 
 def $x as int init 5;    # ERROR: drop the $ here
@@ -82,7 +82,7 @@ no meaning):
 
 ```jennifer
 def const MAX as int init 100;
-printf(MAX);             # use site - bare name
+io.printf(MAX);             # use site - bare name
 MAX = 200;               # ERROR: cannot assign to constant
 ```
 
@@ -124,19 +124,19 @@ use io;
 
 # A list is an ordered, 0-indexed, mutable sequence.
 def xs as list of int init [10, 20, 30];
-printf("%d\n", $xs[0]);          # 10
+io.printf("%d\n", $xs[0]);          # 10
 $xs[1] = 99;                     # index write
-printf("%d\n", len($xs));        # 3
+io.printf("%d\n", len($xs));        # 3
 
 # A map is a key->value lookup. Iteration is in insertion order.
 def m as map of string to int init {"a": 1, "b": 2};
-printf("%d\n", $m["a"]);         # 1
+io.printf("%d\n", $m["a"]);         # 1
 $m["c"] = 3;                     # adds new key
 $m["a"] = 99;                    # updates existing
 
 # Iterate a list's elements, or a map's keys.
-for (def x in $xs) { printf("%d ", $x); }      printf("\n");
-for (def k in $m) { printf("%s ", $k); }       printf("\n");
+for (def x in $xs) { io.printf("%d ", $x); }      io.printf("\n");
+for (def k in $m) { io.printf("%s ", $k); }       io.printf("\n");
 ```
 
 A few rules worth knowing up front:
@@ -224,7 +224,7 @@ $xs[] = 30;
 Rules:
 
 - **Write-only.** `$xs[]` is only meaningful as a write target. Any
-  read context (`printf($xs[])`, `def y init $xs[] + 1`) is a parse
+  read context (`io.printf($xs[])`, `def y init $xs[] + 1`) is a parse
   error.
 - **Lists only.** `$m[] = ...;` on a map errors at runtime - maps
   have no "end-of" position.

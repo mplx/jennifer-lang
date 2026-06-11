@@ -26,7 +26,7 @@ func TestVersionConstantMatchesPackage(t *testing.T) {
 	iolib.Install(in)
 	corelib.Install(in)
 
-	src := `use io; printf("%s", JENNIFER_VERSION);`
+	src := `use io; io.printf("%s", JENNIFER_VERSION);`
 	prog, err := parser.Parse(src)
 	if err != nil {
 		t.Fatalf("parse: %v", err)

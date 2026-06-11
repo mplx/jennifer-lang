@@ -18,9 +18,9 @@ nothing here will surprise you.
   Same goes for any other keyword operator the language grows.
 - **One space after `,` and `;` inside `for (...; ...; ...)`**, never
   before. `for (def i as int init 0; $i < 10; $i = $i + 1)`.
-- **No space inside parentheses**: `printf("hi")`, not `printf( "hi" )`.
+- **No space inside parentheses**: `io.printf("hi")`, not `io.printf( "hi" )`.
 - **One space between a keyword and its `(`**: `if (cond)`, `while (cond)`,
-  `for (...)`. Function calls don't get this space: `printf(...)`.
+  `for (...)`. Function calls don't get this space: `io.printf(...)`.
 - **No space inside `[ ]` or `{ }` list/map literals**: `[1, 2, 3]`,
   `{"a": 1, "b": 2}`, not `[ 1, 2, 3 ]` or `{ "a" : 1 }`. Empty
   literals are `[]` and `{}`. Same rule as `()`.
@@ -73,7 +73,7 @@ nothing here will surprise you.
 
   ```jennifer
   for (def i as int init 0; $i < 10; $i = $i + 1) {   # preferred
-      printf("%d\n", $i);
+      io.printf("%d\n", $i);
   }
   ```
 
@@ -82,7 +82,7 @@ nothing here will surprise you.
   ```jennifer
   def i as int;
   for ($i = 0; $i < 10; $i = $i + 1) {                # avoid
-      printf("%d\n", $i);
+      io.printf("%d\n", $i);
   }
   ```
 
@@ -227,7 +227,7 @@ func fact(n as int) {
     return $n * fact($n - 1);
 }
 for (def i as int init 0; $i <= 8; $i = $i + 1) {
-    printf("%d! = %d\n", $i, fact($i));
+    io.printf("%d! = %d\n", $i, fact($i));
 }
 ```
 

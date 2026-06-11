@@ -7,7 +7,7 @@ Save the following as `hello.j`:
 use io;
 
 def x as int init 21;
-printf($x + $x);
+io.printf($x + $x);
 ```
 
 Run it:
@@ -25,7 +25,7 @@ You should see `42`.
 2. `def x as int init 21;` declares an integer variable named `x` and
    initializes it to `21`. Notice that **using** a variable requires the `$`
    prefix.
-3. `printf($x + $x)` calls the standard library function with the result of
+3. `io.printf($x + $x)` calls the standard library function with the result of
    `21 + 21`.
 
 Top-level statements run in source order - there is no required entry-point

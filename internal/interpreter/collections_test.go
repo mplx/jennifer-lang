@@ -16,9 +16,9 @@ use io;
 def xs as list of int init [10, 20];
 $xs[] = 30;
 $xs[] = 40;
-for (def x in $xs) { printf("%d ", $x); }
-printf("\n");
-printf("len=%d\n", len($xs));
+for (def x in $xs) { io.printf("%d ", $x); }
+io.printf("\n");
+io.printf("len=%d\n", len($xs));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -75,10 +75,10 @@ use io;
 use lists;
 def xs as list of int init [1, 2, 3];
 $xs = lists.push($xs, 4);
-printf("after push: len=%d last=%d\n", len($xs), lists.last($xs));
+io.printf("after push: len=%d last=%d\n", len($xs), lists.last($xs));
 $xs = lists.pop($xs);
 $xs = lists.pop($xs);
-printf("after two pops: len=%d last=%d\n", len($xs), lists.last($xs));
+io.printf("after two pops: len=%d last=%d\n", len($xs), lists.last($xs));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -93,7 +93,7 @@ func TestListsFirstLast(t *testing.T) {
 use io;
 use lists;
 def xs as list of string init ["a", "b", "c"];
-printf("%s/%s\n", lists.first($xs), lists.last($xs));
+io.printf("%s/%s\n", lists.first($xs), lists.last($xs));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -117,7 +117,7 @@ use lists;
 def xs as list of int init [1, 2, 3, 4, 5];
 def front as list of int init lists.head($xs, 2);
 def back as list of int init lists.tail($xs, 2);
-printf("head=[%d, %d] tail=[%d, %d]\n", $front[0], $front[1], $back[0], $back[1]);
+io.printf("head=[%d, %d] tail=[%d, %d]\n", $front[0], $front[1], $back[0], $back[1]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -133,8 +133,8 @@ use io;
 use lists;
 def xs as list of int init [1, 2, 3];
 def rev as list of int init lists.reverse($xs);
-printf("orig: %d,%d,%d\n", $xs[0], $xs[1], $xs[2]);
-printf("rev:  %d,%d,%d\n", $rev[0], $rev[1], $rev[2]);
+io.printf("orig: %d,%d,%d\n", $xs[0], $xs[1], $xs[2]);
+io.printf("rev:  %d,%d,%d\n", $rev[0], $rev[1], $rev[2]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -150,8 +150,8 @@ use io;
 use lists;
 def xs as list of int init [3, 1, 4, 1, 5, 9, 2, 6];
 def s as list of int init lists.sort($xs);
-for (def v in $s) { printf("%d ", $v); }
-printf("\n");
+for (def v in $s) { io.printf("%d ", $v); }
+io.printf("\n");
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -167,8 +167,8 @@ use io;
 use lists;
 def xs as list of string init ["c", "a", "b"];
 def s as list of string init lists.sort($xs);
-for (def v in $s) { printf("%s ", $v); }
-printf("\n");
+for (def v in $s) { io.printf("%s ", $v); }
+io.printf("\n");
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -183,7 +183,7 @@ func TestListsContains(t *testing.T) {
 use io;
 use lists;
 def xs as list of int init [10, 20, 30];
-printf("%t %t\n", lists.contains($xs, 20), lists.contains($xs, 99));
+io.printf("%t %t\n", lists.contains($xs, 20), lists.contains($xs, 99));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -200,7 +200,7 @@ use lists;
 def a as list of int init [1, 2];
 def b as list of int init [3, 4, 5];
 def c as list of int init lists.concat($a, $b);
-printf("len=%d first=%d last=%d\n", len($c), lists.first($c), lists.last($c));
+io.printf("len=%d first=%d last=%d\n", len($c), lists.first($c), lists.last($c));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -217,8 +217,8 @@ use lists;
 def xs as list of int init [10, 20, 30, 40, 50];
 def two as list of int init lists.slice($xs, 1, 3);
 def tail as list of int init lists.slice($xs, 3);
-printf("two: %d,%d\n", $two[0], $two[1]);
-printf("tail: %d,%d\n", $tail[0], $tail[1]);
+io.printf("two: %d,%d\n", $two[0], $two[1]);
+io.printf("tail: %d,%d\n", $tail[0], $tail[1]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -235,7 +235,7 @@ use io;
 use lists;
 def xs as list of int init [1, 2];
 def ys as list of int init lists.push($xs, 3);
-printf("xs len=%d ys len=%d\n", len($xs), len($ys));
+io.printf("xs len=%d ys len=%d\n", len($xs), len($ys));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -254,10 +254,10 @@ use maps;
 def m as map of string to int init {"a": 1, "b": 2, "c": 3};
 def ks as list of string init maps.keys($m);
 def vs as list of int init maps.values($m);
-for (def k in $ks) { printf("%s ", $k); }
-printf("\n");
-for (def v in $vs) { printf("%d ", $v); }
-printf("\n");
+for (def k in $ks) { io.printf("%s ", $k); }
+io.printf("\n");
+for (def v in $vs) { io.printf("%d ", $v); }
+io.printf("\n");
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -273,7 +273,7 @@ use io;
 use maps;
 def m as map of string to int init {"a": 1, "b": 2, "c": 3};
 def shrunk as map of string to int init maps.delete($m, "b");
-printf("len=%d has(a)=%t has(b)=%t has(c)=%t\n",
+io.printf("len=%d has(a)=%t has(b)=%t has(c)=%t\n",
     len($shrunk), maps.has($shrunk, "a"), maps.has($shrunk, "b"), maps.has($shrunk, "c"));
 `)
 	if err != nil {
@@ -302,7 +302,7 @@ use maps;
 def a as map of string to int init {"x": 1, "y": 2};
 def b as map of string to int init {"y": 99, "z": 3};
 def merged as map of string to int init maps.merge($a, $b);
-printf("x=%d y=%d z=%d\n", $merged["x"], $merged["y"], $merged["z"]);
+io.printf("x=%d y=%d z=%d\n", $merged["x"], $merged["y"], $merged["z"]);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
@@ -318,7 +318,7 @@ use io;
 use maps;
 def a as map of string to int init {"x": 1};
 def b as map of string to int init maps.merge($a, {"y": 2});
-printf("a len=%d b len=%d\n", len($a), len($b));
+io.printf("a len=%d b len=%d\n", len($a), len($b));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)

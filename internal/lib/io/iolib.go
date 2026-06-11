@@ -20,10 +20,10 @@ const LibraryName = "io"
 // Install registers io library functions on an interpreter.
 // Call this before Interpreter.Run(prog).
 func Install(in *interpreter.Interpreter) {
-	in.Register(LibraryName, "printf", printf)
-	in.Register(LibraryName, "sprintf", sprintf)
-	in.Register(LibraryName, "readLine", readLine)
-	in.Register(LibraryName, "eof", eofFn)
+	in.RegisterNamespaced(LibraryName, "printf", printf)
+	in.RegisterNamespaced(LibraryName, "sprintf", sprintf)
+	in.RegisterNamespaced(LibraryName, "readLine", readLine)
+	in.RegisterNamespaced(LibraryName, "eof", eofFn)
 }
 
 // printf writes formatted output to stdout. Two forms:

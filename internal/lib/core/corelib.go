@@ -49,13 +49,17 @@ import (
 const LibraryName = "core"
 
 // Install registers the core library's builtins and constants on an
-// interpreter. The caller is also expected to mark `core` as
-// pre-imported; that happens in Interpreter.New, not here, so this
-// installer remains a plain Register-only function consistent with the
-// other libraries.
+// interpreter. `core` is the only library that registers any name via
+// `RegisterGlobal` / `RegisterGlobalConst` (M10+): `len` is genuinely
+// polymorphic across string/list/map and `JENNIFER_VERSION` is a
+// structural fact about the running binary - both belong to "nothing
+// for free except this." They are *only* exposed globally; no
+// `core.len` / `core.JENNIFER_VERSION` qualified form exists, since
+// publishing the same name two ways would violate stance #1
+// ("one way per thing").
 func Install(in *interpreter.Interpreter) {
-	in.RegisterConst(LibraryName, "JENNIFER_VERSION", interpreter.StringVal(version.Version))
-	in.Register(LibraryName, "len", lenFn)
+	in.RegisterGlobalConst(LibraryName, "JENNIFER_VERSION", interpreter.StringVal(version.Version))
+	in.RegisterGlobal(LibraryName, "len", lenFn)
 }
 
 // lenFn returns the structural length of its argument. Polymorphic on

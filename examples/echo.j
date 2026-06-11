@@ -2,7 +2,7 @@
 # Copyright (C) 2026 <developer@mplx.eu>
 #
 # echo.j - read lines from stdin, print each surrounded by `[ ]`.
-# Demonstrates the canonical `while (not eof()) { readLine() }` loop.
+# Demonstrates the canonical `while (not io.eof()) { io.readLine() }` loop.
 #
 # Run with stdin piped in:
 #   echo -e 'one\ntwo\nthree' | jennifer run examples/echo.j
@@ -14,8 +14,8 @@
 use io;
 
 def ln as int init 0;
-while (not eof()) {
-    def line as string init readLine();
+while (not io.eof()) {
+    def line as string init io.readLine();
     $ln = $ln + 1;
-    printf("[%d|pad=3][%s]\n", $ln, $line);
+    io.printf("[%d|pad=3][%s]\n", $ln, $line);
 }

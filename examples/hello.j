@@ -7,4 +7,4 @@
 use io;
 
 def x as int init 21;
-printf($x + $x);
+io.printf($x + $x);

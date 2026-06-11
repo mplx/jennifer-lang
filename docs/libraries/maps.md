@@ -33,7 +33,7 @@ indexed-read to avoid the missing-key runtime error:
 ```jennifer
 def m as map of string to int init {"a": 1};
 if (maps.has($m, "a")) {
-    printf("%d\n", $m["a"]);   # safe - we just checked
+    io.printf("%d\n", $m["a"]);   # safe - we just checked
 }
 ```
 

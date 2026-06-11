@@ -5,8 +5,8 @@
 # `import "greetinglib.j";` splices the contents of greetinglib.j at this point,
 # making $name and $greeting available to the surrounding scope.
 use io;
-import "greetinglib.j";
+include "greetinglib.j";
 
-printf($greeting);
-printf($name);
-printf("!\n");
+io.printf($greeting);
+io.printf($name);
+io.printf("!\n");

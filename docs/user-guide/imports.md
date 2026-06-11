@@ -3,30 +3,35 @@
 Two keywords, two mechanisms:
 
 ```jennifer
-use io;                  # library import - enables `io` library (printf, sprintf)
-import "helpers.j";      # file import - splices helpers.j here
+use io;                   # library import - enables `io.printf`, `io.sprintf`, ...
+include "helpers.j";      # textual file splice - pastes helpers.j here
 ```
+
+A third keyword, `import`, is **reserved** for the module system that
+lands in M17. Writing `import "x.j";` today produces a migration-hint
+error pointing at `include`.
 
 ## Library imports
 
-`use NAME;` enables a built-in module. Standard functions live in
-topic-based libraries; nothing is auto-loaded except the special `core`
-library. Each library has its own reference doc; the table below is the
-index.
+`use NAME;` enables a built-in library. After M10 every library is
+**namespaced** - every name lives behind the library's prefix
+(`io.printf`, `math.sqrt`, `convert.toInt`). The only library exposing
+bare-name globals is the auto-loaded `core` (which doesn't need `use`).
+Each library has its own reference doc; the table below is the index.
 
-| Library   | Enable with      | Contents                                                                                                  | Reference                                  |
-|-----------|------------------|-----------------------------------------------------------------------------------------------------------|--------------------------------------------|
-| `io`      | `use io;`        | `printf`, `sprintf` and the format-verb mini-language                                                     | [libraries/io.md](../libraries/io.md)       |
-| `convert` | `use convert;`   | `int`, `float`, `string`, `bool`, `typeOf` - explicit casts                                               | [libraries/convert.md](../libraries/convert.md) |
-| `math`    | `use math;`      | `abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`; constants `PI`, `E`                         | [libraries/math.md](../libraries/math.md)   |
-| `strings` | `use strings;`   | **Namespaced** (`strings.upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring`, `split`, `chars`, `join`)  | [libraries/strings.md](../libraries/strings.md) |
-| `lists`   | `use lists;`     | **Namespaced**; non-mutating list helpers (`push`, `pop`, `first`, `last`, `head`, `tail`, `reverse`, `sort`, `contains`, `concat`, `slice`) | [libraries/lists.md](../libraries/lists.md) |
-| `maps`    | `use maps;`      | **Namespaced**; non-mutating map helpers (`keys`, `values`, `delete`, `merge`)                                                              | [libraries/maps.md](../libraries/maps.md)   |
-| `os`      | `use os;`        | `os.platform`, `os.getEnv`, `os.JENNIFER_LF`, `os.JENNIFER_OS` | [libraries/os.md](../libraries/os.md)       |
-| `core`    | *(auto-loaded)*  | `len`, `JENNIFER_VERSION`. No `use` needed; writing `use core;` is a runtime error.                       | [libraries/core.md](../libraries/core.md)   |
+| Library   | Enable with     | Contents                                                                                                                                                                                | Reference                                  |
+|-----------|-----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|
+| `io`      | `use io;`       | `io.printf`, `io.sprintf`, `io.readLine`, `io.eof`, and the format-verb mini-language                                                                                                  | [libraries/io.md](../libraries/io.md)       |
+| `convert` | `use convert;`  | `convert.toInt`, `convert.toFloat`, `convert.toString`, `convert.toBool`, `convert.typeOf` - explicit casts                                                                          | [libraries/convert.md](../libraries/convert.md) |
+| `math`    | `use math;`     | `math.abs`, `math.min`, `math.max`, `math.sqrt`, `math.pow`, `math.floor`, `math.ceil`, `math.round`, `math.rand`, `math.randInt`, `math.randSeed`; constants `math.PI`, `math.E`     | [libraries/math.md](../libraries/math.md)   |
+| `strings` | `use strings;`  | `strings.upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring`, `split`, `chars`, `join`                  | [libraries/strings.md](../libraries/strings.md) |
+| `lists`   | `use lists;`    | `lists.push`, `pop`, `first`, `last`, `head`, `tail`, `reverse`, `sort`, `contains`, `concat`, `slice` - non-mutating helpers                                                          | [libraries/lists.md](../libraries/lists.md) |
+| `maps`    | `use maps;`     | `maps.keys`, `values`, `has`, `delete`, `merge` - non-mutating helpers                                                                                                                  | [libraries/maps.md](../libraries/maps.md)   |
+| `os`      | `use os;`       | `os.platform`, `os.getEnv`, `os.JENNIFER_LF`, `os.JENNIFER_OS`                                                                                                                          | [libraries/os.md](../libraries/os.md)       |
+| `core`    | *(auto-loaded)* | `len`, `JENNIFER_VERSION`. Reachable as bare names only - no `core.len` / `core.JENNIFER_VERSION` form exists. The only library that exposes bare-name globals. Writing `use core;` is a runtime error. | [libraries/core.md](../libraries/core.md)   |
 
-See [libraries/index.md](../libraries/index.md) for a fuller catalog and
-the library-organization principles, or
+See [libraries/index.md](../libraries/index.md) for a fuller catalog
+and the library-organization principles, or
 [libraries/cheatsheet.md](../libraries/cheatsheet.md) for an
 alphabetical lookup of every builtin function and constant.
 
@@ -37,114 +42,116 @@ use io;
 use convert;
 use math;
 
-printf("%s\n", typeOf(5 / 2));         # "float"      [convert]
-printf("%d\n", floor(PI * 2.0));       # 6            [math + io]
-printf("%s\n", string(true));          # "true"       [convert]
+io.printf("%s\n", convert.typeOf(5 / 2));     # "float"   [convert]
+io.printf("%d\n", math.floor(math.PI * 2.0)); # 6         [math + io]
+io.printf("%s\n", convert.toString(true));      # "true"    [convert]
 ```
 
 The per-library docs cover every function in detail along with error cases.
 
-### Namespaced libraries and aliasing
+### Namespaced calls and aliasing
 
-Jennifer ships two flavours of library. Flat libraries (`io`,
-`convert`, `math`, `strings`, the auto-loaded `core`) register
-their names at the top level - you call `printf(...)`, `upper(...)`,
-reference `PI`. Namespaced libraries register their names behind a
-prefix - the prefix is the library's name:
+A qualified call is always `prefix.name(...)`; a qualified constant
+is `prefix.NAME`. No spaces around the dot. The prefix is the library
+name by default; an `as ALIAS` clause renames it at the use site:
 
 ```jennifer
-use io;
 use os;
-
-printf("on %s\n", os.platform());     # qualified call
-printf("OS:  %s\n", os.JENNIFER_OS);  # qualified constant
-```
-
-A qualified reference is always `prefix.name(...)` for a call or
-`prefix.NAME` for a constant. No spaces around the dot.
-
-#### `use NAME as ALIAS;` aliasing
-
-The optional `as ALIAS` clause renames the namespace at the use
-site:
-
-```jennifer
-use os as o;
-
-printf("on %s\n", o.platform());      # only o. resolves
-printf("on %s\n", os.platform());     # ERROR: did you mean `o`?
-```
-
-**Aliasing is only available for namespaced libraries.** It would
-be meaningless for a flat library - there's no prefix to rename -
-so the interpreter rejects it explicitly:
-
-```jennifer
 use math as m;
-# ERROR: library "math" has no namespaced builtins;
-#        `as m` aliasing is meaningless here
+
+io.printf("on %s\n", os.platform());      # canonical prefix
+io.printf("pi=%f\n", m.PI);               # aliased prefix
 ```
 
-If you find yourself wanting to alias a flat library, you're
-probably trying to solve a name collision that doesn't actually
-exist (flat builtins don't ship duplicate names) - drop the `as`
-and use the canonical form.
+#### Aliasing rules
 
-The rest of the aliasing semantics for namespaced libraries:
-
-- **Rename, not addition.** After `use os as o;` only `o.`
-  resolves; `os.foo()` errors with a "did you mean `o`?" hint.
-  Matches Python's `import foo as bar` shadowing of `foo`.
-- **Canonical name freed.** The aliased canonical name (`os`
-  above) is freed for ordinary identifier use - you *could* write
+- **Rename, not addition.** After `use os as o;` only `o.` resolves;
+  `os.platform()` errors with a "did you mean `o`?" hint. Matches
+  Python's `import foo as bar` shadowing of `foo`.
+- **Canonical name freed.** The aliased canonical name (`os` above)
+  is freed for ordinary identifier use - you *could* write
   `func os() { ... }` after `use os as o;`. The
-  [style guide](style-guide.md#namespaced-calls) recommends
-  against it - it reads as a library call at first glance and
-  surprises the reader.
+  [style guide](style-guide.md#namespaced-calls) recommends against
+  it - it reads as a library call at first glance and surprises the
+  reader.
 - **Without aliasing, the prefix is reserved.** Bare `use os;`
   reserves `os` as a namespace prefix for the rest of the program;
   `func os() {}` then errors with `shadows imported namespace 'os'`.
-- **Repeating an `use` is a silent no-op** in both batch mode and
-  the REPL - useful so re-running the same input doesn't produce a
-  redefinition error. Pick one form (`use os;` or `use os as o;`)
-  per program and stick with it.
+- **Repeating a `use` is a silent no-op in the REPL.** In a batch
+  program a duplicate `use` is also accepted as a no-op unless the
+  library exposes any global (only `core` does today); for a library
+  with globals, a second `use NAME [as ALIAS];` errors with
+  `library 'X' already in scope`. Pick one form per program.
 
-## File imports
+#### `core` and global names
 
-`import "PATH.j";` textually includes another `.j` source file at the
-point of import. The path is a **string literal** that must end in `.j`.
-Relative paths resolve from the directory of the file containing the
-import; absolute paths and subdirectories work:
+`core` is auto-loaded and is the only library that exposes its names
+as bare globals. `len(...)` and `JENNIFER_VERSION` are reachable
+without any prefix:
 
 ```jennifer
-import "helpers.j";          # sibling file
-import "subdir/utils.j";     # subdirectory
-import "../shared/util.j";   # parent dir
-import "/abs/path/lib.j";    # absolute path
+def n as int init len("hello");        # 5
+io.printf("Jennifer %s\n", JENNIFER_VERSION);
 ```
 
-File imports may appear anywhere a statement is allowed, including inside a
-block:
+There is **no** `core.len` / `core.JENNIFER_VERSION` qualified
+form - publishing the same name two ways would violate stance #1
+("one way per thing"). `core` is the only library where the
+exposure is asymmetric, and the asymmetry is the whole point:
+the auto-loaded library exists precisely so its names can stay
+short.
+
+## File splices (`include`)
+
+`include "PATH.j";` textually splices another `.j` source file at the
+point of include. The path is a **string literal** that must end in
+`.j`. Relative paths resolve from the directory of the file containing
+the include; absolute paths and subdirectories work:
+
+```jennifer
+include "helpers.j";          # sibling file
+include "subdir/utils.j";     # subdirectory
+include "../shared/util.j";   # parent dir
+include "/abs/path/lib.j";    # absolute path
+```
+
+File splices may appear anywhere a statement is allowed, including
+inside a block:
 
 ```jennifer
 use io;
-import "helpers.j";          # ← spliced here; whatever helpers.j contains lands here
-printf($helper_value);
+include "helpers.j";          # ← spliced here; whatever helpers.j contains lands here
+io.printf($helperValue);
 ```
 
-Circular imports (file A imports file B, B imports A) are detected and
-rejected with an error.
+Circular includes (file A includes file B, B includes A) are detected
+and rejected with an error.
 
-Mixing the keywords produces a helpful error:
+### `include` vs `import`
+
+`include` does a textual splice with no module boundary - the spliced
+file's top-level names land directly in the enclosing program's scope.
+The `import` keyword is reserved for the M17 module system, which will
+add real modules with their own namespaces and explicit exports.
+Writing `import "foo.j";` today is rejected with a migration-hint
+pointing at `include`.
 
 ```
-import io;           → error: use `use io;` for system libraries
-use foo.j;           → error: use `import "foo.j";` for files
-import foo.j;        → error: file imports take a string literal: `import "foo.j";`
+import "x.j";   → error: use `include "x.j";` for textual file
+                  splicing; the `import` keyword is reserved for
+                  the module system landing in M17
+include io;     → error: `include` is for files; use `use io;` for
+                  system libraries
+use foo.j;      → error: `use` is for system libraries; for files use
+                  `include "foo.j";`
+include foo.j;  → error: file splices take a string literal:
+                  `include "foo.j";`
+include "foo.go"; → error: include path "foo.go" must end with `.j`
 ```
 
 Notes:
 
-- The imported file's contents must be valid where the import appears. A file
-  containing a top-level `def` cannot be imported inside a block (since
-  definitions are only allowed at the top level).
+- The included file's contents must be valid where the include
+  appears. A file containing a top-level `def` cannot be included
+  inside a block (since definitions are only allowed at the top
+  level).

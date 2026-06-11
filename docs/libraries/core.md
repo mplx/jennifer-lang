@@ -9,7 +9,7 @@ invokes.
 ```jennifer
 use io;
 
-printf("running Jennifer %s\n", JENNIFER_VERSION);
+io.printf("running Jennifer %s\n", JENNIFER_VERSION);
 ```
 
 (no `use core;` needed; `JENNIFER_VERSION` is already in scope.)
@@ -43,10 +43,10 @@ Passing any other kind (`int`, `float`, `bool`, `null`) is a positioned
 runtime error.
 
 ```jennifer
-printf("%d\n", len("hello"));      # 5
-printf("%d\n", len("héllo"));      # 5 (rune count)
-printf("%d\n", len([1, 2, 3]));    # 3
-printf("%d\n", len({"a": 1, "b": 2})); # 2
+io.printf("%d\n", len("hello"));      # 5
+io.printf("%d\n", len("héllo"));      # 5 (rune count)
+io.printf("%d\n", len([1, 2, 3]));    # 3
+io.printf("%d\n", len({"a": 1, "b": 2})); # 2
 ```
 
 ### `has` was here (M9: moved to `maps.has`)
