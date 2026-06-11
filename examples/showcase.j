@@ -275,4 +275,47 @@ def emptyMap as map of string to int init {};
 io.printf("=== empty containers ===\n");
 io.printf("len(emptyList) = %d, len(emptyMap) = %d\n", len($emptyList), len($emptyMap));
 
+# --- M11: break / continue / repeat...until ---
+io.printf("=== M11 control flow ===\n");
+
+# break leaves the innermost loop early
+for (def k as int init 0; $k < 10; $k = $k + 1) {
+    if ($k == 4) { break; }
+    io.printf("%d ", $k);
+}
+io.printf("\n");
+
+# continue skips one iteration; the step (k = k + 1) still runs.
+for (def k as int init 0; $k < 5; $k = $k + 1) {
+    if ($k == 2) { continue; }
+    io.printf("%d ", $k);
+}
+io.printf("\n");
+
+# repeat...until runs the body at least once, then checks `until`.
+def count as int init 0;
+repeat {
+    io.printf("%d ", $count);
+    $count = $count + 1;
+} until ($count >= 3);
+io.printf("\n");
+
+# --- M11: printf %s|align=center ---
+io.printf("=== M11 align=center ===\n");
+io.printf("[%s|pad=8|align=center]\n", "hi");
+io.printf("[%s|pad=9|align=center]\n", "hi");
+
+# --- M11: printf %a aggregate verb ---
+io.printf("=== M11 aggregate %%a ===\n");
+def nums as list of int init [1, 2, 3];
+io.printf("default        %a\n", $nums);
+io.printf("custom sep     %a|sep=\" | \"\n", $nums);
+io.printf("brackets       %a|open=\"<\"|close=\">\"\n", $nums);
+def matrix as list of list of int init [[1, 2], [3, 4]];
+io.printf("nested         %a\n", $matrix);
+io.printf("depth=1        %a|depth=1\n", $matrix);
+def scoreMap as map of string to int init {"a": 1, "b": 2};
+io.printf("map            %a\n", $scoreMap);
+io.printf("map kv style   %a|kv=\"=\"|sep=\" \"\n", $scoreMap);
+
 io.printf("=== done ===\n");

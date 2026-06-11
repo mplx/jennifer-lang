@@ -328,6 +328,14 @@ func TestPrintfModifierErrors(t *testing.T) {
 		{"non-null type still mismatches", vals("%d", interpreter.StringVal("x")), "requires int"},
 		{"null still mismatches without null=", vals("%d", interpreter.Null()), "requires int"},
 		{"fill=0 with align=left is rejected", vals("%d|pad=5|fill=0|align=left", interpreter.IntVal(1)), "fill=0"},
+		// M11 additions
+		{"align=center on %d is rejected", vals("%d|pad=5|align=center", interpreter.IntVal(1)), "only valid on %s"},
+		{"align=center on %f is rejected", vals("%f|pad=5|align=center", interpreter.FloatVal(1.0)), "only valid on %s"},
+		{"null=skip on %s is rejected", vals("%s|null=skip", interpreter.Null()), "only valid on %a"},
+		{"unknown %a modifier", vals("%a|junk=true", listOfInts(1, 2)), `unknown modifier "junk"`},
+		{"%a on a non-aggregate is rejected", vals("%a", interpreter.IntVal(42)), "requires list or map"},
+		{"unterminated quoted value", vals(`%a|sep="abc`, listOfInts(1, 2)), "unterminated quoted modifier value"},
+		{"unknown escape in quoted value", vals(`%a|sep="\q"`, listOfInts(1, 2)), "unknown escape"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -338,6 +346,57 @@ func TestPrintfModifierErrors(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), c.want) {
 				t.Errorf("error %q does not contain %q", err.Error(), c.want)
+			}
+		})
+	}
+}
+
+// listOfInts returns a Jennifer list value containing the given ints,
+// used by tests that need an aggregate input for `%a`.
+func listOfInts(xs ...int64) interpreter.Value {
+	list := make([]interpreter.Value, 0, len(xs))
+	for _, x := range xs {
+		list = append(list, interpreter.IntVal(x))
+	}
+	v := interpreter.Value{Kind: interpreter.KindList, List: list}
+	return v
+}
+
+// TestAlignCenterAndAggregate exercises the M11 printf additions:
+// `%s|align=center` and the `%a` aggregate verb with its modifiers.
+func TestAlignCenterAndAggregate(t *testing.T) {
+	in := interpreter.New()
+	Install(in)
+	cases := []struct {
+		name string
+		args []interpreter.Value
+		want string
+	}{
+		// align=center distributes padding evenly; odd leftover goes
+		// to the right.
+		{"center even width", vals("%s|pad=6|align=center", interpreter.StringVal("hi")), "  hi  "},
+		{"center odd leftover", vals("%s|pad=7|align=center", interpreter.StringVal("hi")), "  hi   "},
+		{"center on already-wide", vals("%s|pad=3|align=center", interpreter.StringVal("hello")), "hello"},
+
+		// %a list defaults match Jennifer's literal syntax.
+		{"list default", vals("%a", listOfInts(1, 2, 3)), "[1, 2, 3]"},
+		{"list custom sep", vals(`%a|sep=" | "`, listOfInts(1, 2, 3)), "[1 | 2 | 3]"},
+		{"list custom brackets", vals(`%a|open="<"|close=">"`, listOfInts(1, 2, 3)), "<1, 2, 3>"},
+
+		// Depth collapses nested aggregates to "[...]" / "{...}".
+		{"depth=0 collapses top", vals("%a|depth=0", listOfInts(1, 2)), "[...]"},
+
+		// Empty list still rounds-trips.
+		{"empty list", vals("%a", listOfInts()), "[]"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if _, err := callPrintf(in, &buf, c.args); err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if buf.String() != c.want {
+				t.Errorf("got %q, want %q", buf.String(), c.want)
 			}
 		})
 	}

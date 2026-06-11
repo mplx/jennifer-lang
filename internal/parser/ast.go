@@ -292,6 +292,48 @@ type ReturnStmt struct {
 
 func (*ReturnStmt) stmtNode() {}
 
+// BreakStmt: `break;` - exit the innermost enclosing loop. Errors at
+// runtime if no loop is active. M11.
+type BreakStmt struct {
+	pos
+}
+
+func (*BreakStmt) stmtNode() {}
+
+// ContinueStmt: `continue;` - skip to the next iteration of the
+// innermost enclosing loop. Same rule as BreakStmt; errors outside a
+// loop. M11.
+type ContinueStmt struct {
+	pos
+}
+
+func (*ContinueStmt) stmtNode() {}
+
+// RepeatStmt: `repeat { ... } until (cond);` - post-test loop that
+// runs the body at least once and stops when `cond` evaluates true.
+// New keywords `repeat` and `until` were chosen over the
+// `do { } while ...` shape so the inversion ("loop until done")
+// reads as English and matches Jennifer's word-operator style. M11.
+type RepeatStmt struct {
+	pos
+	Body *Block
+	Cond Expr
+}
+
+func (*RepeatStmt) stmtNode() {}
+
+// ExitStmt: `exit;` (exit code 0) or `exit EXPR;` (EXPR must evaluate
+// to int). Terminates the program immediately, skipping the rest of
+// the current method's body, any caller frames, and any remaining
+// top-level statements. Distinct from `return` (which is
+// method-scoped). M11.
+type ExitStmt struct {
+	pos
+	Code Expr // nil for `exit;` -> 0
+}
+
+func (*ExitStmt) stmtNode() {}
+
 // ExprStmt: a bare expression terminated by `;` (used for calls like `printf(...)`).
 type ExprStmt struct {
 	pos
@@ -604,6 +646,17 @@ func Sprint(n Node) string {
 			return "Return"
 		}
 		return fmt.Sprintf("Return(%s)", Sprint(v.Value))
+	case *BreakStmt:
+		return "Break"
+	case *ContinueStmt:
+		return "Continue"
+	case *RepeatStmt:
+		return fmt.Sprintf("Repeat(%s, until %s)", Sprint(v.Body), Sprint(v.Cond))
+	case *ExitStmt:
+		if v.Code == nil {
+			return "Exit"
+		}
+		return fmt.Sprintf("Exit(%s)", Sprint(v.Code))
 	case *ExprStmt:
 		return fmt.Sprintf("ExprStmt(%s)", Sprint(v.Expr))
 	case *IntLit:

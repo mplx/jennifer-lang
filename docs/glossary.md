@@ -13,9 +13,12 @@ alphabetically.
 | Term (singular / plural) | Kind | Meaning |
 |--------------------------|------|---------|
 | bool / bools | type | Boolean primitive. Two values: `true`, `false`. Comparison operators produce one. |
+| break | language (M11+) | The `break;` statement; exits the innermost enclosing loop. Misuse outside a loop is a positioned runtime error. *Not* "leave", "stop". |
 | builtin / builtins | implementation | A function or constant registered by a library via the Go-side `Register*` API. Distinguishes "ships with the interpreter" from user-defined `func`. |
 | constant / constants | language | A name bound once at declaration with `def const NAME ...` and never reassigned. Constants are deep-immutable for lists and maps. |
+| continue | language (M11+) | The `continue;` statement; skips to the next iteration of the innermost loop. In C-style `for`, the step expression still runs before re-checking the condition. *Not* "next", "skip". |
 | `core` library | library | The single auto-loaded library; the only one that ships globals (`len`, `JENNIFER_VERSION`). Writing `use core;` is a runtime error. |
+| exit | language (M11+) | The `exit;` (code 0) or `exit EXPR;` (int code) statement. Terminates the whole program; skips every caller frame and remaining top-level statement. *Distinct from* `return` (method-scoped). |
 | float / floats | type | 64-bit floating-point primitive. Mixed `int`/`float` arithmetic promotes to `float`. |
 | function / functions | language | A named callable defined with `func NAME(...) { ... }`. *Not* "method" or "procedure". The `func` keyword is the canonical source. |
 | global | implementation | A builtin registered via `RegisterGlobal` / `RegisterGlobalConst`; reachable as a bare name in addition to `lib.name`. Reserved for the `core` library; the bar for adding more is deliberately high. |
@@ -29,6 +32,7 @@ alphabetically.
 | namespace / namespaces | language | The prefix a library introduces at call sites (`os.platform()`, `lists.push(...)`). Activated by `use NAME;` or remapped by `use NAME as ALIAS;`. |
 | null | type / value | A type with a single value (`null`). Returned by bodyless `return;` and by a method that runs to the end. |
 | parameter / parameters | language | A function's input slot, declared `name as type` in the function header. *Not* "argument" (which is the value passed at the call site). |
+| repeat ... until | language (M11+) | Post-test loop: `repeat { ... } until (cond);`. Body runs at least once, then `until` is checked after each pass; loop stops when `cond` is true. Chosen over `do { } while !cond;` so the condition reads as "loop until done." |
 | sigil | language | The `$` prefix on a variable use site. Marks "read or assign a mutable binding"; constants and functions do *not* take the sigil. |
 | stance / stances | project | One of the seven design rules. Tie-breakers for ambiguous design choices. |
 | statement / statements | language | A `;`-terminated unit of source: `def`, assignment, control flow, expression statement, `include`, `use`. |

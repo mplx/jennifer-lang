@@ -251,8 +251,16 @@ func (p *parser) parseStatement() (Stmt, error) {
 		return p.parseWhile()
 	case lexer.TOKEN_FOR:
 		return p.parseFor()
+	case lexer.TOKEN_REPEAT:
+		return p.parseRepeat()
+	case lexer.TOKEN_BREAK:
+		return p.parseBreak()
+	case lexer.TOKEN_CONTINUE:
+		return p.parseContinue()
 	case lexer.TOKEN_RETURN:
 		return p.parseReturn()
+	case lexer.TOKEN_EXIT:
+		return p.parseExit()
 	case lexer.TOKEN_VARREF:
 		// `$x = expr ;` is a simple assignment.
 		if p.peekN(1).Type == lexer.TOKEN_ASSIGN {
@@ -382,6 +390,78 @@ func (p *parser) parseReturn() (Stmt, error) {
 		stmt.Value = expr
 	}
 	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate return"); err != nil {
+		return nil, err
+	}
+	return stmt, nil
+}
+
+// parseBreak parses `break;`. Loop-scope validity is enforced at
+// runtime (not here) so an error in a deeply-nested misuse can carry
+// the body-statement's position.
+func (p *parser) parseBreak() (Stmt, error) {
+	bk, _ := p.match(lexer.TOKEN_BREAK)
+	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate break"); err != nil {
+		return nil, err
+	}
+	return &BreakStmt{pos: pos{File: bk.File, Line: bk.Line, Col: bk.Col}}, nil
+}
+
+// parseContinue parses `continue;`. Same shape and validation rule as
+// parseBreak.
+func (p *parser) parseContinue() (Stmt, error) {
+	ct, _ := p.match(lexer.TOKEN_CONTINUE)
+	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate continue"); err != nil {
+		return nil, err
+	}
+	return &ContinueStmt{pos: pos{File: ct.File, Line: ct.Line, Col: ct.Col}}, nil
+}
+
+// parseRepeat parses `repeat { ... } until (cond);` - the post-test
+// loop. Body runs at least once; cond is re-evaluated AFTER each pass
+// and stops the loop when true.
+func (p *parser) parseRepeat() (Stmt, error) {
+	rp, _ := p.match(lexer.TOKEN_REPEAT)
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TOKEN_UNTIL, "after `repeat { ... }` body"); err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TOKEN_LPAREN, "before `repeat ... until` condition"); err != nil {
+		return nil, err
+	}
+	cond, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TOKEN_RPAREN, "to close `repeat ... until` condition"); err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate `repeat ... until` statement"); err != nil {
+		return nil, err
+	}
+	return &RepeatStmt{
+		pos:  pos{File: rp.File, Line: rp.Line, Col: rp.Col},
+		Body: body,
+		Cond: cond,
+	}, nil
+}
+
+// parseExit parses `exit;` or `exit EXPR;`. The optional EXPR is the
+// process exit code; defaults to 0 when bare. Distinct from `return`
+// (which is method-scoped); exit terminates the whole program.
+func (p *parser) parseExit() (Stmt, error) {
+	ex, _ := p.match(lexer.TOKEN_EXIT)
+	stmt := &ExitStmt{pos: pos{File: ex.File, Line: ex.Line, Col: ex.Col}}
+	if !p.check(lexer.TOKEN_SEMI) {
+		expr, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		stmt.Code = expr
+	}
+	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate exit"); err != nil {
 		return nil, err
 	}
 	return stmt, nil
@@ -769,6 +849,28 @@ func containsUnderscore(s string) bool {
 	return false
 }
 
+// isPostDotName reports whether `t` can appear as the name slot of a
+// qualified call (`prefix.NAME`) or qualified constant ref. After a
+// `.` no statement keyword can start, so a reserved word is
+// unambiguously a name there - `strings.repeat`, `strings.split`,
+// `lists.for` (if anyone wrote that) all read fine. Lets reserved
+// words coexist with library names that happen to spell the same way.
+func isPostDotName(t lexer.Token) bool {
+	if t.Type == lexer.TOKEN_IDENT {
+		return true
+	}
+	// Any token whose lexeme is a non-empty identifier-shaped word.
+	// Built-in keywords all carry their spelling in t.Lexeme; type
+	// tokens (TOKEN_INT_TYPE etc.) and operator tokens (`and`, `or`,
+	// `not`) likewise. Punctuation tokens have lexemes like "{" or ","
+	// that fail the first-letter check, so they're excluded.
+	if t.Lexeme == "" {
+		return false
+	}
+	c := t.Lexeme[0]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
 func (p *parser) parseExpr() (Expr, error) {
 	return p.parseOr()
 }
@@ -955,9 +1057,24 @@ func (p *parser) parseCallTail(callee lexer.Token) (Expr, error) {
 // registry, gated by `use prefix;` (or the alias-aware equivalent).
 func (p *parser) parseQualifiedTail(prefix lexer.Token) (Expr, error) {
 	p.advance() // consume DOT
-	name, err := p.expect(lexer.TOKEN_IDENT, "after `.` in qualified call")
-	if err != nil {
-		return nil, err
+	// After a `.` the name slot is unambiguously a callee or constant -
+	// no statement keyword can start there - so a token that lexes as a
+	// reserved word (`repeat`, `until`, `for`, ...) reads as a name in
+	// this position. Accept any identifier-shaped keyword in addition
+	// to a plain IDENT. This preserves library names like
+	// `strings.repeat` even after we add `repeat` as a loop keyword
+	// in M11, and pre-emptively dodges similar collisions for any
+	// future keyword.
+	var name lexer.Token
+	if isPostDotName(p.peek()) {
+		name = p.peek()
+		p.advance()
+	} else {
+		var err error
+		name, err = p.expect(lexer.TOKEN_IDENT, "after `.` in qualified call")
+		if err != nil {
+			return nil, err
+		}
 	}
 	if p.check(lexer.TOKEN_LPAREN) {
 		if containsUnderscore(name.Lexeme) {

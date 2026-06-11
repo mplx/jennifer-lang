@@ -93,13 +93,13 @@ its verb: `%s|mode=quote|null=literal("X")` on a null prints `X`, not
 
 ### `%s` modifiers
 
-| Key      | Values                 | Default | Effect                                        |
-|----------|------------------------|---------|-----------------------------------------------|
-| `pad`    | non-negative integer   | -       | minimum rune width                            |
-| `max`    | non-negative integer   | -       | truncate to N runes                           |
-| `align`  | `left`, `right`        | `left`  | which side gets the pad spaces                |
-| `mode`   | `raw`, `quote`, `escape` | `raw`   | wrap in `"..."` (`quote`) / show escapes (`escape`) |
-| `null`   | see above              | -       | substitute when value is `null`               |
+| Key      | Values                            | Default | Effect                                        |
+|----------|-----------------------------------|---------|-----------------------------------------------|
+| `pad`    | non-negative integer              | -       | minimum rune width                            |
+| `max`    | non-negative integer              | -       | truncate to N runes                           |
+| `align`  | `left`, `right`, `center` (M11+)  | `left`  | which side gets the pad spaces; `center` splits the pad evenly (odd leftover goes right) |
+| `mode`   | `raw`, `quote`, `escape`          | `raw`   | wrap in `"..."` (`quote`) / show escapes (`escape`) |
+| `null`   | see above                         | -       | substitute when value is `null`               |
 
 `mode=quote` wraps the string in double quotes and escapes interior
 `\`, `"`, and control bytes. `mode=escape` does the same escaping
@@ -161,6 +161,47 @@ io.printf("%f|sci=true|prec=2\n", 0.00123);     # 1.23e-03
 `%v` takes no modifiers - it is deliberately the "I don't care, just
 print it" verb. Use a typed verb plus modifiers when you want to shape
 the output.
+
+### `%a` modifiers (M11+)
+
+`%a` is the aggregate verb: it renders a list or map in literal-like
+shape, recursing into nested aggregates. Non-collection input is a
+runtime error.
+
+| Key       | Values                  | Default               | Effect                                                              |
+|-----------|-------------------------|-----------------------|---------------------------------------------------------------------|
+| `sep`     | quoted string           | `", "`                | element separator (between list items, between map entries)         |
+| `kv`      | quoted string           | `": "`                | key/value separator for map entries                                 |
+| `open`    | quoted string           | `[` (list) / `{` (map)| opening bracket                                                     |
+| `close`   | quoted string           | `]` (list) / `}` (map)| closing bracket                                                     |
+| `depth`   | non-negative integer    | unlimited             | max recursion depth; deeper levels collapse to `[...]` / `{...}` (`depth=0` collapses at the top) |
+| `null`    | `skip`                  | -                     | omit null list elements and null map values                         |
+
+Modifier values can be **double-quoted** to include spaces, brackets,
+or other characters reserved by the modifier-list grammar. The escape
+set is the standard `\n \r \t \\ \"`:
+
+```jennifer
+def xs as list of int init [1, 2, 3];
+io.printf("%a\n", $xs);                              # [1, 2, 3]
+io.printf("%a|sep=\" | \"\n", $xs);                  # 1 | 2 | 3 (with brackets)
+io.printf("%a|open=\"<\"|close=\">\"\n", $xs);       # <1, 2, 3>
+
+def grid as list of list of int init [[1, 2], [3, 4]];
+io.printf("%a\n", $grid);            # [[1, 2], [3, 4]]
+io.printf("%a|depth=1\n", $grid);    # [[...], [...]]
+
+def m as map of string to int init {"a": 1, "b": 2};
+io.printf("%a\n", $m);                       # {a: 1, b: 2}
+io.printf("%a|kv=\"=\"|sep=\" \"\n", $m);    # {a=1 b=2}
+```
+
+Per-element rendering uses the same display form as `%v`, so primitive
+values inside an aggregate look the way they would in a print
+statement. `null=skip` is only valid on `%a` - it omits null elements
+entirely; the other `null=` modes (`empty`, `null`, `literal`) are
+rejected for `%a` because they don't have a sensible per-element
+meaning.
 
 ## Input from stdin
 

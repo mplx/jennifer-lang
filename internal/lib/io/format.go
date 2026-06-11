@@ -48,6 +48,31 @@ type FormatSpec struct {
 
 	Case caseMode
 
+	// %a (aggregate) modifiers - M11. Defaults reproduce Jennifer's
+	// literal syntax for the kind being rendered: `[a, b, c]` for
+	// lists, `{k: v, k: v}` for maps. Override via:
+	//   sep="..."   element separator (default ", ")
+	//   kv="..."    map key/value separator (default ": ")
+	//   open="..."  opener bracket (default "[" / "{")
+	//   close="..." closer bracket (default "]" / "}")
+	//   depth=N     max recursion depth; deeper levels collapse to
+	//               "[...]" / "{...}" (default unlimited; 0 = collapse
+	//               at the top, useful for "size only" renderings)
+	//   null=skip   per-element null handling; omits null list elements
+	//               and null map values entirely. Other null= modes
+	//               (empty / null / literal) are rejected for %a.
+	HasAggSep   bool
+	AggSep      string
+	HasAggKV    bool
+	AggKV       string
+	HasAggOpen  bool
+	AggOpen     string
+	HasAggClose bool
+	AggClose    string
+	HasDepth    bool
+	Depth       int
+	NullSkipA   bool // null=skip set on %a
+
 	seen map[string]bool
 }
 
@@ -66,6 +91,7 @@ const (
 	alignDefault alignMode = iota
 	alignLeft
 	alignRight
+	alignCenter // M11: %s only - splits padding around the value
 )
 
 type stringMode uint8
@@ -159,12 +185,16 @@ func readKey(src string, pos int) (string, int, error) {
 	return src[start:pos], pos, nil
 }
 
-// readValue reads a non-null modifier value: letters, digits, underscore,
-// or single-char punctuation from the `sep=` set. Stops at any other byte
-// (including `|`, `]`, end-of-string, or any character outside the value
-// alphabet) so the modifier list cleanly ends at the surrounding format
-// text without grabbing trailing punctuation.
+// readValue reads a modifier value: either a bare token (letters,
+// digits, underscore, or single-char punctuation from the `sep=` set)
+// or a Jennifer-style double-quoted string. The quoted form is what
+// makes `%a|sep=", "` and `%a|open="<"` work - values containing
+// spaces, brackets, or other reserved characters can be expressed
+// without limiting the modifier-list grammar.
 func readValue(src string, pos int) (string, int, error) {
+	if pos < len(src) && src[pos] == '"' {
+		return readQuotedValue(src, pos)
+	}
 	start := pos
 	for pos < len(src) && isValueByte(src[pos]) {
 		pos++
@@ -173,6 +203,41 @@ func readValue(src string, pos int) (string, int, error) {
 		return "", pos, fmt.Errorf("empty value after `=`")
 	}
 	return src[start:pos], pos, nil
+}
+
+// readQuotedValue parses a `"..."` modifier value with the standard
+// `\n \r \t \\ \"` escape set. Stops at the closing `"`; returns the
+// position just past it.
+func readQuotedValue(src string, pos int) (string, int, error) {
+	pos++ // consume opening "
+	var b strings.Builder
+	for pos < len(src) {
+		c := src[pos]
+		if c == '"' {
+			return b.String(), pos + 1, nil
+		}
+		if c == '\\' && pos+1 < len(src) {
+			switch src[pos+1] {
+			case 'n':
+				b.WriteByte('\n')
+			case 'r':
+				b.WriteByte('\r')
+			case 't':
+				b.WriteByte('\t')
+			case '\\':
+				b.WriteByte('\\')
+			case '"':
+				b.WriteByte('"')
+			default:
+				return "", pos, fmt.Errorf("unknown escape `\\%c` in quoted modifier value", src[pos+1])
+			}
+			pos += 2
+			continue
+		}
+		b.WriteByte(c)
+		pos++
+	}
+	return "", pos, fmt.Errorf("unterminated quoted modifier value")
 }
 
 func isValueByte(c byte) bool {
@@ -257,6 +322,8 @@ func applyModifier(spec *FormatSpec, key, value string) error {
 		return setFloatMod(spec, key, value)
 	case 't':
 		return setBoolMod(spec, key, value)
+	case 'a':
+		return setAggMod(spec, key, value)
 	case 'v':
 		return fmt.Errorf("verb `%%v` takes no modifiers (got %q)", key)
 	}
@@ -264,6 +331,19 @@ func applyModifier(spec *FormatSpec, key, value string) error {
 }
 
 func setNull(spec *FormatSpec, value string) error {
+	// `null=skip` is the per-element mode that only makes sense for
+	// the aggregate verb (`%a`) - it omits null list elements and null
+	// map values from the rendered output. Reject it on every other
+	// verb so a stray `%s|null=skip` produces a clear error rather
+	// than silently doing the wrong thing.
+	if value == "skip" {
+		if spec.Verb != 'a' {
+			return fmt.Errorf("null=skip is only valid on %%a, not %%%c", spec.Verb)
+		}
+		spec.NullSkipA = true
+		spec.NullSet = true
+		return nil
+	}
 	spec.NullSet = true
 	switch {
 	case value == "empty":
@@ -275,6 +355,31 @@ func setNull(spec *FormatSpec, value string) error {
 		spec.NullLit = value[len("literal:"):]
 	default:
 		return fmt.Errorf("null=%q: expected `empty`, `null`, or `literal(\"...\")`", value)
+	}
+	return nil
+}
+
+// setAggMod handles modifiers for the `%a` aggregate verb (M11).
+// The modifiers shape the *render*, not the values: separators,
+// brackets, recursion depth, and the per-element null-handling.
+func setAggMod(spec *FormatSpec, key, value string) error {
+	switch key {
+	case "sep":
+		spec.HasAggSep = true
+		spec.AggSep = value
+	case "kv":
+		spec.HasAggKV = true
+		spec.AggKV = value
+	case "open":
+		spec.HasAggOpen = true
+		spec.AggOpen = value
+	case "close":
+		spec.HasAggClose = true
+		spec.AggClose = value
+	case "depth":
+		return setIntField(value, &spec.Depth, &spec.HasDepth)
+	default:
+		return fmt.Errorf("unknown modifier %q for `%%a`", key)
 	}
 	return nil
 }
@@ -414,8 +519,15 @@ func setAlign(spec *FormatSpec, value string) error {
 		spec.Align = alignLeft
 	case "right":
 		spec.Align = alignRight
+	case "center":
+		// M11: `center` is only meaningful for `%s` - splitting padding
+		// around a number breaks columnar alignment for numeric output.
+		if spec.Verb != 's' {
+			return fmt.Errorf("align=center is only valid on %%s, not %%%c", spec.Verb)
+		}
+		spec.Align = alignCenter
 	default:
-		return fmt.Errorf("align=%q: expected `left` or `right`", value)
+		return fmt.Errorf("align=%q: expected `left`, `right`, or `center`", value)
 	}
 	return nil
 }
@@ -482,8 +594,86 @@ func renderValue(spec FormatSpec, v interpreter.Value) (string, error) {
 		return applyLayout(spec, renderBool(spec, v.Bool)), nil
 	case 'v':
 		return v.Display(), nil
+	case 'a':
+		if v.Kind != interpreter.KindList && v.Kind != interpreter.KindMap {
+			return "", fmt.Errorf("`%%a` requires list or map, got %s", v.Kind)
+		}
+		return renderAggregate(spec, v, 0), nil
 	}
 	return "", fmt.Errorf("unknown format verb `%%%c`", spec.Verb)
+}
+
+// renderAggregate handles `%a` (M11). Recurses into nested lists and
+// maps using the same spec, so a single `%a|sep=" | "` on the top
+// level applies consistently all the way down. `level` tracks the
+// current recursion depth so `depth=N` can collapse deeper trees to
+// "[...]"/"{...}". Per-element rendering uses Value.Display(), which
+// matches `%v` semantics (so primitive values inside an aggregate
+// look the way they would in a print statement).
+func renderAggregate(spec FormatSpec, v interpreter.Value, level int) string {
+	switch v.Kind {
+	case interpreter.KindList:
+		open, close := "[", "]"
+		if spec.HasAggOpen {
+			open = spec.AggOpen
+		}
+		if spec.HasAggClose {
+			close = spec.AggClose
+		}
+		if spec.HasDepth && level >= spec.Depth {
+			return open + "..." + close
+		}
+		sep := ", "
+		if spec.HasAggSep {
+			sep = spec.AggSep
+		}
+		var parts []string
+		for _, elem := range v.List {
+			if elem.Kind == interpreter.KindNull && spec.NullSkipA {
+				continue
+			}
+			parts = append(parts, aggElement(spec, elem, level+1))
+		}
+		return open + strings.Join(parts, sep) + close
+	case interpreter.KindMap:
+		open, close := "{", "}"
+		if spec.HasAggOpen {
+			open = spec.AggOpen
+		}
+		if spec.HasAggClose {
+			close = spec.AggClose
+		}
+		if spec.HasDepth && level >= spec.Depth {
+			return open + "..." + close
+		}
+		sep := ", "
+		if spec.HasAggSep {
+			sep = spec.AggSep
+		}
+		kv := ": "
+		if spec.HasAggKV {
+			kv = spec.AggKV
+		}
+		var parts []string
+		for _, entry := range v.Map {
+			if entry.Value.Kind == interpreter.KindNull && spec.NullSkipA {
+				continue
+			}
+			parts = append(parts, aggElement(spec, entry.Key, level+1)+kv+aggElement(spec, entry.Value, level+1))
+		}
+		return open + strings.Join(parts, sep) + close
+	}
+	return v.Display()
+}
+
+// aggElement renders one element/value/key inside an aggregate. Nested
+// collections recurse through renderAggregate; primitives use Display
+// (the same shape `%v` produces).
+func aggElement(spec FormatSpec, v interpreter.Value, level int) string {
+	if v.Kind == interpreter.KindList || v.Kind == interpreter.KindMap {
+		return renderAggregate(spec, v, level)
+	}
+	return v.Display()
 }
 
 func nullText(spec FormatSpec) string {
@@ -670,12 +860,7 @@ func applyLayout(spec FormatSpec, s string) string {
 	if spec.Fill == '0' && spec.Verb == 'd' {
 		return s
 	}
-	need := spec.Pad - runeLen(s)
-	pad := strings.Repeat(" ", need)
-	if alignOf(spec) == alignLeft {
-		return s + pad
-	}
-	return pad + s
+	return padTo(s, spec.Pad, alignOf(spec))
 }
 
 // layoutOnly is the variant used for the `null=` replacement string:
@@ -688,12 +873,27 @@ func layoutOnly(spec FormatSpec, s string) string {
 	if !spec.HasPad || runeLen(s) >= spec.Pad {
 		return s
 	}
-	need := spec.Pad - runeLen(s)
-	pad := strings.Repeat(" ", need)
-	if alignOf(spec) == alignLeft {
-		return s + pad
+	return padTo(s, spec.Pad, alignOf(spec))
+}
+
+// padTo extends s with spaces to `width` runes, placing s on the
+// requested side. Centered alignment splits leftover space with the
+// extra rune (when the gap is odd) going to the right so column
+// headers line up over even/odd-length values.
+func padTo(s string, width int, align alignMode) string {
+	need := width - runeLen(s)
+	if need <= 0 {
+		return s
 	}
-	return pad + s
+	switch align {
+	case alignLeft:
+		return s + strings.Repeat(" ", need)
+	case alignCenter:
+		left := need / 2
+		right := need - left
+		return strings.Repeat(" ", left) + s + strings.Repeat(" ", right)
+	}
+	return strings.Repeat(" ", need) + s
 }
 
 // alignOf falls back to the verb's default when the spec didn't ask for

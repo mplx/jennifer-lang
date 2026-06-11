@@ -105,6 +105,29 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 		emitOptionalNodeField(b, "value", v.Value, indent+1)
 		endObj(b, indent)
 
+	case *parser.BreakStmt:
+		startObj(b, indent)
+		emitTypeAndPos(b, "BreakStmt", v, indent+1)
+		endObj(b, indent)
+
+	case *parser.ContinueStmt:
+		startObj(b, indent)
+		emitTypeAndPos(b, "ContinueStmt", v, indent+1)
+		endObj(b, indent)
+
+	case *parser.RepeatStmt:
+		startObj(b, indent)
+		emitTypeAndPos(b, "RepeatStmt", v, indent+1)
+		emitNodeField(b, "body", v.Body, indent+1)
+		emitNodeField(b, "cond", v.Cond, indent+1)
+		endObj(b, indent)
+
+	case *parser.ExitStmt:
+		startObj(b, indent)
+		emitTypeAndPos(b, "ExitStmt", v, indent+1)
+		emitOptionalNodeField(b, "code", v.Code, indent+1)
+		endObj(b, indent)
+
 	case *parser.ExprStmt:
 		startObj(b, indent)
 		emitTypeAndPos(b, "ExprStmt", v, indent+1)

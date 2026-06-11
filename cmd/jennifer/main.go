@@ -168,6 +168,12 @@ func runFile(path string) int {
 	oslib.Install(in)
 	corelib.Install(in)
 	if err := in.Run(prog); err != nil {
+		// `exit;` / `exit EXPR;` (M11) - user-requested clean termination.
+		// Propagate the requested exit code without printing a runtime
+		// error trace.
+		if ex, ok := err.(*interpreter.ExitSignal); ok {
+			return ex.Code
+		}
 		fmt.Fprintf(os.Stderr, "%s: %s\n", label, err.Error())
 		printErrorContext(src, absPath, err)
 		return 1

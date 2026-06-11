@@ -429,23 +429,55 @@ later library needs.
 
 ## M11 - Control-flow completion
 
-- `break;` and `continue;` inside `while`/`for`/`for-each`/`repeat`.
-- `repeat { } until (cond);` post-test loop. New keywords `repeat`
+**Status:** done.
+
+Closes the biggest daily-use gap in the language and rounds out the
+printf modifier table at the same time.
+
+- **`break;` and `continue;`** inside `while`/`for`/`for-each`/`repeat`.
+  Caught by the innermost enclosing loop only; a stray use at the top
+  level or inside a method body that has no enclosing loop is a
+  positioned runtime error. `continue` in a C-style `for` still runs
+  the step expression before re-checking the condition (matches C/Go).
+- **`repeat { } until (cond);`** post-test loop. New keywords `repeat`
   and `until`. `until` makes condition inversion explicit, matching
   the word-operator style (`and`/`or`/`not`); `do { } while ...`
   considered and rejected.
-- `exit;` and `exit EXPR;`. Process exit; integer expression sets
-  the OS exit code on top-level execution. Distinct from `return`
-  (which stays method-scoped).
-- Bundled: printf `%s|align=center` while the modifier table is
-  being touched anyway.
-- Bundled: printf `%a` aggregate verb for lists and maps (deferred
-  from M7; unblocked by M6's compound types and M9's collection
-  libraries). Renders a list/map in a configurable shape so
-  `printf("%a\n", $xs);` does the right thing without the caller
-  building the string by hand. Modifier shape (separators,
-  bracket characters, recursion depth, the `null=skip` element
-  mode that only makes sense for `%a`) settled at start of M11.
+- **`exit;` and `exit EXPR;`** terminate the whole program. Bare form
+  yields exit code 0; `exit EXPR;` requires an int. Distinct from
+  `return` (method-scoped): an `exit` inside a deeply nested call
+  skips every caller frame and every remaining top-level statement.
+  Implemented as an `ExitSignal` sentinel error that the CLI catches
+  and translates into the OS exit code.
+- **Bundled: printf `%s|align=center`** rounds out the `%s` align
+  modifier set. Rejected on every other typed verb because
+  splitting padding around a numeric value breaks columnar
+  alignment.
+- **Bundled: printf `%a` aggregate verb** for lists and maps
+  (deferred from M7; unblocked by M6's compound types and M9's
+  collection libraries). Renders a list/map in a configurable shape
+  so `io.printf("%a\n", $xs);` does the right thing without the
+  caller building the string by hand. Modifiers:
+  - `sep` (element separator, default `", "`)
+  - `kv` (map key/value separator, default `": "`)
+  - `open` / `close` (bracket pair, default `[`/`]` for lists,
+    `{`/`}` for maps)
+  - `depth=N` (max recursion depth; deeper levels collapse to
+    `[...]` / `{...}`. Default unlimited; `depth=0` collapses at
+    the top, useful for "size only" renderings)
+  - `null=skip` (per-element null handling; omits null list
+    elements and null map values. The other `null=` modes are
+    rejected for `%a`.)
+
+  Modifier values can be quoted (`%a|sep=", "`); the modifier-list
+  parser was extended with a `"..."` form so values containing
+  spaces / brackets / other reserved characters can be expressed.
+  The escape set is the standard `\n \r \t \\ \"`.
+- **Post-dot name relaxation.** Reserved words appearing as the
+  name slot of a qualified call (after a `.`) read as identifiers,
+  so `strings.repeat` keeps working after `repeat` is reserved as
+  a loop keyword. Same rule covers `until` / `break` / `continue` /
+  `exit` and any future keyword.
 
 ## M12 - Bytes and bit operators
 

@@ -206,6 +206,11 @@ func runRepl() int {
 		}
 		val, rerr := in.EvalInteractive(prog)
 		if rerr != nil {
+			// `exit;` / `exit EXPR;` terminates the REPL with the
+			// requested code, the same way it terminates a batch run.
+			if ex, ok := rerr.(*interpreter.ExitSignal); ok {
+				return ex.Code
+			}
 			fmt.Fprintf(stderrW, "%s\n", rerr.Error())
 			printErrorContextTo(stderrW, src, replFileTag, rerr)
 			continue

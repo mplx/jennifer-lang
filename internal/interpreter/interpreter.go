@@ -234,6 +234,36 @@ func RuntimeError(err error) bool {
 	return ok
 }
 
+// unhandledLoopFlowError converts a `break` or `continue` that
+// reached a boundary it shouldn't have crossed (top of Run, top of a
+// method body) into a positioned runtime error. Both signals are only
+// valid inside a loop; reaching anywhere else means the source has a
+// stray statement.
+func unhandledLoopFlowError(r blockResult) error {
+	kw := "break"
+	if r.hasContinue {
+		kw = "continue"
+	}
+	return &runtimeError{
+		Msg:  fmt.Sprintf("`%s` is only valid inside a loop", kw),
+		File: r.flowFile, Line: r.flowLine, Col: r.flowCol,
+	}
+}
+
+// ExitSignal is the sentinel error returned by an `exit;` /
+// `exit EXPR;` statement. It bubbles out of every frame to Run /
+// EvalInteractive; the CLI catches it and translates Code into the
+// process exit status. Distinct from runtimeError so the CLI can tell
+// "user asked to terminate cleanly" apart from "interpreter found a
+// bug." M11.
+type ExitSignal struct {
+	Code int
+}
+
+func (e *ExitSignal) Error() string {
+	return fmt.Sprintf("program requested exit with code %d", e.Code)
+}
+
 // Position implements the positioned-error interface used by the CLI.
 func (e *runtimeError) Position() (file string, line, col int) {
 	return e.File, e.Line, e.Col
@@ -274,8 +304,14 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 		i.methods[m.Name] = m
 	}
 	i.global = NewEnvironment(nil)
-	_, err := i.execStmts(prog.TopLevel, i.global)
-	return err
+	res, err := i.execStmts(prog.TopLevel, i.global)
+	if err != nil {
+		return err
+	}
+	if res.hasBreak || res.hasContinue {
+		return unhandledLoopFlowError(res)
+	}
+	return nil
 }
 
 // processImports walks `use NAME [as ALIAS];` statements and updates the
@@ -513,18 +549,45 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 			continue
 		}
 		last = Null()
-		if _, err := i.execStmt(st, i.global); err != nil {
+		res, err := i.execStmt(st, i.global)
+		if err != nil {
 			return Null(), err
+		}
+		if res.hasBreak || res.hasContinue {
+			return Null(), unhandledLoopFlowError(res)
 		}
 	}
 	return last, nil
 }
 
-// blockResult carries control flow info out of a block. M1 has no return/break,
-// but the shape is ready for M2+ to plug control flow in.
+// blockResult carries control flow info out of a block.
+//   - hasReturn: a `return` was executed; `value` holds the return value
+//     (callers in non-method contexts bubble this up further).
+//   - hasBreak: a `break;` was executed (M11). Loop statements catch
+//     this and exit; non-loop statements pass it through. A `break`
+//     reaching the top level is a positioned runtime error.
+//   - hasContinue: a `continue;` was executed (M11). Loop statements
+//     catch this and start the next iteration; non-loop statements
+//     pass it through. Same misuse rule as break.
+// At most one of the three flags is true at a time. flowFile / flowLine
+// / flowCol carry the source position of the break/continue/return
+// statement so an unhandled signal can be reported with the right
+// location.
 type blockResult struct {
-	hasReturn bool
-	value     Value
+	hasReturn   bool
+	hasBreak    bool
+	hasContinue bool
+	value       Value
+	flowFile    string
+	flowLine    int
+	flowCol     int
+}
+
+// flowsOut returns true if any control-flow flag is set - the result
+// needs to propagate up through the calling block without executing
+// subsequent statements.
+func (r blockResult) flowsOut() bool {
+	return r.hasReturn || r.hasBreak || r.hasContinue
 }
 
 // execBlock runs every statement of a block in a *new* child env so that
@@ -537,9 +600,11 @@ func (i *Interpreter) execBlock(b *parser.Block, parent *Environment) (blockResu
 
 func (i *Interpreter) execStmts(stmts []parser.Stmt, env *Environment) (blockResult, error) {
 	for _, st := range stmts {
-		if res, err := i.execStmt(st, env); err != nil {
+		res, err := i.execStmt(st, env)
+		if err != nil {
 			return blockResult{}, err
-		} else if res.hasReturn {
+		}
+		if res.flowsOut() {
 			return res, nil
 		}
 	}
@@ -573,6 +638,16 @@ func (i *Interpreter) execStmt(s parser.Stmt, env *Environment) (blockResult, er
 			return blockResult{}, err
 		}
 		return blockResult{hasReturn: true, value: v}, nil
+	case *parser.BreakStmt:
+		file, line, col := posFor(st)
+		return blockResult{hasBreak: true, flowFile: file, flowLine: line, flowCol: col}, nil
+	case *parser.ContinueStmt:
+		file, line, col := posFor(st)
+		return blockResult{hasContinue: true, flowFile: file, flowLine: line, flowCol: col}, nil
+	case *parser.RepeatStmt:
+		return i.execRepeat(st, env)
+	case *parser.ExitStmt:
+		return i.execExit(st, env)
 	case *parser.ExprStmt:
 		if _, err := i.evalExpr(st.Expr, env); err != nil {
 			return blockResult{}, err
@@ -937,6 +1012,9 @@ func (i *Interpreter) execForEach(st *parser.ForEachStmt, env *Environment) (blo
 			if res.hasReturn {
 				return res, nil
 			}
+			if res.hasBreak {
+				return blockResult{}, nil
+			}
 		}
 	case KindMap:
 		for _, entry := range coll.Map {
@@ -946,6 +1024,9 @@ func (i *Interpreter) execForEach(st *parser.ForEachStmt, env *Environment) (blo
 			}
 			if res.hasReturn {
 				return res, nil
+			}
+			if res.hasBreak {
+				return blockResult{}, nil
 			}
 		}
 	}
@@ -991,6 +1072,10 @@ func (i *Interpreter) execWhile(st *parser.WhileStmt, env *Environment) (blockRe
 		if res.hasReturn {
 			return res, nil
 		}
+		if res.hasBreak {
+			return blockResult{}, nil
+		}
+		// hasContinue (or no flow): fall through to the next iteration.
 	}
 }
 
@@ -1020,12 +1105,65 @@ func (i *Interpreter) execFor(st *parser.ForStmt, env *Environment) (blockResult
 		if res.hasReturn {
 			return res, nil
 		}
+		if res.hasBreak {
+			return blockResult{}, nil
+		}
+		// On `continue` (or no flow) we still run the step before the
+		// next condition check, matching the C-style for loop where
+		// `continue` jumps to the step, not past it.
 		if st.Step != nil {
 			if _, err := i.execStmt(st.Step, forEnv); err != nil {
 				return blockResult{}, err
 			}
 		}
 	}
+}
+
+// execRepeat runs the body at least once, then re-checks `until`
+// AFTER each pass. The loop exits when the condition is true (the
+// inversion is the whole reason `until` was picked over `do { } while
+// !cond`). Same break/continue handling as the other loops.
+func (i *Interpreter) execRepeat(st *parser.RepeatStmt, env *Environment) (blockResult, error) {
+	for {
+		res, err := i.execBlock(st.Body, env)
+		if err != nil {
+			return blockResult{}, err
+		}
+		if res.hasReturn {
+			return res, nil
+		}
+		if res.hasBreak {
+			return blockResult{}, nil
+		}
+		// hasContinue (or no flow): re-evaluate `until` before the next pass.
+		done, err := i.evalBool(st.Cond, env, "`repeat ... until` condition")
+		if err != nil {
+			return blockResult{}, err
+		}
+		if done {
+			return blockResult{}, nil
+		}
+	}
+}
+
+// execExit terminates the program by returning a sentinel `exitSignal`
+// error that propagates up through every frame to Run / EvalInteractive.
+// The CLI catches the sentinel and translates it into an OS exit code.
+// See P4.
+func (i *Interpreter) execExit(st *parser.ExitStmt, env *Environment) (blockResult, error) {
+	code := int64(0)
+	if st.Code != nil {
+		v, err := i.evalExpr(st.Code, env)
+		if err != nil {
+			return blockResult{}, err
+		}
+		if v.Kind != KindInt {
+			file, line, col := posFor(st.Code)
+			return blockResult{}, &runtimeError{Msg: fmt.Sprintf("`exit` argument must be int, got %s", v.Kind), File: file, Line: line, Col: col}
+		}
+		code = v.Int
+	}
+	return blockResult{}, &ExitSignal{Code: int(code)}
 }
 
 // evalBool evaluates an expression that must yield a bool; otherwise it
@@ -1395,6 +1533,12 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 		res, err := i.execBlock(m.Body, callFrame)
 		if err != nil {
 			return Value{}, err
+		}
+		if res.hasBreak || res.hasContinue {
+			// A `break` or `continue` in the method body that wasn't
+			// caught by an inner loop is a misuse - they don't cross
+			// the method-call boundary into the caller's loop.
+			return Value{}, unhandledLoopFlowError(res)
 		}
 		if res.hasReturn {
 			return res.value, nil

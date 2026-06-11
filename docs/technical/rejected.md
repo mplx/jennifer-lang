@@ -39,7 +39,11 @@ modifier list with options that transform the *value* rather than its
 - `%s|slice=START:END`
 - `%s|md=italic|bold|code|strike|header1|header2|...|link(URL)|...`
 - `%s|md=table(...)` and the wider `%a|json=*`/`%a|xml=*`/`%a|yaml=*`
-  family (deferred along with the rest of `%a`)
+  family - serialisation modifiers for the aggregate verb. `%a`
+  itself shipped in M11 with presentation-only modifiers (`sep`,
+  `kv`, `open`, `close`, `depth`, `null=skip`); the
+  `json=`/`xml=`/`yaml=` family remains rejected as data
+  transformation that belongs in dedicated libraries.
 - `null=sql` (SQL-specific spelling of `NULL`)
 
 Rejected for the modifier system because:

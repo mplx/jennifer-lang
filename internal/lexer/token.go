@@ -33,6 +33,11 @@ const (
 	TOKEN_ELSE
 	TOKEN_WHILE
 	TOKEN_FOR
+	TOKEN_REPEAT   // M11: `repeat { ... } until (cond);` post-test loop
+	TOKEN_UNTIL    // M11: companion to `repeat`
+	TOKEN_BREAK    // M11: exit innermost loop
+	TOKEN_CONTINUE // M11: skip to next iteration of innermost loop
+	TOKEN_EXIT     // M11: terminate the program; optional int expression sets exit code
 	TOKEN_TRUE
 	TOKEN_FALSE
 	TOKEN_NULL
@@ -102,6 +107,11 @@ var tokenNames = map[TokenType]string{
 	TOKEN_ELSE:        "ELSE",
 	TOKEN_WHILE:       "WHILE",
 	TOKEN_FOR:         "FOR",
+	TOKEN_REPEAT:      "REPEAT",
+	TOKEN_UNTIL:       "UNTIL",
+	TOKEN_BREAK:       "BREAK",
+	TOKEN_CONTINUE:    "CONTINUE",
+	TOKEN_EXIT:        "EXIT",
 	TOKEN_TRUE:        "TRUE",
 	TOKEN_FALSE:       "FALSE",
 	TOKEN_NULL:        "NULL",
@@ -181,8 +191,13 @@ var keywords = map[string]TokenType{
 	"if":     TOKEN_IF,
 	"elseif": TOKEN_ELSEIF,
 	"else":   TOKEN_ELSE,
-	"while":  TOKEN_WHILE,
-	"for":    TOKEN_FOR,
+	"while":    TOKEN_WHILE,
+	"for":      TOKEN_FOR,
+	"repeat":   TOKEN_REPEAT,
+	"until":    TOKEN_UNTIL,
+	"break":    TOKEN_BREAK,
+	"continue": TOKEN_CONTINUE,
+	"exit":     TOKEN_EXIT,
 	"true":   TOKEN_TRUE,
 	"false":  TOKEN_FALSE,
 	"null":   TOKEN_NULL,

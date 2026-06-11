@@ -118,5 +118,5 @@ func formatString(fmtStr string, args []interpreter.Value) (string, error) {
 }
 
 func isVerb(c byte) bool {
-	return c == 'd' || c == 'f' || c == 's' || c == 't' || c == 'v'
+	return c == 'd' || c == 'f' || c == 's' || c == 't' || c == 'v' || c == 'a'
 }

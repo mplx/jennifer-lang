@@ -123,3 +123,95 @@ reach for the outer-scope form only when you actually need to inspect
 the iterator after the loop ends. For-each (`for (def x in $coll)`)
 is always loop-local - the iteration variable lives in a fresh scope
 each pass through the loop and is gone once the loop exits.
+
+## `repeat ... until` (post-test loop)
+
+For loops that should run **at least once**, then keep going until a
+condition becomes true:
+
+```jennifer
+def n as int init 0;
+repeat {
+    io.printf("n=%d\n", $n);
+    $n = $n + 1;
+} until ($n >= 3);
+# prints n=0, n=1, n=2 - the body runs three times before until is true.
+```
+
+The body runs unconditionally on entry, then `until (cond)` is checked
+**after** each iteration. The loop stops when `cond` evaluates true.
+
+This is the post-test counterpart to `while`. The keyword pair
+`repeat`/`until` was chosen over `do { } while ...` so the condition
+inversion ("loop until done") reads as English and matches the rest of
+Jennifer's word-operator style (`and`, `or`, `not`). Like every other
+condition slot, `cond` must be `bool`.
+
+## `break` and `continue`
+
+`break;` exits the **innermost** enclosing loop:
+
+```jennifer
+for (def i as int init 0; $i < 10; $i = $i + 1) {
+    if ($i == 5) { break; }
+    io.printf("%d ", $i);
+}
+# prints "0 1 2 3 4 "
+```
+
+`continue;` skips the rest of the current iteration and starts the
+next one. In a C-style `for` loop, the step expression (`$i = $i + 1`)
+still runs before the condition is re-checked - matching the behaviour
+in C, Go, Java, and Python:
+
+```jennifer
+for (def i as int init 0; $i < 5; $i = $i + 1) {
+    if ($i % 2 == 0) { continue; }
+    io.printf("%d ", $i);
+}
+# prints "1 3 "
+```
+
+Both work in `while`, C-style `for`, for-each (`for (def x in $coll)`),
+and `repeat ... until`. In `repeat`, `continue` jumps to the `until`
+check (skipping the rest of the body); the loop still terminates
+normally when `until` becomes true.
+
+Misuse:
+
+- `break` and `continue` **only exist inside a loop**. Using one at
+  the top level or as a stray statement in a method body that has no
+  enclosing loop is a positioned runtime error.
+- They do **not** cross the method-call boundary. A `break` inside a
+  method body looks for a loop in **that method**, not in the caller.
+  If the called method has no loop, the `break` errors.
+- They only catch the **innermost** loop. To exit several levels at
+  once, use a flag variable that the outer loop checks, or refactor
+  the inner work into a method that `return`s when done.
+
+## `exit`
+
+`exit;` terminates the whole program immediately - it skips the rest
+of the current method, every caller frame, and every remaining
+top-level statement. The bare form yields exit code 0:
+
+```jennifer
+use io;
+io.printf("ok\n");
+exit;                   # process ends with code 0
+io.printf("never\n");   # not reached
+```
+
+`exit EXPR;` sets the exit code; `EXPR` must evaluate to `int`:
+
+```jennifer
+use io;
+io.printf("error: input missing\n");
+exit 2;                 # process ends with code 2
+```
+
+`exit` is **distinct from `return`**. `return` ends the current
+method's body and yields a value to the caller; `exit` ends the
+program. Use `return` when a method has done its job; use `exit` when
+the whole run is over.
+
