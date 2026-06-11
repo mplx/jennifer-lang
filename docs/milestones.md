@@ -432,52 +432,47 @@ later library needs.
 **Status:** done.
 
 Closes the biggest daily-use gap in the language and rounds out the
-printf modifier table at the same time.
+printf modifier table at the same time. Five new keywords (`break`,
+`continue`, `repeat`, `until`, `exit`) and two new printf features.
 
-- **`break;` and `continue;`** inside `while`/`for`/`for-each`/`repeat`.
-  Caught by the innermost enclosing loop only; a stray use at the top
-  level or inside a method body that has no enclosing loop is a
-  positioned runtime error. `continue` in a C-style `for` still runs
-  the step expression before re-checking the condition (matches C/Go).
-- **`repeat { } until (cond);`** post-test loop. New keywords `repeat`
-  and `until`. `until` makes condition inversion explicit, matching
-  the word-operator style (`and`/`or`/`not`); `do { } while ...`
-  considered and rejected.
-- **`exit;` and `exit EXPR;`** terminate the whole program. Bare form
-  yields exit code 0; `exit EXPR;` requires an int. Distinct from
-  `return` (method-scoped): an `exit` inside a deeply nested call
-  skips every caller frame and every remaining top-level statement.
-  Implemented as an `ExitSignal` sentinel error that the CLI catches
-  and translates into the OS exit code.
-- **Bundled: printf `%s|align=center`** rounds out the `%s` align
-  modifier set. Rejected on every other typed verb because
-  splitting padding around a numeric value breaks columnar
-  alignment.
+- **`break;` / `continue;`** in every loop kind
+  (`while`/`for`/`for-each`/`repeat`). Innermost loop only; misuse
+  outside a loop or across a method-call boundary is a positioned
+  runtime error. `continue` in C-style `for` still runs the step
+  before re-checking the condition (matches C/Go).
+- **`repeat { } until (cond);`** post-test loop. New keywords
+  `repeat` and `until`; `do { } while ...` considered and rejected
+  because the inverted condition is the whole point of switching
+  to `until`.
+- **`exit;` / `exit EXPR;`** terminate the whole program (exit code 0
+  / EXPR-as-int). Distinct from `return` (method-scoped): skips every
+  caller frame and remaining top-level statement. Implemented as an
+  `ExitSignal` sentinel error the CLI translates into the OS exit
+  status.
+- **Bundled: printf `%s|align=center`** rounds out the align set.
+  Rejected on every other typed verb (centred numbers break columnar
+  output).
 - **Bundled: printf `%a` aggregate verb** for lists and maps
-  (deferred from M7; unblocked by M6's compound types and M9's
-  collection libraries). Renders a list/map in a configurable shape
-  so `io.printf("%a\n", $xs);` does the right thing without the
-  caller building the string by hand. Modifiers:
-  - `sep` (element separator, default `", "`)
-  - `kv` (map key/value separator, default `": "`)
-  - `open` / `close` (bracket pair, default `[`/`]` for lists,
-    `{`/`}` for maps)
-  - `depth=N` (max recursion depth; deeper levels collapse to
-    `[...]` / `{...}`. Default unlimited; `depth=0` collapses at
-    the top, useful for "size only" renderings)
-  - `null=skip` (per-element null handling; omits null list
-    elements and null map values. The other `null=` modes are
-    rejected for `%a`.)
+  (deferred from M7; unblocked by M6 + M9). Modifiers: `sep`, `kv`,
+  `open`, `close`, `depth=N`, `null=skip`. The modifier-list parser
+  was extended with a `"..."` quoted-value form (`%a|sep=", "`) so
+  values can contain spaces / reserved characters; standard
+  `\n \r \t \\ \"` escapes.
+- **Post-dot name relaxation.** Reserved words read as identifiers in
+  the name slot of a qualified call (`strings.repeat`,
+  `lists.break` if anyone wrote one), preserving the `strings.repeat`
+  library function after `repeat` was reserved as a loop keyword.
 
-  Modifier values can be quoted (`%a|sep=", "`); the modifier-list
-  parser was extended with a `"..."` form so values containing
-  spaces / brackets / other reserved characters can be expressed.
-  The escape set is the standard `\n \r \t \\ \"`.
-- **Post-dot name relaxation.** Reserved words appearing as the
-  name slot of a qualified call (after a `.`) read as identifiers,
-  so `strings.repeat` keeps working after `repeat` is reserved as
-  a loop keyword. Same rule covers `until` / `break` / `continue` /
-  `exit` and any future keyword.
+See:
+- [user-guide/control-flow.md](user-guide/control-flow.md) -
+  `repeat`/`until`, `break`/`continue` scope rules, `exit` vs
+  `return`.
+- [libraries/io.md](libraries/io.md) - `%a` modifier table,
+  `%s|align=center` example, quoted modifier values.
+- [technical/rejected.md](technical/rejected.md) - `%a|json=*` /
+  `%a|xml=*` / `%a|yaml=*` (serialisation modifiers stayed rejected
+  even after `%a` itself shipped) and the
+  `do { } while` shape for the post-test loop.
 
 ## M12 - Bytes and bit operators
 
