@@ -42,7 +42,20 @@ statement   = defineStmt
             | whileStmt
             | forStmt
             | forEachStmt
+            | tryStmt
+            | throwStmt
             | exprStmt ;
+
+tryStmt     = "try" block "catch" "(" IDENT ")" block ;
+                                       (* M13.2: IDENT is the catch
+                                          binding, follows the
+                                          iteration-variable name rule
+                                          (letters only). No `finally`
+                                          in v1. *)
+throwStmt   = "throw" expr ";" ;
+                                       (* M13.2: expr may produce any
+                                          value; convention is an
+                                          `Error` struct. *)
 
 returnStmt  = "return" [ expr ] ";" ;
 
@@ -263,6 +276,8 @@ grammar the parser implements is the EBNF above.
 | `AssignStmt`  | stmt  | `VarName`, `Value Expr`                      |
 | `IndexAssignStmt` | stmt | `Target *IndexExpr`, `Value Expr` - `$xs[i][j] = ...` (M13.1: chain may include `FieldAccessExpr` nodes) |
 | `FieldAssignStmt` | stmt | `Target *FieldAccessExpr`, `Value Expr` - `$p.field = ...` (M13.1) |
+| `TryStmt`     | stmt  | `Body *Block`, `CatchName`, `CatchBody *Block` - `try { ... } catch (NAME) { ... }` (M13.2) |
+| `ThrowStmt`   | stmt  | `Value Expr` - `throw EXPR;` (M13.2) |
 | `AppendStmt`  | stmt  | `Target *VarExpr`, `Value Expr` - `$xs[] = item;` (M9) |
 | `ReturnStmt`  | stmt  | `Value Expr` (nil for bare `return;`)        |
 | `IfStmt`      | stmt  | `Cond`, `Then *Block`, `ElseIfs []Expr`, `ElseIfBodies []*Block`, `Else *Block` |

@@ -248,3 +248,102 @@ method's body and yields a value to the caller; `exit` ends the
 program. Use `return` when a method has done its job; use `exit` when
 the whole run is over.
 
+## `try`, `catch`, `throw` (M13.2+)
+
+Catchable errors. `throw EXPR;` signals an error from any reachable
+point; `try { body } catch (NAME) { handler }` runs the body and, if
+anything inside it throws (user code or a runtime failure like
+out-of-bounds), runs the handler with `NAME` bound to the thrown
+value:
+
+```jennifer
+use io;
+
+try {
+    def n as int init convert.toInt($input);
+    process($n);
+} catch (err) {
+    io.printf("not a number: %s\n", $err.message);
+}
+```
+
+### What can be thrown
+
+Any value. The **convention** is an `Error` struct - the runtime
+auto-defines that struct shape so user code can rely on it without a
+`def struct Error { ... };` of its own:
+
+```jennifer
+def struct Error {
+    kind    as string,    # short symbolic tag
+    message as string,    # human-readable
+    file    as string,
+    line    as int,
+    col     as int,
+};
+```
+
+User code throws an `Error{...}` to signal expected failure modes;
+catch sites dispatch on `$err.kind`:
+
+```jennifer
+func parseConfig(src as string) {
+    if (not strings.contains($src, "=")) {
+        throw Error{
+            kind: "parse_error",
+            message: "missing `=`",
+            file: "", line: 0, col: 0
+        };
+    }
+    # ... happy path ...
+}
+
+try {
+    parseConfig($cfg);
+} catch (err) {
+    if ($err.kind == "parse_error") {
+        io.printf("config invalid: %s\n", $err.message);
+    } else {
+        throw $err;     # not our concern; let it propagate
+    }
+}
+```
+
+A bare `throw "boom";` still works (any value); the catch handler just
+won't be able to read `.kind` / `.message` off it. Use
+`convert.typeOf($err)` if you need to branch on the kind.
+
+### What can be caught
+
+- **User-issued `throw EXPR;`** - whatever the user passed, copied
+  into the catch binding (value semantics, like every other binding
+  boundary).
+- **Runtime errors** - out-of-bounds reads / writes, missing map
+  keys, type mismatches, division by zero, undefined names,
+  bytes-element range violations, and the rest of today's positioned
+  runtime errors. The runtime wraps them into the canonical `Error`
+  struct with `kind = "runtime"` (more specific tags will land per
+  site over time) and the original file / line / col preserved.
+
+### What can NOT be caught
+
+- **`exit` / `exit EXPR;`** - the program-level escape hatch stays
+  escape. `try { exit 1; } catch (e) { ... }` lets the exit through;
+  the catch block does not run.
+- **`return` / `break` / `continue`** - they're control flow, not
+  errors. `try { break; } catch (e) { ... }` breaks the enclosing
+  loop; the handler does not run.
+
+### Re-throwing
+
+`throw $err;` inside a catch re-raises - the value propagates past
+the current `try`/`catch` to the next enclosing `try`. Same value
+unless replaced.
+
+### No `finally` in v1
+
+Jennifer does not have a `finally` clause yet. The pattern is
+"do the cleanup explicitly in both branches" until a real cleanup
+need surfaces (probably with file handles in the M16.1 `fs`
+library).
+

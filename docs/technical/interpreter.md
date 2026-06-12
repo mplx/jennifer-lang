@@ -304,13 +304,49 @@ with the standard `strings` package, which it depends on heavily.
 
 ## Runtime errors
 
-`*runtimeError` carries optional `File`/`Line`/`Col`. Errors render as
-`runtime error at FILE:L:C: <msg>` (or `runtime error at L:C: <msg>` when
-the file is unknown). All four Jennifer error types - `*lexer.LexError`,
-`*preproc.PreprocessError`, `*parser.ParseError`, and `*runtimeError` -
-implement a small `Position() (file string, line, col int)` interface. The
-CLI uses that interface (no string parsing) to look up the right file and
-print a caret under the offending source line.
+`*runtimeError` carries optional `File`/`Line`/`Col` and a `Kind` tag
+(M13.2; defaults to `"runtime"` when the originating site doesn't
+specialise it). Errors render as `runtime error at FILE:L:C: <msg>`
+(or `runtime error at L:C: <msg>` when the file is unknown). All
+five Jennifer error types - `*lexer.LexError`, `*preproc.PreprocessError`,
+`*parser.ParseError`, `*runtimeError`, and `*ErrorSignal` (M13.2) -
+implement a small `Position() (file string, line, col int)` interface.
+The CLI uses that interface (no string parsing) to look up the right
+file and print a caret under the offending source line.
+
+### Catchable errors (M13.2)
+
+`try { body } catch (NAME) { handler }` runs the body and, on an
+error, binds the thrown value to `$NAME` in a fresh per-handler
+scope. Two sentinel paths can produce the catchable error:
+
+- **`*ErrorSignal`** - raised by `throw EXPR;` (`execThrow`). Carries
+  the thrown `Value` plus the throw's source position. Uncaught
+  signals reach the CLI through the same `positioned` interface as
+  `*runtimeError`.
+- **`*runtimeError`** - raised by any builtin or language operation
+  (out-of-bounds index, missing map key, type mismatch, etc.). When
+  one reaches an enclosing `try`, `execTry` wraps it via
+  `runtimeErrorToValue` into an `Error` struct (`kind`, `message`,
+  `file`, `line`, `col`) and binds it like any other thrown value.
+
+`*ExitSignal` is **not** routed through this path - the spec puts
+process exit outside the recoverable-error scope, so `execTry`
+propagates it untouched. `blockResult` flags (`hasReturn`,
+`hasBreak`, `hasContinue`) flow through `execTry` unchanged so the
+surrounding method / loop sees them.
+
+The canonical `Error` struct is auto-hoisted into `i.structs` by
+both `Run` and `EvalInteractive` before any user struct definition
+runs (`canonicalErrorStructDef()`). User code may not redefine it -
+the existing duplicate-struct check fires with
+`struct "Error" is defined more than once`.
+
+`runtimeError.Kind` is the symbolic tag surfaced as `$err.kind` in
+the catch block. The current shipping default is `"runtime"`;
+specific tags (`"out_of_bounds"`, `"type_mismatch"`, etc.) get
+filled in per call site as user code grows demand for finer
+dispatch.
 
 ## Errors and positions (cross-file)
 

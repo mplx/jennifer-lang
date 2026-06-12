@@ -218,6 +218,15 @@ type runtimeError struct {
 	File string
 	Line int
 	Col  int
+	// Kind is the symbolic tag surfaced when the error is caught by an
+	// M13.2 `try { ... } catch (err) { ... }` block: it becomes
+	// `$err.kind`. Empty means "no specific kind"; the wrapper defaults
+	// to `"runtime"`. New runtime-error sites should set this to a
+	// short snake_case tag (`"out_of_bounds"`, `"type_mismatch"`,
+	// ...) so user code can dispatch on it. Existing sites that don't
+	// set it keep working - they just appear as kind `"runtime"` to
+	// catch blocks.
+	Kind string
 }
 
 func (e *runtimeError) Error() string {
@@ -266,6 +275,78 @@ func (e *ExitSignal) Error() string {
 	return fmt.Sprintf("program requested exit with code %d", e.Code)
 }
 
+// ErrorSignal is the sentinel error returned by an M13.2 `throw EXPR;`
+// statement, and also produced when a runtime error reaches a `try`
+// block (so user code can catch both kinds uniformly). It carries the
+// thrown Value - any kind, but the convention is an `Error` struct
+// matching the canonicalErrorStructDef shape. Position info captures
+// where the `throw` (or originating runtime error) fired. Distinct
+// from ExitSignal (uncatchable, program-level escape) and from
+// runtimeError (which wraps INTO an ErrorSignal when it enters a try
+// block, not the other way around). M13.2.
+type ErrorSignal struct {
+	Value Value
+	File  string
+	Line  int
+	Col   int
+}
+
+func (e *ErrorSignal) Error() string {
+	if e.File != "" {
+		return fmt.Sprintf("uncaught error at %s:%d:%d: %s", e.File, e.Line, e.Col, e.Value.Display())
+	}
+	if e.Line != 0 {
+		return fmt.Sprintf("uncaught error at %d:%d: %s", e.Line, e.Col, e.Value.Display())
+	}
+	return "uncaught error: " + e.Value.Display()
+}
+
+// Position implements the positioned-error interface used by the CLI.
+func (e *ErrorSignal) Position() (file string, line, col int) {
+	return e.File, e.Line, e.Col
+}
+
+// canonicalErrorStructName is the conventional struct used by the
+// runtime to wrap runtime errors for M13.2 catch blocks, and is the
+// recommended shape for user-thrown errors. Auto-hoisted by Run and
+// EvalInteractive so user code can rely on it without a `def struct`.
+const canonicalErrorStructName = "Error"
+
+// canonicalErrorStructDef returns the StructDef the runtime hoists at
+// startup. Field order matches the M13.2 spec:
+// kind, message, file, line, col.
+func canonicalErrorStructDef() *parser.StructDef {
+	str := parser.PrimitiveType(parser.TypeString)
+	in := parser.PrimitiveType(parser.TypeInt)
+	return &parser.StructDef{
+		Name: canonicalErrorStructName,
+		Fields: []parser.StructField{
+			{Name: "kind", Type: str},
+			{Name: "message", Type: str},
+			{Name: "file", Type: str},
+			{Name: "line", Type: in},
+			{Name: "col", Type: in},
+		},
+	}
+}
+
+// runtimeErrorToValue converts a *runtimeError into the conventional
+// `Error` struct Value so it can be bound to a catch variable. Kind
+// falls back to `"runtime"` when the originating site didn't set one.
+func runtimeErrorToValue(e *runtimeError) Value {
+	kind := e.Kind
+	if kind == "" {
+		kind = "runtime"
+	}
+	return StructVal(canonicalErrorStructName, []StructField{
+		{Name: "kind", Value: StringVal(kind)},
+		{Name: "message", Value: StringVal(e.Msg)},
+		{Name: "file", Value: StringVal(e.File)},
+		{Name: "line", Value: IntVal(int64(e.Line))},
+		{Name: "col", Value: IntVal(int64(e.Col))},
+	})
+}
+
 // Position implements the positioned-error interface used by the CLI.
 func (e *runtimeError) Position() (file string, line, col int) {
 	return e.File, e.Line, e.Col
@@ -296,6 +377,16 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	}
 	// Structs: hoist before methods so a method body can reference a
 	// struct type declared later in source order.
+	//
+	// The canonical `Error` struct (M13.2) is hoisted first - the
+	// runtime wraps every catchable runtime error into a value of this
+	// type, so it must be in scope from the program's very first
+	// statement. User code may not redefine it; the existing
+	// duplicate-struct check catches that as "struct \"Error\" is
+	// defined more than once".
+	if _, exists := i.structs[canonicalErrorStructName]; !exists {
+		i.structs[canonicalErrorStructName] = canonicalErrorStructDef()
+	}
 	for _, s := range prog.Structs {
 		if _, exists := i.structs[s.Name]; exists {
 			file, line, col := posFor(s)
@@ -540,6 +631,9 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 	if err := i.processImports(prog, true); err != nil {
 		return Null(), err
 	}
+	if _, exists := i.structs[canonicalErrorStructName]; !exists {
+		i.structs[canonicalErrorStructName] = canonicalErrorStructDef()
+	}
 	for _, s := range prog.Structs {
 		// REPL: silently re-define so a snippet can redeclare a struct.
 		i.structs[s.Name] = s
@@ -665,6 +759,10 @@ func (i *Interpreter) execStmt(s parser.Stmt, env *Environment) (blockResult, er
 		return i.execRepeat(st, env)
 	case *parser.ExitStmt:
 		return i.execExit(st, env)
+	case *parser.TryStmt:
+		return i.execTry(st, env)
+	case *parser.ThrowStmt:
+		return blockResult{}, i.execThrow(st, env)
 	case *parser.ExprStmt:
 		if _, err := i.evalExpr(st.Expr, env); err != nil {
 			return blockResult{}, err
@@ -1460,6 +1558,65 @@ func (i *Interpreter) execExit(st *parser.ExitStmt, env *Environment) (blockResu
 		code = v.Int
 	}
 	return blockResult{}, &ExitSignal{Code: int(code)}
+}
+
+// execThrow evaluates the thrown expression and returns an
+// *ErrorSignal carrying its value. Position is the `throw` keyword's
+// own source location so a top-level uncaught throw points at the
+// statement, not deep inside whatever expression built the value.
+// M13.2.
+func (i *Interpreter) execThrow(st *parser.ThrowStmt, env *Environment) error {
+	v, err := i.evalExpr(st.Value, env)
+	if err != nil {
+		return err
+	}
+	file, line, col := posFor(st)
+	return &ErrorSignal{Value: v.Copy(), File: file, Line: line, Col: col}
+}
+
+// execTry runs the body and, if it produces a catchable error
+// (*ErrorSignal from `throw`, or *runtimeError from a builtin /
+// language operation), runs the handler with the catch variable
+// bound to the thrown value. *ExitSignal propagates uncaught (the
+// program-level escape is uncatchable per spec). blockResult flags
+// (return/break/continue) flow through unchanged so the surrounding
+// method / loop sees them. M13.2.
+func (i *Interpreter) execTry(st *parser.TryStmt, env *Environment) (blockResult, error) {
+	res, err := i.execStmts(st.Body.Stmts, env)
+	if err == nil {
+		return res, nil
+	}
+	// ExitSignal is uncatchable - propagate.
+	if _, ok := err.(*ExitSignal); ok {
+		return blockResult{}, err
+	}
+	// Convert err into the catch value.
+	var caught Value
+	switch e := err.(type) {
+	case *ErrorSignal:
+		caught = e.Value
+	case *runtimeError:
+		caught = runtimeErrorToValue(e)
+	default:
+		// Unknown error type - don't try to catch it; let it propagate.
+		return blockResult{}, err
+	}
+	// Bind the catch variable in a fresh scope, then run the handler.
+	// The catch scope shadows nothing because no-shadowing already
+	// rejects a CatchName collision with an outer binding at runtime
+	// via env.Define.
+	catchEnv := NewEnvironment(env)
+	declType := parser.StructType(canonicalErrorStructName)
+	if caught.Kind != KindStruct || caught.StructName != canonicalErrorStructName {
+		// User threw a non-Error value (any kind is permitted by the
+		// spec). Bind without a declared type stamp; the catch body
+		// uses convert.typeOf / runtime checks if it needs to inspect.
+		declType = parser.Type{}
+	}
+	if err := catchEnv.Define(st.CatchName, caught.Copy(), declType, false); err != nil {
+		return blockResult{}, &runtimeError{Msg: err.Error(), File: st.CatchFile, Line: st.CatchLine, Col: st.CatchCol}
+	}
+	return i.execStmts(st.CatchBody.Stmts, catchEnv)
 }
 
 // evalBool evaluates an expression that must yield a bool; otherwise it

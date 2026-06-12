@@ -370,4 +370,28 @@ def L as Line init Line{ from: Point{ x: 0, y: 0 }, to: Point{ x: 10, y: 20 } };
 $L.from.x = 5;
 io.printf("nested write   = %v\n", $L);
 
+# --- M13.2: try / catch / throw ---
+#
+# `try { ... } catch (err) { ... }` runs the body; any `throw EXPR;`
+# inside it, or any runtime error (out-of-bounds, missing key, etc.),
+# binds the thrown value to `$err` in the handler. Convention is to
+# throw an `Error` struct - the runtime auto-defines that struct shape.
+# A dedicated walkthrough lives in examples/trycatch.j.
+io.printf("=== M13.2 try/catch ===\n");
+
+# User throw, caught.
+try {
+    throw Error{kind: "demo", message: "user", file: "", line: 0, col: 0};
+} catch (err) {
+    io.printf("user thrown  = %s / %s\n", $err.kind, $err.message);
+}
+
+# Runtime error caught uniformly.
+def shortList as list of int init [1, 2];
+try {
+    def bad as int init $shortList[99];
+} catch (err) {
+    io.printf("runtime err  = kind=%s\n", $err.kind);
+}
+
 io.printf("=== done ===\n");

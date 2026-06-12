@@ -384,6 +384,32 @@ type ExitStmt struct {
 
 func (*ExitStmt) stmtNode() {}
 
+// TryStmt: `try { body } catch (NAME) { handler }` - catchable error
+// block. The body runs first; if any `throw` (user-issued or runtime)
+// reaches this `try`, the handler runs with `NAME` bound to the
+// thrown value in a fresh per-handler scope. M13.2.
+type TryStmt struct {
+	pos
+	Body       *Block
+	CatchName  string
+	CatchBody  *Block
+	CatchFile  string // position of the `catch (NAME)` introducer for diagnostics
+	CatchLine  int
+	CatchCol   int
+}
+
+func (*TryStmt) stmtNode() {}
+
+// ThrowStmt: `throw EXPR;` - raises a catchable error. EXPR may
+// produce any value (the convention is an `Error` struct - see
+// docs/milestones.md M13.2). M13.2.
+type ThrowStmt struct {
+	pos
+	Value Expr
+}
+
+func (*ThrowStmt) stmtNode() {}
+
 // ExprStmt: a bare expression terminated by `;` (used for calls like `printf(...)`).
 type ExprStmt struct {
 	pos
@@ -761,6 +787,10 @@ func Sprint(n Node) string {
 			return "Exit"
 		}
 		return fmt.Sprintf("Exit(%s)", Sprint(v.Code))
+	case *TryStmt:
+		return fmt.Sprintf("Try(%s, catch %s %s)", Sprint(v.Body), v.CatchName, Sprint(v.CatchBody))
+	case *ThrowStmt:
+		return fmt.Sprintf("Throw(%s)", Sprint(v.Value))
 	case *ExprStmt:
 		return fmt.Sprintf("ExprStmt(%s)", Sprint(v.Expr))
 	case *IntLit:

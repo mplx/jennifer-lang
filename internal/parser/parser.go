@@ -341,6 +341,10 @@ func (p *parser) parseStatement() (Stmt, error) {
 		return p.parseReturn()
 	case lexer.TOKEN_EXIT:
 		return p.parseExit()
+	case lexer.TOKEN_TRY:
+		return p.parseTry()
+	case lexer.TOKEN_THROW:
+		return p.parseThrow()
 	case lexer.TOKEN_VARREF:
 		// `$x = expr ;` is a simple assignment.
 		if p.peekN(1).Type == lexer.TOKEN_ASSIGN {
@@ -545,6 +549,67 @@ func (p *parser) parseExit() (Stmt, error) {
 		return nil, err
 	}
 	return stmt, nil
+}
+
+// parseTry parses `try { ... } catch (NAME) { ... }`. The catch
+// binding is a bare IDENT following the iteration-variable rule (no
+// `_`, letters-only). No `finally` in v1 (see M13.2 spec). M13.2.
+func (p *parser) parseTry() (Stmt, error) {
+	tk, _ := p.match(lexer.TOKEN_TRY)
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	catchTok, err := p.expect(lexer.TOKEN_CATCH, "after `try { ... }` body")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TOKEN_LPAREN, "before catch binding"); err != nil {
+		return nil, err
+	}
+	name, err := p.expect(lexer.TOKEN_IDENT, "for catch binding name")
+	if err != nil {
+		return nil, err
+	}
+	if containsUnderscore(name.Lexeme) {
+		return nil, &ParseError{
+			Msg:  fmt.Sprintf("catch variable name %q may not contain `_` (use camelCase)", name.Lexeme),
+			File: name.File, Line: name.Line, Col: name.Col,
+		}
+	}
+	if _, err := p.expect(lexer.TOKEN_RPAREN, "to close catch binding"); err != nil {
+		return nil, err
+	}
+	handler, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	return &TryStmt{
+		pos:       pos{File: tk.File, Line: tk.Line, Col: tk.Col},
+		Body:      body,
+		CatchName: name.Lexeme,
+		CatchBody: handler,
+		CatchFile: catchTok.File,
+		CatchLine: catchTok.Line,
+		CatchCol:  catchTok.Col,
+	}, nil
+}
+
+// parseThrow parses `throw EXPR;`. The EXPR may produce any value;
+// convention is an `Error` struct - see the M13.2 spec. M13.2.
+func (p *parser) parseThrow() (Stmt, error) {
+	tk, _ := p.match(lexer.TOKEN_THROW)
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate throw"); err != nil {
+		return nil, err
+	}
+	return &ThrowStmt{
+		pos:   pos{File: tk.File, Line: tk.Line, Col: tk.Col},
+		Value: expr,
+	}, nil
 }
 
 // tryParseIndexAssign attempts to parse `$xs[i]...[j] = expr ;` as an

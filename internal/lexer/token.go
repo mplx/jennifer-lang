@@ -38,6 +38,9 @@ const (
 	TOKEN_BREAK    // M11: exit innermost loop
 	TOKEN_CONTINUE // M11: skip to next iteration of innermost loop
 	TOKEN_EXIT     // M11: terminate the program; optional int expression sets exit code
+	TOKEN_TRY      // M13.2: `try { ... } catch (NAME) { ... }` catchable error block
+	TOKEN_CATCH    // M13.2: companion to `try`; binds the thrown value
+	TOKEN_THROW    // M13.2: `throw EXPR;` raises a catchable error
 	TOKEN_TRUE
 	TOKEN_FALSE
 	TOKEN_NULL
@@ -122,6 +125,9 @@ var tokenNames = map[TokenType]string{
 	TOKEN_BREAK:       "BREAK",
 	TOKEN_CONTINUE:    "CONTINUE",
 	TOKEN_EXIT:        "EXIT",
+	TOKEN_TRY:         "TRY",
+	TOKEN_CATCH:       "CATCH",
+	TOKEN_THROW:       "THROW",
 	TOKEN_TRUE:        "TRUE",
 	TOKEN_FALSE:       "FALSE",
 	TOKEN_NULL:        "NULL",
@@ -216,6 +222,9 @@ var keywords = map[string]TokenType{
 	"break":    TOKEN_BREAK,
 	"continue": TOKEN_CONTINUE,
 	"exit":     TOKEN_EXIT,
+	"try":      TOKEN_TRY,
+	"catch":    TOKEN_CATCH,
+	"throw":    TOKEN_THROW,
 	"true":   TOKEN_TRUE,
 	"false":  TOKEN_FALSE,
 	"null":   TOKEN_NULL,

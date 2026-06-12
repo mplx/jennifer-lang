@@ -576,6 +576,8 @@ See:
 
 ## M13.2 - `try` / `catch` / `throw`
 
+**Status:** done.
+
 Catchable errors, both user-thrown and runtime. Ships as a
 sub-milestone of M13 because the canonical error value is a
 struct (M13.1) - waiting saves a string-to-struct migration that
@@ -698,6 +700,20 @@ try {
     }
 }
 ```
+
+See:
+- [user-guide/control-flow.md](user-guide/control-flow.md#try-catch-throw-m132) -
+  language angle: throw shape, what's catchable, what isn't,
+  re-throwing.
+- [technical/interpreter.md](technical/interpreter.md#catchable-errors-m132) -
+  runtime details: `ErrorSignal` sentinel, `runtimeError` -> `Error`
+  struct wrapping, `execTry`'s flow-control passthrough.
+- [technical/grammar.md](technical/grammar.md) - `tryStmt`,
+  `throwStmt`, AST node table.
+- `examples/trycatch.j` - standalone walkthrough; the
+  `=== M13.2 try/catch ===` section of `examples/showcase.j`
+  exercises the same surface alongside everything else that
+  ships through M13.2.
 
 ---
 

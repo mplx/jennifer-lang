@@ -1,0 +1,12 @@
+=== user throw ===
+config invalid: missing `=`
+=== runtime error ===
+caught kind=runtime msg=list index 99 out of bounds (len 2)
+=== throw any value ===
+caught raw string error of kind string
+=== re-throw ===
+inner saw inner
+outer saw inner
+=== value semantics ===
+source.kind = k
+=== done ===
