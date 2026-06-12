@@ -527,193 +527,78 @@ See:
 
 ## M13 - Structs and catchable errors
 
-The composite-data milestone, split into two sub-milestones
-because M13.2's error-handling design depends on M13.1's struct
-shape. Ships as a batch: structs are the foundation, errors are
-the first big consumer of that foundation.
+**Status:** done.
+
+The composite-data milestone, batched into two sub-milestones in
+dependency order: M13.1 ships the struct mechanism, M13.2 ships
+the error-handling design that uses it. Together they unblock
+every library that wants composite returns and give the language
+a recoverable-error story.
 
 ## M13.1 - Structs / records
 
 **Status:** done.
 
-- New `def struct Name { field as type, ... };` syntax,
-  top-level only. Hoisted before the first top-level statement
-  runs (parallel to method hoisting); duplicate names are
-  positioned errors in `Run`, silently redefined in the REPL.
-- Literals: `Name{ field: expr, ... }`. Every field is required
-  at the literal (no defaults at literal level); the
-  no-init form `def x as Name;` gives every field its declared
-  zero, recursing through nested struct-typed fields.
-- Field access `$p.field` and write `$p.field = ...;`. Lvalue
-  chains mix `[index]` and `.field` freely
-  (`$L.from.x = 5;`, `$bag.items[0] = 99;`); both
-  `IndexAssignStmt` and `FieldAssignStmt` route through a
-  unified walker.
-- Value semantics like lists/maps - `def q as Name init $p;`
-  copies; function-parameter binding copies; `const` is deep
-  (rejects both binding-rewrite and content mutation at any
-  depth).
-- Strict at boundaries: unknown struct type at declaration,
-  missing or unknown field at literal, field-type mismatch on
-  write, and field access on a non-struct value are all
-  positioned runtime errors.
-- Unblocks every library that wants to return composite data
-  (file info, time values, network endpoints, http request /
-  response) and is the foundation for the M13.2 error struct.
+- `def struct Name { field as type, ... };` at top level
+  (hoisted before the first statement; duplicate names error in
+  `Run`, silently redefine in the REPL).
+- Literals `Name{ field: expr, ... }` with every field required;
+  `def x as Name;` (no init) zero-fills, recursing through
+  nested struct fields.
+- Field read `$p.field`, write `$p.field = ...;`. Lvalue chains
+  mix `[index]` and `.field` freely (`$L.from.x = 5;`,
+  `$bag.items[0] = 99;`); index-assign and field-assign share
+  one walker.
+- Value semantics like lists/maps; `const` deep at any depth.
+- Strict at boundaries: unknown struct type, missing / unknown
+  field at literal, field-type mismatch on write, field access
+  on a non-struct value are all positioned errors.
 
 See:
 - [user-guide/types-and-values.md](user-guide/types-and-values.md#structs-m131) -
-  language angle: declaration, construction, value semantics,
-  nested / chained access.
+  language angle.
 - [technical/interpreter.md](technical/interpreter.md#structs-m131) -
-  runtime details: `KindStruct`, hoisting, unified lvalue walker.
+  runtime details (`KindStruct`, hoisting, unified lvalue walker).
 - [technical/grammar.md](technical/grammar.md) - `structDef`,
   `structLit`, `fieldAssign`, mixed-tail lvalues.
-- `examples/structs.j` - standalone walkthrough; the
-  `=== M13.1 structs ===` section of `examples/showcase.j`
-  exercises the same surface alongside everything else that
-  ships through M13.1.
+- `examples/structs.j` standalone; `examples/showcase.j`
+  `=== M13.1 structs ===` section.
 
 ## M13.2 - `try` / `catch` / `throw`
 
 **Status:** done.
 
-Catchable errors, both user-thrown and runtime. Ships as a
-sub-milestone of M13 because the canonical error value is a
-struct (M13.1) - waiting saves a string-to-struct migration that
-would otherwise hit every catch site.
+Catchable errors. New keywords `try`, `catch`, `throw`. Depends
+on M13.1 because the canonical error value is a struct.
 
-**New keywords**: `try`, `catch`, `throw`.
-
-**Syntax.**
-
-```jennifer
-try {
-    def n as int init convert.toInt($s);
-    use($n);
-} catch (err) {
-    io.printf("invalid input: %s\n", $err.message);
-}
-```
-
-`throw EXPR;` signals an error; `EXPR` evaluates to any value but
-the convention is a struct (see "Error shape" below). The
-matching `catch (NAME)` binds the thrown value to `$NAME` in a
-fresh per-block scope.
-
-**Error shape.** Every error - user-thrown or runtime-raised -
-is conventionally a struct with the M13.1 shape:
-
-```jennifer
-def struct Error {
-    kind    as string,    # short symbolic tag: "out_of_bounds", "type_mismatch", ...
-    message as string,    # human-readable
-    file    as string,    # source file the error originated in
-    line    as int,
-    col     as int,
-};
-```
-
-Library and runtime errors construct an `Error{}` with the right
-`kind`. User code is free to throw any value (a bare string still
-works), but the recommended shape is a struct that matches or
-extends `Error` so dispatch is uniform.
-
-**What's catchable.**
-
-- **Runtime errors**: out-of-bounds index reads/writes, missing
-  map keys, type mismatches, division by zero, undefined names,
-  bytes-element range violations, codec decode failures, and the
-  rest of today's positioned `runtimeError`. Each gets a `kind`
-  tag (see [technical/interpreter.md > Error kinds](technical/interpreter.md#error-kinds)
-  for the catalog at M13.2).
-- **User `throw EXPR;`** - whatever the user passed.
-
-**What's NOT catchable.**
-
-- **`exit` / `exit EXPR;`** - the program-level escape hatch
-  stays escape. Matches Python's `SystemExit` (uncatchable by
-  bare `except`), Java's `System.exit()`. `try { exit 1; } catch
-  (e) { }` lets the exit through.
-- **`return` / `break` / `continue`** - they're control flow,
-  not errors. `try { break; } catch (e) { ... }` breaks the
-  enclosing loop; the `catch` block isn't entered.
-- **Internal interpreter panics** - they shouldn't happen; if
-  one does it's a bug in the interpreter, not a recoverable
-  condition.
-
-**Semantics.**
-
-- `try` opens a new scope. Bindings inside the `try` body do not
-  survive a thrown error (matches every other block).
-- `catch (NAME)` opens its own scope. `NAME` is bound to the
-  thrown value for the duration of the catch block. The catch
-  block's own bindings don't leak past it.
-- An uncaught `throw` at the top level produces a positioned
-  runtime error (same shape today's uncaught runtime errors
-  produce, plus the `kind` tag).
-- `throw` inside a `catch` re-raises - propagates past the
-  current `try`/`catch` to the next enclosing `try`. Same value
-  unless replaced.
-- No `finally` clause in v1. Deferred until a real cleanup need
-  surfaces (probably with `fs` file handles in M16.1).
-- No typed catch in v1 (`catch (TypeError e)`). The user
-  dispatches on `$e.kind` inside the catch body. Keeps the
-  syntax minimal.
-
-**Internals.** Implemented as an `ErrorSignal` sentinel error
-(parallels the M11 `ExitSignal`), carrying the thrown `Value`.
-The interpreter unwinds frames until it hits an enclosing `try`
-that catches it; if none does, the signal turns back into a
-positioned runtime error at the program boundary. Existing
-`runtimeError`s are routed through the same channel - they
-construct an `Error{}` struct and become catchable
-automatically; no per-builtin change needed.
-
-**Examples.**
-
-```jennifer
-# Validate user input without dying on bad data.
-try {
-    def n as int init convert.toInt($input);
-    process($n);
-} catch (err) {
-    io.printf("not a number, ignoring: %s\n", $err.message);
-}
-
-# Library code signals expected failure modes.
-func parseConfig(src as string) {
-    if (not strings.contains($src, "=")) {
-        throw Error{kind: "parse_error", message: "missing `=`", file: "", line: 0, col: 0};
-    }
-    # ... normal parsing path ...
-}
-
-# Dispatch on `kind`.
-try {
-    parseConfig($cfg);
-} catch (err) {
-    if ($err.kind == "parse_error") {
-        io.printf("config invalid: %s\n", $err.message);
-    } else {
-        throw $err;   # not our concern; let it propagate
-    }
-}
-```
+- `try { body } catch (NAME) { handler }` runs the body and, on
+  a catchable error, binds the thrown value to `$NAME` in a
+  fresh per-handler scope.
+- `throw EXPR;` raises any value; convention is the auto-hoisted
+  `Error{kind, message, file, line, col}` struct.
+- Runtime errors (out-of-bounds, missing key, type mismatch,
+  etc.) are wrapped into the canonical `Error` shape on entry
+  to the catch (`kind` defaults to `"runtime"` until sites
+  opt in to specific tags); user code catches both kinds
+  uniformly. `throw $err;` inside a catch re-raises to the
+  enclosing `try`.
+- **Not** catchable: `exit` (program-level escape, propagates
+  through `try`); `return` / `break` / `continue` (control
+  flow, flow through `try` unchanged).
+- No `finally` and no typed catch in v1.
+- Internals: `ErrorSignal` sentinel parallels `ExitSignal`;
+  `runtimeError.Kind` field threads the symbolic tag; user code
+  may not redefine the auto-hoisted `Error` struct.
 
 See:
 - [user-guide/control-flow.md](user-guide/control-flow.md#try-catch-throw-m132) -
-  language angle: throw shape, what's catchable, what isn't,
-  re-throwing.
+  language angle.
 - [technical/interpreter.md](technical/interpreter.md#catchable-errors-m132) -
-  runtime details: `ErrorSignal` sentinel, `runtimeError` -> `Error`
-  struct wrapping, `execTry`'s flow-control passthrough.
+  runtime details (`ErrorSignal`, wrapping, flow passthrough).
 - [technical/grammar.md](technical/grammar.md) - `tryStmt`,
-  `throwStmt`, AST node table.
-- `examples/trycatch.j` - standalone walkthrough; the
-  `=== M13.2 try/catch ===` section of `examples/showcase.j`
-  exercises the same surface alongside everything else that
-  ships through M13.2.
+  `throwStmt`.
+- `examples/trycatch.j` standalone; `examples/showcase.j`
+  `=== M13.2 try/catch ===` section.
 
 ---
 
