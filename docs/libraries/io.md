@@ -234,9 +234,37 @@ io.printf("hi, %s\n", $name);
 
 ### `io.eof() -> bool`
 
-True if and only if the next `io.readLine()` would error. Implemented by peeking one
-byte through a buffered reader; the byte stays in the buffer for the
-next read. Once true, `io.eof()` stays true for the rest of the run.
+True if and only if the next `io.readLine()` (or `io.readBytes` /
+`io.readChars`) would return less than requested. Implemented by
+peeking one byte through a buffered reader; the byte stays in the
+buffer for the next read. Once true, `io.eof()` stays true for the
+rest of the run.
+
+### `io.readBytes(n) -> bytes` (M12+)
+
+Reads exactly `n` bytes from stdin and returns them as a `bytes`
+value. If EOF is hit before `n` bytes are available, returns the
+partial result and `io.eof()` becomes true on the next call. `n`
+must be a non-negative `int`.
+
+```jennifer
+use io;
+def first as bytes init io.readBytes(8);   # exactly 8 bytes or less at EOF
+io.printf("got %d bytes\n", len($first));
+```
+
+### `io.readChars(n) -> string` (M12+)
+
+Reads exactly `n` Unicode code points from stdin, decoded from UTF-8,
+and returns them as a string. Same EOF behavior as `readBytes`
+(partial result, sticky `io.eof()`). `n` is a rune count, not a byte
+count - one Unicode character can be 1-4 bytes wide.
+
+```jennifer
+use io;
+def first as string init io.readChars(3);  # exactly 3 runes
+io.printf("got %d runes (%d bytes)\n", len($first), 0);  # len = 3
+```
 
 ### Canonical loop
 

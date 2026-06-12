@@ -14,6 +14,7 @@ alphabetically.
 |--------------------------|------|---------|
 | bool / bools | type | Boolean primitive. Two values: `true`, `false`. Comparison operators produce one. |
 | break | language (M11+) | The `break;` statement; exits the innermost enclosing loop. Misuse outside a loop is a positioned runtime error. *Not* "leave", "stop". |
+| bytes | type (M12+) | Mutable byte sequence. Indexing yields `int` in `[0, 255]`; writes accept the same range and reject anything else. Value-typed (deep-copy on assignment / parameter binding). Built from a string via `convert.bytesFromString(s, "utf-8")` or grown from `def b as bytes;` via `$b[] = byte;`. *Not* "buffer", "bytestring", "blob". |
 | builtin / builtins | implementation | A function or constant registered by a library via the Go-side `Register*` API. Distinguishes "ships with the interpreter" from user-defined `func`. |
 | constant / constants | language | A name bound once at declaration with `def const NAME ...` and never reassigned. Constants are deep-immutable for lists and maps. |
 | continue | language (M11+) | The `continue;` statement; skips to the next iteration of the innermost loop. In C-style `for`, the step expression still runs before re-checking the condition. *Not* "next", "skip". |

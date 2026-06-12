@@ -26,6 +26,8 @@ io.printf("%s\n", convert.typeOf(5 // 2));     # "int"
 | `convert.toString(v)`   | any                           | always succeeds; uses the value's display form                       |
 | `convert.toBool(v)`     | bool / int / float / string   | identity / canonical only (`0`/`1`, `0.0`/`1.0`, `"true"`/`"false"`) |
 | `convert.typeOf(v)`   | any                           | returns the kind as a string: `"int"`, `"float"`, etc.               |
+| `convert.bytesFromString(s, codec)` (M12+) | (string, string) | string → bytes; only `"utf-8"` codec today |
+| `convert.stringFromBytes(b, codec)` (M12+) | (bytes, string)  | bytes → string; only `"utf-8"` codec today; invalid UTF-8 is an error |
 
 ## Errors
 
@@ -34,6 +36,11 @@ io.printf("%s\n", convert.typeOf(5 // 2));     # "int"
 - `convert.toBool("maybe")` - strings: only `"true"` and `"false"` accepted.
 - `convert.toBool(123)`, `convert.toBool(-1)` - ints: only `0` and `1` accepted.
 - `convert.toBool(1.5)` - floats: only `0.0` and `1.0` accepted.
+- `convert.stringFromBytes(b, "utf-8")` on bytes that aren't valid
+  UTF-8 - strict at boundaries; no silent replacement characters.
+- `convert.bytesFromString(s, "latin-1")` or any non-`"utf-8"`
+  codec name - rejected as unsupported (further codecs ship in
+  the M15.4 `encoding` library).
 - Arity errors (too many or too few arguments).
 
 For "any nonzero counts as true" semantics, write the comparison explicitly:

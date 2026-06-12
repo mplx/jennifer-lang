@@ -768,6 +768,9 @@ func (p *parser) parseType() (Type, error) {
 	case lexer.TOKEN_BOOL_TYPE:
 		p.advance()
 		return PrimitiveType(TypeBool), nil
+	case lexer.TOKEN_BYTES_TYPE:
+		p.advance()
+		return PrimitiveType(TypeBytes), nil
 	case lexer.TOKEN_NULL:
 		p.advance()
 		return PrimitiveType(TypeNull), nil
@@ -928,8 +931,23 @@ func (p *parser) parseNot() (Expr, error) {
 // Comparison is lower-precedence than additive, non-associative-ish: we accept
 // a chain (`a < b == c`) syntactically but it's almost certainly a bug; for
 // now we parse left-associatively and let semantics reject mixed-kind ops.
+//
+// M12 inserts four new rungs between comparison and additive for the bit
+// operators (`|`, `^`, `&`, `<<` / `>>`) following Python's precedence:
+//
+//   comparison
+//     |   (bitwise OR)
+//     ^   (bitwise XOR)
+//     &   (bitwise AND)
+//     << >> (shifts)
+//   additive (+ -)
+//   multiplicative (* / // %)
+//   unary (- ~ not)
+//
+// Each level recurses into the next tighter one. Python ordering avoids
+// the C `x & 0xff == 0` footgun (which C parses as `x & (0xff == 0)`).
 func (p *parser) parseComparison() (Expr, error) {
-	left, err := p.parseAdd()
+	left, err := p.parseBitOr()
 	if err != nil {
 		return nil, err
 	}
@@ -947,6 +965,82 @@ func (p *parser) parseComparison() (Expr, error) {
 			op = OpGe
 		case lexer.TOKEN_EQ:
 			op = OpEq
+		default:
+			return left, nil
+		}
+		p.advance()
+		right, err := p.parseBitOr()
+		if err != nil {
+			return nil, err
+		}
+		l, c := left.Pos()
+		left = &BinaryExpr{pos: pos{File: left.Filename(), Line: l, Col: c}, Op: op, Left: left, Right: right}
+	}
+}
+
+func (p *parser) parseBitOr() (Expr, error) {
+	left, err := p.parseBitXor()
+	if err != nil {
+		return nil, err
+	}
+	for p.peek().Type == lexer.TOKEN_BIT_OR {
+		p.advance()
+		right, err := p.parseBitXor()
+		if err != nil {
+			return nil, err
+		}
+		l, c := left.Pos()
+		left = &BinaryExpr{pos: pos{File: left.Filename(), Line: l, Col: c}, Op: OpBitOr, Left: left, Right: right}
+	}
+	return left, nil
+}
+
+func (p *parser) parseBitXor() (Expr, error) {
+	left, err := p.parseBitAnd()
+	if err != nil {
+		return nil, err
+	}
+	for p.peek().Type == lexer.TOKEN_BIT_XOR {
+		p.advance()
+		right, err := p.parseBitAnd()
+		if err != nil {
+			return nil, err
+		}
+		l, c := left.Pos()
+		left = &BinaryExpr{pos: pos{File: left.Filename(), Line: l, Col: c}, Op: OpBitXor, Left: left, Right: right}
+	}
+	return left, nil
+}
+
+func (p *parser) parseBitAnd() (Expr, error) {
+	left, err := p.parseShift()
+	if err != nil {
+		return nil, err
+	}
+	for p.peek().Type == lexer.TOKEN_BIT_AND {
+		p.advance()
+		right, err := p.parseShift()
+		if err != nil {
+			return nil, err
+		}
+		l, c := left.Pos()
+		left = &BinaryExpr{pos: pos{File: left.Filename(), Line: l, Col: c}, Op: OpBitAnd, Left: left, Right: right}
+	}
+	return left, nil
+}
+
+func (p *parser) parseShift() (Expr, error) {
+	left, err := p.parseAdd()
+	if err != nil {
+		return nil, err
+	}
+	for {
+		var op BinaryOp
+		switch p.peek().Type {
+		case lexer.TOKEN_SHL:
+			op = OpShl
+		case lexer.TOKEN_SHR:
+			op = OpShr
 		default:
 			return left, nil
 		}
@@ -1116,9 +1210,10 @@ func (p *parser) parseQualifiedTail(prefix lexer.Token) (Expr, error) {
 	}, nil
 }
 
-// parseUnaryMinus handles the `-EXPR` prefix form. It sits between
-// multiplicative and primary so that `-x * 2` parses as `(-x) * 2`.
-// Right-associative: `--x` is `-(-x)`.
+// parseUnaryMinus handles the `-EXPR` and `~EXPR` prefix forms. Sits
+// between multiplicative and primary so `-x * 2` parses as `(-x) * 2`.
+// Right-associative: `--x` is `-(-x)`, `~~x` is `~(~x)`. Mixing is
+// allowed: `-~x` is `-(~x)`.
 func (p *parser) parseUnaryMinus() (Expr, error) {
 	if t, ok := p.match(lexer.TOKEN_MINUS); ok {
 		operand, err := p.parseUnaryMinus()
@@ -1126,6 +1221,13 @@ func (p *parser) parseUnaryMinus() (Expr, error) {
 			return nil, err
 		}
 		return &UnaryExpr{pos: pos{File: t.File, Line: t.Line, Col: t.Col}, Op: OpNeg, Operand: operand}, nil
+	}
+	if t, ok := p.match(lexer.TOKEN_BIT_NOT); ok {
+		operand, err := p.parseUnaryMinus()
+		if err != nil {
+			return nil, err
+		}
+		return &UnaryExpr{pos: pos{File: t.File, Line: t.Line, Col: t.Col}, Op: OpBitNot, Operand: operand}, nil
 	}
 	return p.parsePrimary()
 }
@@ -1173,7 +1275,16 @@ func (p *parser) parsePrimaryAtom() (Expr, error) {
 	switch t.Type {
 	case lexer.TOKEN_INT:
 		p.advance()
-		n, err := strconv.ParseInt(t.Lexeme, 10, 64)
+		// M12: literal may be prefixed `0x`/`0o`/`0b` for non-decimal
+		// bases. Pass base=0 to ParseInt so it picks the base from the
+		// prefix (or 10 if none). 64-bit signed range applies in every
+		// base.
+		lex := t.Lexeme
+		base := 0
+		if !strings.HasPrefix(lex, "0x") && !strings.HasPrefix(lex, "0o") && !strings.HasPrefix(lex, "0b") {
+			base = 10
+		}
+		n, err := strconv.ParseInt(lex, base, 64)
 		if err != nil {
 			return nil, &ParseError{Msg: fmt.Sprintf("invalid int literal %q: %v", t.Lexeme, err), File: t.File, Line: t.Line, Col: t.Col}
 		}
@@ -1214,16 +1325,21 @@ func (p *parser) parsePrimaryAtom() (Expr, error) {
 			return &ConstRefExpr{pos: pos{File: t.File, Line: t.Line, Col: t.Col}, Name: t.Lexeme}, nil
 		}
 		return p.parseCallTail(t)
-	case lexer.TOKEN_INT_TYPE, lexer.TOKEN_FLOAT_TYPE, lexer.TOKEN_STRING_TYPE, lexer.TOKEN_BOOL_TYPE:
+	case lexer.TOKEN_INT_TYPE, lexer.TOKEN_FLOAT_TYPE, lexer.TOKEN_STRING_TYPE, lexer.TOKEN_BOOL_TYPE, lexer.TOKEN_BYTES_TYPE:
 		// Type keywords have no expression-position meaning. The pre-M10
 		// `int(v)` / `float(v)` / `string(v)` / `bool(v)` conversion-call
 		// shortcut moved to the convert library under names that avoid
 		// the keyword collision: `convert.toInt(v)`, `convert.toFloat(v)`,
-		// `convert.toString(v)`, `convert.toBool(v)`.
+		// `convert.toString(v)`, `convert.toBool(v)`. The M12 `bytes`
+		// type doesn't take a single-arg conversion (it ships
+		// `convert.bytesFromString(s, codec)` instead); rejecting it
+		// here keeps the type-keyword treatment uniform.
 		hint := ""
-		if p.peekN(1).Type == lexer.TOKEN_LPAREN {
+		if p.peekN(1).Type == lexer.TOKEN_LPAREN && t.Type != lexer.TOKEN_BYTES_TYPE {
 			toName := "to" + strings.ToUpper(t.Lexeme[:1]) + t.Lexeme[1:]
 			hint = fmt.Sprintf(" (the bare-call form was removed in M10; use `convert.%s(...)` instead)", toName)
+		} else if t.Type == lexer.TOKEN_BYTES_TYPE {
+			hint = " (use `convert.bytesFromString(s, codec)` to build bytes from a string)"
 		} else {
 			hint = " (type names belong after `as` in a declaration)"
 		}

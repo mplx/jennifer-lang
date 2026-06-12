@@ -130,6 +130,10 @@ func (l *Lexer) Next() (Token, error) {
 			l.advance()
 			return Token{Type: TOKEN_LE, Lexeme: "<=", Line: startLine, Col: startCol}, nil
 		}
+		if next, ok := l.peek(0); ok && next == '<' {
+			l.advance()
+			return Token{Type: TOKEN_SHL, Lexeme: "<<", Line: startLine, Col: startCol}, nil
+		}
 		return Token{Type: TOKEN_LT, Lexeme: "<", Line: startLine, Col: startCol}, nil
 	case ch == '>':
 		l.advance()
@@ -137,7 +141,23 @@ func (l *Lexer) Next() (Token, error) {
 			l.advance()
 			return Token{Type: TOKEN_GE, Lexeme: ">=", Line: startLine, Col: startCol}, nil
 		}
+		if next, ok := l.peek(0); ok && next == '>' {
+			l.advance()
+			return Token{Type: TOKEN_SHR, Lexeme: ">>", Line: startLine, Col: startCol}, nil
+		}
 		return Token{Type: TOKEN_GT, Lexeme: ">", Line: startLine, Col: startCol}, nil
+	case ch == '&':
+		l.advance()
+		return Token{Type: TOKEN_BIT_AND, Lexeme: "&", Line: startLine, Col: startCol}, nil
+	case ch == '|':
+		l.advance()
+		return Token{Type: TOKEN_BIT_OR, Lexeme: "|", Line: startLine, Col: startCol}, nil
+	case ch == '^':
+		l.advance()
+		return Token{Type: TOKEN_BIT_XOR, Lexeme: "^", Line: startLine, Col: startCol}, nil
+	case ch == '~':
+		l.advance()
+		return Token{Type: TOKEN_BIT_NOT, Lexeme: "~", Line: startLine, Col: startCol}, nil
 	case ch == '+':
 		l.advance()
 		return Token{Type: TOKEN_PLUS, Lexeme: "+", Line: startLine, Col: startCol}, nil
@@ -300,24 +320,114 @@ func (l *Lexer) readVarRef(startLine, startCol int) (Token, error) {
 }
 
 func (l *Lexer) readNumber(startLine, startCol int) (Token, error) {
-	var b strings.Builder
-	for l.pos < len(l.src) && unicode.IsDigit(l.src[l.pos]) {
-		b.WriteRune(l.src[l.pos])
-		l.advance()
-	}
-	// Float? Require a digit after `.` so that `3.j` (file-import-ish) still
-	// lexes as INT(3) DOT IDENT(j). A trailing dot with no digit is also left
-	// to the caller's interpretation.
-	if l.pos+1 < len(l.src) && l.src[l.pos] == '.' && unicode.IsDigit(l.src[l.pos+1]) {
-		b.WriteRune('.')
-		l.advance()
-		for l.pos < len(l.src) && unicode.IsDigit(l.src[l.pos]) {
-			b.WriteRune(l.src[l.pos])
-			l.advance()
+	// Non-decimal integer prefixes (M12). `0x`, `0o`, `0b` followed by
+	// at least one digit of the right base; `_` may appear between digits
+	// as a visual separator. The lexeme stored on the token includes the
+	// prefix so the parser can pick the base back out, but excludes the
+	// `_` separators (parser-side ParseInt sees clean digits).
+	if l.pos+1 < len(l.src) && l.src[l.pos] == '0' {
+		switch l.src[l.pos+1] {
+		case 'x', 'X':
+			return l.readBasedInt(startLine, startCol, 16, "0x", isHexDigit)
+		case 'o', 'O':
+			return l.readBasedInt(startLine, startCol, 8, "0o", isOctDigit)
+		case 'b', 'B':
+			return l.readBasedInt(startLine, startCol, 2, "0b", isBinDigit)
 		}
-		return Token{Type: TOKEN_FLOAT, Lexeme: b.String(), Line: startLine, Col: startCol}, nil
 	}
-	return Token{Type: TOKEN_INT, Lexeme: b.String(), Line: startLine, Col: startCol}, nil
+	// Decimal int / float. `_` is accepted between digits (`1_000_000`) but
+	// not as the first / last character of the integer-or-mantissa part and
+	// never adjacent to the `.`.
+	digits, err := l.readSeparatedDigits(startLine, startCol, unicode.IsDigit, "decimal")
+	if err != nil {
+		return Token{}, err
+	}
+	if l.pos+1 < len(l.src) && l.src[l.pos] == '.' && unicode.IsDigit(l.src[l.pos+1]) {
+		l.advance() // consume the `.`
+		fraction, err := l.readSeparatedDigits(startLine, startCol, unicode.IsDigit, "decimal")
+		if err != nil {
+			return Token{}, err
+		}
+		return Token{Type: TOKEN_FLOAT, Lexeme: digits + "." + fraction, Line: startLine, Col: startCol}, nil
+	}
+	return Token{Type: TOKEN_INT, Lexeme: digits, Line: startLine, Col: startCol}, nil
+}
+
+// readBasedInt reads a `0x...` / `0o...` / `0b...` integer literal. The
+// caller has only peeked at the prefix; we advance past it here, then
+// scan one or more digits of the requested base with `_` allowed
+// between (but not at) digit positions. The returned lexeme carries the
+// prefix back so the parser knows what base to use; underscores are
+// stripped.
+func (l *Lexer) readBasedInt(startLine, startCol, base int, prefix string, isDigit func(rune) bool) (Token, error) {
+	l.advance() // 0
+	l.advance() // x/o/b
+	if l.pos >= len(l.src) || !isDigit(l.src[l.pos]) {
+		return Token{}, &LexError{File: l.file, Msg: fmt.Sprintf("expected %s digit after `%s`", baseName(base), prefix), Line: startLine, Col: startCol}
+	}
+	digits, err := l.readSeparatedDigits(startLine, startCol, isDigit, baseName(base))
+	if err != nil {
+		return Token{}, err
+	}
+	return Token{Type: TOKEN_INT, Lexeme: prefix + digits, Line: startLine, Col: startCol}, nil
+}
+
+// readSeparatedDigits scans a run of digits with `_` allowed between
+// (but not at the start or end of) the run. The returned string is the
+// digit characters with the underscores stripped, so callers can hand
+// it to strconv.ParseInt directly.
+func (l *Lexer) readSeparatedDigits(startLine, startCol int, isDigit func(rune) bool, kind string) (string, error) {
+	var b strings.Builder
+	prevWasUnderscore := false
+	for l.pos < len(l.src) {
+		c := l.src[l.pos]
+		if isDigit(c) {
+			b.WriteRune(c)
+			prevWasUnderscore = false
+			l.advance()
+			continue
+		}
+		if c == '_' {
+			if b.Len() == 0 {
+				return "", &LexError{File: l.file, Msg: fmt.Sprintf("`_` digit separator may not start a %s literal", kind), Line: startLine, Col: startCol}
+			}
+			if prevWasUnderscore {
+				return "", &LexError{File: l.file, Msg: "consecutive `_` in numeric literal", Line: startLine, Col: startCol}
+			}
+			prevWasUnderscore = true
+			l.advance()
+			continue
+		}
+		break
+	}
+	if prevWasUnderscore {
+		return "", &LexError{File: l.file, Msg: fmt.Sprintf("`_` digit separator may not end a %s literal", kind), Line: startLine, Col: startCol}
+	}
+	return b.String(), nil
+}
+
+func isHexDigit(r rune) bool {
+	return unicode.IsDigit(r) || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+}
+
+func isOctDigit(r rune) bool {
+	return r >= '0' && r <= '7'
+}
+
+func isBinDigit(r rune) bool {
+	return r == '0' || r == '1'
+}
+
+func baseName(base int) string {
+	switch base {
+	case 2:
+		return "binary"
+	case 8:
+		return "octal"
+	case 16:
+		return "hex"
+	}
+	return "decimal"
 }
 
 func (l *Lexer) readIdentifierOrKeyword(startLine, startCol int) (Token, error) {

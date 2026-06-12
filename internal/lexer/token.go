@@ -49,6 +49,7 @@ const (
 	TOKEN_FLOAT_TYPE  // the word "float" used as a type
 	TOKEN_STRING_TYPE // the word "string" used as a type
 	TOKEN_BOOL_TYPE   // the word "bool" used as a type
+	TOKEN_BYTES_TYPE  // M12: the word "bytes" used as a type
 
 	// Compound-type keywords (M6)
 	TOKEN_LIST // the word "list" used as a type
@@ -83,6 +84,14 @@ const (
 	TOKEN_LE // <=
 	TOKEN_GE // >=
 	TOKEN_EQ // ==
+
+	// Bitwise operators (M12)
+	TOKEN_BIT_AND // & - bitwise AND on int
+	TOKEN_BIT_OR  // | - bitwise OR on int
+	TOKEN_BIT_XOR // ^ - bitwise XOR on int
+	TOKEN_BIT_NOT // ~ - bitwise NOT on int (unary)
+	TOKEN_SHL     // <<
+	TOKEN_SHR     // >>
 )
 
 var tokenNames = map[TokenType]string{
@@ -121,6 +130,7 @@ var tokenNames = map[TokenType]string{
 	TOKEN_DIV:         "DIV",
 	TOKEN_INT_TYPE:    "INT_TYPE",
 	TOKEN_FLOAT_TYPE:  "FLOAT_TYPE",
+	TOKEN_BYTES_TYPE:  "BYTES_TYPE",
 	TOKEN_STRING_TYPE: "STRING_TYPE",
 	TOKEN_BOOL_TYPE:   "BOOL_TYPE",
 	TOKEN_LIST:        "LIST",
@@ -149,6 +159,12 @@ var tokenNames = map[TokenType]string{
 	TOKEN_LE:          "LE",
 	TOKEN_GE:          "GE",
 	TOKEN_EQ:          "EQ",
+	TOKEN_BIT_AND:     "BIT_AND",
+	TOKEN_BIT_OR:      "BIT_OR",
+	TOKEN_BIT_XOR:     "BIT_XOR",
+	TOKEN_BIT_NOT:     "BIT_NOT",
+	TOKEN_SHL:         "SHL",
+	TOKEN_SHR:         "SHR",
 }
 
 func (t TokenType) String() string {
@@ -208,6 +224,7 @@ var keywords = map[string]TokenType{
 	"float":  TOKEN_FLOAT_TYPE,
 	"string": TOKEN_STRING_TYPE,
 	"bool":   TOKEN_BOOL_TYPE,
+	"bytes":  TOKEN_BYTES_TYPE,
 	"list":   TOKEN_LIST,
 	"map":    TOKEN_MAP,
 	"of":     TOKEN_OF,

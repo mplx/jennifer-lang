@@ -318,4 +318,33 @@ def scoreMap as map of string to int init {"a": 1, "b": 2};
 io.printf("map            %a\n", $scoreMap);
 io.printf("map kv style   %a|kv=\"=\"|sep=\" \"\n", $scoreMap);
 
+# --- M12: non-decimal literals + digit separators ---
+io.printf("=== M12 literals ===\n");
+io.printf("0xff           = %d\n", 0xff);
+io.printf("0xDEAD_BEEF    = %d\n", 0xDEAD_BEEF);
+io.printf("0o755          = %d\n", 0o755);
+io.printf("0b1010_0110    = %d\n", 0b1010_0110);
+io.printf("1_000_000      = %d\n", 1_000_000);
+
+# --- M12: bit operators ---
+io.printf("=== M12 bit ops ===\n");
+io.printf("0xff & 0x0f    = %d|base=16\n", 0xff & 0x0f);
+io.printf("0x0f | 0xf0    = %d|base=16\n", 0x0f | 0xf0);
+io.printf("0xff ^ 0xaa    = %d|base=16\n", 0xff ^ 0xaa);
+io.printf("~0             = %d\n", ~0);
+io.printf("1 << 8         = %d\n", 1 << 8);
+io.printf("256 >> 1       = %d\n", 256 >> 1);
+
+# --- M12: bytes type ---
+io.printf("=== M12 bytes ===\n");
+def msg as bytes init convert.bytesFromString("Hi!", "utf-8");
+io.printf("len            = %d\n", len($msg));
+io.printf("msg[0]         = %d (H)\n", $msg[0]);
+io.printf("display        = %v\n", $msg);
+$msg[0] = 0x68;
+$msg[] = 0x0a;
+io.printf("after mutation = %v\n", $msg);
+def roundTripped as string init convert.stringFromBytes($msg, "utf-8");
+io.printf("round-trip     = %s", $roundTripped);
+
 io.printf("=== done ===\n");

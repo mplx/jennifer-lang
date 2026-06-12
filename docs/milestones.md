@@ -476,45 +476,61 @@ See:
 
 ## M12 - Bytes and bit operators
 
-- New primitive type `bytes` - **mutable** byte sequence with
-  `list`-like semantics. Indexing yields `int` in `[0, 255]`;
-  index-assign writes `$b[i] = 0xff;` (out-of-range writes are
-  positioned runtime errors). Append via the same `$b[] = byte;`
-  sugar M9 introduces for lists. **Value semantics** like lists:
-  `$a = $b;` deep-copies, so passing bytes into a method can't
-  surprise the caller. `const` is deep. `len($b)` returns the
-  count. Rune-aware ops stay in `strings`; byte-level ops live
-  here. (Mutable was chosen over immutable to fit real
-  buffer-shaped workflows - I/O, hashing-while-streaming,
-  in-place encrypt/decrypt - without forcing an allocate-new
-  loop for each transformation.)
-- New `bytes <-> string` codecs land in `convert` as
-  `convert.bytesFromString($s, $codec)` and
-  `convert.stringFromBytes($b, $codec)`. Two-argument shape
-  follows `convert.toInt(v)` / `convert.toFloat(v)` (one input, one
-  output) with `$codec` selecting the encoding (`"utf-8"` by
-  default; further codecs ship with the `encoding` library in
-  M15.4). The pair lives in `convert` because bytes ↔ string
-  *is* a value transformation across kinds, which is `convert`'s
-  charter; the codec-introspection helpers
-  (`isAscii`, `lenBytes`, `lenRunes`, hex, base64) stay in
-  `encoding` because their concern is the byte stream's shape,
-  not the conversion itself.
-- New operators `& | ^ ~ << >>` on `int` - promoted to syntax,
-  not library calls. Library form would parallel arithmetic
-  (`bitand` vs `+`) and violate "one way per thing."
+**Status:** done.
+
+Adds the buffer-shaped primitive and the bit-twiddling vocabulary
+the standard library will need for hashing, encoding, crypto, and
+network code in the upcoming M14.x / M18 milestones.
+
+- **New primitive type `bytes`** - mutable byte sequence, value
+  semantics on assignment / parameter binding (deep-copy, no
+  aliasing), deep-const, `len($b)` returns the byte count. Reads
+  yield `int` in `[0, 255]`; writes accept the same range and
+  reject anything else. Append via the existing M9 `$b[] = byte;`
+  sugar. `convert.bytesFromString(s, "utf-8")` builds; otherwise
+  start from `def b as bytes;` and append.
+- **New `convert.bytesFromString(s, codec)` and
+  `convert.stringFromBytes(b, codec)`** - bytes ↔ string codecs.
+  Two-argument shape matches `convert.toInt(v)` style; `codec`
+  selects encoding. Only `"utf-8"` is supported today; further
+  codecs ship in M15.4 `encoding`. Strict-at-boundaries: invalid
+  UTF-8 input to `stringFromBytes` is an error (no silent
+  replacement characters).
+- **Bit operators on `int`**: `& | ^ ~ << >>`. Python-style
+  precedence between comparison and additive (comparison < `|`
+  < `^` < `&` < shifts < `+ -`), so `$x & 0xff == 0` parses as
+  `($x & 0xff) == 0` instead of the C footgun
+  `$x & (0xff == 0)`. `~` is bitwise NOT (`-x - 1`). Shifts are
+  arithmetic (sign-extending `>>`); negative count is rejected;
+  count >= 64 saturates to 0 / -1 the way hardware does. `^` ships
+  even though it's algebraically derivable - it's a CPU primitive
+  with unique algebraic properties (self-inverse, round-trip,
+  toggle-bits) and shipping it costs one operator; the analogy is
+  `-` not being banned for being composable from `+` and unary `-`.
 - **Non-decimal integer literals**: hex `0xff` / `0xDEAD_BEEF`,
   octal `0o755`, binary `0b1010_0110`. All three lex as `int`
-  (same kind, same operators); `_` accepted as a digit separator
-  in any position except leading or trailing. Decimal literals
-  also gain the `_` separator (`1_000_000`). Lexer-only change,
-  no new runtime semantics. Lands here because byte and bit work
-  without hex is the wrong default for the milestone.
-- Resolves the M7-deferred stdin builtins that waited on the
-  binary representation: `io.readBytes(n) -> bytes` (exact n;
-  partial result at EOF, then `eof()` is true) and `io.readChars(n)
-  -> string` (n runes, decoded from stdin's UTF-8). M7's `eof()`
-  composes with both unchanged.
+  (same kind, same operators). `_` accepted as a digit separator
+  between digits but never adjacent to the prefix or another `_`;
+  decimal literals (`1_000_000`) and the mantissa side of floats
+  also accept it. Lexer-only change.
+- **Resolves the M7-deferred stdin builtins**:
+  `io.readBytes(n) -> bytes` (exact n; partial at EOF then
+  `io.eof()` becomes true) and `io.readChars(n) -> string`
+  (n runes, UTF-8 decoded). M7's `io.eof()` composes with both
+  unchanged.
+
+See:
+- [user-guide/types-and-values.md](user-guide/types-and-values.md) -
+  `bytes` in the types table, value semantics, append-sugar,
+  index-write rules.
+- [libraries/convert.md](libraries/convert.md) -
+  `bytesFromString` / `stringFromBytes` reference; UTF-8 strictness.
+- [libraries/io.md](libraries/io.md) - `io.readBytes`,
+  `io.readChars`.
+- [user-guide/control-flow.md](user-guide/control-flow.md) -
+  bit-operator precedence table.
+- [user-guide/syntax.md](user-guide/syntax.md) - non-decimal
+  literals + digit separator.
 
 ## M13 - Structs / records
 

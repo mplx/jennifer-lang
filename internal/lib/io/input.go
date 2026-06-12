@@ -95,6 +95,82 @@ func readLine(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter
 	return interpreter.StringVal(line), nil
 }
 
+// readBytes reads exactly `n` bytes from stdin and returns them as a
+// `bytes` value. If EOF is hit before `n` bytes are available, the
+// partial result is returned and `eof()` becomes true on the next call.
+// `n` must be a non-negative int. M12.
+func readBytes(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if ctx.InREPL {
+		return interpreter.Null(), fmt.Errorf("readBytes: stdin is owned by the REPL editor")
+	}
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("`readBytes` takes 1 argument, got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindInt {
+		return interpreter.Null(), fmt.Errorf("`readBytes` count must be int, got %s", args[0].Kind)
+	}
+	n := args[0].Int
+	if n < 0 {
+		return interpreter.Null(), fmt.Errorf("`readBytes` count must be non-negative, got %d", n)
+	}
+	r := getReader(ctx.In)
+	if r == nil {
+		return interpreter.Null(), fmt.Errorf("readBytes: no input source")
+	}
+	if eofState {
+		return interpreter.BytesVal(nil), nil
+	}
+	out := make([]byte, n)
+	got, err := io.ReadFull(r, out)
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		eofState = true
+		return interpreter.BytesVal(out[:got]), nil
+	}
+	if err != nil {
+		return interpreter.Null(), fmt.Errorf("readBytes: %v", err)
+	}
+	return interpreter.BytesVal(out[:got]), nil
+}
+
+// readChars reads exactly `n` Unicode code points from stdin's UTF-8
+// stream and returns them as a string. Partial-rune EOF errors are
+// surfaced; `eof()` becomes true once the stream is exhausted. M12.
+func readChars(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if ctx.InREPL {
+		return interpreter.Null(), fmt.Errorf("readChars: stdin is owned by the REPL editor")
+	}
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("`readChars` takes 1 argument, got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindInt {
+		return interpreter.Null(), fmt.Errorf("`readChars` count must be int, got %s", args[0].Kind)
+	}
+	n := args[0].Int
+	if n < 0 {
+		return interpreter.Null(), fmt.Errorf("`readChars` count must be non-negative, got %d", n)
+	}
+	r := getReader(ctx.In)
+	if r == nil {
+		return interpreter.Null(), fmt.Errorf("readChars: no input source")
+	}
+	if eofState {
+		return interpreter.StringVal(""), nil
+	}
+	var b strings.Builder
+	for i := int64(0); i < n; i++ {
+		ch, _, err := r.ReadRune()
+		if err == io.EOF {
+			eofState = true
+			break
+		}
+		if err != nil {
+			return interpreter.Null(), fmt.Errorf("readChars: %v", err)
+		}
+		b.WriteRune(ch)
+	}
+	return interpreter.StringVal(b.String()), nil
+}
+
 // eofFn reports whether the next `readLine()` would error. Implementation
 // peeks one byte through the buffered reader; the byte stays in the
 // buffer for the next read. Once true, eofState is sticky for the rest

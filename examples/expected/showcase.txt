@@ -150,4 +150,23 @@ nested         [[1, 2], [3, 4]]
 depth=1        [[...], [...]]
 map            {a: 1, b: 2}
 map kv style   {a=1 b=2}
+=== M12 literals ===
+0xff           = 255
+0xDEAD_BEEF    = 3735928559
+0o755          = 493
+0b1010_0110    = 166
+1_000_000      = 1000000
+=== M12 bit ops ===
+0xff & 0x0f    = f
+0x0f | 0xf0    = ff
+0xff ^ 0xaa    = 55
+~0             = -1
+1 << 8         = 256
+256 >> 1       = 128
+=== M12 bytes ===
+len            = 3
+msg[0]         = 72 (H)
+display        = bytes[48 69 21]
+after mutation = bytes[68 69 21 0a]
+round-trip     = hi!
 === done ===

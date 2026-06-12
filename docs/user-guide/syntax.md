@@ -102,6 +102,31 @@ io.printf("hi\n");
 (`env -S` splits the rest of the line into arguments, which is how
 `jennifer run` reaches the interpreter on Linux.)
 
+## Number literals
+
+Decimal:
+
+```jennifer
+42
+1_000_000           # `_` is a visual digit separator (M12+)
+3.14
+1_000.000_5         # the mantissa side of a float accepts `_` too
+```
+
+Non-decimal integer prefixes (M12+):
+
+```jennifer
+0xff                # hex
+0xDEAD_BEEF
+0o755               # octal
+0b1010_0110         # binary
+```
+
+All four bases produce ordinary `int` values - same kind, same
+operators. The `_` separator is allowed between digits but never
+adjacent to the prefix, adjacent to another `_`, or at the start /
+end of the digit run (`0x_ff`, `1__000`, `100_` are all lex errors).
+
 ## Identifiers
 
 - Variable, method, parameter and library names are letters only: `[A-Za-z]`,

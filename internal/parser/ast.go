@@ -47,6 +47,7 @@ const (
 	TypeString
 	TypeBool
 	TypeNull
+	TypeBytes // M12: mutable byte sequence; elements are int in [0, 255]
 	TypeList
 	TypeMap
 )
@@ -63,6 +64,8 @@ func (k TypeKind) String() string {
 		return "bool"
 	case TypeNull:
 		return "null"
+	case TypeBytes:
+		return "bytes"
 	case TypeList:
 		return "list"
 	case TypeMap:
@@ -479,6 +482,13 @@ const (
 	OpEq
 	OpAnd
 	OpOr
+
+	// Bitwise (M12) - int only, never short-circuit.
+	OpBitOr  // |
+	OpBitXor // ^
+	OpBitAnd // &
+	OpShl    // <<
+	OpShr    // >> (arithmetic / sign-extending on signed int)
 )
 
 func (o BinaryOp) String() string {
@@ -509,6 +519,16 @@ func (o BinaryOp) String() string {
 		return "and"
 	case OpOr:
 		return "or"
+	case OpBitOr:
+		return "|"
+	case OpBitXor:
+		return "^"
+	case OpBitAnd:
+		return "&"
+	case OpShl:
+		return "<<"
+	case OpShr:
+		return ">>"
 	}
 	return "?"
 }
@@ -531,8 +551,9 @@ func (o BinaryOp) IsLogical() bool {
 type UnaryOp int
 
 const (
-	OpNeg UnaryOp = iota // -x  (numeric)
-	OpNot                // not x  (bool)
+	OpNeg    UnaryOp = iota // -x  (numeric)
+	OpNot                   // not x  (bool)
+	OpBitNot                // ~x  (bitwise NOT on int, M12)
 )
 
 func (o UnaryOp) String() string {
@@ -541,6 +562,8 @@ func (o UnaryOp) String() string {
 		return "-"
 	case OpNot:
 		return "not"
+	case OpBitNot:
+		return "~"
 	}
 	return "?"
 }

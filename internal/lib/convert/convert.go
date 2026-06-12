@@ -29,6 +29,12 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "toString", toStringFn)
 	in.RegisterNamespaced(LibraryName, "toBool", toBoolFn)
 	in.RegisterNamespaced(LibraryName, "typeOf", typeOfFn)
+	// M12: bytes <-> string codecs. Two-argument shape (value, codec)
+	// follows the `toInt(v)` / `toFloat(v)` style; codec selects the
+	// encoding (only "utf-8" today). Further codecs ship with the
+	// `encoding` library in M15.4.
+	in.RegisterNamespaced(LibraryName, "bytesFromString", bytesFromStringFn)
+	in.RegisterNamespaced(LibraryName, "stringFromBytes", stringFromBytesFn)
 }
 
 // arityOne returns an error if args doesn't contain exactly one value.
@@ -164,4 +170,113 @@ func typeOfFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 		return interpreter.Null(), err
 	}
 	return interpreter.StringVal(args[0].Kind.String()), nil
+}
+
+// bytesFromStringFn implements `convert.bytesFromString(s, codec) -> bytes`.
+// `codec` selects the encoding; only "utf-8" is supported today. The
+// returned bytes are a fresh slice; modifying them does not affect the
+// source string. M12.
+func bytesFromStringFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 2 {
+		return interpreter.Null(), fmt.Errorf("bytesFromString expects 2 arguments, got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("bytesFromString: first argument must be string, got %s", args[0].Kind)
+	}
+	if args[1].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("bytesFromString: codec must be string, got %s", args[1].Kind)
+	}
+	codec := args[1].Str
+	if codec != "utf-8" {
+		return interpreter.Null(), fmt.Errorf("bytesFromString: codec %q is not supported (only \"utf-8\" today)", codec)
+	}
+	// Go strings are already UTF-8 internally - copy the bytes so the
+	// caller's mutations can't reach back into shared interned-string
+	// storage.
+	src := args[0].Str
+	out := make([]byte, len(src))
+	copy(out, src)
+	return interpreter.BytesVal(out), nil
+}
+
+// stringFromBytesFn implements `convert.stringFromBytes(b, codec) -> string`.
+// `codec` selects the encoding; only "utf-8" is supported today. Invalid
+// UTF-8 input is rejected (matches Jennifer's "strict at boundaries"
+// stance - no silent replacement characters). M12.
+func stringFromBytesFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 2 {
+		return interpreter.Null(), fmt.Errorf("stringFromBytes expects 2 arguments, got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindBytes {
+		return interpreter.Null(), fmt.Errorf("stringFromBytes: first argument must be bytes, got %s", args[0].Kind)
+	}
+	if args[1].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("stringFromBytes: codec must be string, got %s", args[1].Kind)
+	}
+	codec := args[1].Str
+	if codec != "utf-8" {
+		return interpreter.Null(), fmt.Errorf("stringFromBytes: codec %q is not supported (only \"utf-8\" today)", codec)
+	}
+	src := args[0].Bytes
+	if !utf8Valid(src) {
+		return interpreter.Null(), fmt.Errorf("stringFromBytes: input is not valid UTF-8")
+	}
+	return interpreter.StringVal(string(src)), nil
+}
+
+// utf8Valid wraps Go's utf8.Valid with a one-byte fast path. Inlined to
+// avoid pulling the `unicode/utf8` import into convert.go just for this.
+func utf8Valid(b []byte) bool {
+	for i := 0; i < len(b); {
+		if b[i] < 0x80 {
+			i++
+			continue
+		}
+		size, ok := utf8DecodeSize(b[i:])
+		if !ok {
+			return false
+		}
+		i += size
+	}
+	return true
+}
+
+// utf8DecodeSize returns the rune length of the encoding starting at b[0],
+// and ok=false if the bytes don't form a valid multi-byte sequence.
+func utf8DecodeSize(b []byte) (int, bool) {
+	if len(b) == 0 {
+		return 0, false
+	}
+	c := b[0]
+	switch {
+	case c&0xE0 == 0xC0:
+		if len(b) < 2 || b[1]&0xC0 != 0x80 || c&0x1E == 0 {
+			return 0, false
+		}
+		return 2, true
+	case c&0xF0 == 0xE0:
+		if len(b) < 3 || b[1]&0xC0 != 0x80 || b[2]&0xC0 != 0x80 {
+			return 0, false
+		}
+		// Reject overlongs and surrogates.
+		if c == 0xE0 && b[1] < 0xA0 {
+			return 0, false
+		}
+		if c == 0xED && b[1] >= 0xA0 {
+			return 0, false
+		}
+		return 3, true
+	case c&0xF8 == 0xF0:
+		if len(b) < 4 || b[1]&0xC0 != 0x80 || b[2]&0xC0 != 0x80 || b[3]&0xC0 != 0x80 {
+			return 0, false
+		}
+		if c == 0xF0 && b[1] < 0x90 {
+			return 0, false
+		}
+		if c > 0xF4 || (c == 0xF4 && b[1] >= 0x90) {
+			return 0, false
+		}
+		return 4, true
+	}
+	return 0, false
 }

@@ -14,6 +14,9 @@
 | `==`                 | equality; same-kind plus `int`/`float` promotion; `bool` |
 | `and`, `or`          | logical; both operands `bool`; short-circuit             |
 | `not`                | unary logical negation; operand `bool`                   |
+| `&`, `|`, `^` (M12+) | bitwise AND / OR / XOR on `int`                          |
+| `<<`, `>>` (M12+)    | left / arithmetic right shift on `int`                   |
+| unary `~` (M12+)     | bitwise NOT on `int` (`~x == -x - 1`)                    |
 
 **Division has two operators.** `/` always returns a `float` (Python 3
 style). `//` returns the floor, keeping the type when both operands are
@@ -33,9 +36,14 @@ So `def x as int init 5 / 2;` is rejected (right side is float). Use
 operator. The `#` choice also lets Jennifer files start with a shebang:
 `#!/usr/bin/env -S jennifer run`.)
 
-Precedence (low to high): `or`, `and`, `not`, comparison, additive (`+`, `-`),
-multiplicative (`*`, `/`, `//`, `%`), unary `-`. Use parentheses to override:
-`(1 + 2) * 3`. Examples that follow the rules:
+Precedence (low to high): `or`, `and`, `not`, comparison, bitwise `|`,
+bitwise `^`, bitwise `&`, shifts `<< >>`, additive (`+`, `-`),
+multiplicative (`*`, `/`, `//`, `%`), unary `-` / `~`. Use parentheses
+to override: `(1 + 2) * 3`. The bit-op rungs (M12+) sit between
+comparison and additive following Python's precedence, so
+`$x & 0xff == 0` parses as `($x & 0xff) == 0` (the intuitive
+interpretation), not the C/Go shape `$x & (0xff == 0)`. Examples that
+follow the rules:
 
 ```jennifer
 not 1 == 2                  # not (1 == 2) -> true
@@ -59,6 +67,31 @@ float (`3 + 0.5` -> `3.5`). **`/` always returns `float`**, even with two
 int operands (`5 / 2` is `2.5`, not `2`). Use `//` when you want an
 integer quotient: `5 // 2` is `2`. This is Python-3 division, not C/Java
 division.
+
+### Bitwise operators (M12+)
+
+The bit operators take `int` operands only - float is rejected with a
+positioned error. The shifts are arithmetic (sign-extending `>>`); a
+negative shift count is rejected, and a count >= 64 saturates to 0 or
+-1 the way hardware does. Non-decimal literals (`0xff`, `0o755`,
+`0b1010_0110`) and the `_` digit separator (`1_000_000`,
+`0xDEAD_BEEF`) make bit-twiddling code much easier to read.
+
+```jennifer
+def mask as int init 0xff;
+def x as int init 0xDEAD_BEEF;
+
+io.printf("low byte:  %d|base=16\n", $x & $mask);   # ef
+io.printf("flip last: %d|base=16\n", $x ^ 1);       # dead_beee
+io.printf("shift 4:   %d|base=16\n", $x >> 4);      # dead_beef >> 4
+```
+
+The XOR operator (`^`) ships even though it's algebraically derivable
+from `& | ~` because it's a CPU primitive with unique algebraic
+properties (self-inverse: `$a ^ $a == 0`; round-trip:
+`($a ^ $b) ^ $b == $a`; bit-toggle: `$flags ^ $mask`). Forcing every
+XOR use site to write the composition would be the
+`a - b` ≡ `a + (-b)` argument: we still ship `-`.
 
 ## Conditionals and loops
 

@@ -817,10 +817,9 @@ func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environme
 	return nil
 }
 
-// execAppend handles `$xs[] = expr;` (M9). Same shape as execIndexAssign
-// without an index chain: copy the target binding, append the new value,
-// commit it back. Element-type check, const-target rejection, and
-// non-list rejection all live here.
+// execAppend handles `$xs[] = expr;` (M9) and `$b[] = byte;` (M12).
+// Copies the target binding, appends, commits it back. Const-target
+// rejection, type check, and per-kind validation all live here.
 func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error {
 	binding, err := env.GetBinding(st.Target.Name)
 	if err != nil {
@@ -831,13 +830,30 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: fmt.Sprintf("cannot mutate contents of constant %q (const is deep)", st.Target.Name), File: file, Line: line, Col: col}
 	}
-	if binding.Value.Kind != KindList {
+	if binding.Value.Kind != KindList && binding.Value.Kind != KindBytes {
 		file, line, col := posFor(st)
-		return &runtimeError{Msg: fmt.Sprintf("`$%s[] = ...` requires a list, got %s", st.Target.Name, binding.Value.Kind), File: file, Line: line, Col: col}
+		return &runtimeError{Msg: fmt.Sprintf("`$%s[] = ...` requires a list or bytes, got %s", st.Target.Name, binding.Value.Kind), File: file, Line: line, Col: col}
 	}
 	newVal, err := i.evalExpr(st.Value, env)
 	if err != nil {
 		return err
+	}
+	if binding.Value.Kind == KindBytes {
+		if newVal.Kind != KindInt {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("bytes element must be int in [0, 255], got %s", newVal.Kind), File: file, Line: line, Col: col}
+		}
+		if newVal.Int < 0 || newVal.Int > 255 {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("bytes element value %d out of range [0, 255]", newVal.Int), File: file, Line: line, Col: col}
+		}
+		rootCopy := binding.Value.Copy()
+		rootCopy.Bytes = append(rootCopy.Bytes, byte(newVal.Int))
+		if err := env.Assign(st.Target.Name, rootCopy); err != nil {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+		}
+		return nil
 	}
 	if binding.Value.ElemTyp != nil && !newVal.MatchesDeclared(*binding.Value.ElemTyp) {
 		file, line, col := posFor(st)
@@ -960,6 +976,29 @@ func writeIndexedSlot(parent *Value, idx Value, newVal Value, st *parser.IndexAs
 		}
 		// New key: append, preserving insertion order.
 		parent.Map = append(parent.Map, MapEntry{Key: idx.Copy(), Value: newVal.Copy()})
+		return nil
+	case KindBytes:
+		// M12: byte slot writes accept an int in [0, 255]. Out-of-range
+		// writes are positioned runtime errors (same shape as list
+		// out-of-bounds), and a non-int RHS is rejected as a type error.
+		if idx.Kind != KindInt {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("bytes index must be int, got %s", idx.Kind), File: file, Line: line, Col: col}
+		}
+		n := int(idx.Int)
+		if n < 0 || n >= len(parent.Bytes) {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("bytes index %d out of bounds (len %d)", n, len(parent.Bytes)), File: file, Line: line, Col: col}
+		}
+		if newVal.Kind != KindInt {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("bytes element must be int in [0, 255], got %s", newVal.Kind), File: file, Line: line, Col: col}
+		}
+		if newVal.Int < 0 || newVal.Int > 255 {
+			file, line, col := posFor(st)
+			return &runtimeError{Msg: fmt.Sprintf("bytes element value %d out of range [0, 255]", newVal.Int), File: file, Line: line, Col: col}
+		}
+		parent.Bytes[n] = byte(newVal.Int)
 		return nil
 	}
 	file, line, col := posFor(st)
@@ -1288,7 +1327,7 @@ func (i *Interpreter) evalMapLit(ex *parser.MapLit, env *Environment) (Value, er
 // evalIndex implements read access for `$xs[i]`, `$m["k"]`, or arbitrary
 // nesting. Reads of out-of-bounds list indices and missing map keys are
 // positioned runtime errors (no null fallback - that's the M6 decision
-// from milestones.md).
+// from milestones.md). Bytes (M12) read as int in [0, 255].
 func (i *Interpreter) evalIndex(ex *parser.IndexExpr, env *Environment) (Value, error) {
 	parent, err := i.evalExpr(ex.Target, env)
 	if err != nil {
@@ -1298,11 +1337,29 @@ func (i *Interpreter) evalIndex(ex *parser.IndexExpr, env *Environment) (Value, 
 	if err != nil {
 		return Value{}, err
 	}
+	if parent.Kind == KindBytes {
+		return readByteAt(parent, idx, ex)
+	}
 	slot, err := indexInto(&parent, idx, ex)
 	if err != nil {
 		return Value{}, err
 	}
 	return *slot, nil
+}
+
+// readByteAt returns parent.Bytes[idx] as IntVal, with the same
+// out-of-bounds rules the list path uses.
+func readByteAt(parent Value, idx Value, node parser.Node) (Value, error) {
+	if idx.Kind != KindInt {
+		file, line, col := posFor(node)
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("bytes index must be int, got %s", idx.Kind), File: file, Line: line, Col: col}
+	}
+	n := int(idx.Int)
+	if n < 0 || n >= len(parent.Bytes) {
+		file, line, col := posFor(node)
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("bytes index %d out of bounds (len %d)", n, len(parent.Bytes)), File: file, Line: line, Col: col}
+	}
+	return IntVal(int64(parent.Bytes[n])), nil
 }
 
 func (i *Interpreter) evalBinary(b *parser.BinaryExpr, env *Environment) (Value, error) {
@@ -1323,7 +1380,73 @@ func (i *Interpreter) evalBinary(b *parser.BinaryExpr, env *Environment) (Value,
 	if b.Op.IsComparison() {
 		return i.evalComparison(b.Op, lv, rv, file, line, col)
 	}
+	if isBitOp(b.Op) {
+		return i.evalBitOp(b.Op, lv, rv, file, line, col)
+	}
 	return i.evalArithmetic(b.Op, lv, rv, file, line, col)
+}
+
+// isBitOp returns true for the M12 bitwise operators. Kept separate
+// from BinaryOp.IsLogical / IsComparison so each category retains its
+// own quick-check.
+func isBitOp(op parser.BinaryOp) bool {
+	switch op {
+	case parser.OpBitOr, parser.OpBitXor, parser.OpBitAnd, parser.OpShl, parser.OpShr:
+		return true
+	}
+	return false
+}
+
+// evalBitOp evaluates a bitwise operator. Both operands must be `int`;
+// `float` is rejected because bit-twiddling a floating-point bit
+// pattern is almost always a typo - the user can `convert.toInt` if
+// they really mean it. Shift count rules:
+//   - Negative count is a runtime error (no implicit reverse-direction).
+//   - Count >= 64 is allowed; Go's >> / << produce the "shifted off the
+//     end" result (0 for `<<` and for arithmetic `>>` of a non-negative
+//     value, -1 for arithmetic `>>` of a negative value). Predictable
+//     and matches what hardware does.
+func (i *Interpreter) evalBitOp(op parser.BinaryOp, lv, rv Value, file string, line, col int) (Value, error) {
+	if lv.Kind != KindInt || rv.Kind != KindInt {
+		return Value{}, &runtimeError{
+			Msg:  fmt.Sprintf("operator %s requires int operands, got %s and %s", op, lv.Kind, rv.Kind),
+			File: file, Line: line, Col: col,
+		}
+	}
+	a, b := lv.Int, rv.Int
+	switch op {
+	case parser.OpBitAnd:
+		return IntVal(a & b), nil
+	case parser.OpBitOr:
+		return IntVal(a | b), nil
+	case parser.OpBitXor:
+		return IntVal(a ^ b), nil
+	case parser.OpShl, parser.OpShr:
+		if b < 0 {
+			return Value{}, &runtimeError{
+				Msg:  fmt.Sprintf("shift count must be non-negative, got %d", b),
+				File: file, Line: line, Col: col,
+			}
+		}
+		// Cap the visible shift at 64: Go's runtime panics for >= 64
+		// with `>>` of an int when count is uint, but produces a
+		// predictable result if we mask it ourselves.
+		if b >= 64 {
+			if op == parser.OpShl {
+				return IntVal(0), nil
+			}
+			// Arithmetic right shift of >= 64 saturates to 0 or -1.
+			if a < 0 {
+				return IntVal(-1), nil
+			}
+			return IntVal(0), nil
+		}
+		if op == parser.OpShl {
+			return IntVal(a << uint(b)), nil
+		}
+		return IntVal(a >> uint(b)), nil
+	}
+	return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown bitwise operator %s", op), File: file, Line: line, Col: col}
 }
 
 // evalLogical implements short-circuit `and`/`or`. Both operands must be bool;
@@ -1387,6 +1510,14 @@ func (i *Interpreter) evalUnary(u *parser.UnaryExpr, env *Environment) (Value, e
 			}
 		}
 		return BoolVal(!v.Bool), nil
+	case parser.OpBitNot:
+		if v.Kind != KindInt {
+			return Value{}, &runtimeError{
+				Msg:  fmt.Sprintf("unary `~` requires int, got %s", v.Kind),
+				File: file, Line: line, Col: col,
+			}
+		}
+		return IntVal(^v.Int), nil
 	}
 	return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown unary operator %s", u.Op), File: file, Line: line, Col: col}
 }

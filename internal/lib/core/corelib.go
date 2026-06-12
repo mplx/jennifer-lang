@@ -68,6 +68,7 @@ func Install(in *interpreter.Interpreter) {
 //   - string -> rune count (Unicode code points, not bytes)
 //   - list   -> element count
 //   - map    -> entry count
+//   - bytes  -> byte count (M12)
 //
 // Any other kind is a positioned runtime error.
 func lenFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
@@ -82,7 +83,9 @@ func lenFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Valu
 		return interpreter.IntVal(int64(len(v.List))), nil
 	case interpreter.KindMap:
 		return interpreter.IntVal(int64(len(v.Map))), nil
+	case interpreter.KindBytes:
+		return interpreter.IntVal(int64(len(v.Bytes))), nil
 	}
-	return interpreter.Null(), fmt.Errorf("len() expects a string, list or map, got %s", v.Kind)
+	return interpreter.Null(), fmt.Errorf("len() expects a string, list, map or bytes, got %s", v.Kind)
 }
 

@@ -24,6 +24,8 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "sprintf", sprintf)
 	in.RegisterNamespaced(LibraryName, "readLine", readLine)
 	in.RegisterNamespaced(LibraryName, "eof", eofFn)
+	in.RegisterNamespaced(LibraryName, "readBytes", readBytes)
+	in.RegisterNamespaced(LibraryName, "readChars", readChars)
 }
 
 // printf writes formatted output to stdout. Two forms:

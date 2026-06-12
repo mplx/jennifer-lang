@@ -2,15 +2,16 @@
 
 ## Types
 
-| Type                | Example literals             | Default | Notes                                     |
-|---------------------|------------------------------|---------|-------------------------------------------|
-| `int`               | `0`, `42`, `9001`            | `0`     | 64-bit signed                             |
-| `float`             | `3.14`, `0.5`                | `0.0`   | 64-bit; promoted from int in mixed math   |
-| `string`            | `"hello"`, `'single quotes'` | `""`    | Supports escape sequences                 |
-| `bool`              | `true`, `false`              | `false` | Produced by comparison operators          |
-| `null`              | `null`                       | `null`  | A type with a single value (the unit)     |
-| `list of T`         | `[1, 2, 3]`                  | `[]`    | Ordered sequence; 0-indexed; mutable      |
-| `map of K to V`     | `{"a": 1, "b": 2}`           | `{}`    | Key→value; insertion-ordered; mutable     |
+| Type                | Example literals                              | Default | Notes                                     |
+|---------------------|-----------------------------------------------|---------|-------------------------------------------|
+| `int`               | `42`, `0xff`, `0o755`, `0b1010_0110`, `1_000` | `0`     | 64-bit signed; M12+ for non-decimal forms and `_` separator |
+| `float`             | `3.14`, `0.5`, `1_000.000_5`                  | `0.0`   | 64-bit; promoted from int in mixed math   |
+| `string`            | `"hello"`, `'single quotes'`                  | `""`    | Supports escape sequences                 |
+| `bool`              | `true`, `false`                               | `false` | Produced by comparison operators          |
+| `null`              | `null`                                        | `null`  | A type with a single value (the unit)     |
+| `bytes` (M12+)      | *(no literal)*                                | empty   | Mutable byte sequence; element = `int` in `[0, 255]`; built via `convert.bytesFromString` or grown with `$b[] = byte;` |
+| `list of T`         | `[1, 2, 3]`                                   | `[]`    | Ordered sequence; 0-indexed; mutable      |
+| `map of K to V`     | `{"a": 1, "b": 2}`                            | `{}`    | Key→value; insertion-ordered; mutable     |
 
 The **Default** column is the value an uninitialized variable receives
 (`def x as int;` produces `0`). For compound types the default is an
@@ -333,3 +334,92 @@ yet (planned post-M11). Until then, options for the meantime:
 
 As a rule of thumb: **one level is normal, two is fine, three is
 uncommon, four is almost always a sign there's a missing abstraction.**
+
+## Bytes (M12+)
+
+`bytes` is a **mutable byte sequence**. It looks and acts a lot like a
+`list of int`, with two important specialisations:
+
+- Each element is constrained to `int` in `[0, 255]`. A write outside
+  that range is a positioned runtime error.
+- Indexing returns the byte as an `int` (you can't get a one-byte
+  `bytes` slice via `$b[i]` - it's the integer value of the byte).
+
+```jennifer
+use io;
+use convert;
+
+# Constructing - bytes has no literal form. Either decode a string,
+# or start empty and append.
+def from_string as bytes init convert.bytesFromString("Hello", "utf-8");
+def grown as bytes;
+$grown[] = 0x48;
+$grown[] = 0x69;
+
+io.printf("from_string: %v\n", $from_string);  # bytes[48 65 6c 6c 6f]
+io.printf("grown:       %v\n", $grown);        # bytes[48 69]
+io.printf("len:         %d\n", len($from_string));  # 5
+
+# Reading - $b[i] is the byte's value as int.
+io.printf("first byte:  %d (= 0x%d|base=16)\n", $from_string[0], $from_string[0]);
+
+# Writing - same int-in-range rule.
+$from_string[0] = 0x68;       # lowercase h
+io.printf("after edit:  %v\n", $from_string);
+
+# Round-trip back to string.
+def s as string init convert.stringFromBytes($from_string, "utf-8");
+io.printf("string back: %s\n", $s);
+```
+
+### Why `bytes` is its own type (not just `list of int`)
+
+The range constraint is the point. A `list of int` can hold any
+64-bit signed integer; `bytes` can only hold a byte. The runtime
+enforces this on every write so I/O, hashing, encoding, and
+crypto code can rely on it. Trying to write `$b[i] = 256;` is a
+positioned runtime error, not a silent truncation.
+
+### Value semantics, just like lists and maps
+
+```jennifer
+def src as bytes init convert.bytesFromString("Hi", "utf-8");
+def dst as bytes init $src;
+$dst[0] = 0x78;            # mutates only dst
+# $src is still bytes[48 69]
+```
+
+Function parameters bind by copy too, so a `func mutate(b as bytes)`
+that writes into `$b` doesn't leak back to its caller. `const` is
+deep: `def const B as bytes init ...;` rejects both `$B = ...` and
+`$B[i] = ...`.
+
+### The `$b[] = byte;` append form
+
+Bytes share the M9 append sugar with lists:
+
+```jennifer
+def buf as bytes;
+$buf[] = 0x48;
+$buf[] = 0x69;
+# buf is now bytes[48 69]
+```
+
+The byte you append must be an `int` in `[0, 255]`; the same
+[deliberate-exception reasoning](#the-xs-append-sugar) that justifies
+the sugar for lists applies here.
+
+### Codecs and rune vs byte counts
+
+- `convert.bytesFromString(s, codec)` and
+  `convert.stringFromBytes(b, codec)` are the canonical bridges.
+  Only `"utf-8"` is supported today; the M15.4 `encoding` library
+  will add the rest.
+- `stringFromBytes` is **strict at boundaries**: invalid UTF-8 input
+  is a runtime error, not a silent replacement character.
+- `len($b)` returns the **byte count**; `len($s)` on a string returns
+  the **rune count**. They will disagree for any non-ASCII input.
+- `io.readBytes(n) -> bytes` reads `n` bytes from stdin;
+  `io.readChars(n) -> string` reads `n` Unicode code points (1-4
+  bytes each, decoded from UTF-8). See
+  [libraries/io.md](../libraries/io.md) for details.

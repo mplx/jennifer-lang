@@ -32,8 +32,9 @@ const (
 	KindFloat
 	KindString
 	KindBool
-	KindList // M6: ordered, mutable sequence (Go slice underneath)
-	KindMap  // M6: ordered key-value map; iteration is insertion order
+	KindBytes // M12: mutable byte sequence; elements are int in [0, 255]
+	KindList  // M6: ordered, mutable sequence (Go slice underneath)
+	KindMap   // M6: ordered key-value map; iteration is insertion order
 )
 
 func (k ValueKind) String() string {
@@ -48,6 +49,8 @@ func (k ValueKind) String() string {
 		return "string"
 	case KindBool:
 		return "bool"
+	case KindBytes:
+		return "bytes"
 	case KindList:
 		return "list"
 	case KindMap:
@@ -86,6 +89,7 @@ type Value struct {
 	Bool    bool
 	List    []Value      // KindList: element data
 	Map     []MapEntry   // KindMap:  insertion-ordered entries
+	Bytes   []byte       // KindBytes (M12): byte data
 	ElemTyp *parser.Type // KindList: element type
 	KeyTyp  *parser.Type // KindMap:  key type
 	ValTyp  *parser.Type // KindMap:  value type
@@ -96,6 +100,11 @@ func IntVal(n int64) Value     { return Value{Kind: KindInt, Int: n} }
 func FloatVal(f float64) Value { return Value{Kind: KindFloat, Float: f} }
 func StringVal(s string) Value { return Value{Kind: KindString, Str: s} }
 func BoolVal(b bool) Value     { return Value{Kind: KindBool, Bool: b} }
+
+// BytesVal constructs a bytes value with the given data. The slice is
+// taken by reference; callers needing value-semantics guarantees
+// (assignment, parameter binding) must call Value.Copy. M12.
+func BytesVal(data []byte) Value { return Value{Kind: KindBytes, Bytes: data} }
 
 // ListVal constructs a list value with the given element type and data.
 // The data slice is taken by reference; callers that need value-semantics
@@ -132,6 +141,13 @@ func (v Value) Copy() Value {
 			out[i] = MapEntry{Key: e.Key.Copy(), Value: e.Value.Copy()}
 		}
 		return Value{Kind: KindMap, Map: out, KeyTyp: v.KeyTyp, ValTyp: v.ValTyp}
+	case KindBytes:
+		// M12: same value-semantics as lists / maps - deep copy so the
+		// callee can't surprise the caller by mutating a shared
+		// underlying slice.
+		out := make([]byte, len(v.Bytes))
+		copy(out, v.Bytes)
+		return Value{Kind: KindBytes, Bytes: out}
 	}
 	return v
 }
@@ -153,6 +169,8 @@ func ZeroFor(t parser.Type) Value {
 		return BoolVal(false)
 	case parser.TypeNull:
 		return Null()
+	case parser.TypeBytes:
+		return BytesVal([]byte{})
 	case parser.TypeList:
 		var et parser.Type
 		if t.Element != nil {
@@ -212,6 +230,23 @@ func (v Value) Display() string {
 		}
 		b.WriteByte('}')
 		return b.String()
+	case KindBytes:
+		// M12: bytes display as hex pairs separated by spaces, wrapped
+		// in `bytes[...]`. Picked over a string-decoded form because
+		// bytes are explicitly not assumed to be valid UTF-8 - the
+		// hex form is unambiguous and round-trippable in `%v` output.
+		var b strings.Builder
+		b.WriteString("bytes[")
+		for i, by := range v.Bytes {
+			if i > 0 {
+				b.WriteByte(' ')
+			}
+			const hex = "0123456789abcdef"
+			b.WriteByte(hex[by>>4])
+			b.WriteByte(hex[by&0x0f])
+		}
+		b.WriteByte(']')
+		return b.String()
 	}
 	return "<unknown>"
 }
@@ -243,6 +278,8 @@ func (v Value) MatchesDeclared(t parser.Type) bool {
 		return v.Kind == KindBool
 	case parser.TypeNull:
 		return v.Kind == KindNull
+	case parser.TypeBytes:
+		return v.Kind == KindBytes
 	case parser.TypeList:
 		if v.Kind != KindList {
 			return false
@@ -293,6 +330,16 @@ func (v Value) Equal(o Value) bool {
 			return v.Str == o.Str
 		case KindBool:
 			return v.Bool == o.Bool
+		case KindBytes:
+			if len(v.Bytes) != len(o.Bytes) {
+				return false
+			}
+			for i := range v.Bytes {
+				if v.Bytes[i] != o.Bytes[i] {
+					return false
+				}
+			}
+			return true
 		case KindList:
 			if len(v.List) != len(o.List) {
 				return false
