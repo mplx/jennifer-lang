@@ -307,3 +307,101 @@ at the `use` site:
 Users who genuinely want one entry point can write a tiny
 Jennifer-coded shim that picks an implementation explicitly;
 that's a per-program decision, not a language-wide default.
+
+## FFI as a single milestone
+
+Considered: a dedicated "FFI" milestone covering everything users
+typically mean by foreign function interface - calling C libraries,
+calling Go libraries, integrating with OS APIs, embedding Jennifer
+in host applications, reusing existing ecosystems.
+
+Rejected because it's three different problems wearing one name,
+and lumping them together obscures that two are already addressed
+and the third doesn't fit:
+
+- **"Call Go libraries" is already the library mechanism.** Every
+  `<pkg>.Install(in)` call registers Go functions as Jennifer
+  builtins. That *is* FFI in everything but name. Anyone wanting
+  to extend Jennifer with Go code writes a topic library today;
+  no new surface needed.
+- **"Integrate with OS APIs" is the topic-library job.** `os`,
+  `fs`, `net`, and friends wrap Go's stdlib (which wraps the
+  OS). Adding more OS surface means filling out those libraries,
+  not inventing an FFI keyword.
+- **"Reuse existing ecosystems / call C libraries" lands through
+  WASM (M19), not cgo.** TinyGo's cgo support is partial on
+  hosted targets and absent on WASI / baremetal; macflyos has no
+  userspace libc to link against. The WASM runtime milestone
+  already plans sandboxed module loading, which sidesteps the
+  ABI / marshalling / ownership fight entirely.
+- **"Embed Jennifer in host applications" is a real gap - but
+  it's a Go-side polish job, not a language feature.** It gets
+  its own placeholder in the Long horizon list under
+  "Host-embedding API", separate from FFI as conventionally
+  meant.
+
+The chosen rule: no FFI milestone. Three named homes instead -
+topic libraries (Go + OS surface), WASM (M19, third-party
+ecosystems), and a future host-embedding API milestone (driving
+the interpreter from Go).
+
+## References, interior mutability, shared mutable state
+
+Considered as escape hatches from the deep-copy cost that
+stance #5 (value semantics for collections) imposes on graph
+algorithms, large data structures, and zero-copy workflows.
+Three different shapes, considered together because they all
+relax the same invariant:
+
+- **Mutable references.** A `&xs` form that lets a callee
+  write through to the caller's binding (Go / C++ semantics).
+- **Interior mutability.** A wrapper type (Rust's `Cell` /
+  `RefCell`) carrying a mutable cell behind an otherwise-immutable
+  value, settable from anywhere holding the wrapper.
+- **Shared mutable state.** A first-class "shared list" or
+  "shared map" kind whose writes are visible to every binding
+  that points at the same underlying storage.
+
+Rejected because:
+
+- **They break the local-reasoning guarantee that value
+  semantics is the whole point of.** Today a reader of
+  `func f(xs as list of int)` knows the caller's binding cannot
+  be mutated by `f` - no aliasing, no surprises. Any of the
+  three above forces every reader to ask "does this callee
+  have a writable handle on my data?" at every call site. The
+  cost is paid by every program, not just the ones that need
+  the optimization.
+- **Rust gets away with this only because the borrow checker
+  pays the bill.** Aliased mutation in Rust is sound because
+  the type system rejects programs where two writable handles
+  coexist. Jennifer has no such checker and the language's
+  whole point is local readability without a type-system tax;
+  adding aliased mutation without the checker is just C
+  semantics with prettier syntax.
+- **Pre-1.0 softening is a one-way door.** Once any of these
+  ships, the "no aliasing" guarantee is gone for every future
+  reader. Even gating them behind a keyword (`shared`, `&mut`)
+  forces every other Jennifer programmer to learn the
+  aliased-mutation rules to read other people's code.
+- **The performance gap is recoverable without semantic
+  change.** Copy-on-write, arena allocation, and read-only
+  slice views (`xs[1..5]` as a non-owning window that errors
+  on assignment) close most of the gap that motivates the
+  proposals. Those are interpreter-internal optimizations -
+  they preserve "no aliasing" at the user level and are
+  recorded as the "Performance & memory" placeholder in the
+  Long horizon list. Graph algorithms specifically can use the
+  M13.1 struct mechanism with explicit ID-keyed maps
+  (`map of int to Node`) for parent / child links, which is
+  the conventional fix in value-typed languages.
+- **Shared state for concurrency belongs to M16.0.** The
+  concurrency milestone already plans channel / queue / spawn
+  primitives that handle the cross-task communication case
+  without exposing shared mutable values to single-threaded
+  code.
+
+The chosen rule: stance #5 stands without exception. The
+"Performance & memory" Long horizon entry covers the
+optimizations that close the cost gap; users who genuinely
+need aliased mutation are using the wrong language.

@@ -1306,6 +1306,37 @@ map-fold and "first to respond wins"). Anything more complex
 (timeouts, racing N tasks with cancellation of losers, etc.)
 ships in a `task.x` sub-milestone if a real use case forces it.
 
+**Multi-core / parallelism.** Spawn blocks compile to goroutines
+and Go's scheduler runs them across every available core by
+default - so on hosted builds (Linux / macOS / Windows desktop)
+M16.0 *is* multi-core parallelism, not just concurrency.
+Data-race-freedom holds by construction because value-semantics
+capture deep-copies every variable at spawn time; the data races
+that drive most parallel-programming bugs cannot happen.
+
+Two target classes need an explicit fallback:
+
+- **Single-threaded TinyGo targets** (WASI, baremetal embedded)
+  and **macflyos** have no OS threads to schedule across. The
+  interpreter ships a **`--cooperative` mode** for these builds
+  in which `spawn` blocks run on a single OS thread with a
+  cooperative scheduler; the same source program runs without
+  modification, just sequentially. Semantics remain identical -
+  the only observable difference is wall-clock behavior.
+- **Per-goroutine interpreter state stays single-threaded.**
+  Each `spawn` walks the AST sequentially in its own goroutine;
+  making the tree-walker itself internally parallel
+  (lock-free environments, concurrent scope chains) is a
+  different and much harder project with near-zero payoff for
+  the workloads Jennifer targets and is deliberately out of
+  scope.
+
+Finer-grained scheduling control (CPU affinity, work-stealing
+pools, NUMA awareness, `GOMAXPROCS`-equivalent tuning) is
+recorded in the Long horizon list - those are advanced-runtime
+knobs, not language features, and the same "ships when a real
+use case forces it" rule applies.
+
 **What's NOT in v1 (deliberate; defer until a forcing function appears).**
 
 - **Channels** (`chan of T`, `chan.send`, `chan.recv`). Tasks
@@ -1439,32 +1470,92 @@ M10) stays as the textual-splice form for inline composition
 inside one source tree; library distribution moves to modules
 via `import`.
 
-- **Source tree separation.** A new top-level `modules/` directory
-  holds Jennifer-coded modules; system (Go-built) libraries stay
-  in `internal/lib/*/`. The split is load-bearing for distro
-  packaging: system libraries are baked into the interpreter
-  binary, so a Debian package only ships `/usr/bin/jennifer`;
-  modules are data files that ship to a system module dir
-  (`/usr/share/jennifer/modules/` or `/var/lib/jennifer/modules/`,
-  decided at packaging time) and are loadable without
-  recompilation. The directory exists from M17; the modules
-  shipped in M18.x land directly in it.
-- **`import "modules/foo.j" as foo;` syntax.** A real module
-  boundary - the imported file's top-level names live behind the
-  `foo.` prefix at the call site, the same shape as a namespaced
-  system library. Aliasing rules match `use NAME as ALIAS;`.
-- **Module resolution.** A search path with explicit precedence:
-  the current source file's directory first, then any
-  `-I` directories passed on the command line, then the system
-  module dir. No implicit fallback to system libraries - a
-  `use NAME;` always means a system library, `import "..." as ...;`
-  always means a module file. Matches the explicit-prefix rule
-  recorded in
-  [rejected.md > Implicit `use NAME;` fallback chain](technical/rejected.md#implicit-use-name-fallback-chain-m8).
-- **Module-level exports** ship with the milestone: top-level
-  `def` and `func` are exported by default; a leading `private`
-  marker (or similar; settled at start of M17) hides them. Same
-  visibility rule top-to-bottom; no per-file export list.
+Split into four sub-milestones so each piece ships standalone
+and lands in dependency order: source-tree layout first, then
+the import syntax, then resolution, then exports. M18.x cannot
+start until all four ship.
+
+## M17.1 - Source tree separation
+
+A new top-level `modules/` directory holds Jennifer-coded
+modules; system (Go-built) libraries stay in `internal/lib/*/`.
+The split is load-bearing for distro packaging: system
+libraries are baked into the interpreter binary, so a Debian
+package only ships `/usr/bin/jennifer`; modules are data files
+that ship to a system module dir
+(`/usr/share/jennifer/modules/` or `/var/lib/jennifer/modules/`,
+decided at packaging time) and are loadable without
+recompilation. The directory exists from M17.1; the modules
+shipped in M18.x land directly in it.
+
+## M17.2 - `import "modules/foo.j" as foo;` syntax
+
+The real module boundary. The imported file's top-level names
+live behind the `foo.` prefix at the call site, the same shape
+as a namespaced system library. Aliasing rules match
+`use NAME as ALIAS;` (alias replaces the canonical name; bare
+form reserves the file-stem as the prefix). Reuses the
+namespacing machinery shipped in M10 so call-site resolution is
+already settled.
+
+## M17.3 - Module resolution
+
+A search path with explicit precedence: the current source
+file's directory first, then any `-I` directories passed on
+the command line, then the system module dir. No implicit
+fallback to system libraries - a `use NAME;` always means a
+system library, `import "..." as ...;` always means a module
+file. Matches the explicit-prefix rule recorded in
+[rejected.md > Implicit `use NAME;` fallback chain](technical/rejected.md#implicit-use-name-fallback-chain-m8).
+
+## M17.4 - Module-level exports
+
+Top-level `def` and `func` are exported by default; a leading
+`private` marker (or similar; settled at start of M17.4) hides
+them. Same visibility rule top-to-bottom; no per-file export
+list. Ships last because it's the only piece that touches
+parser grammar - M17.1 through M17.3 are tooling and
+resolution.
+
+## M17.5 - Developer tooling: profiling
+
+A `jennifer profile <prog.j>` subcommand that instruments the
+evaluator to attribute work back to Jennifer source positions -
+the gap left by `go tool pprof`, which profiles the interpreter
+binary, not the .j program running inside it. Lands between M17
+(modules) and M18.x (Jennifer-coded libraries) so library
+authors can profile their code from the moment they start
+writing it; deliberately not under M16.x because it isn't an
+I/O library and doesn't fit the phase grouping.
+
+- **Statement / call profile.** The default mode. Per source
+  position (file:line:col) record hit count and cumulative
+  wall-clock time spent in that statement / expression.
+  Output formats: a flat human-readable table by default,
+  pprof-compatible binary via `--format=pprof`, Chrome-trace
+  JSON via `--format=trace`. Existing flamegraph tooling
+  (`go tool pprof`, https://www.speedscope.app/) consumes
+  both forms so we don't ship a renderer.
+- **Allocation tracking.** Optional second mode
+  (`--allocs`) that counts `Value.Copy()` and Value-build
+  sites per source position. Jennifer's value semantics
+  make every copy load-bearing; surfacing "this struct
+  passes through 40 frames per call" is exactly the
+  kind of insight that compiled-language allocation
+  profilers give. Same output formats as the statement
+  profile.
+- **TinyGo-friendliness.** Profiling code lives behind the
+  `profile` subcommand and a build tag so it doesn't bloat
+  the shipping `jennifer` binary. The macflyos embedding
+  target gets the profiler-free build; desktop / dev
+  builds get both.
+- **Out of scope for v1.** No source-step debugger (its
+  own milestone if/when it lands).
+- **May absorb future developer-tooling work.** Source-level
+  debugger hooks, runtime introspection, and any other
+  `jennifer <tool>` subcommand that instruments the
+  evaluator can ship as sub-milestones under M17.5.x rather
+  than getting their own top-level slots.
 
 ## M18.x - Jennifer-coded modules
 
@@ -1574,3 +1665,33 @@ willing to keep it green; they're not blocking anything.
   list. Additive on top of the streaming `readLine()` + `eof()`
   idiom; nice-to-have for tiny scripts, not blocking. Deferred from
   M7.
+- **i18n.** Locale-aware case folding, collation, number / date
+  formatting, BiDi. Gated on the CLDR-data binary-size question
+  (likely an optional library shipped after the M19 WASM runtime
+  so locale tables aren't baked into every build).
+- **Host-embedding API.** A stable, documented Go-side surface
+  for driving the interpreter from a host program (passing
+  values in / out, surfacing positioned errors, hooking stdout
+  / stdin). Distinct from FFI as conventionally meant - see
+  [technical/rejected.md](technical/rejected.md#ffi-as-a-single-milestone)
+  for why that framing was turned down. Likely Phase D/E timing
+  (around M18-M19), since macflyos embedding and any
+  serious host-driven use case need it.
+- **Advanced scheduling knobs.** CPU affinity, work-stealing
+  pool sizing, NUMA awareness, `GOMAXPROCS`-equivalent runtime
+  tuning. Runtime-config surface for the M16.0 spawn scheduler,
+  not new language features. Ships when a real use case forces
+  it (the M16.0 default - "let Go's scheduler decide" -
+  handles every workload we've imagined so far).
+- **Performance & memory.** Interpreter-internal optimizations
+  that preserve stance #5 (value semantics) at the user level:
+  copy-on-write for lists / maps / bytes / structs (share
+  underlying storage until a write splits it), per-frame arena
+  allocation, and read-only slice views (`xs[1..5]` as a
+  non-owning window that errors on assignment). Strictly
+  optimizations - no user-visible aliasing or mutation rules
+  change. Stance-breaking variants (mutable references,
+  interior mutability, shared mutable state) are turned down in
+  [technical/rejected.md](technical/rejected.md#references-interior-mutability-shared-mutable-state).
+  Best landed post-M21 once the language is settled and the
+  interpreter doesn't churn under it.
