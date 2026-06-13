@@ -18,6 +18,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/maps"
 	"github.com/mplx/jennifer-lang/internal/lib/math"
 	"github.com/mplx/jennifer-lang/internal/lib/core"
+	"github.com/mplx/jennifer-lang/internal/lib/meta"
 	"github.com/mplx/jennifer-lang/internal/lib/os"
 	"github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/parser"
@@ -32,10 +33,16 @@ func main() {
 	}
 	switch os.Args[1] {
 	case "run":
-		if len(os.Args) != 3 {
+		if len(os.Args) < 3 {
 			usage()
 			os.Exit(2)
 		}
+		// args[3:] become the user program's command-line arguments.
+		// Convention (matches Python sys.argv, Go os.Args): index 0 of
+		// the user-visible `os.ARGS` is the script path, the rest are
+		// the user-supplied args.
+		userArgs := append([]string{os.Args[2]}, os.Args[3:]...)
+		oslib.SetUserArgs(userArgs)
 		os.Exit(runFile(os.Args[2]))
 	case "repl":
 		if len(os.Args) != 2 {
@@ -166,6 +173,7 @@ func runFile(path string) int {
 	listslib.Install(in)
 	mapslib.Install(in)
 	oslib.Install(in)
+	metalib.Install(in)
 	corelib.Install(in)
 	if err := in.Run(prog); err != nil {
 		// `exit;` / `exit EXPR;` (M11) - user-requested clean termination.

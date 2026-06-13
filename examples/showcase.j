@@ -145,19 +145,20 @@ io.printf("split         = %s\n", strings.join(strings.split("a,b,c", ","), "|")
 io.printf("chars count   = %d\n", len(strings.chars("héllo")));
 io.printf("join          = %s\n", strings.join(["x", "y", "z"], "-"));
 
-# --- os library (M8) ---
+# --- os library ---
 #
-# Every name lives behind the `os.` prefix. The actual *values* of
-# os.platform() / os.JENNIFER_OS / os.JENNIFER_LF depend on the host
-# OS (Jennifer ships Linux-only today, but Windows and macOS are on
-# the roadmap), so we only assert their runtime *kinds* here - same
-# pattern that keeps JENNIFER_VERSION out of the golden file. The
+# Every name lives behind the `os.` prefix. Immutable per-run host
+# facts are uppercase constants; `getEnv` is a real function. The
+# actual values of PLATFORM / ARCH / EOL depend on the host OS,
+# so we only assert their runtime *kinds* here - the
 # platform-pinned demo lives in examples/osinfo.j. `os.getEnv` of a
 # deliberately unset variable returns the empty string portably.
 io.printf("=== os ===\n");
-io.printf("convert.typeOf(os.platform())  = %s\n", convert.typeOf(os.platform()));
-io.printf("convert.typeOf(os.JENNIFER_OS) = %s\n", convert.typeOf(os.JENNIFER_OS));
-io.printf("convert.typeOf(os.JENNIFER_LF) = %s\n", convert.typeOf(os.JENNIFER_LF));
+io.printf("convert.typeOf(os.PLATFORM)    = %s\n", convert.typeOf(os.PLATFORM));
+io.printf("convert.typeOf(os.ARCH)        = %s\n", convert.typeOf(os.ARCH));
+io.printf("convert.typeOf(os.EOL)         = %s\n", convert.typeOf(os.EOL));
+io.printf("convert.typeOf(os.DIRSEP)      = %s\n", convert.typeOf(os.DIRSEP));
+io.printf("convert.typeOf(os.PATHSEP)     = %s\n", convert.typeOf(os.PATHSEP));
 io.printf("getEnv unset           = [%s]\n", os.getEnv("JENNIFER_SHOWCASE_NONEXISTENT_VAR"));
 
 # --- lists ---
@@ -262,9 +263,19 @@ $dst = $src;
 $dst[0] = 99;
 io.printf("src[0]=%d dst[0]=%d\n", $src[0], $dst[0]);
 
-# --- core (auto-loaded): prove JENNIFER_VERSION is wired without baking its value into the golden ---
-io.printf("=== core ===\n");
-io.printf("convert.typeOf(JENNIFER_VERSION) = %s\n", convert.typeOf(JENNIFER_VERSION));
+# --- meta: prove meta.VERSION + meta.BUILD are wired without
+# baking either value into the golden (both depend on build state).
+use meta;
+io.printf("=== meta ===\n");
+io.printf("convert.typeOf(meta.VERSION) = %s\n", convert.typeOf(meta.VERSION));
+io.printf("convert.typeOf(meta.BUILD)   = %s\n", convert.typeOf(meta.BUILD));
+
+# --- os: ARGS + flag inspection. Type-check, don't print
+# actual values (vary by host / how the program was launched).
+io.printf("=== os ARGS + flags ===\n");
+io.printf("convert.typeOf(os.ARGS)            = %s\n", convert.typeOf(os.ARGS));
+io.printf("convert.typeOf(os.hasFlag(\"x\"))    = %s\n", convert.typeOf(os.hasFlag("--definitely-not-a-real-flag")));
+io.printf("convert.typeOf(os.flag(\"x\"))       = %s\n", convert.typeOf(os.flag("--definitely-not-a-real-flag")));
 
 # --- Constants in expressions ---
 io.printf("=== constants ===\n");

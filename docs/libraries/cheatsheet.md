@@ -47,8 +47,9 @@ flat lookup view, not authoritative.
 | `maps.values(m)`                   | [maps](maps.md)                 | List of values in insertion order.                                                                                                  |
 | `math.max(a, b)`                   | [math](math.md)                 | Larger of two numbers; mixed int/float promotes to float.                                                                           |
 | `math.min(a, b)`                   | [math](math.md)                 | Smaller of two numbers; mixed int/float promotes to float.                                                                          |
+| `os.flag(name)`                    | [os](os.md)                     | Value following `name` in `os.ARGS`, or `""` if absent / at end. Exact-match (no `--foo=bar` parsing).                              |
+| `os.hasFlag(name)`                 | [os](os.md)                     | True if `name` appears as an exact element of `os.ARGS`.                                                                            |
 | `os.getEnv(name)`                  | [os](os.md)                     | Read environment variable `name`. Unset → empty string, no error.                                                                   |
-| `os.platform()`                    | [os](os.md)                     | Operating-system name as reported by the runtime (`"linux"` today).                                                                 |
 | `math.pow(x, y)`                   | [math](math.md)                 | `x` raised to `y`; always float. Errors on NaN/Inf-producing inputs.                                                                |
 | `io.printf(value)`                 | [io](io.md)                     | Write a value's display form to stdout.                                                                                             |
 | `io.printf(format, args...)`       | [io](io.md)                     | Format-string write to stdout. Verbs: `%d %f %s %t %v %%`; per-verb `\|key=value` modifiers (`pad`, `prec`, `base`, `null=*`, ...). |
@@ -73,13 +74,18 @@ flat lookup view, not authoritative.
 
 ## Constants
 
-| Name               | Library                         | Type     | Value                                                    |
-| ------------------ | ------------------------------- | -------- | -------------------------------------------------------- |
-| `E`                | [math](math.md)                 | `float`  | Euler's number, 2.718281828459045.                       |
-| `JENNIFER_VERSION` | [core](core.md) *(auto-loaded)* | `string` | The interpreter's build version (e.g. `"0.6.0"`).        |
-| `os.JENNIFER_LF`   | [os](os.md)                     | `string` | Platform line ending. `"\n"` on Linux today.             |
-| `os.JENNIFER_OS`   | [os](os.md)                     | `string` | OS tag (`"linux"` today); same value as `os.platform()`. |
-| `PI`               | [math](math.md)                 | `float`  | π, 3.141592653589793.                                    |
+| Name           | Library         | Type           | Value                                                             |
+| -------------- | --------------- | -------------- | ----------------------------------------------------------------- |
+| `E`            | [math](math.md) | `float`        | Euler's number, 2.718281828459045.                                |
+| `meta.BUILD`   | [meta](meta.md) | `string`       | Which Go toolchain compiled the interpreter: `"go"` / `"tinygo"`. |
+| `meta.VERSION` | [meta](meta.md) | `string`       | The interpreter's build version (e.g. `"0.14.0"`).                |
+| `os.ARCH`      | [os](os.md)     | `string`       | CPU architecture: `"amd64"`, `"arm64"`, `"wasm"`, ...             |
+| `os.ARGS`      | [os](os.md)     | list of string | Argv. Index 0 is the script path, the rest are user args.         |
+| `os.DIRSEP`    | [os](os.md)     | `string`       | Path-component separator: `"/"` Unix, `"\\"` Windows.             |
+| `os.EOL`       | [os](os.md)     | `string`       | Platform line ending. `"\n"` Unix-likes, `"\r\n"` Windows.        |
+| `os.PATHSEP`   | [os](os.md)     | `string`       | PATH-list separator: `":"` Unix, `";"` Windows.                   |
+| `os.PLATFORM`  | [os](os.md)     | `string`       | OS tag: `"linux"`, `"darwin"`, `"windows"`, ...                   |
+| `PI`           | [math](math.md) | `float`        | π, 3.141592653589793.                                             |
 
 ## Type-conversion calls
 

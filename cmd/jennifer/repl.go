@@ -19,6 +19,7 @@ import (
 	listslib "github.com/mplx/jennifer-lang/internal/lib/lists"
 	mapslib "github.com/mplx/jennifer-lang/internal/lib/maps"
 	mathlib "github.com/mplx/jennifer-lang/internal/lib/math"
+	metalib "github.com/mplx/jennifer-lang/internal/lib/meta"
 	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
 	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/parser"
@@ -55,6 +56,7 @@ func runRepl() int {
 	listslib.Install(in)
 	mapslib.Install(in)
 	oslib.Install(in)
+	metalib.Install(in)
 	corelib.Install(in)
 
 	cwd, err := os.Getwd()
@@ -299,7 +301,7 @@ func printReplHelp(w io.Writer) {
 // It also tracks whether the most recent byte was a newline. The editor
 // reads `lastByteIsNL` before each redraw and emits a fresh `\r\n` if
 // the cursor isn't already on a clean line. Without this, a program
-// like `printf("%s", JENNIFER_VERSION);` (no trailing newline) would
+// like `printf("%s", meta.VERSION);` (no trailing newline) would
 // have its output wiped by the next prompt's `\r ESC[K` redraw.
 type crlfWriter struct {
 	w            io.Writer

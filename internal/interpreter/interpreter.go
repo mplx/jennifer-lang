@@ -49,7 +49,7 @@ type libConstantEntry struct {
 
 // nsKey identifies a namespaced builtin or constant by (namespace,
 // name). Used as a map key so a single map covers `bio.translate`,
-// `os.platform`, etc. without nested maps. The namespace doubles as the
+// `os.getEnv`, etc. without nested maps. The namespace doubles as the
 // owning library's name; the user enables the namespace via
 // `use <lib>;` and addresses callees as `<lib>.name(...)`.
 type nsKey struct {

@@ -78,9 +78,11 @@ split         = a|b|c
 chars count   = 5
 join          = x-y-z
 === os ===
-convert.typeOf(os.platform())  = string
-convert.typeOf(os.JENNIFER_OS) = string
-convert.typeOf(os.JENNIFER_LF) = string
+convert.typeOf(os.PLATFORM)    = string
+convert.typeOf(os.ARCH)        = string
+convert.typeOf(os.EOL)         = string
+convert.typeOf(os.DIRSEP)      = string
+convert.typeOf(os.PATHSEP)     = string
 getEnv unset           = []
 === lists ===
 xs = [10, 20, 30]
@@ -124,8 +126,13 @@ after delete: len=2 has(bob)=false
 merged: alice=100 dave=60
 === value semantics ===
 src[0]=1 dst[0]=99
-=== core ===
-convert.typeOf(JENNIFER_VERSION) = string
+=== meta ===
+convert.typeOf(meta.VERSION) = string
+convert.typeOf(meta.BUILD)   = string
+=== os ARGS + flags ===
+convert.typeOf(os.ARGS)            = list
+convert.typeOf(os.hasFlag("x"))    = bool
+convert.typeOf(os.flag("x"))       = string
 === constants ===
 MAX=5 MAX_RETRIES=3 HTTP_OK=200 PI_APPROX=3.14
 === printf modifiers ===

@@ -18,6 +18,7 @@ import (
 	mapslib "github.com/mplx/jennifer-lang/internal/lib/maps"
 	mathlib "github.com/mplx/jennifer-lang/internal/lib/math"
 	corelib "github.com/mplx/jennifer-lang/internal/lib/core"
+	metalib "github.com/mplx/jennifer-lang/internal/lib/meta"
 	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
 	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/parser"
@@ -142,6 +143,7 @@ func runProgramOutput(path, src string) (string, error) {
 	listslib.Install(in)
 	mapslib.Install(in)
 	oslib.Install(in)
+	metalib.Install(in)
 	corelib.Install(in)
 	if err := in.Run(prog); err != nil {
 		return "", err
@@ -242,8 +244,8 @@ func TestFmtSpacingRules(t *testing.T) {
 		},
 		{
 			"qualified call hugs the dot",
-			`os . platform (  );`,
-			"os.platform();\n",
+			`os . getEnv ( "HOME" );`,
+			"os.getEnv(\"HOME\");\n",
 		},
 		{
 			"qualified call with args",

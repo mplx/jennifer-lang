@@ -277,13 +277,13 @@ func TestParseQualifiedCall(t *testing.T) {
 }
 
 func TestParseQualifiedCallZeroArg(t *testing.T) {
-	src := `use os; os.platform();`
+	src := `use os; os.getEnv("HOME");`
 	prog, err := Parse(src)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	got := Sprint(prog.TopLevel[0])
-	want := "ExprStmt(QCall(os.platform))"
+	want := `ExprStmt(QCall(os.getEnv, Str("HOME")))`
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}

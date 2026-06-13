@@ -17,17 +17,19 @@ interpreter today and links to the reference doc for each.
 | `strings` | `use strings;`  | `strings.upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring`, `split`, `chars`, `join`. `len` lives in `core`. | [strings.md](strings.md) |
 | `lists`   | `use lists;`    | `lists.push`, `pop`, `first`, `last`, `head`, `tail`, `reverse`, `sort`, `contains`, `concat`, `slice` - all return a new list.                                                                | [lists.md](lists.md)     |
 | `maps`    | `use maps;`     | `maps.keys`, `values`, `has`, `delete`, `merge` - all return a new map / list / bool.                                                                                                          | [maps.md](maps.md)       |
-| `os`      | `use os;`       | `os.platform`, `os.getEnv`, `os.JENNIFER_LF`, `os.JENNIFER_OS`                                                                                                                                 | [os.md](os.md)           |
-| `core`    | *(auto-loaded)* | `len` (polymorphic over string/list/map), `JENNIFER_VERSION`. The only library that ships bare-name globals; **no** namespaced form (`core.len`) is published, by design.                      | [core.md](core.md)       |
+| `os`      | `use os;`       | `os.getEnv`, `os.hasFlag`, `os.flag`; constants `os.PLATFORM`, `os.ARCH`, `os.EOL`, `os.DIRSEP`, `os.PATHSEP`, `os.ARGS`                                                                       | [os.md](os.md)           |
+| `meta`    | `use meta;`     | `meta.VERSION`, `meta.BUILD` - interpreter-self-identity constants                                                                                                                             | [meta.md](meta.md)       |
+| `core`    | *(auto-loaded)* | `len` (polymorphic over string/list/map/bytes). The only library that ships bare-name globals; **no** namespaced form (`core.len`) is published, by design.                                   | [core.md](core.md)       |
 
 A quick taste:
 
 ```jennifer
 use io;
 use math;
+use meta;
 use strings;
 
-io.printf("Jennifer %s\n", JENNIFER_VERSION);   # auto-loaded from core
+io.printf("Jennifer %s\n", meta.VERSION);
 io.printf("pi is roughly %f\n", math.PI);
 io.printf("math.sqrt(2) = %f\n", math.sqrt(2));
 io.printf("upper: %s\n", strings.upper("hello"));
@@ -42,15 +44,13 @@ doubles as the namespace prefix at the use site. There is no longer
 a separate "flat library" category.
 
 The only library that publishes bare-name **globals** is
-auto-loaded `core`. Its two globals - `len(...)` and
-`JENNIFER_VERSION` - are polymorphic structural primitives that
-earn the exemption from the "every call carries its library name"
-rule. There is **no** `core.len` / `core.JENNIFER_VERSION`
-qualified form: shipping the same name two ways would violate
-stance #1 ("one way per thing"). `core` is the only library where
-the exposure is asymmetric, and its asymmetry is the whole point -
-the auto-loaded library exists precisely so its names can stay
-short.
+auto-loaded `core`. Its one global - `len(...)` - is a polymorphic
+structural primitive that earns the exemption from the "every call
+carries its library name" rule. There is **no** `core.len` qualified
+form: shipping the same name two ways would violate stance #1 ("one
+way per thing"). `core` is the only library where the exposure is
+asymmetric, and its asymmetry is the whole point - the auto-loaded
+library exists precisely so its sole name can stay short.
 
 **Rule for library authors:** new libraries always use
 `RegisterNamespaced` / `RegisterNamespacedConst`. The
@@ -80,10 +80,12 @@ large ones. The organizing principle, captured for future extensions:
 - List manipulation -> `lists`.
 - Map manipulation -> `maps`.
 - Operating-system glue (env, args, host info) -> `os`.
-- Polymorphic structural primitives spanning types (`len`,
-  `JENNIFER_VERSION`) -> auto-loaded `core` with `RegisterGlobal`.
-  Reserve carefully; this is the only escape hatch from the "every
-  call carries its library name" rule.
+- Interpreter-self-identity constants (version, build, future
+  build-time / git-sha / GC stats) -> `meta`.
+- Polymorphic structural primitives spanning types (`len`) ->
+  auto-loaded `core` with `RegisterGlobal`. Reserve carefully; this
+  is the only escape hatch from the "every call carries its library
+  name" rule.
 - A genuinely new topic with **five or more** functions / constants
   -> a new library. Fewer than five names fold into the most-related
   existing library (M10 raised the threshold from "3+"; the
@@ -119,7 +121,7 @@ Three practical constraints reinforce the count/mass rule:
    intuition.
 3. Within a library, function names are lowercase / camelCase
    (`upper`, `startsWith`, `typeOf`). Constants are uppercase
-   (`PI`, `E`, `JENNIFER_VERSION`).
+   (`PI`, `E`, `VERSION`, `PLATFORM`).
 
 For implementation notes on how libraries register themselves with the
 interpreter (`RegisterNamespaced`, `RegisterGlobal`, the `use`-gated

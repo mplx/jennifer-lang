@@ -126,7 +126,7 @@ func TestEvalInteractiveQualifiedCall(t *testing.T) {
 	in, buf := newReplInterp()
 	evalLine(t, in, "use io;")
 	evalLine(t, in, "use os;")
-	evalLine(t, in, `io.printf("%s\n", os.platform());`)
+	evalLine(t, in, `io.printf("%s\n", os.PLATFORM);`)
 	if got := buf.String(); got == "" || got[len(got)-1] != '\n' {
 		t.Errorf("expected platform output ending in newline, got %q", got)
 	}
@@ -136,7 +136,7 @@ func TestEvalInteractiveAliasedQualifiedCall(t *testing.T) {
 	in, buf := newReplInterp()
 	evalLine(t, in, "use io;")
 	evalLine(t, in, "use os as o;")
-	evalLine(t, in, `io.printf("%s", o.JENNIFER_LF);`)
+	evalLine(t, in, `io.printf("%s", o.EOL);`)
 	if got := buf.String(); got != "\n" && got != "\r\n" {
 		t.Errorf("expected platform line ending, got %q", got)
 	}

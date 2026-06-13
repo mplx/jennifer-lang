@@ -9,27 +9,25 @@
 // parse-time-equivalent error - the library is already available, and an
 // explicit `use core;` signals confusion that's better surfaced loudly.
 //
-// Pass 1 contents:
-//   - JENNIFER_VERSION (string constant) - the interpreter's build version.
-//     Underscored, language-prefixed name follows the PHP_VERSION /
-//     RUBY_VERSION precedent and leaves room for future host/build
-//     constants (JENNIFER_BUILDTIME, PLATFORM, OSNAME, ARCH).
+// Contents:
+//   - len(string | list | map | bytes) - polymorphic structural length.
 //
-// Pass 2 (during the M5 cleanup that introduced this library) adds:
-//   - len(string | list | map) - polymorphic structural length.
+// M15.1 cleanup: `JENNIFER_VERSION` moved from core to the new `meta`
+// library (`meta.JENNIFER_VERSION`). Core's charter is now strictly
+// polymorphic structural primitives - interpreter-identity constants
+// live in `meta`. Breaking change; pre-1.0 budget covers it.
 //
 // M9 cleanup: `has()` was removed from core and relocated to the
 // `maps` library as `maps.has(m, key)`. Map membership testing is
 // domain-specific (only meaningful on maps), so it didn't fit core's
 // "universally-needed structural primitives" charter - `len()` stays
-// because it is genuinely polymorphic across three kinds. Breaking
-// change; pre-1.0 budget covers it.
+// because it is genuinely polymorphic across kinds.
 //
 // Reserve this library carefully. It is the escape hatch from Jennifer's
 // "nothing for free" library discipline; it should hold a handful of
 // universally-needed structural primitives and nothing more. Anything that
-// could plausibly belong to a topic library (io, math, strings, ...) goes
-// there instead.
+// could plausibly belong to a topic library (io, math, strings, meta, ...)
+// goes there instead.
 //
 // The Go package is named corelib to follow the convention used by the
 // other libraries (iolib, mathlib, stringslib).
@@ -40,7 +38,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/version"
 )
 
 // LibraryName is the Jennifer name the interpreter uses to track the core
@@ -48,17 +45,13 @@ import (
 // it and explicit imports are rejected.
 const LibraryName = "core"
 
-// Install registers the core library's builtins and constants on an
-// interpreter. `core` is the only library that registers any name via
-// `RegisterGlobal` / `RegisterGlobalConst` (M10+): `len` is genuinely
-// polymorphic across string/list/map and `JENNIFER_VERSION` is a
-// structural fact about the running binary - both belong to "nothing
-// for free except this." They are *only* exposed globally; no
-// `core.len` / `core.JENNIFER_VERSION` qualified form exists, since
-// publishing the same name two ways would violate stance #1
-// ("one way per thing").
+// Install registers the core library's builtins on an interpreter. `core`
+// is the only library that registers names via `RegisterGlobal`: `len` is
+// genuinely polymorphic across string/list/map/bytes - the "nothing for
+// free except this" exception. It is *only* exposed globally; no
+// `core.len` qualified form exists, since publishing the same name two
+// ways would violate stance #1 ("one way per thing").
 func Install(in *interpreter.Interpreter) {
-	in.RegisterGlobalConst(LibraryName, "JENNIFER_VERSION", interpreter.StringVal(version.Version))
 	in.RegisterGlobal(LibraryName, "len", lenFn)
 }
 

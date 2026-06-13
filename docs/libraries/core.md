@@ -9,20 +9,20 @@ invokes.
 ```jennifer
 use io;
 
-io.printf("running Jennifer %s\n", JENNIFER_VERSION);
+io.printf("five: %d\n", len("hello"));
 ```
 
-(no `use core;` needed; `JENNIFER_VERSION` is already in scope.)
+(no `use core;` needed; `len` is already in scope.)
 
 ## Why `core` is special
 
 Jennifer's library discipline is "nothing for free": every standard
 library is opt-in via `use NAME;`. `core` is the deliberate exception,
-reserved for a tiny handful of *structural* builtins that every program
-needs without ceremony - things that are more like language operators
-than library functions. Reserve membership carefully; almost everything
-new belongs in `io`, `math`, `convert`, `strings`, or a new
-domain-library, not here.
+reserved for a tiny handful of *polymorphic structural* builtins that
+every program needs without ceremony - things that are more like
+language operators than library functions. Reserve membership
+carefully; almost everything new belongs in `io`, `math`, `convert`,
+`strings`, `meta`, or a new domain-library, not here.
 
 ## Functions
 
@@ -38,72 +38,33 @@ is well-defined:
 - **string** → rune count (Unicode code points, not bytes)
 - **list**   → element count
 - **map**    → entry count
+- **bytes**  → byte count
 
 Passing any other kind (`int`, `float`, `bool`, `null`) is a positioned
 runtime error.
 
 ```jennifer
-io.printf("%d\n", len("hello"));      # 5
-io.printf("%d\n", len("héllo"));      # 5 (rune count)
-io.printf("%d\n", len([1, 2, 3]));    # 3
-io.printf("%d\n", len({"a": 1, "b": 2})); # 2
+io.printf("%d\n", len("hello"));            # 5
+io.printf("%d\n", len("héllo"));            # 5 (rune count)
+io.printf("%d\n", len([1, 2, 3]));          # 3
+io.printf("%d\n", len({"a": 1, "b": 2}));   # 2
 ```
 
-### `has` was here (M9: moved to `maps.has`)
+### `has` was here (moved to `maps.has`)
 
 The map-membership test that used to live in core was relocated to
-the `maps` library in M9; call it as `maps.has($m, key)` after
-`use maps;`. The move keeps core focused on truly polymorphic
-primitives - `len` works across three kinds, `has` only ever
-worked on maps. See [maps.md](maps.md#maps-has).
+the `maps` library; call it as `maps.has($m, key)` after `use maps;`.
+The move keeps core focused on truly polymorphic primitives - `len`
+works across four kinds, `has` only ever worked on maps. See
+[maps.md](maps.md#maps-has).
 
-## Constants
+### `JENNIFER_VERSION` was here (moved to `meta.JENNIFER_VERSION`)
 
-| Name               | Kind   | Value                                               |
-| ------------------ | ------ | --------------------------------------------------- |
-| `JENNIFER_VERSION` | string | The interpreter's build version (see format below). |
+The build-version constant moved out of `core` to the new `meta`
+library, which holds interpreter-self-identity facts. After
+`use meta;` it is `meta.JENNIFER_VERSION`. The move keeps core's
+charter strictly "polymorphic structural primitive that's more like
+an operator than a library function" - the version string was always
+a special case under that rule.
 
-The `JENNIFER_` prefix follows the precedent set by `PHP_VERSION` and
-`RUBY_VERSION` (and similar from other languages). It also leaves the
-unprefixed namespace clean for host/environment constants
-(`PLATFORM`, `OSNAME`, `ARCH`, ...) when those land.
-
-### `JENNIFER_VERSION` string format
-
-The build pipeline derives `JENNIFER_VERSION` from
-`git describe --tags --long`:
-
-| Repository state                           | `JENNIFER_VERSION` value     |
-| ------------------------------------------ | ---------------------------- |
-| HEAD is exactly on a semver tag            | `"0.4.0"`                    |
-| HEAD is N commits past the most recent tag | `"0.4.0-dev+2.1023204"`      |
-| No tags exist yet                          | `"0.0.0-dev+<N>.<shortsha>"` |
-| Built without git (or outside a repo)      | `"dev"`                      |
-
-The `dev+` prefix is intentional: any non-tagged build is a development
-build, and the `N.shortsha` suffix lets you trace which commit produced it.
-
-## Build flow
-
-`JENNIFER_VERSION` is set at build time by a small codegen step. The
-Makefile runs `scripts/gen-version.sh` before `tinygo build` /
-`go build`, writing a generated `internal/version/version_gen.go` whose
-`init()` assigns `version.Version` to the string from
-`scripts/version.sh`. The `core` library then mirrors that into the
-interpreter as the `JENNIFER_VERSION` constant.
-
-You don't need to run the codegen step manually if you build via `make
-build` (TinyGo) or `make build-go` (Go). A bare `go test ./...` skips
-codegen and uses the default `"dev"` baked into `version.go`.
-
-Codegen rather than `go build -ldflags -X` is used because TinyGo 0.41
-silently ignores `-X`. The generated file is `.gitignore`d.
-
-## Roadmap
-
-Future candidates for `core` membership (none committed yet):
-`PLATFORM`, `BUILDTIME`, runtime introspection like `JENNIFER_TARGET`.
-Each one needs to clear the bar of "universally needed structural
-primitive that's more like an operator than a library function."
-
-See also: [../user-guide/index.md](../user-guide/index.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).
+See also: [meta.md](meta.md), [../user-guide/index.md](../user-guide/index.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

@@ -18,6 +18,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/maps"
 	"github.com/mplx/jennifer-lang/internal/lib/math"
 	"github.com/mplx/jennifer-lang/internal/lib/core"
+	"github.com/mplx/jennifer-lang/internal/lib/meta"
 	"github.com/mplx/jennifer-lang/internal/lib/os"
 	"github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/parser"
@@ -78,6 +79,7 @@ func TestExamples(t *testing.T) {
 			listslib.Install(in)
 			mapslib.Install(in)
 			oslib.Install(in)
+			metalib.Install(in)
 			corelib.Install(in)
 			if err := in.Run(prog); err != nil {
 				t.Fatalf("run %s: %v", name, err)

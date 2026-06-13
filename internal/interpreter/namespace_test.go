@@ -64,14 +64,14 @@ func TestNamespaceBuiltinResolves(t *testing.T) {
 	out, err := runNS(t, `
 use io;
 use os;
-io.printf("%s\n", os.platform());
+io.printf("%s\n", os.getEnv("PATH"));
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	// runtime.GOOS varies between hosts; just make sure something
-	// non-empty printed and ended with a newline.
-	if !strings.HasSuffix(out, "\n") || strings.TrimSpace(out) == "" {
+	// PATH varies between hosts; just make sure something printed and
+	// ended with a newline (an empty PATH still produces just "\n").
+	if !strings.HasSuffix(out, "\n") {
 		t.Errorf("got %q", out)
 	}
 }
@@ -227,17 +227,17 @@ io.printf("%d\n", $total);
 	}
 }
 
-func TestOsJenniferConstants(t *testing.T) {
+func TestOsEOLConstant(t *testing.T) {
 	out, err := runNS(t, `
 use io;
 use os;
-io.printf("%s", os.JENNIFER_LF);
+io.printf("%s", os.EOL);
 `)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	if out != "\n" && out != "\r\n" {
-		t.Errorf("os.JENNIFER_LF was %q (expected \\n or \\r\\n)", out)
+		t.Errorf("os.EOL was %q (expected \\n or \\r\\n)", out)
 	}
 }
 

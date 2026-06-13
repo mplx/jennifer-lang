@@ -313,7 +313,7 @@ stand on; M14 closes the lexer-side gap (`fmt` losing comments
 and shebangs) so the first wave of struct-using libraries can
 ship with doc-comments intact; Phase B (M15.x) ships the
 foundational libraries that every Jennifer program needs,
-finishing with **M15.5 - the first public release** (CI, prebuilt
+finishing with **M15.7 - the first public release** (CI, prebuilt
 binaries, .deb / pacman / AUR packaging); Phase C (M16.x) ships
 I/O libraries on top of the now-released foundation; Phase D
 (M17-M20) ships the higher-level ecosystem (Jennifer-coded
@@ -492,7 +492,7 @@ network code in later milestones.
   sugar. `len($b)` returns the byte count.
 - **New `convert.bytesFromString(s, codec)` and
   `convert.stringFromBytes(b, codec)`** - bytes ↔ string codecs.
-  Only `"utf-8"` today (further codecs ship in M15.4 `encoding`).
+  Only `"utf-8"` today (further codecs ship in M15.6 `encoding`).
   Invalid UTF-8 input is an error - no silent replacement
   characters.
 - **Bit operators on `int`**: `& | ^ ~ << >>`. Python-style
@@ -652,101 +652,199 @@ home rather than getting a tiny library of its own.
 Small additions to the M8 / M9 / M10 libraries that depend on
 features the language picked up after those libraries shipped.
 
-- **`lists.shuffle(xs) -> list`** - Durstenfeld's variant of the
-  Fisher-Yates shuffle. Returns a new list with the elements in
-  a uniformly random order; non-mutating, matching
-  `lists.sort` / `lists.reverse` / every other helper in the
-  library. Algorithm walks the elements from index `n-1` down to
-  `1`; for each `i`, pick a random `j` in `[0, i]` and swap; the
-  walk is O(n) and the distribution is uniform across the `n!`
-  permutations. Empty and single-element inputs are returned
-  unchanged (still copied, per the non-mutating convention).
-  Determinism: respects `math.randSeed(n)` from M10 - calling
-  `math.randSeed(N); lists.shuffle($xs)` twice in the same run
-  yields the same permutation, useful for reproducibility in
-  tests and reruns. Dependency: `math.rand*` (M10, shipped).
-- **`lists.range(...) -> list of int`** - allocate a list of
-  consecutive integers. Two arities:
-  - `lists.range(start, end)` → `[start, start+1, ..., end-1]`
-  - `lists.range(start, end, step)` → walks from `start` by
-    `step`, emitting every value strictly before `end`. Positive
-    `step` requires `start <= end` and emits while
-    `current < end`; negative `step` requires `start >= end` and
-    emits while `current > end`.
-
-  **End is exclusive** (half-open range). Same shape as
-  `lists.slice` and `strings.substring`, and the standard half-open
-  form across the wider ecosystem (Python `range`, Go slice
-  indexing, Rust `..`). Two practical properties follow:
-  index alignment (`lists.range(0, len($xs))` is exactly the
-  valid 0-based indices) and composability
-  (`lists.concat(lists.range(a, b), lists.range(b, c))` equals
-  `lists.range(a, c)`).
-
-  A single-arg form is deliberately not provided so the caller
-  always spells out both ends (stance #2: explicit over implicit).
-  For the "count 1 to N inclusive" idiom, write
-  `lists.range(1, N + 1)`.
-
-  Step must be non-zero (positional error). An empty result is
-  returned when `start == end`; `lists.range(5, 5)` → `[]`.
-
-  Ships as a library function rather than a `[1..n]` syntax
-  operator on Stance #1 grounds - see
-  [technical/rejected.md > Range literal syntax](../technical/rejected.md#range-literal-syntax-19).
-  The half-open design rationale (why we deviated from the
-  English-reading stance here, when that stance is the right
-  tie-breaker and when it isn't) is in
-  [technical/design-decisions.md > Half-open ranges](../technical/design-decisions.md#half-open-ranges).
+- `lists.shuffle(xs) -> list` - Durstenfeld Fisher-Yates;
+  non-mutating; respects `math.randSeed` for deterministic
+  reruns. No `use math;` needed in the calling program (Go-side
+  dependency only).
+- `lists.range(start, end[, step]) -> list of int` - half-open
+  (end exclusive). Same shape as `lists.slice` /
+  `strings.substring`; gives index alignment with `$xs[i]` and
+  clean composability. Step must match direction; single-arg
+  form deliberately omitted (stance #2).
 
 Further extensions can land here as the language gains features
-that unblock library additions (e.g. a `maps.invert` once it has
-a clear use case; a `strings.repeat` already exists so it stays
-put).
+that unblock library additions.
 
-## M15.1 - `os`
+See:
+- [libraries/lists.md](libraries/lists.md) - Shuffle and Range
+  sections (worked examples, index-alignment and composability
+  properties).
+- [technical/design-decisions.md](technical/design-decisions.md#half-open-ranges) -
+  why `lists.range` is half-open even though Jennifer's
+  English-reading stance would argue for closed; the meta-rule
+  for future tie-breakers between prose-friendly and
+  operation-friendly forms.
+- `examples/showcase.j` `=== lists ===` section exercises both
+  builtins, including the partition-and-reassemble
+  composability demo.
 
-Expands the M8 demo slice (`os.platform()`, `os.getEnv(name)`,
-`os.JENNIFER_LF`, `os.JENNIFER_OS` already ship there). One large
-update covering process metadata, the `JENNIFER_*` constant set,
-and the external-program execution surface. Depends on M13.1
-(structs) for the result and handle types.
+## M15.1 - `os` + `meta` (process metadata)
 
-**Process metadata.**
+**Status:** done (metadata piece). External-program execution
+moved to M15.3, after the language milestone (M15.2) that
+unblocks library-provided namespaced struct types.
 
-- `os.args -> list of string` - command-line arguments passed to
-  the running program (index 0 is the program name, by convention).
-- Constants `os.JENNIFER_BUILD`, `os.JENNIFER_PLATFORM`,
-  `os.JENNIFER_ARCHITECTURE` round out the `JENNIFER_*` set
-  introduced in M8.
+Expands the host-environment surface and introduces a new
+`meta` library for interpreter-self-identity facts. The library
+split that ships now:
+
+- **`os`** gains constants (immutable per-run host facts;
+  uppercase) and renames the M8 demo slice into the new
+  convention:
+  - **Constants**: `os.PLATFORM` (was `os.JENNIFER_OS`),
+    `os.ARCH` (new), `os.EOL` (was `os.JENNIFER_LF`),
+    `os.DIRSEP` (new, path-component separator),
+    `os.PATHSEP` (new, PATH-list separator between $PATH
+    entries), `os.ARGS` (was `os.args()` function -
+    immutable per-run, so a constant fits better).
+  - **Functions**: `os.getEnv(name)` (unchanged),
+    `os.hasFlag(name) -> bool`, `os.flag(name) -> string` -
+    exact-match flag inspection on `os.ARGS`. Deliberately
+    minimal; real CLI parsing (`--foo=bar`, combined short
+    flags, repeated flags) belongs to a future `cli`
+    library.
+  - **Removed**: `os.platform()` (duplicate of `os.PLATFORM`).
+  - The CLI's `jennifer run <file.j> [user args...]` now
+    forwards everything past the file path to the user
+    program as `os.ARGS`, matching Python `sys.argv` /
+    Go `os.Args` convention (index 0 is the script path).
+- **`meta`** is new. Holds `meta.VERSION` (was bare
+  `JENNIFER_VERSION` in `core`) and `meta.BUILD` (new,
+  reports which Go variant compiled the interpreter:
+  `"go"` / `"tinygo"`). `core` returns to its strict
+  charter of polymorphic structural primitives.
+
+**Naming rule** applied across both libraries:
+**immutable per-run facts are uppercase constants; operations
+that take arguments are functions.** The `JENNIFER_` prefix is
+dropped because it only made sense for the bare-global case in
+`core`; inside a namespace it's redundant.
+
+### Breaking changes
+
+M15.1 renames and reshapes the M8-era `os` surface and moves
+`JENNIFER_VERSION` out of `core`. Pre-1.0 covers the break, but
+every program that touches these names needs a mechanical
+update.
+
+| Pre-M15.1                  | M15.1                       | Migration                                        |
+| -------------------------- | --------------------------- | ------------------------------------------------ |
+| `JENNIFER_VERSION` (bare)  | `meta.VERSION`              | Add `use meta;`; rewrite all references.         |
+| `os.platform()` (function) | `os.PLATFORM` (constant)    | Drop the parens.                                 |
+| `os.JENNIFER_OS`           | `os.PLATFORM`               | Same OS tag, new name.                           |
+| `os.JENNIFER_LF`           | `os.EOL`                    | Same line ending, new name.                      |
+
+`os.platform()` and the `JENNIFER_*`-prefixed constants are
+gone - calling or referencing them is now a plain "undefined
+name" runtime error. No rename-hint diagnostic ships in M15.1;
+the rename table above and `jennifer fmt`'s round-trip discipline
+are the migration aids.
+
+The `meta` library bends the "5+ names for a new library" rule
+because (a) interpreter-self-identity doesn't fit any existing
+home cleanly and (b) future runtime introspection (build time,
+git SHA, GC stats, scheduler info) has a natural home here once
+it lands.
 
 Process exit stays on the language statement `exit EXPR;` (M11),
 not in `os` - see
 [rejected.md > `os.exit(n)`](technical/rejected.md#osexitn).
 
-**External-program execution.**
+See:
+- [libraries/os.md](libraries/os.md) - full host-environment
+  surface (constants, functions, flag-inspection semantics).
+- [libraries/meta.md](libraries/meta.md) - interpreter-self-
+  identity constants.
+- [libraries/core.md](libraries/core.md) - now strictly
+  polymorphic primitives (`len` only); historical
+  `JENNIFER_VERSION` moved out.
 
-Two result structs, one process handle struct, four functions:
+External-program execution (`os.run`, `os.spawn`, etc.) is
+deferred to M15.3 once the M15.2 language work lands.
 
-- `def struct os.Result { exitCode as int, stdout as string,
-  stderr as string };` - what a command produced.
-- `def struct os.Process { ... };` - opaque handle for an async
-  child. Field shape (pid, internal state) settled at start of
-  M15.1; users interact through the function API below, not the
-  fields directly.
+## M15.2 - Language: library-provided namespaced struct types
 
-**Argument-list form, no shell.** Every variant takes the command
-as a `list of string` (argv-style: program name plus arguments).
-This avoids the shell-injection footguns of a single concatenated
-command string. If a user genuinely wants shell parsing they pass
-`["sh", "-c", $cmd]` explicitly - making the shell hop visible at
-the call site.
+A language milestone slotted inside Phase B because the next wave
+of libraries (M15.3 os execution, M15.4 time, M15.5 hash
+streaming, M16.1 fs, M16.2 net, M16.3 regex) all want to ship
+their own struct types and the M13.1 struct mechanism only
+handles bare-IDENT names. Ships before any consumer so each of
+those library milestones can adopt the namespaced form cleanly
+at first build instead of migrating later from a flat-name
+placeholder.
 
-- `os.run(argv) -> os.Result` - **blocking**. Runs the command to
-  completion, captures stdout and stderr into the result, returns
-  the exit code. The interpreter's stdin is not passed through
-  (deferred; explicit stdin variant lands in a later sub-milestone
-  if demand surfaces).
+**The problem.** M13.1 lets user code write
+`def struct Point { ... };` and use `Point` as a bare type name.
+A library that wants to ship `os.Result` has to either (a)
+register the struct under the bare name `Result` (pollutes the
+global struct namespace; collides with user-defined `Result`)
+or (b) wait for the language to support `lib.StructName` in type
+position.
+
+**Scope.**
+
+- **Type grammar extension.** `def x as lib.Name;` and
+  `def x as lib.Name init lib.Name{ ... };` parse and resolve
+  against the namespaced struct table. `structType` grammar
+  becomes `IDENT [ "." IDENT ]`.
+- **Struct-literal extension.** `lib.Name{ field: expr, ... }`
+  works in expression position, the same shape as the M13.1
+  bare form.
+- **Library registration API.** New
+  `Interpreter.RegisterNamespacedStruct(libName, structName,
+  fields)` mirrors the existing
+  `RegisterNamespaced` / `RegisterNamespacedConst` pattern. The
+  struct definition lives behind `lib.` prefix at use sites,
+  active only after `use lib;`.
+- **Aliasing.** `use lib as l;` renames the prefix at the use
+  site; `l.Name` resolves the same way namespaced functions
+  already do.
+- **No methods on structs.** Out of scope - still goes through
+  the `lib.func(struct)` accessor pattern documented in
+  [rejected.md > Methods on structs](technical/rejected.md#methods-on-structs).
+- **No struct inheritance / open structs.** Out of scope -
+  every library-provided struct has a fixed shape known at
+  registration time.
+- **Field access and chained lvalues** (`$r.exitCode`,
+  `$line.from.x = 5;`) work exactly as for user-defined
+  structs; no new evaluator path is needed beyond the
+  type-resolution change.
+
+**Strict at boundaries.** Unknown namespaced struct type at
+declaration, missing or unknown field at the literal, field-type
+mismatch on write, field access on a non-struct value are all
+positioned runtime errors - same rule as M13.1 user-defined
+structs.
+
+User code may not register namespaced structs - the API is
+Go-side only. Programs that need to declare their own structs
+keep using the M13.1 `def struct Name { ... };` bare form.
+
+## M15.3 - `os` external-program execution
+
+Lands after M15.2 so the result and handle types can ship as
+`os.Result` and `os.Process` cleanly. Depends on M13.1
+(structs), M15.1 (the rest of `os`), and M15.2 (the language
+mechanism above).
+
+- `os.Result { exitCode as int, stdout as string, stderr as
+  string }` - what a command produced. Registered via the new
+  namespaced-struct API in M15.2.
+- `os.Process { ... }` - opaque handle for an async child.
+  Field shape (pid, internal state) is private API; users
+  interact through the function set below.
+
+**Argument-list form, no shell.** Every variant takes the
+command as a `list of string` (argv-style: program name plus
+arguments). This avoids shell-injection footguns. If a user
+genuinely wants shell parsing they pass `["sh", "-c", $cmd]`
+explicitly - making the shell hop visible at the call site.
+
+- `os.run(argv) -> os.Result` - **blocking**. Runs the command
+  to completion, captures stdout and stderr into the result,
+  returns the exit code. The interpreter's stdin is not passed
+  through; explicit stdin variant ships in a later sub-milestone
+  if demand surfaces.
 - `os.spawn(argv) -> os.Process` - **non-blocking**. Starts the
   command and returns immediately with a handle. Streams are
   buffered internally; the caller drains them through
@@ -760,7 +858,7 @@ the call site.
 - `os.kill(p as os.Process)` - request termination of `$p`
   (SIGTERM on POSIX). A subsequent `os.wait` returns the result
   the OS reports for a terminated child. Signal variants beyond
-  SIGTERM are out of scope for M15.1.
+  SIGTERM are out of scope.
 
 Errors at the boundary (program not found, not executable,
 permission denied, fork/exec failure) are positioned runtime
@@ -769,7 +867,7 @@ errors at the `os.run` / `os.spawn` site, matching the
 errors - they're values in `os.Result.exitCode`; the caller
 decides whether to branch on them.
 
-## M15.2 - `time`
+## M15.4 - `time`
 
 One library covering both date and time concerns through a single
 zone-aware instant type, plus a separate span type for differences.
@@ -790,9 +888,9 @@ of the value's type.
 Unix timestamps are **not** a separate type; they're a
 constructor (`time.fromUnix(n)`) and accessor
 (`$t.unix() -> int`). Same shape for ISO 8601 strings and any
-other wire format added in M15.2.2.
+other wire format added in M15.4.2.
 
-### M15.2.1 - core type, arithmetic, Unix
+### M15.4.1 - core type, arithmetic, Unix
 
 - `def struct time.Time { ... };` - opaque struct representing
   an instant on the wall-clock timeline with nanosecond
@@ -834,10 +932,10 @@ other wire format added in M15.2.2.
   `time.seconds($d)`, `time.milliseconds($d)`,
   `time.minutes($d)`, `time.hours($d)`.
 
-### M15.2.2 - formatting, parsing, timezones
+### M15.4.2 - formatting, parsing, timezones
 
 - `time.format($t, layout as string) -> string` - layout
-  language settled at the start of M15.2.2 (`strftime`-style
+  language settled at the start of M15.4.2 (`strftime`-style
   vs Go's reference-time style; the former wins on
   familiarity, the latter on copy-paste reliability).
 - `time.parse(s as string, layout as string) -> time.Time` -
@@ -850,10 +948,10 @@ other wire format added in M15.2.2.
   IANA database (`"Europe/Vienna"`, `"America/Los_Angeles"`).
   TinyGo footprint of the tz database evaluated honestly
   before commitment; if too heavy, ship only fixed offsets
-  in M15.2.2 and defer IANA loading until embedding decisions
+  in M15.4.2 and defer IANA loading until embedding decisions
   settle.
 
-## M15.3 - `hash` and `crc`
+## M15.5 - `hash` and `crc`
 
 Common digests over `bytes` (MD5, SHA-1, SHA-256, CRC32, CRC64).
 Pure compute, no external dependencies. Crypto-relevant primitives
@@ -898,7 +996,7 @@ relevant library (`json`, `csv`, future `cbor`) and hash the
 resulting bytes; the `hash` library has no opinion on struct
 layout.
 
-## M15.4 - `encoding`
+## M15.6 - `encoding`
 
 Codec library: byte-stream introspection plus the lossless
 re-encoding codecs beyond UTF-8. The cross-kind `bytes <-> string`
@@ -934,7 +1032,7 @@ don't validly decode in the named codec, or (c) string runes
 that don't representably encode (e.g. a string containing
 `U+1F600` into Latin-1).
 
-**Codec set shipped in M15.4.** All single-byte (and ASCII), so
+**Codec set shipped in M15.6.** All single-byte (and ASCII), so
 each costs at most one 256-entry table:
 
 - **`"ascii"`** - 7-bit ASCII; rejects any byte >= 0x80 on decode
@@ -970,7 +1068,7 @@ with the hyphen form. Common aliases (`"latin-1"` for
 `"iso-8859-1"`, `"cp1252"` for `"windows-1252"`) are accepted on
 input.
 
-**What stays out of M15.4 (deferred to later milestones).**
+**What stays out of M15.6 (deferred to later milestones).**
 
 - Variable-width Asian encodings: `Shift-JIS`, `Big5`, `GB2312`,
   `GBK`, `GB18030`, `EUC-JP`, `EUC-KR`. Each is a state-machine
@@ -986,10 +1084,10 @@ input.
 These ship in their own sub-milestone once a real Jennifer
 program needs them - currently no roadmap item depends on them.
 
-## M15.5 - distribution + first public release
+## M15.7 - distribution + first public release
 
 The last step before Phase C. Phase B finishes the foundational
-library batch; M15.5 makes that batch a thing people can actually
+library batch; M15.7 makes that batch a thing people can actually
 install and run before Phase C starts adding I/O on top. The
 items below have been on the parallel "Path to 1.0.0
 distribution" track for a while; promoting them to a real
@@ -1058,12 +1156,12 @@ decision is documented in one place.
 
 GitHub Pages driven from `docs/` (mdBook is the leading
 candidate; needs a design pass for the navigation/landing
-shape). The site goes live with M15.5 so the release
+shape). The site goes live with M15.7 so the release
 announcement has somewhere to link to that isn't a GitHub
 file tree. Versioned per release tag.
 
 **What stays on the "Path to 1.0.0 distribution" parallel
-track** (post-M15.5 polish, not gated on this milestone):
+track** (post-M15.7 polish, not gated on this milestone):
 
 - Homebrew tap for macOS users
 - Snap package
@@ -1467,7 +1565,7 @@ Sub-milestones in priority order:
 
 Symmetric and asymmetric primitives, key derivation,
 crypto-grade random. System library; TinyGo-safe primitives
-only. Hashes already shipped in M15.3.
+only. Hashes already shipped in M15.5.
 
 ## M20 - `httpd`
 
@@ -1511,8 +1609,8 @@ some of this space first.
 ## Path to 1.0.0 distribution (parallel track)
 
 The core CI + release + packaging items that used to live here
-were promoted into M15.5 (the last step before Phase C). What
-stays on this parallel track is the post-M15.5 polish - items
+were promoted into M15.7 (the last step before Phase C). What
+stays on this parallel track is the post-M15.7 polish - items
 that can land any time and don't block any milestone:
 
 - **Homebrew tap** for macOS users.
@@ -1522,7 +1620,7 @@ that can land any time and don't block any milestone:
   platform-portability work in the Long-horizon list; ships as
   soon as that lands.
 - **Real apt repository** (replacing the "GitHub Release
-  artifact" install of the M15.5 `.deb`) if user demand
+  artifact" install of the M15.7 `.deb`) if user demand
   warrants the maintenance.
 - **Snap / Flatpak**, **AppImage**, or any other Linux
   distribution format Jennifer users actually ask for.

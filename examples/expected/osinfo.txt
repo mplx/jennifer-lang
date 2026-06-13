@@ -1,9 +1,11 @@
 bare prefix:
-  os.platform()       = linux
-  os.JENNIFER_OS      = linux
+  os.PLATFORM = linux
+  os.ARCH     = amd64
+  os.DIRSEP   = /
+  os.PATHSEP  = :
 aliased prefix (`use os as o;`):
-  o.platform()        = linux
-  o.JENNIFER_OS       = linux
+  o.PLATFORM  = linux
+  o.ARCH      = amd64
 aliased prefix (`use os as convert;`):
-  convert.platform()        = linux
-  convert.JENNIFER_OS       = linux
+  convert.PLATFORM = linux
+  convert.ARCH     = amd64
