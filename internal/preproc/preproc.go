@@ -60,7 +60,28 @@ func Process(tokens []lexer.Token, baseDir, selfPath string) ([]lexer.Token, err
 			visited[abs] = true
 		}
 	}
+	// M14: trivia tokens (comments, blank lines) carry no semantic
+	// content. Drop them here so the include / use / import
+	// recognizers can rely on adjacent tokens being meaningful. The
+	// formatter doesn't go through the preprocessor; the parser
+	// strips any survivors as a defensive last step.
+	tokens = stripTrivia(tokens)
 	return processTokens(tokens, baseDir, visited)
+}
+
+func stripTrivia(toks []lexer.Token) []lexer.Token {
+	out := toks[:0]
+	for _, t := range toks {
+		switch t.Type {
+		case lexer.TOKEN_COMMENT_LINE,
+			lexer.TOKEN_COMMENT_BLOCK,
+			lexer.TOKEN_COMMENT_SHEBANG,
+			lexer.TOKEN_BLANK_LINE:
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 func processTokens(tokens []lexer.Token, baseDir string, visited map[string]bool) ([]lexer.Token, error) {
@@ -167,12 +188,12 @@ func importReservedError(tokens []lexer.Token, i int) error {
 	if i+1 < len(tokens) && tokens[i+1].Type == lexer.TOKEN_STRING {
 		// `import "foo.j";` shape - the most common migration target.
 		return &PreprocessError{
-			Msg:  fmt.Sprintf("use `include %q;` for textual file splicing; the `import` keyword is reserved for the module system landing in M17", tokens[i+1].Lexeme),
+			Msg:  fmt.Sprintf("use `include %q;` for textual file splicing; the `import` keyword is reserved for the planned module system", tokens[i+1].Lexeme),
 			File: imp.File, Line: imp.Line, Col: imp.Col,
 		}
 	}
 	return &PreprocessError{
-		Msg:  "the `import` keyword is reserved for the module system landing in M17; use `include \"path.j\";` for textual file splicing",
+		Msg:  "the `import` keyword is reserved for the planned module system; use `include \"path.j\";` for textual file splicing",
 		File: imp.File, Line: imp.Line, Col: imp.Col,
 	}
 }

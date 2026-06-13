@@ -84,6 +84,9 @@ func TestTokenizeNumbersAndOperators(t *testing.T) {
 }
 
 func TestTokenizeComments(t *testing.T) {
+	// M14: comments and blank lines are emitted as trivia tokens; the
+	// parser skips them at statement boundaries but the formatter
+	// round-trips them.
 	src := `# line comment
 include /* block */ stdlib; # trailing
 /* multi
@@ -93,7 +96,17 @@ def`
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	want := []TokenType{TOKEN_INCLUDE, TOKEN_IDENT, TOKEN_SEMI, TOKEN_DEFINE, TOKEN_EOF}
+	want := []TokenType{
+		TOKEN_COMMENT_LINE,
+		TOKEN_INCLUDE,
+		TOKEN_COMMENT_BLOCK,
+		TOKEN_IDENT,
+		TOKEN_SEMI,
+		TOKEN_COMMENT_LINE,
+		TOKEN_COMMENT_BLOCK,
+		TOKEN_DEFINE,
+		TOKEN_EOF,
+	}
 	if len(toks) != len(want) {
 		t.Fatalf("got %d tokens, want %d: %v", len(toks), len(want), toks)
 	}
@@ -101,6 +114,70 @@ def`
 		if toks[i].Type != w {
 			t.Errorf("tok %d: got %s, want %s", i, toks[i].Type, w)
 		}
+	}
+}
+
+func TestTokenizeShebang(t *testing.T) {
+	// Line 1 col 1 `#!` is TOKEN_COMMENT_SHEBANG; an ordinary `#` on
+	// line 1 below is TOKEN_COMMENT_LINE.
+	src := "#!/usr/bin/env jennifer\n# normal\ndef"
+	toks, err := Tokenize(src)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	want := []TokenType{
+		TOKEN_COMMENT_SHEBANG,
+		TOKEN_COMMENT_LINE,
+		TOKEN_DEFINE,
+		TOKEN_EOF,
+	}
+	if len(toks) != len(want) {
+		t.Fatalf("got %d tokens, want %d: %v", len(toks), len(want), toks)
+	}
+	for i, w := range want {
+		if toks[i].Type != w {
+			t.Errorf("tok %d: got %s, want %s", i, toks[i].Type, w)
+		}
+	}
+	if toks[0].Lexeme != "#!/usr/bin/env jennifer" {
+		t.Errorf("shebang lexeme = %q", toks[0].Lexeme)
+	}
+}
+
+func TestTokenizeBlankLineCollapses(t *testing.T) {
+	// Multiple consecutive blank lines collapse into one
+	// TOKEN_BLANK_LINE so the formatter never emits more than one
+	// consecutive blank line on output.
+	src := "def\n\n\n\ndef"
+	toks, err := Tokenize(src)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	want := []TokenType{TOKEN_DEFINE, TOKEN_BLANK_LINE, TOKEN_DEFINE, TOKEN_EOF}
+	if len(toks) != len(want) {
+		t.Fatalf("got %d tokens, want %d: %v", len(toks), len(want), toks)
+	}
+	for i, w := range want {
+		if toks[i].Type != w {
+			t.Errorf("tok %d: got %s, want %s", i, toks[i].Type, w)
+		}
+	}
+}
+
+func TestTokenizeNestedBlockComment(t *testing.T) {
+	// M14: block comments nest. A `/*` inside a block comment
+	// increments the depth counter; only matching `*/`s close.
+	src := "def /* outer /* inner */ still in outer */ def"
+	toks, err := Tokenize(src)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	want := []TokenType{TOKEN_DEFINE, TOKEN_COMMENT_BLOCK, TOKEN_DEFINE, TOKEN_EOF}
+	if len(toks) != len(want) {
+		t.Fatalf("got %d tokens, want %d: %v", len(toks), len(want), toks)
+	}
+	if toks[1].Lexeme != "/* outer /* inner */ still in outer */" {
+		t.Errorf("block comment lexeme = %q", toks[1].Lexeme)
 	}
 }
 

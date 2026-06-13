@@ -37,14 +37,35 @@ func Parse(source string) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &parser{tokens: toks}
+	p := &parser{tokens: stripTrivia(toks)}
 	return p.parseProgram()
 }
 
-// ParseTokens parses an already-lexed token stream.
+// ParseTokens parses an already-lexed token stream. M14: trivia
+// tokens (comments, blank lines) are stripped before parsing - they
+// pass through the formatter on the raw lexer stream and don't reach
+// here.
 func ParseTokens(toks []lexer.Token) (*Program, error) {
-	p := &parser{tokens: toks}
+	p := &parser{tokens: stripTrivia(toks)}
 	return p.parseProgram()
+}
+
+// stripTrivia drops comment and blank-line tokens. The parser doesn't
+// model comments; the formatter consumes them from the raw lexer
+// stream instead.
+func stripTrivia(toks []lexer.Token) []lexer.Token {
+	out := toks[:0]
+	for _, t := range toks {
+		switch t.Type {
+		case lexer.TOKEN_COMMENT_LINE,
+			lexer.TOKEN_COMMENT_BLOCK,
+			lexer.TOKEN_COMMENT_SHEBANG,
+			lexer.TOKEN_BLANK_LINE:
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 type parser struct {

@@ -239,7 +239,12 @@ func inputComplete(tokens []lexer.Token) bool {
 	depth := 0
 	lastIdx := -1
 	for i, t := range tokens {
-		if t.Type == lexer.TOKEN_EOF {
+		switch t.Type {
+		case lexer.TOKEN_EOF,
+			lexer.TOKEN_COMMENT_LINE,
+			lexer.TOKEN_COMMENT_BLOCK,
+			lexer.TOKEN_COMMENT_SHEBANG,
+			lexer.TOKEN_BLANK_LINE:
 			continue
 		}
 		lastIdx = i

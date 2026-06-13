@@ -190,9 +190,9 @@ func TestRejectsIncludeOfLibraryName(t *testing.T) {
 }
 
 func TestImportKeywordReserved(t *testing.T) {
-	// After M10 the pre-M10 spelling `import "x.j";` is rejected with a
+	// The pre-namespacing spelling `import "x.j";` is rejected with a
 	// migration hint pointing at `include`. The `import` keyword itself
-	// is reserved for the M17 module system.
+	// is reserved for the planned module system.
 	src := `func app() { import "foo.j"; }`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, ".", "")

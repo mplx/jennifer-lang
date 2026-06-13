@@ -18,9 +18,12 @@ import (
 // otherwise inline them) and any parentheses the user wrote (the AST
 // erases redundant grouping).
 //
-// Known v1 limitation: comments are dropped because the lexer strips them
-// at scan time. This is documented in style-guide.md; preserving comments
-// would require carrying them as tokens through the lexer.
+// M14: comments and blank lines now survive `fmt`. The lexer emits them
+// as trivia tokens (TOKEN_COMMENT_*, TOKEN_BLANK_LINE); the formatter
+// recognises each kind and re-emits it at the position it had in the
+// source. Comments inside an expression (`printf(/* note */ $x)`) are
+// supported only by-position - they are not parsed for attachment to
+// any particular subexpression.
 func runFmt(path string) int {
 	src, label, absPath, _, ok := loadProgramSource(path)
 	if !ok {
@@ -41,7 +44,11 @@ func runFmt(path string) int {
 // (including the trailing EOF). Tests call this directly; the CLI wraps
 // it with file I/O.
 func formatTokens(tokens []lexer.Token) string {
-	f := &fmtState{indent: 0}
+	// File starts at column 1 of line 1 with no output yet, which is
+	// effectively "line start" for separator purposes. M14: that makes
+	// a leading comment skip the spurious blank line that would
+	// otherwise appear before it.
+	f := &fmtState{indent: 0, atLineStart: true}
 	for i, t := range tokens {
 		if t.Type == lexer.TOKEN_EOF {
 			break
@@ -75,6 +82,13 @@ type fmtState struct {
 	// `}` a block close or a map close?" after the stack was already
 	// popped. 0 if no brace has been seen yet.
 	lastBraceKind byte
+	// pendingTriviaSpace is set by emitTrivia after writing an inline
+	// block comment that should not hug the next token. writeSeparator
+	// consumes it, emitting a space before the next real token unless
+	// that next token is itself tight-on-left (`)`, `,`, `;`, ...).
+	// This is what makes `printf(/* note */ $x)` come out with the
+	// expected internal space rather than `printf( /* note */$x)`.
+	pendingTriviaSpace bool
 }
 
 const (
@@ -85,6 +99,18 @@ const (
 const fmtIndent = "    " // 4 spaces, per style-guide.md
 
 func (f *fmtState) emit(t, next lexer.Token) {
+	// M14: trivia (comments, blank lines) is emitted by a dedicated
+	// path that doesn't touch the prev/operand/brace state. That keeps
+	// unary-vs-binary and brace classification working as if the
+	// trivia weren't there.
+	switch t.Type {
+	case lexer.TOKEN_COMMENT_SHEBANG,
+		lexer.TOKEN_COMMENT_LINE,
+		lexer.TOKEN_COMMENT_BLOCK,
+		lexer.TOKEN_BLANK_LINE:
+		f.emitTrivia(t)
+		return
+	}
 	// Classify `{` before writing it: prev token decides whether this is
 	// a block opener (after `)` or `else`) or a map literal (anywhere
 	// else - the parser only allows `{` in expression position when it's
@@ -130,6 +156,78 @@ func (f *fmtState) emit(t, next lexer.Token) {
 	}
 }
 
+// emitTrivia handles comments and blank lines. It writes only output -
+// it does NOT touch prev/lastBraceKind/prevIsOperand/prevIsUnaryMinus
+// so the surrounding state machine continues to see the most recent
+// regular token. atLineStart IS updated because the separator logic
+// for the next regular token reads it to decide whether to skip a
+// leading separator.
+func (f *fmtState) emitTrivia(t lexer.Token) {
+	switch t.Type {
+	case lexer.TOKEN_COMMENT_SHEBANG:
+		// Shebang must be at file head, col 1. Re-emit verbatim and
+		// move to a new line.
+		f.out.WriteString(t.Lexeme)
+		f.out.WriteByte('\n')
+		f.atLineStart = true
+	case lexer.TOKEN_COMMENT_LINE:
+		// A line comment on the same source line as the previous real
+		// token is a trailing comment; one on its own line is a leading
+		// comment. Trailing: ` # ...`. Leading: indent + ` # ...`.
+		// Either way, the line ends after the comment.
+		if f.hasPrev && f.prev.Line == t.Line {
+			f.out.WriteByte(' ')
+		} else if !f.atLineStart {
+			f.newline()
+		}
+		f.out.WriteString(t.Lexeme)
+		f.out.WriteByte('\n')
+		// Next real token starts a fresh line at the current indent.
+		for i := 0; i < f.indent; i++ {
+			f.out.WriteString(fmtIndent)
+		}
+		f.atLineStart = true
+	case lexer.TOKEN_COMMENT_BLOCK:
+		// Block comments emit inline. A multi-line block comment
+		// re-emits its body verbatim - the formatter doesn't try to
+		// re-indent the inner lines (v1 limitation).
+		//
+		// Leading-space rule: emit a space before the comment unless
+		// the previous token was a tight-on-right operator (`(`, `[`,
+		// `.`) - those would normally hug the next token, and the
+		// comment inherits that behaviour. Same for the start of file
+		// / start of line.
+		needLeadingSpace := f.hasPrev && !f.atLineStart && !tightOnRight(f.prev.Type)
+		if needLeadingSpace {
+			f.out.WriteByte(' ')
+		}
+		f.out.WriteString(t.Lexeme)
+		if strings.HasSuffix(t.Lexeme, "\n") {
+			f.atLineStart = true
+		} else {
+			f.atLineStart = false
+			// Force a space before the next real token (unless that
+			// token is itself tight-on-left). Without this flag, the
+			// next token's separator logic would still see prev=`(` /
+			// `[` / `.` and skip the space.
+			f.pendingTriviaSpace = true
+		}
+	case lexer.TOKEN_BLANK_LINE:
+		// End the current line if we're mid-line, then add one blank.
+		// The indent for the next real token is emitted lazily; we
+		// leave the formatter at line-start so the next separator
+		// decides what indent goes in.
+		if !f.atLineStart {
+			f.out.WriteByte('\n')
+		}
+		f.out.WriteByte('\n')
+		for i := 0; i < f.indent; i++ {
+			f.out.WriteString(fmtIndent)
+		}
+		f.atLineStart = true
+	}
+}
+
 // prevBraceKind reports the kind of the most recently emitted `{` or `}`
 // token. The brace stack itself has already popped by the time the
 // separator runs, so we cache the kind on emit.
@@ -143,6 +241,20 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 		return
 	}
 	if f.atLineStart {
+		f.pendingTriviaSpace = false
+		return
+	}
+	// M14: a preceding inline block comment forces a space before this
+	// token unless the token is itself tight-on-left (`)`, `,`, `;`,
+	// `]`, `.`, `:`).
+	if f.pendingTriviaSpace {
+		f.pendingTriviaSpace = false
+		switch t.Type {
+		case lexer.TOKEN_RPAREN, lexer.TOKEN_COMMA, lexer.TOKEN_SEMI,
+			lexer.TOKEN_DOT, lexer.TOKEN_RBRACKET, lexer.TOKEN_COLON:
+			return
+		}
+		f.out.WriteByte(' ')
 		return
 	}
 	// Statement terminator: ";" closes a statement; the next token starts
@@ -350,6 +462,18 @@ func noSpaceBeforeLParen(tt lexer.TokenType) bool {
 	case lexer.TOKEN_IDENT,
 		lexer.TOKEN_INT_TYPE, lexer.TOKEN_FLOAT_TYPE,
 		lexer.TOKEN_STRING_TYPE, lexer.TOKEN_BOOL_TYPE:
+		return true
+	}
+	return false
+}
+
+// tightOnRight reports whether a token would normally hug the
+// following token (i.e. no separator between it and what comes next).
+// `(`, `[`, `.` are the only ones; the trivia path consults this so a
+// block comment after `(` doesn't get a spurious leading space.
+func tightOnRight(tt lexer.TokenType) bool {
+	switch tt {
+	case lexer.TOKEN_LPAREN, lexer.TOKEN_LBRACKET, lexer.TOKEN_DOT:
 		return true
 	}
 	return false

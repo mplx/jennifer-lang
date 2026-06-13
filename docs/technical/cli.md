@@ -147,9 +147,12 @@ spelling (`writeToken`). Key state fields:
 Strings are re-quoted with `quoteJenniferString` (double quotes plus
 standard escapes), mirroring the lexer's `readString` on the way in.
 
-Known v1 limitations are documented in style-guide.md: comments are
-stripped by the lexer and not preserved; blank lines aren't preserved
-or auto-inserted between logical groups.
+Comments and blank lines survive a `fmt` round-trip: the lexer
+emits them as trivia tokens, and `emitTrivia` writes them inline
+without disturbing the surrounding state machine. Leading
+comments land on their own line at the current indent; trailing
+same-line comments stay on the same line; runs of blank lines
+collapse to one. Block comments may nest.
 
 ## Version injection
 

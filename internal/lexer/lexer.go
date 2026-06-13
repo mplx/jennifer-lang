@@ -78,9 +78,20 @@ func TokenizeWithFile(source, file string) ([]Token, error) {
 }
 
 // Next returns the next token. At end of input it repeatedly returns TOKEN_EOF.
+//
+// M14: comments and blank lines are emitted as trivia tokens
+// (TOKEN_COMMENT_*, TOKEN_BLANK_LINE) rather than silently skipped, so
+// the formatter can round-trip them. Regular whitespace between
+// non-trivia tokens is still skipped; blank lines (a line containing
+// only whitespace) emit one TOKEN_BLANK_LINE per run, mirroring the
+// style rule "never more than one consecutive blank line". A `#!` on
+// line 1 produces TOKEN_COMMENT_SHEBANG so `jennifer fmt` can re-emit
+// it verbatim at the file head.
 func (l *Lexer) Next() (Token, error) {
-	if err := l.skipWhitespaceAndComments(); err != nil {
+	if tok, ok, err := l.nextTrivia(); err != nil {
 		return Token{}, err
+	} else if ok {
+		return tok, nil
 	}
 	if l.pos >= len(l.src) {
 		return Token{Type: TOKEN_EOF, Line: l.line, Col: l.col}, nil
@@ -214,48 +225,127 @@ func (l *Lexer) peek(offset int) (rune, bool) {
 	return l.src[idx], true
 }
 
-func (l *Lexer) skipWhitespaceAndComments() error {
+// nextTrivia consumes leading non-token material until it either
+// (a) produces one trivia token (comment or blank line), or
+// (b) reaches a non-trivia position (returns ok=false so the caller
+//     can read a regular token).
+//
+// Non-newline whitespace is silently skipped. Newlines are tracked
+// so a line containing only whitespace can be reported as a blank
+// line; consecutive blank lines collapse into one TOKEN_BLANK_LINE.
+// The shebang `#!` on line 1 col 1 is emitted as
+// TOKEN_COMMENT_SHEBANG; any other `#` is TOKEN_COMMENT_LINE.
+// `/* ... */` is TOKEN_COMMENT_BLOCK and may nest (depth counter).
+func (l *Lexer) nextTrivia() (Token, bool, error) {
+	// First, count any leading newlines (skipping intervening spaces /
+	// tabs / carriage returns) so we can decide whether a blank line
+	// is present. We need at least two newlines to call something a
+	// blank line - one terminates the previous logical line, any
+	// further newline (with only whitespace between) is a blank.
+	startLine, startCol := l.line, l.col
+	newlines := 0
 	for l.pos < len(l.src) {
 		ch := l.src[l.pos]
-		if unicode.IsSpace(ch) {
+		if ch == '\n' {
+			newlines++
 			l.advance()
 			continue
 		}
-		if ch == '#' {
-			// `#` line comment - runs to end of line. Lets `#!/usr/bin/env -S
-			// jennifer run` work as a shebang since the kernel reads the line
-			// and the interpreter then sees it as a comment.
-			for l.pos < len(l.src) && l.src[l.pos] != '\n' {
-				l.advance()
-			}
+		if ch == ' ' || ch == '\t' || ch == '\r' {
+			l.advance()
 			continue
 		}
+		break
+	}
+	if newlines >= 2 {
+		// Emit one blank-line token. Subsequent newlines (after we
+		// already consumed them above) collapse into the same one.
+		return Token{Type: TOKEN_BLANK_LINE, Line: startLine, Col: startCol}, true, nil
+	}
+	// No blank line. We may now be at a comment or at a normal token.
+	if l.pos >= len(l.src) {
+		return Token{}, false, nil
+	}
+	ch := l.src[l.pos]
+	if ch == '#' {
+		return l.readLineComment(), true, nil
+	}
+	if ch == '/' {
+		if next, ok := l.peek(1); ok && next == '*' {
+			return l.readBlockComment()
+		}
+		// `//` is the integer-division operator, not a comment.
+	}
+	return Token{}, false, nil
+}
+
+// readLineComment consumes a `#`-introduced line comment and returns
+// the matching token. A `#!` on line 1 col 1 is reported as
+// TOKEN_COMMENT_SHEBANG so the formatter can re-emit the shebang
+// verbatim at the file head. Lexeme includes the leading `#` (or
+// `#!`) so a verbatim round-trip is possible.
+func (l *Lexer) readLineComment() Token {
+	startLine, startCol := l.line, l.col
+	isShebang := startLine == 1 && startCol == 1
+	if isShebang {
+		if next, ok := l.peek(1); !ok || next != '!' {
+			isShebang = false
+		}
+	}
+	var b strings.Builder
+	for l.pos < len(l.src) && l.src[l.pos] != '\n' {
+		b.WriteRune(l.src[l.pos])
+		l.advance()
+	}
+	kind := TOKEN_COMMENT_LINE
+	if isShebang {
+		kind = TOKEN_COMMENT_SHEBANG
+	}
+	return Token{Type: kind, Lexeme: b.String(), Line: startLine, Col: startCol}
+}
+
+// readBlockComment consumes a `/* ... */` block comment. M14: nested
+// block comments are now legal; the scanner uses a depth counter
+// (increment on `/*`, decrement on `*/`, exit when depth hits 0).
+// Unterminated comments still error positionally at the outermost
+// `/*` so the message points at where the user meant to start.
+func (l *Lexer) readBlockComment() (Token, bool, error) {
+	startLine, startCol := l.line, l.col
+	var b strings.Builder
+	b.WriteRune('/')
+	b.WriteRune('*')
+	l.advance() // /
+	l.advance() // *
+	depth := 1
+	for depth > 0 {
+		if l.pos >= len(l.src) {
+			return Token{}, false, &LexError{File: l.file, Msg: "unterminated block comment", Line: startLine, Col: startCol}
+		}
+		ch := l.src[l.pos]
 		if ch == '/' {
 			if next, ok := l.peek(1); ok && next == '*' {
-				startLine, startCol := l.line, l.col
-				l.advance() // /
-				l.advance() // *
-				for {
-					if l.pos >= len(l.src) {
-						return &LexError{File: l.file, Msg: "unterminated block comment", Line: startLine, Col: startCol}
-					}
-					if l.src[l.pos] == '*' {
-						if next, ok := l.peek(1); ok && next == '/' {
-							l.advance()
-							l.advance()
-							break
-						}
-					}
-					l.advance()
-				}
+				b.WriteRune('/')
+				b.WriteRune('*')
+				l.advance()
+				l.advance()
+				depth++
 				continue
 			}
-			// Note: `//` is no longer a comment - it's the integer-division
-			// operator (see the SLASH/SLASH dispatch in Next()).
 		}
-		return nil
+		if ch == '*' {
+			if next, ok := l.peek(1); ok && next == '/' {
+				b.WriteRune('*')
+				b.WriteRune('/')
+				l.advance()
+				l.advance()
+				depth--
+				continue
+			}
+		}
+		b.WriteRune(ch)
+		l.advance()
 	}
-	return nil
+	return Token{Type: TOKEN_COMMENT_BLOCK, Lexeme: b.String(), Line: startLine, Col: startCol}, true, nil
 }
 
 func (l *Lexer) readString(quote rune, startLine, startCol int) (Token, error) {

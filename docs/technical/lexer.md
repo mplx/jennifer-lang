@@ -52,9 +52,12 @@ the string value. Escape sequences (`\n`, `\t`, ...) are the
 conventional spelling; raw multi-line literals work too but aren't
 the canonical form `fmt` produces.
 
-Comments are also whitespace-like for parsing purposes: `# ...` to
-end of line and `/* ... */` are skipped after they're recognised,
-producing no token. See [Comments](#comments) below.
+Comments and blank lines are emitted as **trivia tokens**
+(`TOKEN_COMMENT_LINE`, `TOKEN_COMMENT_BLOCK`,
+`TOKEN_COMMENT_SHEBANG`, `TOKEN_BLANK_LINE`) so `jennifer fmt`
+can round-trip them. The preprocessor and parser strip these
+tokens at entry; the formatter walks the raw lexer stream. See
+[Comments](#comments) below.
 
 ## Position tracking
 
@@ -75,11 +78,24 @@ over floor division.
 
 ## Comments
 
-`# ...` runs to end of line. `/* ... */` is non-nesting and reports an
-"unterminated block comment" error if unclosed. `#` was chosen (over the
-C/Java `//` style) so the floor-division operator `//` is unambiguous and
-a Jennifer file can begin with a Unix shebang
-(`#!/usr/bin/env -S jennifer run`).
+`# ...` runs to end of line and emits `TOKEN_COMMENT_LINE`; the special
+case of `#!` on line 1 col 1 emits `TOKEN_COMMENT_SHEBANG` instead so
+the formatter can re-emit the shebang verbatim at the file head.
+`/* ... */` emits `TOKEN_COMMENT_BLOCK` and **nests** via a depth
+counter (increment on `/*`, decrement on `*/`, exit at depth 0).
+Unterminated nested comments error positionally at the outermost `/*`
+so the message points at where the user meant to start.
+
+Each comment token's `Lexeme` carries the verbatim source text
+including the delimiters (`# ...`, `/* ... */`, `#! ...`) so the
+formatter round-trips byte-for-byte.
+
+Runs of blank lines collapse to one `TOKEN_BLANK_LINE` per run -
+matching the style rule "never more than one consecutive blank line".
+
+`#` was chosen (over the C/Java `//` style) so the floor-division
+operator `//` is unambiguous and a Jennifer file can begin with a
+Unix shebang (`#!/usr/bin/env -S jennifer run`).
 
 ## Identifier rule
 

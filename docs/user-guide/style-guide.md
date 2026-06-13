@@ -145,7 +145,16 @@ user-method pool even when aliasing has technically freed it.
   thing they describe. The very first line may be a shebang
   (`#!/usr/bin/env -S jennifer run`); the lexer treats it as a comment.
 - `/* block comment */` for longer commentary that doesn't fit one line.
-  Block comments don't nest.
+  Block comments nest, so wrapping a chunk of code that already
+  contains a block comment in another `/* ... */` works.
+- **Inline block comments inside `(`, `[`, or after `.` get a space on
+  the operand side.** `printf(/* note */ $x)`, not
+  `printf(/* note */$x)`. This is a deliberate exception to the
+  "no space inside `()`" rule above: `*/$x` runs together visually
+  and is harder to read than the spaced form. The comment hugs the
+  opening delimiter (no space between `(` and `/*`) so only the
+  operand side picks up the space. Same rule for `[/* note */ 0]`
+  and `$obj./* doc */ field`.
 - Comments explain *why*, not *what*. The code already says what.
 
 ## Source file conventions
@@ -201,21 +210,6 @@ trim_trailing_whitespace = true
 insert_final_newline = true
 ```
 
-## Limitations
-
-`jennifer fmt` (v1) operates on the lexer's token stream and re-emits
-canonical source. As a consequence:
-
-- **Comments are dropped.** The lexer strips `#` and `/* */` at scan
-  time. Preserving them would require carrying comments as tokens, which
-  is a future enhancement.
-- **Blank lines aren't preserved or inserted.** The formatter packs
-  statements one per line at the appropriate indent without inserting
-  vertical whitespace between logical groups. You can still write blank
-  lines in source, but they don't survive a `fmt` round-trip.
-
-Both limitations are listed in `docs/milestones.md` for tracking.
-
 ## A complete example
 
 ```jennifer
@@ -233,10 +227,13 @@ for (def i as int init 0; $i <= 8; $i = $i + 1) {
 
 Everything in this example follows the rules above: 1TBS braces, 4-space
 indent, spaces around binary operators, double-quoted strings, expanded
-blocks, no blank lines (a limitation - see above). `jennifer fmt` will
-produce this output byte-for-byte from any equivalent input.
+blocks. `jennifer fmt` will produce this output byte-for-byte from any
+equivalent input.
 
-The SPDX header (`# SPDX-License-Identifier: ...`) and copyright comment
-that the project's source files carry are stripped by `fmt` today; keep
-them in version control via your normal workflow and re-apply after a
-reformat until the comment-preservation enhancement lands.
+Comments, blank lines, and the shebang on line 1 all survive a `fmt`
+round-trip. The SPDX header (`# SPDX-License-Identifier: ...`) and any
+inline `# why` notes you keep alongside the code are re-emitted at
+their original positions: leading comments stay on the line above
+their attached statement, trailing same-line comments stay on the
+same line, and runs of blank lines collapse to one (matching the
+"never more than one consecutive blank line" rule).

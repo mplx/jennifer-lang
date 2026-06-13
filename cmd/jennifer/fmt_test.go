@@ -275,3 +275,76 @@ func TestFmtSpacingRules(t *testing.T) {
 		})
 	}
 }
+
+// TestFmtPreservesComments exercises M14 trivia preservation: line
+// comments (leading and trailing), block comments, blank lines, and
+// shebang.
+func TestFmtPreservesComments(t *testing.T) {
+	cases := []struct {
+		name, src, want string
+	}{
+		{
+			"leading line comment on its own line",
+			"# top\nuse io;\n",
+			"# top\nuse io;\n",
+		},
+		{
+			"trailing line comment same source line",
+			"use io; # imports\n",
+			"use io; # imports\n",
+		},
+		{
+			"single blank line separates blocks",
+			"use io;\n\ndef x as int init 1;\n",
+			"use io;\n\ndef x as int init 1;\n",
+		},
+		{
+			"consecutive blank lines collapse to one",
+			"use io;\n\n\n\ndef x as int init 1;\n",
+			"use io;\n\ndef x as int init 1;\n",
+		},
+		{
+			"shebang stays at file head",
+			"#!/usr/bin/env -S jennifer run\nuse io;\n",
+			"#!/usr/bin/env -S jennifer run\nuse io;\n",
+		},
+		{
+			"block comment inline preserved",
+			"def x as int init /* note */ 5;\n",
+			"def x as int init /* note */ 5;\n",
+		},
+		{
+			"nested block comment",
+			"def x as int init /* outer /* inner */ still */ 5;\n",
+			"def x as int init /* outer /* inner */ still */ 5;\n",
+		},
+		{
+			"leading comment block before def",
+			"# why this matters\ndef x as int init 1;\n",
+			"# why this matters\ndef x as int init 1;\n",
+		},
+		{
+			"inline block comment between LPAREN and operand",
+			"io.printf(/* note */ $x);\n",
+			"io.printf(/* note */ $x);\n",
+		},
+		{
+			"inline block comment between operand and operator",
+			"def y as int init 1 /* foo */ + 2;\n",
+			"def y as int init 1 /* foo */ + 2;\n",
+		},
+		{
+			"inline block comment before RPAREN",
+			"io.printf($x /* trail */);\n",
+			"io.printf($x /* trail */);\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := fmtSource(t, c.src)
+			if got != c.want {
+				t.Errorf("got %q\nwant %q", got, c.want)
+			}
+		})
+	}
+}

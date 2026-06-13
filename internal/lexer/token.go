@@ -96,6 +96,18 @@ const (
 	TOKEN_BIT_NOT // ~ - bitwise NOT on int (unary)
 	TOKEN_SHL     // <<
 	TOKEN_SHR     // >>
+
+	// Trivia tokens (M14): comments and blank lines are emitted as
+	// tokens so the formatter can round-trip them. The parser skips
+	// them at statement boundaries via a wrapper around peek/advance
+	// (see parser.skipTrivia); attachment to AST nodes is done at
+	// statement boundaries as part of the parsing loop. Lexeme holds
+	// the comment text including its delimiters (`#...`, `/* ... */`,
+	// `#!...`); TOKEN_BLANK_LINE has empty Lexeme.
+	TOKEN_COMMENT_LINE    // `# ...` to end of line
+	TOKEN_COMMENT_BLOCK   // `/* ... */`, may be nested
+	TOKEN_COMMENT_SHEBANG // `#!...` on line 1 only
+	TOKEN_BLANK_LINE      // one or more blank lines collapsed into one
 )
 
 var tokenNames = map[TokenType]string{
@@ -173,6 +185,11 @@ var tokenNames = map[TokenType]string{
 	TOKEN_BIT_NOT:     "BIT_NOT",
 	TOKEN_SHL:         "SHL",
 	TOKEN_SHR:         "SHR",
+
+	TOKEN_COMMENT_LINE:    "COMMENT_LINE",
+	TOKEN_COMMENT_BLOCK:   "COMMENT_BLOCK",
+	TOKEN_COMMENT_SHEBANG: "COMMENT_SHEBANG",
+	TOKEN_BLANK_LINE:      "BLANK_LINE",
 }
 
 func (t TokenType) String() string {
