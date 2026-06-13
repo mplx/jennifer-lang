@@ -54,6 +54,11 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "getEnv", getEnvFn)
 	in.RegisterNamespaced(LibraryName, "hasFlag", hasFlagFn)
 	in.RegisterNamespaced(LibraryName, "flag", flagFn)
+	in.RegisterNamespaced(LibraryName, "run", runFn)
+	in.RegisterNamespaced(LibraryName, "spawn", spawnFn)
+	in.RegisterNamespaced(LibraryName, "wait", waitFn)
+	in.RegisterNamespaced(LibraryName, "poll", pollFn)
+	in.RegisterNamespaced(LibraryName, "kill", killFn)
 
 	in.RegisterNamespacedConst(LibraryName, "PLATFORM", interpreter.StringVal(runtime.GOOS))
 	in.RegisterNamespacedConst(LibraryName, "ARCH", interpreter.StringVal(runtime.GOARCH))
@@ -61,6 +66,17 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespacedConst(LibraryName, "DIRSEP", interpreter.StringVal(string(stdos.PathSeparator)))
 	in.RegisterNamespacedConst(LibraryName, "PATHSEP", interpreter.StringVal(string(stdos.PathListSeparator)))
 	in.RegisterNamespacedConst(LibraryName, "ARGS", argsConstant())
+
+	// M15.3: external-program execution result/handle types.
+	str := parser.PrimitiveType(parser.TypeString)
+	in.RegisterNamespacedStruct(LibraryName, "Result", []parser.StructField{
+		{Name: "exitCode", Type: parser.PrimitiveType(parser.TypeInt)},
+		{Name: "stdout", Type: str},
+		{Name: "stderr", Type: str},
+	})
+	in.RegisterNamespacedStruct(LibraryName, "Process", []parser.StructField{
+		{Name: "pid", Type: parser.PrimitiveType(parser.TypeInt)},
+	})
 }
 
 // argsConstant materialises a Jennifer `list of string` for `os.ARGS`.

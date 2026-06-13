@@ -724,108 +724,75 @@ See:
 
 **Status:** done.
 
-A language milestone slotted inside Phase B because the next wave
-of libraries (M15.3 os execution, M15.4 time, M15.5 hash
-streaming, M16.1 fs, M16.2 net, M16.3 regex) all want to ship
-their own struct types and the M13.1 struct mechanism only
-handles bare-IDENT names. Ships before any consumer so each of
-those library milestones can adopt the namespaced form cleanly
-at first build instead of migrating later from a flat-name
-placeholder.
+A language milestone slotted inside Phase B because the next
+wave of libraries (M15.3 os execution, M15.4 time, M15.5 hash
+streaming, M16.1 fs, M16.2 net, M16.3 regex) all need their own
+struct types and the M13.1 mechanism only handles bare-IDENT
+names.
 
-**The problem.** M13.1 lets user code write
-`def struct Point { ... };` and use `Point` as a bare type name.
-A library that wants to ship `os.Result` has to either (a)
-register the struct under the bare name `Result` (pollutes the
-global struct namespace; collides with user-defined `Result`)
-or (b) wait for the language to support `lib.StructName` in type
-position.
-
-**Scope.**
-
-- **Type grammar extension.** `def x as lib.Name;` and
-  `def x as lib.Name init lib.Name{ ... };` parse and resolve
-  against the namespaced struct table. `structType` grammar
-  becomes `IDENT [ "." IDENT ]`.
-- **Struct-literal extension.** `lib.Name{ field: expr, ... }`
-  works in expression position, the same shape as the M13.1
+- Type grammar extension: `def x as lib.Name;` parses; resolves
+  against the namespaced struct table at runtime.
+- Struct-literal extension: `lib.Name{ field: expr, ... }`
+  works in expression position with the same shape as the M13.1
   bare form.
-- **Library registration API.** New
-  `Interpreter.RegisterNamespacedStruct(libName, structName,
-  fields)` mirrors the existing
-  `RegisterNamespaced` / `RegisterNamespacedConst` pattern. The
-  struct definition lives behind `lib.` prefix at use sites,
-  active only after `use lib;`.
-- **Aliasing.** `use lib as l;` renames the prefix at the use
-  site; `l.Name` resolves the same way namespaced functions
-  already do.
-- **No methods on structs.** Out of scope - still goes through
-  the `lib.func(struct)` accessor pattern documented in
-  [rejected.md > Methods on structs](technical/rejected.md#methods-on-structs).
-- **No struct inheritance / open structs.** Out of scope -
-  every library-provided struct has a fixed shape known at
-  registration time.
-- **Field access and chained lvalues** (`$r.exitCode`,
-  `$line.from.x = 5;`) work exactly as for user-defined
-  structs; no new evaluator path is needed beyond the
-  type-resolution change.
+- New Go-side API `Interpreter.RegisterNamespacedStruct(libName,
+  structName, fields)` parallel to `RegisterNamespaced` /
+  `RegisterNamespacedConst`. Active only after `use lib;`.
+- Aliasing (`use lib as l;`) works in both type and literal
+  position; values canonicalise to the underlying namespace so
+  equality stays consistent.
+- Field access, chained lvalues, value semantics, deep `const`,
+  strict-at-boundaries checks all reuse the M13.1 machinery -
+  only the type-resolution path differs.
+- User code may not register namespaced structs; the API is
+  Go-side only. Methods on structs and inheritance remain out
+  of scope.
 
-**Strict at boundaries.** Unknown namespaced struct type at
-declaration, missing or unknown field at the literal, field-type
-mismatch on write, field access on a non-struct value are all
-positioned runtime errors - same rule as M13.1 user-defined
-structs.
-
-User code may not register namespaced structs - the API is
-Go-side only. Programs that need to declare their own structs
-keep using the M13.1 `def struct Name { ... };` bare form.
+See:
+- [technical/grammar.md](technical/grammar.md) - extended
+  `structType` and `structLit` EBNF.
+- [technical/interpreter.md](technical/interpreter.md#library-provided-namespaced-structs-m152) -
+  `NSStructs` table, resolution path, alias canonicalisation.
+- `internal/interpreter/namespaced_struct_test.go` exercises
+  the surface via a synthetic `widgets` namespace.
 
 ## M15.3 - `os` external-program execution
 
-Lands after M15.2 so the result and handle types can ship as
-`os.Result` and `os.Process` cleanly. Depends on M13.1
-(structs), M15.1 (the rest of `os`), and M15.2 (the language
-mechanism above).
+**Status:** done.
 
-- `os.Result { exitCode as int, stdout as string, stderr as
-  string }` - what a command produced. Registered via the new
-  namespaced-struct API in M15.2.
-- `os.Process { ... }` - opaque handle for an async child.
-  Field shape (pid, internal state) is private API; users
-  interact through the function set below.
+Lands after M15.2 so result and handle types ship as `os.Result`
+and `os.Process` cleanly. First library to use the M15.2
+namespaced-struct mechanism.
 
-**Argument-list form, no shell.** Every variant takes the
-command as a `list of string` (argv-style: program name plus
-arguments). This avoids shell-injection footguns. If a user
-genuinely wants shell parsing they pass `["sh", "-c", $cmd]`
-explicitly - making the shell hop visible at the call site.
+- `os.Result {exitCode, stdout, stderr}` - what a command produced.
+- `os.Process {pid}` - opaque handle for an async child (other
+  fields are Go-side implementation detail).
+- `os.run(argv) -> os.Result` - blocking, captures streams.
+- `os.spawn(argv) -> os.Process` - non-blocking; background goroutine
+  records the result.
+- `os.wait(p) -> os.Result` - blocks until exit; idempotent.
+- `os.poll(p) -> bool` - non-blocking; true once `wait` would return
+  immediately.
+- `os.kill(p)` - sends SIGTERM. Signal variants out of scope.
+- `argv` is always a `list of string` (no shell parsing - explicit
+  `["sh", "-c", $cmd]` for the shell hop).
+- Non-zero exit codes are values, not errors. Only boundary
+  failures (program not found, fork/exec failure) raise positioned
+  runtime errors.
+- **TinyGo limitation.** TinyGo's runtime doesn't implement
+  `os/exec`; the shipping binary surfaces a friendly
+  "rebuild with the Go toolchain" error rather than the cryptic
+  TinyGo panic. First place Jennifer's two-binary story becomes
+  user-visible; future I/O work in `fs` / `net` will hit the same
+  boundary.
 
-- `os.run(argv) -> os.Result` - **blocking**. Runs the command
-  to completion, captures stdout and stderr into the result,
-  returns the exit code. The interpreter's stdin is not passed
-  through; explicit stdin variant ships in a later sub-milestone
-  if demand surfaces.
-- `os.spawn(argv) -> os.Process` - **non-blocking**. Starts the
-  command and returns immediately with a handle. Streams are
-  buffered internally; the caller drains them through
-  `os.wait` / `os.poll`.
-- `os.wait(p as os.Process) -> os.Result` - block until `$p`
-  terminates, then return its `os.Result`. Subsequent waits on
-  the same handle return the same result (idempotent).
-- `os.poll(p as os.Process) -> bool` - `true` once `$p` has
-  terminated and an `os.wait` will return immediately. Pure
-  predicate, no side effects.
-- `os.kill(p as os.Process)` - request termination of `$p`
-  (SIGTERM on POSIX). A subsequent `os.wait` returns the result
-  the OS reports for a terminated child. Signal variants beyond
-  SIGTERM are out of scope.
-
-Errors at the boundary (program not found, not executable,
-permission denied, fork/exec failure) are positioned runtime
-errors at the `os.run` / `os.spawn` site, matching the
-"strict at boundaries" stance. Non-zero exit codes are **not**
-errors - they're values in `os.Result.exitCode`; the caller
-decides whether to branch on them.
+See:
+- [libraries/os.md](libraries/os.md) - "External programs"
+  section: full surface, idempotency, no-shell-parsing rule,
+  non-zero-exit-is-a-value rule, stream-buffering caveat,
+  TinyGo limitation.
+- `examples/exec.j` - walkthrough of all five functions
+  (not part of the golden test suite; deterministic output).
 
 ## M15.4 - `time`
 

@@ -54,10 +54,13 @@ branch on this value.
 | `"go"`     | Built with the standard Go toolchain (`gc`)   |
 | `"tinygo"` | Built with TinyGo (the shipping binary today) |
 
-The shipping binary produced by `make build` is always `"tinygo"`. Dev
-builds via `make build-go` or `go run` are `"go"`. If a future
-alternative compiler shows up, its identifier passes through directly
-rather than being normalised - so the constant always reports honestly
+`make build` produces both binaries: the shipping `jennifer` binary
+(TinyGo, `meta.BUILD == "tinygo"`) and `jennifer-go` (standard Go,
+`meta.BUILD == "go"`). `make build-tinygo` and `make build-go`
+produce only one each. `go run` against the source also reports
+`"go"`. If a future alternative compiler shows up, its identifier
+passes through directly rather than being normalised - so the
+constant always reports honestly
 what built the binary.
 
 ## Build flow

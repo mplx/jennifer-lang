@@ -1,7 +1,11 @@
 # TinyGo notes
 
-The interpreter ships as a TinyGo binary: `make build` (preferred,
-regenerates the version file) or `tinygo build -o jennifer ./cmd/jennifer`.
+The interpreter ships as a TinyGo binary named `jennifer`.
+`make build` produces both binaries side by side:
+the TinyGo `jennifer` (shipping) and the standard-Go `jennifer-go`
+(dev/full-feature). To produce only one, use `make build-tinygo`
+or `make build-go`. All three regenerate the version file before
+compiling.
 
 A few constraints shape the implementation:
 
@@ -22,9 +26,10 @@ A few constraints shape the implementation:
 - **`testing` runs under regular `go test`.** TinyGo's `testing` support
   is partial; we develop and verify with `go test ./...`.
 
-Verify the TinyGo build after non-trivial changes:
+Verify both builds after non-trivial changes:
 
 ```sh
 make build
-./jennifer run examples/hello.j
+./jennifer run examples/hello.j     # TinyGo binary
+./jennifer-go run examples/hello.j  # Go binary (full host features)
 ```

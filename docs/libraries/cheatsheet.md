@@ -49,6 +49,11 @@ flat lookup view, not authoritative.
 | `math.min(a, b)`                   | [math](math.md)                 | Smaller of two numbers; mixed int/float promotes to float.                                                                          |
 | `os.flag(name)`                    | [os](os.md)                     | Value following `name` in `os.ARGS`, or `""` if absent / at end. Exact-match (no `--foo=bar` parsing).                              |
 | `os.hasFlag(name)`                 | [os](os.md)                     | True if `name` appears as an exact element of `os.ARGS`.                                                                            |
+| `os.kill(p)`                       | [os](os.md)                     | Send SIGTERM to spawned process `$p`.                                                                                               |
+| `os.poll(p)`                       | [os](os.md)                     | True if spawned process `$p` has exited (a following `os.wait` returns immediately).                                                |
+| `os.run(argv)`                     | [os](os.md)                     | Blocking: run `argv` to completion, return `os.Result{exitCode, stdout, stderr}`.                                                   |
+| `os.spawn(argv)`                   | [os](os.md)                     | Non-blocking: start `argv`, return `os.Process{pid}` handle.                                                                        |
+| `os.wait(p)`                       | [os](os.md)                     | Block until spawned process `$p` exits; return `os.Result`. Idempotent.                                                             |
 | `os.getEnv(name)`                  | [os](os.md)                     | Read environment variable `name`. Unset → empty string, no error.                                                                   |
 | `math.pow(x, y)`                   | [math](math.md)                 | `x` raised to `y`; always float. Errors on NaN/Inf-producing inputs.                                                                |
 | `io.printf(value)`                 | [io](io.md)                     | Write a value's display form to stdout.                                                                                             |
