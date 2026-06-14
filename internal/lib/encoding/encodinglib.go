@@ -1,0 +1,248 @@
+// SPDX-License-Identifier: LGPL-3.0-only
+// Copyright (C) 2026 <developer@mplx.eu>
+
+// Package encodinglib implements Jennifer's `encoding` library
+// (M15.7): byte/string introspection helpers, hex/base64 round-trip,
+// and a codec table for converting Jennifer strings into single-byte
+// encodings (and back).
+//
+// The cross-kind UTF-8 codec ships with `convert`
+// (`convert.bytesFromString` / `convert.stringFromBytes`, M12); this
+// library is where the codec proliferation happens because that's
+// where the table-based implementations belong.
+//
+// M15.7 ships four codecs: `"ascii"`, `"latin-1"`, `"windows-1252"`,
+// `"ebcdic"` (IBM-1047). The long-tail single-byte codecs
+// (ISO-8859-{2..16}, Windows-{1250,1251,1253..1258}) are parked in
+// M24+ to be picked up when a real program asks for one; the
+// codec-table infrastructure is already in place for them when they
+// land.
+//
+// The Go package is named encodinglib to avoid colliding with Go's
+// standard `encoding` package, which this implementation depends on.
+package encodinglib
+
+import (
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"github.com/mplx/jennifer-lang/internal/parser"
+)
+
+// LibraryName is the namespace prefix and `use` name.
+const LibraryName = "encoding"
+
+// Install registers the M15.7 encoding surface.
+func Install(in *interpreter.Interpreter) {
+	in.RegisterNamespaced(LibraryName, "isAscii", isAsciiFn)
+	in.RegisterNamespaced(LibraryName, "lenBytes", lenBytesFn)
+	in.RegisterNamespaced(LibraryName, "lenRunes", lenRunesFn)
+
+	in.RegisterNamespaced(LibraryName, "toText", toTextFn)
+	in.RegisterNamespaced(LibraryName, "fromText", fromTextFn)
+
+	in.RegisterNamespaced(LibraryName, "encode", encodeFn)
+	in.RegisterNamespaced(LibraryName, "decode", decodeFn)
+	in.RegisterNamespaced(LibraryName, "codecs", codecsFn)
+}
+
+// ----- introspection helpers -----------------------------------------
+
+// isAsciiFn returns true iff every byte in `b` is < 0x80.
+func isAsciiFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("encoding.isAscii expects 1 argument (bytes), got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindBytes {
+		return interpreter.Null(), fmt.Errorf("encoding.isAscii: argument must be bytes, got %s", args[0].Kind)
+	}
+	for _, by := range args[0].Bytes {
+		if by >= 0x80 {
+			return interpreter.BoolVal(false), nil
+		}
+	}
+	return interpreter.BoolVal(true), nil
+}
+
+// lenBytesFn returns the UTF-8 byte length of a Jennifer string. Pair
+// this with `len(s)` (rune count) when the difference matters.
+func lenBytesFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("encoding.lenBytes expects 1 argument (string), got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("encoding.lenBytes: argument must be string, got %s", args[0].Kind)
+	}
+	return interpreter.IntVal(int64(len(args[0].Str))), nil
+}
+
+// lenRunesFn returns the rune count of UTF-8 encoded bytes; errors
+// positionally on invalid UTF-8.
+func lenRunesFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("encoding.lenRunes expects 1 argument (bytes), got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindBytes {
+		return interpreter.Null(), fmt.Errorf("encoding.lenRunes: argument must be bytes, got %s", args[0].Kind)
+	}
+	if !utf8.Valid(args[0].Bytes) {
+		return interpreter.Null(), fmt.Errorf("encoding.lenRunes: input is not valid UTF-8")
+	}
+	return interpreter.IntVal(int64(utf8.RuneCount(args[0].Bytes))), nil
+}
+
+// ----- binary-to-text encodings (toText / fromText) -----------------
+//
+// Hex, base64 (standard, RFC 4648 section 4), and base64-url (RFC
+// 4648 section 5) live in a small format table rather than getting
+// one verb each. Two reasons:
+//   - Jennifer's letters-only identifier rule rejects digits in
+//     method names, so `encoding.base64` would not parse.
+//   - The codec-table shape already used by `encoding.encode/decode`
+//     and `convert.bytesFromString` carries over (stance #1).
+
+func textEncode(format string, b []byte) (string, error) {
+	switch format {
+	case "hex":
+		return hex.EncodeToString(b), nil
+	case "base64":
+		return base64.StdEncoding.EncodeToString(b), nil
+	case "base64-url":
+		return base64.URLEncoding.EncodeToString(b), nil
+	}
+	return "", fmt.Errorf("unknown text format %q; known: \"hex\", \"base64\", \"base64-url\"", format)
+}
+
+func textDecode(format string, s string) ([]byte, error) {
+	switch format {
+	case "hex":
+		out, err := hex.DecodeString(s)
+		if err != nil {
+			return nil, err
+		}
+		return out, nil
+	case "base64":
+		return base64.StdEncoding.DecodeString(s)
+	case "base64-url":
+		return base64.URLEncoding.DecodeString(s)
+	}
+	return nil, fmt.Errorf("unknown text format %q; known: \"hex\", \"base64\", \"base64-url\"", format)
+}
+
+func toTextFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 2 {
+		return interpreter.Null(), fmt.Errorf("encoding.toText expects 2 arguments (bytes, format), got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindBytes {
+		return interpreter.Null(), fmt.Errorf("encoding.toText: first argument must be bytes, got %s", args[0].Kind)
+	}
+	if args[1].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("encoding.toText: format must be string, got %s", args[1].Kind)
+	}
+	out, err := textEncode(args[1].Str, args[0].Bytes)
+	if err != nil {
+		return interpreter.Null(), fmt.Errorf("encoding.toText: %v", err)
+	}
+	return interpreter.StringVal(out), nil
+}
+
+func fromTextFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 2 {
+		return interpreter.Null(), fmt.Errorf("encoding.fromText expects 2 arguments (string, format), got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("encoding.fromText: first argument must be string, got %s", args[0].Kind)
+	}
+	if args[1].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("encoding.fromText: format must be string, got %s", args[1].Kind)
+	}
+	out, err := textDecode(args[1].Str, args[0].Str)
+	if err != nil {
+		return interpreter.Null(), fmt.Errorf("encoding.fromText: %v", err)
+	}
+	return interpreter.BytesVal(out), nil
+}
+
+// ----- codec table ---------------------------------------------------
+
+// normalizeCodec returns the lookup key for a codec name: lowercase,
+// with `-`, `_`, and spaces removed. Matches the spec:
+// "ISO-8859-1", "iso88591", "latin_1" all map to the same key.
+func normalizeCodec(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r == '-' || r == '_' || r == ' ' {
+			continue
+		}
+		// ASCII lowercase fast path (codec names are ASCII).
+		if r >= 'A' && r <= 'Z' {
+			r += 'a' - 'A'
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+// encodeFn implements `encoding.encode(s, codec) -> bytes`.
+func encodeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 2 {
+		return interpreter.Null(), fmt.Errorf("encoding.encode expects 2 arguments (string, codec), got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("encoding.encode: first argument must be string, got %s", args[0].Kind)
+	}
+	if args[1].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("encoding.encode: codec must be string, got %s", args[1].Kind)
+	}
+	c, ok := lookupCodec(args[1].Str)
+	if !ok {
+		return interpreter.Null(), fmt.Errorf("encoding.encode: unknown codec %q; known: %s",
+			args[1].Str, knownCodecList())
+	}
+	out, err := c.encodeFn(args[0].Str)
+	if err != nil {
+		return interpreter.Null(), fmt.Errorf("encoding.encode (%s): %v", c.canonical, err)
+	}
+	return interpreter.BytesVal(out), nil
+}
+
+// decodeFn implements `encoding.decode(b, codec) -> string`.
+func decodeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 2 {
+		return interpreter.Null(), fmt.Errorf("encoding.decode expects 2 arguments (bytes, codec), got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindBytes {
+		return interpreter.Null(), fmt.Errorf("encoding.decode: first argument must be bytes, got %s", args[0].Kind)
+	}
+	if args[1].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("encoding.decode: codec must be string, got %s", args[1].Kind)
+	}
+	c, ok := lookupCodec(args[1].Str)
+	if !ok {
+		return interpreter.Null(), fmt.Errorf("encoding.decode: unknown codec %q; known: %s",
+			args[1].Str, knownCodecList())
+	}
+	out, err := c.decodeFn(args[0].Bytes)
+	if err != nil {
+		return interpreter.Null(), fmt.Errorf("encoding.decode (%s): %v", c.canonical, err)
+	}
+	return interpreter.StringVal(out), nil
+}
+
+// codecsFn implements `encoding.codecs() -> list of string`. Returns
+// the canonical codec names in registration order.
+func codecsFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 0 {
+		return interpreter.Null(), fmt.Errorf("encoding.codecs expects 0 arguments, got %d", len(args))
+	}
+	out := make([]interpreter.Value, len(canonicalCodecOrder))
+	for i, name := range canonicalCodecOrder {
+		out[i] = interpreter.StringVal(name)
+	}
+	return interpreter.ListVal(parser.PrimitiveType(parser.TypeString), out), nil
+}

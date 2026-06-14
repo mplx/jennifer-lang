@@ -1,0 +1,22 @@
+len(cafe runes) = 4
+encoding.lenBytes(cafe) = 5
+encoding.lenRunes(bytes) = 4
+encoding.isAscii(cafe) = false
+encoding.isAscii(hello) = true
+toText hex(Hi!) = 486921
+fromText hex roundtrip len = 4
+toText base64     = SGVsbG8=
+toText base64-url = SGVsbG8=
+fromText base64 = Hello
+codec: ascii
+codec: latin-1
+codec: windows-1252
+codec: ebcdic
+encode latin-1 'café' bytes = 99 97 102 233
+decode latin-1 = café
+encode windows-1252 '€100' first byte = 128
+decode back = €100
+encode ebcdic 'Hello' bytes = 200 133 147 147 150
+decode ebcdic = Hello
+alias ISO-8859-1 latin-1 = café
+alias cp1252 windows-1252 = €100

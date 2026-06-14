@@ -1,0 +1,63 @@
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 <developer@mplx.eu>
+#
+# encoding.j - exercises the M15.7 `encoding` library: introspection
+# helpers, hex / base64 round-trips through `toText`/`fromText`, and
+# the codec table for ascii, latin-1, windows-1252, and ebcdic.
+
+use io;
+use convert;
+use encoding;
+
+# --- Introspection ---
+def cafe as string init "café";
+def cafeBytes as bytes init convert.bytesFromString($cafe, "utf-8");
+io.printf("len(cafe runes) = %d\n", len($cafe));
+io.printf("encoding.lenBytes(cafe) = %d\n", encoding.lenBytes($cafe));
+io.printf("encoding.lenRunes(bytes) = %d\n", encoding.lenRunes($cafeBytes));
+io.printf("encoding.isAscii(cafe) = %t\n", encoding.isAscii($cafeBytes));
+io.printf("encoding.isAscii(hello) = %t\n",
+    encoding.isAscii(convert.bytesFromString("hello", "utf-8")));
+
+# --- toText / fromText: hex ---
+def hi as bytes init convert.bytesFromString("Hi!", "utf-8");
+io.printf("toText hex(Hi!) = %s\n", encoding.toText($hi, "hex"));
+def back as bytes init encoding.fromText("4869210a", "hex");
+io.printf("fromText hex roundtrip len = %d\n", len($back));
+
+# --- toText / fromText: base64 variants ---
+def src as bytes init convert.bytesFromString("Hello", "utf-8");
+io.printf("toText base64     = %s\n", encoding.toText($src, "base64"));
+io.printf("toText base64-url = %s\n", encoding.toText($src, "base64-url"));
+def roundStd as bytes init encoding.fromText("SGVsbG8=", "base64");
+io.printf("fromText base64 = %s\n", convert.stringFromBytes($roundStd, "utf-8"));
+
+# --- Codec list ---
+def codecs as list of string init encoding.codecs();
+for (def name in $codecs) {
+    io.printf("codec: %s\n", $name);
+}
+
+# --- Latin-1 round-trip ---
+def latin as bytes init encoding.encode($cafe, "latin-1");
+io.printf("encode latin-1 'café' bytes = %d %d %d %d\n",
+    $latin[0], $latin[1], $latin[2], $latin[3]);
+io.printf("decode latin-1 = %s\n", encoding.decode($latin, "latin-1"));
+
+# --- Windows-1252: 0x80 is the EURO SIGN (versus Latin-1's C1 control) ---
+def euroBytes as bytes init encoding.encode("€100", "windows-1252");
+io.printf("encode windows-1252 '€100' first byte = %d\n", $euroBytes[0]);
+io.printf("decode back = %s\n", encoding.decode($euroBytes, "windows-1252"));
+
+# --- EBCDIC IBM-1047 ---
+def helloEbcdic as bytes init encoding.encode("Hello", "ebcdic");
+io.printf("encode ebcdic 'Hello' bytes = %d %d %d %d %d\n",
+    $helloEbcdic[0], $helloEbcdic[1], $helloEbcdic[2],
+    $helloEbcdic[3], $helloEbcdic[4]);
+io.printf("decode ebcdic = %s\n", encoding.decode($helloEbcdic, "ebcdic"));
+
+# --- Alias normalisation ---
+io.printf("alias ISO-8859-1 latin-1 = %s\n",
+    encoding.decode($latin, "ISO-8859-1"));
+io.printf("alias cp1252 windows-1252 = %s\n",
+    encoding.decode($euroBytes, "cp1252"));

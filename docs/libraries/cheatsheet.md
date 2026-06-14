@@ -22,6 +22,14 @@ flat lookup view, not authoritative.
 | `crc.finalize($s)`                 | [crc](crc.md)                   | Final checksum as big-endian bytes; consumes the handle.                                                                            |
 | `crc.stream(algo)`                 | [crc](crc.md)                   | Allocate a `crc.Stream` for `algo`; feed chunks via `crc.update` then close with `crc.finalize`.                                    |
 | `crc.update($s, $bytes)`           | [crc](crc.md)                   | Feed one chunk into a `crc.Stream` (mutates by side effect).                                                                        |
+| `encoding.codecs()`                | [encoding](encoding.md)         | Canonical character-codec names in registration order.                                                                              |
+| `encoding.decode(b, codec)`        | [encoding](encoding.md)         | Decode `bytes` from a character codec to a Jennifer string.                                                                         |
+| `encoding.encode(s, codec)`        | [encoding](encoding.md)         | Encode a Jennifer string into a character codec's bytes.                                                                            |
+| `encoding.fromText(s, format)`     | [encoding](encoding.md)         | Decode a binary-to-text format. `format`: `"hex"`, `"base64"`, `"base64-url"`.                                                      |
+| `encoding.isAscii(b)`              | [encoding](encoding.md)         | True iff every byte in `b` is < 0x80.                                                                                               |
+| `encoding.lenBytes(s)`             | [encoding](encoding.md)         | UTF-8 byte length of `s` (pair with `len(s)` for rune count).                                                                       |
+| `encoding.lenRunes(b)`             | [encoding](encoding.md)         | Rune count of valid UTF-8 `bytes`; errors on invalid UTF-8.                                                                         |
+| `encoding.toText(b, format)`       | [encoding](encoding.md)         | Encode `bytes` as printable text. `format`: `"hex"`, `"base64"`, `"base64-url"`.                                                    |
 | `hash.compute(b, algo)`            | [hash](hash.md)                 | One-shot digest. `algo` is `"md5"`, `"sha1"`, or `"sha256"`. Returns raw bytes.                                                     |
 | `hash.finalize($s)`                | [hash](hash.md)                 | Final digest as bytes; consumes the handle (later calls error).                                                                     |
 | `hash.stream(algo)`                | [hash](hash.md)                 | Allocate a `hash.Stream` for `algo`; feed chunks via `hash.update` then close with `hash.finalize`.                                 |
@@ -153,6 +161,7 @@ detail.
 - Per-library reference pages: [io.md](io.md), [convert.md](convert.md),
   [math.md](math.md), [strings.md](strings.md), [lists.md](lists.md),
   [maps.md](maps.md), [os.md](os.md), [meta.md](meta.md),
-  [time.md](time.md), [hash.md](hash.md), [crc.md](crc.md).
+  [time.md](time.md), [hash.md](hash.md), [crc.md](crc.md),
+  [encoding.md](encoding.md).
 - [../user-guide/imports.md](../user-guide/imports.md) - how to import a
   library in a Jennifer source file.

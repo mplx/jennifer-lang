@@ -15,6 +15,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lexer"
 	"github.com/mplx/jennifer-lang/internal/lib/convert"
 	crclib "github.com/mplx/jennifer-lang/internal/lib/crc"
+	encodinglib "github.com/mplx/jennifer-lang/internal/lib/encoding"
 	hashlib "github.com/mplx/jennifer-lang/internal/lib/hash"
 	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
 	listslib "github.com/mplx/jennifer-lang/internal/lib/lists"
@@ -62,6 +63,7 @@ func runRepl() int {
 	timelib.Install(in)
 	hashlib.Install(in)
 	crclib.Install(in)
+	encodinglib.Install(in)
 
 	cwd, err := os.Getwd()
 	if err != nil {

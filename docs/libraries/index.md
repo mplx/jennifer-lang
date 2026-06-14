@@ -31,6 +31,7 @@ restriction list; `jennifer-go` always supports the full surface.
 | `time`    | `use time;`    | full                                                  | M15.5.1+.2: instant/duration arithmetic, calendar + Unix accessors, fixed-offset zones (`time.zone`, `time.inZone`, `time.UTC`, `time.local`), strftime format/parse, ISO round-trip; structs `time.Time`, `time.Duration`, `time.Zone` | [time.md](time.md)       |
 | `hash`    | `use hash;`    | full                                                  | M15.6: `hash.compute(b, algo)` + streaming (`hash.stream`/`update`/`finalize`) for `"md5"`, `"sha1"`, `"sha256"`; struct `hash.Stream`                                                                                              | [hash.md](hash.md)       |
 | `crc`     | `use crc;`     | full                                                  | M15.6: `crc.compute(b, algo)` + streaming (`crc.stream`/`update`/`finalize`) for `"crc32"`, `"crc64"`; output is big-endian bytes; struct `crc.Stream`                                                                              | [crc.md](crc.md)         |
+| `encoding` | `use encoding;` | full                                                | M15.7: introspection (`isAscii`, `lenBytes`, `lenRunes`); binary-to-text `toText`/`fromText` for `"hex"`, `"base64"`, `"base64-url"`; character codecs `encode`/`decode` for `"ascii"`, `"latin-1"`, `"windows-1252"`, `"ebcdic"`     | [encoding.md](encoding.md) |
 
 A quick taste:
 
@@ -88,6 +89,9 @@ large ones. The organizing principle, captured for future extensions:
   (M15.6). Non-cryptographic checksums (CRC-32, CRC-64) -> `crc`
   (M15.6). The split keeps "transport integrity" and "content
   addressing" visible at the import line.
+- Byte / string introspection and character-set codecs (ASCII,
+  Latin-1, Windows-1252, EBCDIC IBM-1047) plus hex / base64
+  binary-to-text -> `encoding` (M15.7; long-tail codecs parked in M24+).
 - A genuinely new topic with **five or more** functions / constants
   -> a new library. Fewer than five names fold into the most-related
   existing library (the non-crypto random helpers were the first

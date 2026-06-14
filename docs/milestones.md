@@ -861,140 +861,99 @@ binary comparison.
 
 ## M15.6 - `hash` and `crc`
 
-**Status:** done. Shipped two opt-in libraries: `hash` for
-cryptographic-style digests (MD5, SHA-1, SHA-256) and `crc` for
-non-cryptographic checksums (CRC-32 IEEE, CRC-64 with Go's
-`crc64.ECMA` polynomial). Output is raw `bytes` (4 / 8 bytes for
-CRC in big-endian; natural width for hash digests). Users
-hex/base64-encode through `encoding` (M15.7) when they need a
-string representation. The library split keeps "transport
-integrity" (CRC) vs "content addressing" (cryptographic hash)
-visible at the import line and matches Go's `crypto/*` vs
-`hash/crc*` arrangement.
+**Status:** done. Two opt-in libraries with parallel surfaces:
+`hash` for cryptographic-style digests (`"md5"`, `"sha1"`,
+`"sha256"`) and `crc` for non-cryptographic checksums (`"crc32"`
+IEEE, `"crc64"` with Go's `crc64.ECMA` polynomial). Output is
+raw `bytes` (big-endian and 4 / 8 bytes for CRC, natural width
+for hash digests). The library split makes "transport integrity"
+vs "content addressing" visible at the import line and matches
+Go's `crypto/*` vs `hash/crc*` arrangement. No convenience
+wrappers (`hash.md5String`, `hash.computeHex`, ...); strings go
+through `convert.bytesFromString` first, hex encoding through
+`encoding.hex` (M15.7).
 
-**Codec-table shape.** The original spec called for one verb per
-algorithm (`hash.md5`, `hash.sha256`, `crc.crc32`, ...). That
-conflicts with Jennifer's letters-only identifier rule (digits
-aren't allowed in method names), so each library ships one verb
-per category with the algorithm passed as a string. The shape
-mirrors `convert.bytesFromString(s, "utf-8")` and the planned
-`encoding.encode(s, codec)`:
+Both libraries ship the same codec-table shape - chosen over
+the spec's `hash.md5(...)` / `crc.crc32(...)` per-algorithm
+naming because Jennifer's letters-only identifier rule rejects
+digits in method names:
 
-- `hash.compute($bytes, algo) -> bytes` for `"md5"` / `"sha1"`
-  / `"sha256"`.
-- `crc.compute($bytes, algo) -> bytes` for `"crc32"` / `"crc64"`.
-- `hash.stream(algo) -> hash.Stream`, `hash.update($s, $bytes)`,
-  `hash.finalize($s) -> bytes`. Same shape for `crc.*`.
-- Streaming uses the integer-handle pattern from M15.3
-  (`oslib.Process`): Jennifer sees an opaque struct with one
-  `id as int` field; the live Go `hash.Hash` state lives in a
-  package-scope map and is removed on `finalize`. Re-using a
-  finalized handle is a positioned runtime error.
-- Unknown algorithm names error positionally with the supported
-  set listed.
+- `hash.compute($bytes, algo) -> bytes`,
+  `crc.compute($bytes, algo) -> bytes`.
+- Streaming: `hash.stream(algo) / crc.stream(algo) -> ...Stream`,
+  then `update($s, $bytes)` and `finalize($s) -> bytes`.
+  `finalize` consumes the handle.
 
-**No convenience wrappers** (`hash.md5String($s)`,
-`hash.computeHex($bytes, algo)`, ...). Stance #1 "one way per
-thing": strings go through `convert.bytesFromString` first, hex
-encoding goes through `encoding.hex` (M15.7) afterwards. Until
-that lands, the example
-[`examples/hash.j`](../examples/hash.j) carries a tiny inline
-`bytesToHex` helper for printable golden output.
+Streaming reuses the integer-handle pattern from
+[`oslib.Process`](#m153---os-external-program-execution):
+Jennifer sees an opaque struct with one `id as int` field; the
+live Go `hash.Hash` state lives in a package-scope map and
+gets removed on `finalize`. Reusing a finalized handle is a
+positioned runtime error.
 
-**Struct hashing is deferred.** Hashing a struct requires a
-stable byte serialization (field order, padding, null handling)
-which is its own design problem. Users serialize through the
-relevant library (`json`, `csv`, future `cbor`) and hash the
-resulting bytes; the `hash` library has no opinion on struct
-layout.
+Struct hashing is deferred - it needs a stable byte serializer
+(field order, padding, null handling) which is its own design
+problem. Users serialize via the relevant library (`json`,
+`csv`, future `cbor`) and hash the bytes; `hash` has no
+opinion on struct layout. See
+[libraries/hash.md](libraries/hash.md),
+[libraries/crc.md](libraries/crc.md), and `examples/hash.j` for
+the reference.
 
 ## M15.7 - `encoding`
 
-Codec library: byte-stream introspection plus the lossless
-re-encoding codecs beyond UTF-8. The cross-kind `bytes <-> string`
-**single-codec** pair lives in `convert`
-(`convert.bytesFromString` / `convert.stringFromBytes`, UTF-8 only,
-shipped with the `bytes` type in M12). `encoding` is where the
-codec proliferation happens because that's where the table-based
-implementations belong.
+**Status:** done. Codec library covering three concerns:
+introspection (`isAscii`, `lenBytes`, `lenRunes`), binary-to-text
+(`toText` / `fromText` for `"hex"` / `"base64"` / `"base64-url"`),
+and character codecs (`encode` / `decode`). The cross-kind UTF-8
+codec stays in `convert` (M12) where it shipped with the `bytes`
+type; `encoding` is where the table-based codec proliferation
+lives.
 
-**Introspection helpers.**
+**API consolidation.** The original spec had four separate
+binary-to-text verbs (`encoding.hex`, `encoding.fromHex`,
+`encoding.base64`, `encoding.fromBase64`) plus a "url-safe variant
+via a modifier" hint. Jennifer's letters-only identifier rule
+rejects digits in method names (same blocker M15.6 hit with
+`hash.md5`), so the shipped API consolidates to one verb pair:
 
-- `encoding.isAscii(b as bytes) -> bool` - every byte < 0x80.
-- `encoding.lenBytes(s as string) -> int` - byte length of `$s`'s
-  UTF-8 encoding (contrast with `len($s)`, which is the rune
-  count).
-- `encoding.lenRunes(b as bytes) -> int` - decoded rune count of
-  valid UTF-8 `bytes`; errors on invalid UTF-8.
-- `encoding.hex(b)` / `encoding.fromHex(s)` - lowercase hex
-  round-trip.
-- `encoding.base64(b)` / `encoding.fromBase64(s)` - standard
-  base64 (RFC 4648); url-safe variant via a modifier ships in
-  the same release.
+- `encoding.toText($bytes, format) -> string`
+- `encoding.fromText($string, format) -> bytes`
+- `format`: `"hex"` (lowercase emit, case-insensitive parse),
+  `"base64"` (RFC 4648 §4 standard), `"base64-url"` (RFC 4648 §5
+  URL-safe).
 
-**Codec table API.** The shape mirrors convert's:
+Character-codec surface is the codec-table shape the spec
+described:
 
-- `encoding.encode(s as string, codec as string) -> bytes` -
-  encode a Jennifer string into the named codec.
-- `encoding.decode(b as bytes, codec as string) -> string` -
-  decode bytes from the named codec.
+- `encoding.encode($string, codec) -> bytes`
+- `encoding.decode($bytes, codec) -> string`
+- `encoding.codecs() -> list of string` (canonical names in
+  registration order)
 
-Both error positionally on (a) unknown codec, (b) bytes that
-don't validly decode in the named codec, or (c) string runes
-that don't representably encode (e.g. a string containing
-`U+1F600` into Latin-1).
+**Codec set shipped in M15.7.** The four highest-value entries:
 
-**Codec set shipped in M15.7.** All single-byte (and ASCII), so
-each costs at most one 256-entry table:
+- `"ascii"` - 7-bit; rejects bytes >= 0x80 on decode and runes
+  >= 0x80 on encode.
+- `"latin-1"` (alias `"iso-8859-1"`) - identity for
+  U+0000..U+00FF.
+- `"windows-1252"` (alias `"cp1252"`) - Latin-1 plus the
+  printable C1 range (EURO SIGN at 0x80, smart quotes, etc.).
+  The de-facto encoding of "Latin-1 with smart quotes" in
+  real-world Windows files. Five canonically-undefined
+  positions (0x81, 0x8D, 0x8F, 0x90, 0x9D) error on encode and
+  decode.
+- `"ebcdic"` (alias `"ibm-1047"`) - IBM Code Page 1047, the
+  modern Latin-1 EBCDIC variant. Narrow relevance but the
+  table loader's already in place.
 
-- **`"ascii"`** - 7-bit ASCII; rejects any byte >= 0x80 on decode
-  and any rune >= 0x80 on encode. Trivial; useful for strict
-  protocol validation.
-- **`"latin-1"` / `"iso-8859-1"`** - one-to-one mapping with
-  Unicode block U+0000-U+00FF. No table needed - it's the
-  identity in that range. Aliases resolve to the same codec.
-- **`"iso-8859-2"` through `"iso-8859-16"`** - Central/Eastern
-  European, Cyrillic, Arabic, Greek, Hebrew, Turkish, Nordic,
-  Celtic, South-Eastern European. One 256-entry table each;
-  encode is the inverse lookup. (Codec strings normalised so
-  `"iso-8859-2"`, `"iso88592"`, `"latin-2"` all resolve to the
-  same codec.)
-- **`"windows-1250"` through `"windows-1258"`** - Microsoft's
-  Western, Central, Cyrillic, Greek, Turkish, Hebrew, Arabic,
-  Baltic, and Vietnamese code pages. Same shape as the ISO-8859
-  family; one table each. **Windows-1252** is the highest-priority
-  member - it's the de-facto encoding of "Latin-1 with smart
-  quotes" found in countless real-world Windows files mislabeled
-  as Latin-1.
-- **`"ebcdic"`** - IBM mainframe code page (specifically
-  IBM-1047, the modern Latin-1 EBCDIC variant). One table.
-  Narrow relevance but free to ship now that the table loader
-  is in place; lets Jennifer talk to mainframe data without a
-  separate library.
+Codec name normalisation is case-insensitive and strips `-`,
+`_`, and spaces, so `"ISO-8859-1"`, `"iso88591"`, `"latin_1"`
+all resolve to `"latin-1"`. Format strings for `toText`/
+`fromText` stay case-sensitive (smaller set, no need).
 
-**Codec name normalisation.** Codec strings are case-insensitive
-and ignore `-` / `_` / spaces, so `"ISO-8859-1"`, `"iso88591"`,
-`"latin_1"` all resolve to the same codec. The canonical form
-returned by `encoding.codecs() -> list of string` is lowercase
-with the hyphen form. Common aliases (`"latin-1"` for
-`"iso-8859-1"`, `"cp1252"` for `"windows-1252"`) are accepted on
-input.
-
-**What stays out of M15.7 (deferred to later milestones).**
-
-- Variable-width Asian encodings: `Shift-JIS`, `Big5`, `GB2312`,
-  `GBK`, `GB18030`, `EUC-JP`, `EUC-KR`. Each is a state-machine
-  implementation with multiple variants and ambiguity edge cases;
-  one or two of these is a whole milestone of work, not a row in
-  a table.
-- `UTF-16` / `UTF-16LE` / `UTF-16BE` and `UTF-32` - byte-order
-  marks, surrogate pair handling, endianness. Real but separate
-  work.
-- `UTF-7`, `quoted-printable`, mail-transport hacks - belong
-  with `mail` / `mime` library work, not core encoding.
-
-These ship in their own sub-milestone once a real Jennifer
-program needs them - currently no roadmap item depends on them.
+See [libraries/encoding.md](libraries/encoding.md) for the
+reference and `examples/encoding.j` for a golden walkthrough.
 
 ## M15.8 - distribution + first public release
 
@@ -1524,6 +1483,34 @@ Each domain its own milestone with sub-milestones as needed:
 
 Ordered when demand surfaces. WASM libraries (M22.x) may cover
 some of this space first.
+
+## M24+ - encoding long-tail codecs
+
+The remaining single-byte codecs the original M15.7 spec
+listed, parked here so they're picked up only when a real
+Jennifer program asks for them. The codec-table infrastructure
+shipped with M15.7 - each new entry is just a 256-entry table
+plus its alias list.
+
+- **ISO-8859-{2..16}** (15 codecs): Central / Eastern European,
+  Cyrillic, Arabic, Greek, Hebrew, Turkish, Nordic, Celtic,
+  South-Eastern European. Canonical alias form `"iso-8859-N"`.
+- **Windows-{1250, 1251, 1253..1258}** (8 codecs): Microsoft's
+  Central, Cyrillic, Greek, Turkish, Hebrew, Arabic, Baltic,
+  Vietnamese code pages. Canonical alias form `"windows-N"`
+  with `"cpN"` accepted.
+
+**What stays out (deferred further).**
+
+- Variable-width Asian encodings: `Shift-JIS`, `Big5`, `GB2312`,
+  `GBK`, `GB18030`, `EUC-JP`, `EUC-KR`. Each is a state-machine
+  implementation with multiple variants and ambiguity edge
+  cases; one or two of these is a whole milestone of work, not
+  a row in a table.
+- `UTF-16` / `UTF-16LE` / `UTF-16BE` and `UTF-32` - byte-order
+  marks, surrogate pair handling, endianness.
+- `UTF-7`, `quoted-printable`, mail-transport hacks - belong
+  with `mail` / `mime` library work, not core encoding.
 
 ---
 

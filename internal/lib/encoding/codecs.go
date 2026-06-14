@@ -1,0 +1,323 @@
+// SPDX-License-Identifier: LGPL-3.0-only
+// Copyright (C) 2026 <developer@mplx.eu>
+
+// Codec definitions for the M15.7 set: ascii, latin-1, windows-1252,
+// ebcdic (IBM-1047). The long-tail codecs (ISO-8859-{2..16},
+// Windows-{1250,1251,1253..1258}) are parked in M24+ - the
+// table-driven infrastructure here handles new entries by just
+// adding a 256-rune decode table plus its aliases.
+//
+// Tables are 256-entry byte->rune mappings for decode. The reverse
+// rune->byte map for encode is built lazily on first use so we don't
+// pay the init cost for codecs the program never touches.
+
+package encodinglib
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+	"unicode/utf8"
+)
+
+// codec carries the encode/decode pair plus the canonical name we
+// echo back in error messages and `encoding.codecs()`.
+type codec struct {
+	canonical string
+	encodeFn  func(string) ([]byte, error)
+	decodeFn  func([]byte) (string, error)
+}
+
+// canonicalCodecOrder is the registration order; `encoding.codecs()`
+// returns this list verbatim.
+var canonicalCodecOrder = []string{
+	"ascii",
+	"latin-1",
+	"windows-1252",
+	"ebcdic",
+}
+
+// codecAliases maps every accepted normalised codec name to the
+// canonical name. The normaliser strips `-`, `_`, spaces and
+// lower-cases ASCII (see normalizeCodec in encodinglib.go), so the
+// keys here are already in that form.
+var codecAliases = map[string]string{
+	"ascii":       "ascii",
+	"usascii":     "ascii",
+
+	"latin1":      "latin-1",
+	"iso88591":    "latin-1",
+
+	"windows1252": "windows-1252",
+	"cp1252":      "windows-1252",
+	"ms1252":      "windows-1252",
+	"win1252":     "windows-1252",
+
+	"ebcdic":      "ebcdic",
+	"ibm1047":     "ebcdic",
+	"cp1047":      "ebcdic",
+}
+
+// codecs holds the live codec implementations keyed by canonical
+// name. Populated at init time from the four implementation
+// definitions below.
+var codecs = map[string]*codec{}
+
+func init() {
+	codecs["ascii"] = &codec{
+		canonical: "ascii",
+		encodeFn:  encodeAscii,
+		decodeFn:  decodeAscii,
+	}
+	codecs["latin-1"] = &codec{
+		canonical: "latin-1",
+		encodeFn:  encodeLatin1,
+		decodeFn:  decodeLatin1,
+	}
+	codecs["windows-1252"] = &codec{
+		canonical: "windows-1252",
+		encodeFn:  makeTableEncoder("windows-1252", windows1252Table),
+		decodeFn:  makeTableDecoder("windows-1252", windows1252Table),
+	}
+	codecs["ebcdic"] = &codec{
+		canonical: "ebcdic",
+		encodeFn:  makeTableEncoder("ebcdic (IBM-1047)", ebcdicTable),
+		decodeFn:  makeTableDecoder("ebcdic (IBM-1047)", ebcdicTable),
+	}
+}
+
+// lookupCodec resolves an arbitrary codec string (possibly with
+// mixed case, hyphens, underscores, or spaces) to the live codec.
+func lookupCodec(name string) (*codec, bool) {
+	canonical, ok := codecAliases[normalizeCodec(name)]
+	if !ok {
+		return nil, false
+	}
+	c, ok := codecs[canonical]
+	return c, ok
+}
+
+// knownCodecList renders the canonical codec names for error
+// messages. Stable order, double-quoted.
+func knownCodecList() string {
+	var b strings.Builder
+	for i, name := range canonicalCodecOrder {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%q", name)
+	}
+	return b.String()
+}
+
+// ----- ascii ---------------------------------------------------------
+
+func encodeAscii(s string) ([]byte, error) {
+	out := make([]byte, 0, len(s))
+	pos := 0
+	for _, r := range s {
+		if r >= 0x80 {
+			return nil, fmt.Errorf("rune U+%04X at byte position %d is outside ASCII (0x00..0x7F)", r, pos)
+		}
+		out = append(out, byte(r))
+		pos += utf8.RuneLen(r)
+	}
+	return out, nil
+}
+
+func decodeAscii(b []byte) (string, error) {
+	for i, by := range b {
+		if by >= 0x80 {
+			return "", fmt.Errorf("byte 0x%02X at position %d is outside ASCII (0x00..0x7F)", by, i)
+		}
+	}
+	return string(b), nil
+}
+
+// ----- latin-1 (ISO-8859-1) ------------------------------------------
+//
+// Latin-1 is the identity mapping for byte 0x00..0xFF <-> rune
+// U+0000..U+00FF. No table needed.
+
+func encodeLatin1(s string) ([]byte, error) {
+	out := make([]byte, 0, len(s))
+	pos := 0
+	for _, r := range s {
+		if r >= 0x100 {
+			return nil, fmt.Errorf("rune U+%04X at byte position %d does not fit in Latin-1 (U+0000..U+00FF)", r, pos)
+		}
+		out = append(out, byte(r))
+		pos += utf8.RuneLen(r)
+	}
+	return out, nil
+}
+
+func decodeLatin1(b []byte) (string, error) {
+	out := make([]byte, 0, len(b)) // up to 2 bytes per rune in UTF-8 for U+0080..U+00FF
+	for _, by := range b {
+		out = utf8.AppendRune(out, rune(by))
+	}
+	return string(out), nil
+}
+
+// ----- table-driven single-byte codecs -------------------------------
+
+// makeTableDecoder wraps a 256-rune table. utf8.RuneError (U+FFFD) in
+// a table position means "byte undefined in this codec"; decoding
+// such a byte is a positioned error.
+func makeTableDecoder(name string, table *[256]rune) func([]byte) (string, error) {
+	return func(b []byte) (string, error) {
+		out := make([]byte, 0, len(b))
+		for i, by := range b {
+			r := table[by]
+			if r == utf8.RuneError {
+				return "", fmt.Errorf("byte 0x%02X at position %d has no mapping in %s", by, i, name)
+			}
+			out = utf8.AppendRune(out, r)
+		}
+		return string(out), nil
+	}
+}
+
+// makeTableEncoder builds (lazily, once) the inverse of the table and
+// uses it for encode. utf8.RuneError positions in the source table
+// are NOT installed in the inverse so they fail encode cleanly.
+func makeTableEncoder(name string, table *[256]rune) func(string) ([]byte, error) {
+	var (
+		once    sync.Once
+		inverse map[rune]byte
+	)
+	return func(s string) ([]byte, error) {
+		once.Do(func() {
+			inverse = make(map[rune]byte, 256)
+			for i, r := range table {
+				if r == utf8.RuneError {
+					continue
+				}
+				// First-wins on the rare collision (none in our four
+				// codecs, but the discipline costs nothing).
+				if _, exists := inverse[r]; !exists {
+					inverse[r] = byte(i)
+				}
+			}
+		})
+		out := make([]byte, 0, len(s))
+		pos := 0
+		for _, r := range s {
+			by, ok := inverse[r]
+			if !ok {
+				return nil, fmt.Errorf("rune U+%04X at byte position %d does not map to a byte in %s", r, pos, name)
+			}
+			out = append(out, by)
+			pos += utf8.RuneLen(r)
+		}
+		return out, nil
+	}
+}
+
+// windows1252Table is the byte->rune mapping for Windows-1252 (CP1252).
+// Positions 0x00..0x7F are ASCII identity; 0xA0..0xFF are Latin-1
+// identity; the C1 range 0x80..0x9F maps to the printable
+// "smart-quotes" code points that distinguish Windows-1252 from
+// Latin-1. Five positions (0x81, 0x8D, 0x8F, 0x90, 0x9D) are
+// undefined in the canonical table; we store utf8.RuneError so
+// encode and decode both reject them.
+var windows1252Table = func() *[256]rune {
+	var t [256]rune
+	// ASCII identity.
+	for i := 0; i < 0x80; i++ {
+		t[i] = rune(i)
+	}
+	// C1 range: Windows-1252 specials.
+	t[0x80] = 0x20AC // EURO SIGN
+	t[0x81] = utf8.RuneError
+	t[0x82] = 0x201A // SINGLE LOW-9 QUOTATION MARK
+	t[0x83] = 0x0192 // LATIN SMALL LETTER F WITH HOOK
+	t[0x84] = 0x201E // DOUBLE LOW-9 QUOTATION MARK
+	t[0x85] = 0x2026 // HORIZONTAL ELLIPSIS
+	t[0x86] = 0x2020 // DAGGER
+	t[0x87] = 0x2021 // DOUBLE DAGGER
+	t[0x88] = 0x02C6 // MODIFIER LETTER CIRCUMFLEX ACCENT
+	t[0x89] = 0x2030 // PER MILLE SIGN
+	t[0x8A] = 0x0160 // LATIN CAPITAL LETTER S WITH CARON
+	t[0x8B] = 0x2039 // SINGLE LEFT-POINTING ANGLE QUOTATION MARK
+	t[0x8C] = 0x0152 // LATIN CAPITAL LIGATURE OE
+	t[0x8D] = utf8.RuneError
+	t[0x8E] = 0x017D // LATIN CAPITAL LETTER Z WITH CARON
+	t[0x8F] = utf8.RuneError
+	t[0x90] = utf8.RuneError
+	t[0x91] = 0x2018 // LEFT SINGLE QUOTATION MARK
+	t[0x92] = 0x2019 // RIGHT SINGLE QUOTATION MARK
+	t[0x93] = 0x201C // LEFT DOUBLE QUOTATION MARK
+	t[0x94] = 0x201D // RIGHT DOUBLE QUOTATION MARK
+	t[0x95] = 0x2022 // BULLET
+	t[0x96] = 0x2013 // EN DASH
+	t[0x97] = 0x2014 // EM DASH
+	t[0x98] = 0x02DC // SMALL TILDE
+	t[0x99] = 0x2122 // TRADE MARK SIGN
+	t[0x9A] = 0x0161 // LATIN SMALL LETTER S WITH CARON
+	t[0x9B] = 0x203A // SINGLE RIGHT-POINTING ANGLE QUOTATION MARK
+	t[0x9C] = 0x0153 // LATIN SMALL LIGATURE OE
+	t[0x9D] = utf8.RuneError
+	t[0x9E] = 0x017E // LATIN SMALL LETTER Z WITH CARON
+	t[0x9F] = 0x0178 // LATIN CAPITAL LETTER Y WITH DIAERESIS
+	// 0xA0..0xFF: Latin-1 identity.
+	for i := 0xA0; i < 0x100; i++ {
+		t[i] = rune(i)
+	}
+	return &t
+}()
+
+// ebcdicTable is the byte->rune mapping for IBM Code Page 1047
+// (Open Systems Latin-1 EBCDIC). The values mirror the official
+// IBM table published as part of the Unicode mapping bundle.
+var ebcdicTable = &[256]rune{
+	// 0x00..0x0F
+	0x0000, 0x0001, 0x0002, 0x0003, 0x009C, 0x0009, 0x0086, 0x007F,
+	0x0097, 0x008D, 0x008E, 0x000B, 0x000C, 0x000D, 0x000E, 0x000F,
+	// 0x10..0x1F
+	0x0010, 0x0011, 0x0012, 0x0013, 0x009D, 0x000A, 0x0008, 0x0087,
+	0x0018, 0x0019, 0x0092, 0x008F, 0x001C, 0x001D, 0x001E, 0x001F,
+	// 0x20..0x2F
+	0x0080, 0x0081, 0x0082, 0x0083, 0x0084, 0x0085, 0x0017, 0x001B,
+	0x0088, 0x0089, 0x008A, 0x008B, 0x008C, 0x0005, 0x0006, 0x0007,
+	// 0x30..0x3F
+	0x0090, 0x0091, 0x0016, 0x0093, 0x0094, 0x0095, 0x0096, 0x0004,
+	0x0098, 0x0099, 0x009A, 0x009B, 0x0014, 0x0015, 0x009E, 0x001A,
+	// 0x40..0x4F
+	0x0020, 0x00A0, 0x00E2, 0x00E4, 0x00E0, 0x00E1, 0x00E3, 0x00E5,
+	0x00E7, 0x00F1, 0x00A2, 0x002E, 0x003C, 0x0028, 0x002B, 0x007C,
+	// 0x50..0x5F
+	0x0026, 0x00E9, 0x00EA, 0x00EB, 0x00E8, 0x00ED, 0x00EE, 0x00EF,
+	0x00EC, 0x00DF, 0x0021, 0x0024, 0x002A, 0x0029, 0x003B, 0x005E,
+	// 0x60..0x6F
+	0x002D, 0x002F, 0x00C2, 0x00C4, 0x00C0, 0x00C1, 0x00C3, 0x00C5,
+	0x00C7, 0x00D1, 0x00A6, 0x002C, 0x0025, 0x005F, 0x003E, 0x003F,
+	// 0x70..0x7F
+	0x00F8, 0x00C9, 0x00CA, 0x00CB, 0x00C8, 0x00CD, 0x00CE, 0x00CF,
+	0x00CC, 0x0060, 0x003A, 0x0023, 0x0040, 0x0027, 0x003D, 0x0022,
+	// 0x80..0x8F
+	0x00D8, 0x0061, 0x0062, 0x0063, 0x0064, 0x0065, 0x0066, 0x0067,
+	0x0068, 0x0069, 0x00AB, 0x00BB, 0x00F0, 0x00FD, 0x00FE, 0x00B1,
+	// 0x90..0x9F
+	0x00B0, 0x006A, 0x006B, 0x006C, 0x006D, 0x006E, 0x006F, 0x0070,
+	0x0071, 0x0072, 0x00AA, 0x00BA, 0x00E6, 0x00B8, 0x00C6, 0x00A4,
+	// 0xA0..0xAF
+	0x00B5, 0x007E, 0x0073, 0x0074, 0x0075, 0x0076, 0x0077, 0x0078,
+	0x0079, 0x007A, 0x00A1, 0x00BF, 0x00D0, 0x005B, 0x00DE, 0x00AE,
+	// 0xB0..0xBF
+	0x00AC, 0x00A3, 0x00A5, 0x00B7, 0x00A9, 0x00A7, 0x00B6, 0x00BC,
+	0x00BD, 0x00BE, 0x00DD, 0x00A8, 0x00AF, 0x005D, 0x00B4, 0x00D7,
+	// 0xC0..0xCF
+	0x007B, 0x0041, 0x0042, 0x0043, 0x0044, 0x0045, 0x0046, 0x0047,
+	0x0048, 0x0049, 0x00AD, 0x00F4, 0x00F6, 0x00F2, 0x00F3, 0x00F5,
+	// 0xD0..0xDF
+	0x007D, 0x004A, 0x004B, 0x004C, 0x004D, 0x004E, 0x004F, 0x0050,
+	0x0051, 0x0052, 0x00B9, 0x00FB, 0x00FC, 0x00F9, 0x00FA, 0x00FF,
+	// 0xE0..0xEF
+	0x005C, 0x00F7, 0x0053, 0x0054, 0x0055, 0x0056, 0x0057, 0x0058,
+	0x0059, 0x005A, 0x00B2, 0x00D4, 0x00D6, 0x00D2, 0x00D3, 0x00D5,
+	// 0xF0..0xFF
+	0x0030, 0x0031, 0x0032, 0x0033, 0x0034, 0x0035, 0x0036, 0x0037,
+	0x0038, 0x0039, 0x00B3, 0x00DB, 0x00DC, 0x00D9, 0x00DA, 0x009F,
+}
