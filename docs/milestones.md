@@ -813,87 +813,51 @@ primary.
 
 ## M15.5 - `time`
 
-One library covering both date and time concerns through a single
-zone-aware instant type, plus a separate span type for differences.
-Splits into two sub-milestones because formatting and parsing carry
-their own design surface (timezone names, locale-shaped output);
-the core type plus arithmetic ships first so other M15 / M16
-libraries can rely on it.
+**Status:** done. One opt-in library covering instants, durations,
+fixed-offset zones, strftime format/parse, and ISO 8601
+round-trip. Three namespaced structs anchor the surface -
+`time.Time {nanos, offset}`, `time.Duration {nanos}`, and
+`time.Zone {offset, name}` - with `time.Time` fields documented as
+private API and `time.Zone` fields public so the M18.4
+`timezones.j` companion can construct them. Granularity (date-only
+vs time-of-day-only) is a property of formatting, not of the value
+type. Unix timestamps are a constructor / accessor pair, not a
+separate type. IANA names and DST stay out of the core library
+(deferred to M18.4).
 
-**One-type rationale.** Splitting `date` / `time` / `datetime`
-(the Java pre-`java.time`, Python `datetime`/`date`/`time`,
-JavaScript-`Date`-plus-libraries problem) front-loads
-conversion code into every library that crosses the boundary.
-Every program that needs a calendar date eventually needs a
-time-of-day, and vice versa. Granularity (date-only,
-time-of-day-only) is a property of formatting and parsing, not
-of the value's type.
+- **M15.5.1 - core type, arithmetic, Unix.** Constructors
+  (`now`/`utc`/`fromUnix{,Millis,Nanos}`/`from{Seconds,...}`),
+  Unix + calendar accessors (ISO 8601 weekday Monday=1 ...
+  Sunday=7), duration accessors, arithmetic (`add`/`sub`),
+  comparison on the underlying UTC instant
+  (`before`/`after`/`equal`). Tests run against a Go-level
+  `nowFunc` package var; user-level clock override deferred.
+- **M15.5.2 - formatting, parsing, fixed-offset zones.**
+  `time.zone(offset, name)` (|offset| capped at +/- 26h),
+  `time.inZone($t, $z)` preserves the UTC instant,
+  `time.local()` and the `time.UTC` constant (coexists with the
+  M15.5.1 `time.utc()` function thanks to case-sensitive
+  namespace lookup). `time.format` / `time.parse` use a
+  strftime layout (chosen over Go's reference-time style for
+  familiarity); v1 verbs `%Y %m %d %H %M %S %z %a %A %b %B %j
+  %u %%`, with `%j`/`%u` format-only and English-only
+  month/weekday names. `time.iso` / `time.fromIso` round-trip
+  RFC 3339 with optional fractional seconds.
+- **M15.5.3 - `examples/benchmark.j`.** Eight-workload
+  side-by-side suite (fib, trial-division primes, Newton's
+  iteration, Monte-Carlo pi, list copy chain, struct list,
+  `strings.join`, map churn) for comparing `jennifer` (TinyGo)
+  vs `jennifer-go` (Go). Timing-dependent so it's not
+  golden-tested; `TestFmtPreservesRuntimeBehavior` has an
+  explicit skip entry. The original spec said "Sieve of
+  Eratosthenes" but value-semantic list mutation makes the
+  sieve's write loop O(N^2); trial division stays on scalars
+  and still stresses the dispatch loop.
 
-Unix timestamps are **not** a separate type; they're a
-constructor (`time.fromUnix(n)`) and accessor
-(`$t.unix() -> int`). Same shape for ISO 8601 strings and any
-other wire format added in M15.5.2.
-
-### M15.5.1 - core type, arithmetic, Unix
-
-**Status:** done. Shipped two namespaced structs
-(`time.Time {nanos as int, offset as int}` and
-`time.Duration {nanos as int}`), Unix-int constructors
-(`fromUnix{,Millis,Nanos}`), duration constructors
-(`fromSeconds/Milliseconds/Minutes/Hours`), calendar accessors
-(year/month/day/hour/minute/second/nanosecond/weekday - ISO 8601:
-Monday=1, Sunday=7), Unix accessors (`unix/unixMillis/unixNanos`),
-duration accessors (`seconds/milliseconds/minutes/hours`),
-arithmetic (`add`, `sub`), and comparison (`before`, `after`,
-`equal`). Comparisons run on the underlying UTC instant.
-`time.now()` / `time.utc()` use a Go-level `nowFunc` package var
-for deterministic tests; the user-facing surface has no clock
-override (a hookable clock at language level is deferred). See
-[libraries/time.md](libraries/time.md) for the reference and
-`examples/time.j` for a deterministic golden using `fromUnix`.
-
-### M15.5.2 - formatting, parsing, fixed-offset zones
-
-**Status:** done. Shipped the `time.Zone {offset as int, name as
-string}` struct (fields public so M18.4's `timezones.j` can
-construct them), `time.zone(offset, name)` constructor (|offset|
-capped at +/- 26h), `time.inZone($t, $z)` which preserves the UTC
-instant and re-renders calendar parts in `$z`, the `time.UTC`
-constant, and `time.local()` reading the host's current zone.
-`time.format` / `time.parse` use a strftime-style layout (chosen
-over Go's reference-time style for familiarity to C / Python /
-shell users); v1 verbs are `%Y %m %d %H %M %S %z %a %A %b %B %j
-%u %%` with `%j` and `%u` format-only and month/weekday names
-English-only. `time.iso($t)` / `time.fromIso(s)` round-trip RFC
-3339 with optional fractional seconds. The `time.utc()` function
-(M15.5.1, current instant in UTC) and the `time.UTC` constant
-(zone) coexist via case-sensitive namespace lookup. IANA names
-and DST stay out of the core library; that's the M18.4
-`timezones.j` job. See
-[libraries/time.md](libraries/time.md) for the reference and
-`examples/time-format.j` for a golden walkthrough.
-
-### M15.5.3 - `examples/benchmark.j`
-
-**Status:** done. Shipped `examples/benchmark.j` covering eight
-workloads: `fib(N)` recursion, trial-division prime count,
-hand-rolled Newton's iteration for sqrt, Monte-Carlo pi (seeded
-for reproducibility), `lists.sort`/`reverse`/`slice` chain
-(value-copy stress), struct list build+read, `strings.join` of
-range-toString output, and map insert+read. Each block prints
-its wall-clock milliseconds and an iteration count; a final
-total summarises the run. Output is timing-dependent so no
-golden file is shipped; `TestExamples` auto-skips via the
-no-expected-file rule, and `TestFmtPreservesRuntimeBehavior`
-has an explicit skip entry for the same reason.
-
-The original spec called for a Sieve of Eratosthenes; we
-shipped trial division instead because Jennifer's value-semantic
-list mutation turns the sieve's `$s[i] = false;` write loop
-into an O(N^2) copy-on-write tour of the heap, which masks the
-evaluator-dispatch cost the workload was meant to stress.
-Trial division stays on scalars and accomplishes the same goal
-without the storage allocator dominating.
+See [libraries/time.md](libraries/time.md) for the reference,
+`examples/time.j` and `examples/time-format.j` for golden
+walkthroughs, and `examples/benchmark.j` for the side-by-side
+binary comparison.
 
 ## M15.6 - `hash` and `crc`
 
