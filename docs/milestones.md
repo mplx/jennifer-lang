@@ -797,52 +797,19 @@ See:
 
 ## M15.4 - Language: `len` built-in, `core` removed
 
-**Status:** done.
-
-Drops the last implicit thing in the language. `core` was the one
-auto-loaded library; every other name required `use NAME;`. M15.4
-promotes `core`'s single polymorphic primitive (`len`) to a
-language built-in keyword and deletes the `core` library entirely.
-Stance #2 ("explicit over implicit") now applies uniformly: a `.j`
-file that uses `printf`, `len`, and `meta.VERSION` opens with the
-same `use` block shape as every other library.
-
-- `len(EXPR)` is now a reserved keyword + language primary
-  expression, not a library function. Same polymorphic behavior
-  (string / list / map / bytes); any other kind is a positioned
-  runtime error. `func len() {}` is now a parse-time rejection
-  (the M5-era "shadows builtin" runtime check is gone with
-  `core`).
-- `internal/lib/core/` is deleted. The auto-load logic in
-  `Interpreter.New()` and the `use core;` rejection are both
-  gone; `use core;` now triggers a friendly migration error
-  ("the `core` library was removed in M15.4; `len` is a built-in;
-  version constants moved to `meta`").
-- `JENNIFER_VERSION` had already moved to `meta.VERSION` in M15.1;
-  that migration is unchanged. `core` had carried nothing else
-  since.
-- `RegisterGlobal` / `RegisterGlobalConst` and the per-library
-  globals tables stay in the interpreter as exported API surface,
-  unused by any shipping library. They get removed in a later
-  cleanup pass once the M10 collision-rule tests are migrated.
-- The library charter simplifies: every library is namespaced,
-  every name lives behind a prefix, every program states its
-  imports.
-
-### Breaking changes
-
-| Pre-M15.4                         | M15.4                                  | Migration                                            |
-| --------------------------------- | -------------------------------------- | ---------------------------------------------------- |
-| `len($v)` (bare, auto-loaded)     | `len($v)` (language built-in keyword)  | No source change. Same syntax, different mechanism.  |
-| `use core;`                       | (rejected with migration error)        | Remove the line - `len` no longer needs an import.   |
-| `func len() { ... }`              | parse error                            | Rename the method (`len` is now a reserved keyword). |
-
-See:
-- [technical/grammar.md](technical/grammar.md) - `lenExpr` primary
-  + AST table entry.
-- [technical/design-decisions.md](technical/design-decisions.md) -
-  rationale for promoting `len` to a built-in rather than keeping
-  it as the lone `core` global.
+**Status:** done. Promoted `len(EXPR)` from the auto-loaded `core`
+library to a reserved keyword + language primary expression
+(polymorphic over string / list / map / bytes). Deleted
+`internal/lib/core/` entirely; `use core;` now returns a friendly
+migration error pointing at the built-in and at `meta.VERSION` /
+`meta.BUILD`. Stance #2 ("explicit over implicit") now applies
+uniformly: every library name lives behind a `use NAME;` prefix,
+no exceptions. `RegisterGlobal` / `RegisterGlobalConst` stay as
+exported API with no in-tree callers (cleanup deferred). See
+[technical/design-decisions.md](technical/design-decisions.md#len-is-a-language-built-in-not-a-library)
+for the rationale and
+[technical/grammar.md](technical/grammar.md) for the `lenExpr`
+primary.
 
 ## M15.5 - `time`
 
@@ -909,7 +876,7 @@ other wire format added in M15.5.2.
   `time.seconds($d)`, `time.milliseconds($d)`,
   `time.minutes($d)`, `time.hours($d)`.
 
-### M15.5.2 - formatting, parsing, timezones
+### M15.5.2 - formatting, parsing, fixed-offset zones
 
 - `time.format($t, layout as string) -> string` - layout
   language settled at the start of M15.5.2 (`strftime`-style
@@ -917,16 +884,34 @@ other wire format added in M15.5.2.
   familiarity, the latter on copy-paste reliability).
 - `time.parse(s as string, layout as string) -> time.Time` -
   strict parse, positioned error on mismatch.
-- `time.iso(t)` / `time.fromIso(s)` - ISO 8601 round-trip;
+- `time.iso($t)` / `time.fromIso(s)` - ISO 8601 round-trip;
   the common case shouldn't need a format string.
-- Timezone handling:
-  `time.zone(name as string) -> time.Zone`,
-  `time.inZone($t, $z) -> time.Time`. Zone name uses the
-  IANA database (`"Europe/Vienna"`, `"America/Los_Angeles"`).
-  TinyGo footprint of the tz database evaluated honestly
-  before commitment; if too heavy, ship only fixed offsets
-  in M15.5.2 and defer IANA loading until embedding decisions
-  settle.
+- Fixed-offset zones:
+  `def struct time.Zone { offset as int, name as string };`
+  where `offset` is seconds east of UTC (`3600` for CET,
+  `-28800` for PST). Constructed via
+  `time.zone(offset as int, name as string) -> time.Zone`;
+  applied via `time.inZone($t, $z) -> time.Time`, which
+  re-renders the same instant in the given zone's wall-clock.
+  Two shortcuts cover the common cases: the constant
+  `time.UTC` (`Zone{offset: 0, name: "UTC"}`) and
+  `time.local() -> time.Zone`, which reads the host's current
+  offset from the OS - the only piece of zone state the
+  interpreter itself needs.
+
+**IANA names and DST are deliberately out of scope of the
+core library.** The interpreter ships no tzdata bundle and
+reads no `/usr/share/zoneinfo`; the `time.zone` constructor
+takes an integer offset, not a zone name like
+`"Europe/Vienna"`. Programs that need named IANA zones or
+daylight-saving transitions reach for the `timezones.j`
+library landing in M18.x: a pure-Jennifer map of names to
+offsets (with seasonal ranges where applicable), regenerated
+at build time from the host's tzdata, returning ordinary
+`time.Zone` values back to the caller. The split keeps the
+interpreter small (no embedded IANA bundle, no hosted-runtime
+dependency) and puts zone policy in inspectable Jennifer
+source the user can audit or patch.
 
 ### M15.5.3 - `examples/benchmark.j`
 
@@ -1574,10 +1559,19 @@ Jennifer **module** under `modules/` (the directory introduced in
 M17); none of them are compiled into the interpreter binary.
 Sub-milestones in priority order:
 
-- **M18.1 - `http`** (client) - atop `net`.
-- **M18.2 - `json`** - data interchange ubiquity.
-- **M18.3 - `csv`** - simple, useful early.
-- **M18.4 - `yaml`, `xml`, `markdown`, `pretty`** - one or more
+- **M18.1 - `timezones`** - IANA-name + DST companion to the
+  fixed-offset core in M15.5.2. A pure-Jennifer map of zone
+  names to `time.Zone` values (with seasonal ranges where
+  applicable) and a small resolver helper
+  (`timezones.zoneFor(name, $t) -> time.Zone`) that picks the
+  right offset for a given instant. A build-time script
+  regenerates the map from the host's tzdata before shipping,
+  so the data is auditable as source. Keeps zone policy out
+  of the interpreter binary.
+- **M18.2 - `http`** (client) - atop `net`.
+- **M18.3 - `json`** - data interchange ubiquity.
+- **M18.4 - `csv`** - simple, useful early.
+- **M18.5 - `yaml`, `xml`, `markdown`, `pretty`** - one or more
   sub-milestones depending on scope when planned.
 
 ## M19 - `crypto`
