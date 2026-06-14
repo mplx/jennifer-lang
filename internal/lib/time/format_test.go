@@ -325,6 +325,92 @@ func TestProgramStartIsStable(t *testing.T) {
 	}
 }
 
+// TestSleepHonorsHook: tests swap `sleepFunc` so the suite doesn't
+// actually pause. The hook captures the duration the call requested
+// so we can assert it was forwarded correctly.
+func TestSleepHonorsHook(t *testing.T) {
+	var got stdtime.Duration
+	prev := sleepFunc
+	sleepFunc = func(d stdtime.Duration) { got = d }
+	t.Cleanup(func() { sleepFunc = prev })
+
+	out := runProg(t, `
+		use time;
+		time.sleep(time.fromMilliseconds(500));
+	`)
+	if out != "" {
+		t.Errorf("expected no stdout output, got %q", out)
+	}
+	if got != 500*stdtime.Millisecond {
+		t.Errorf("sleepFunc received %v, want %v", got, 500*stdtime.Millisecond)
+	}
+}
+
+// TestSleepReturnsNull verifies the return type by binding it to
+// `def r as null init time.sleep(...)`. A non-null return would
+// fail Jennifer's declared-type check at the init site.
+func TestSleepReturnsNull(t *testing.T) {
+	prev := sleepFunc
+	sleepFunc = func(_ stdtime.Duration) {}
+	t.Cleanup(func() { sleepFunc = prev })
+
+	got := runProg(t, `
+		use io;
+		use time;
+		def r as null init time.sleep(time.fromMilliseconds(1));
+		io.printf("after");
+	`)
+	if got != "after" {
+		t.Errorf("program output = %q, want %q (and null return implied by `as null`)", got, "after")
+	}
+}
+
+// TestSleepNegativeIsNoOp: negative durations forward through to the
+// hook (which would no-op anyway under Go's time.Sleep), no error.
+func TestSleepNegativeIsNoOp(t *testing.T) {
+	called := false
+	prev := sleepFunc
+	sleepFunc = func(d stdtime.Duration) {
+		called = true
+		if d >= 0 {
+			t.Errorf("expected negative duration, got %v", d)
+		}
+	}
+	t.Cleanup(func() { sleepFunc = prev })
+
+	runProg(t, `
+		use time;
+		time.sleep(time.sub(time.fromUnix(0), time.fromUnix(1)));
+	`)
+	if !called {
+		t.Error("sleepFunc should have been called even with negative duration")
+	}
+}
+
+// TestSleepRejectsNonDuration: passing a Time (or anything not a
+// Duration) errors at the boundary.
+func TestSleepRejectsNonDuration(t *testing.T) {
+	err := expectErr(t, `
+		use time;
+		def t as time.Time init time.fromUnix(0);
+		time.sleep($t);
+	`)
+	if !strings.Contains(err, "time.sleep") || !strings.Contains(err, "Duration") {
+		t.Errorf("err lacks Duration / fn-name context: %v", err)
+	}
+}
+
+// TestSleepArgCount enforces 1-arg arity.
+func TestSleepArgCount(t *testing.T) {
+	err := expectErr(t, `
+		use time;
+		time.sleep();
+	`)
+	if !strings.Contains(err, "time.sleep expects 1 argument") {
+		t.Errorf("err lacks arity message: %v", err)
+	}
+}
+
 // TestProgramStartAnchorsElapsed: composing time.PROGRAM_START with
 // time.now() and time.sub produces the documented elapsed-time
 // idiom. The clock advances 1500ms between Install and the now()

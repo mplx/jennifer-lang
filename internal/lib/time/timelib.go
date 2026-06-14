@@ -34,6 +34,11 @@ const LibraryName = "time"
 // output without rewriting the constructor surface.
 var nowFunc = stdtime.Now
 
+// sleepFunc is the pause primitive `time.sleep` calls. Defaults to the
+// real Go sleep; tests swap it to a no-op (or to a clock-advancing
+// stub) so the test suite doesn't actually block. Parallels nowFunc.
+var sleepFunc = stdtime.Sleep
+
 // Install registers the `time` library: two structs and the M15.5.1
 // function set (constructors, accessors, arithmetic, comparison).
 func Install(in *interpreter.Interpreter) {
@@ -85,6 +90,7 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "before", beforeFn)
 	in.RegisterNamespaced(LibraryName, "after", afterFn)
 	in.RegisterNamespaced(LibraryName, "equal", equalFn)
+	in.RegisterNamespaced(LibraryName, "sleep", sleepFn)
 
 	// M15.5.2: zones, format/parse, ISO round-trip.
 	in.RegisterNamespaced(LibraryName, "zone", zoneFn)
@@ -442,4 +448,21 @@ func afterFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 
 func equalFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	return cmpFn("time.equal", args, func(a, b int64) bool { return a == b })
+}
+
+// sleepFn implements `time.sleep($d)`. Blocks the current goroutine
+// for the requested duration; a negative or zero `Duration` returns
+// immediately (matches Go's `time.Sleep`, sparing callers a check on
+// every "computed delay might be <= 0" path). Returns null - callers
+// who want the wake-up instant call `time.now()` afterward.
+func sleepFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("time.sleep expects 1 argument (duration), got %d", len(args))
+	}
+	nanos, err := extractDuration("time.sleep", args[0])
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	sleepFunc(stdtime.Duration(nanos))
+	return interpreter.Null(), nil
 }

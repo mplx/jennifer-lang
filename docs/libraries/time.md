@@ -132,6 +132,7 @@ at the requested unit.
 | `time.before($a, $b)`      | `bool`          | Strictly earlier (UTC instant compare).                |
 | `time.after($a, $b)`       | `bool`          | Strictly later.                                        |
 | `time.equal($a, $b)`       | `bool`          | Same UTC instant (the stored `offset` is ignored).     |
+| `time.sleep($d)`           | `null`          | Block the running task for the requested duration. Negative or zero `$d` returns immediately. |
 
 Comparison is on the underlying UTC instant, so `13:00 CET` and
 `12:00 UTC` compare equal. The library has no operator overloading
@@ -168,6 +169,32 @@ io.printf("step took %d ms\n", $stepMs);
 `time.PROGRAM_START` is a constant - reading it multiple times
 always returns the same instant, so it's safe as a long-lived
 anchor without ever needing to "refresh" it.
+
+## Pausing execution
+
+`time.sleep($d)` blocks the running task for the requested
+duration. Pair it with the duration constructors:
+
+```jennifer
+use time;
+time.sleep(time.fromMilliseconds(250));   # 250 ms pause
+time.sleep(time.fromSeconds(2));          # 2 second pause
+```
+
+Negative or zero durations return immediately - safe to use with
+a computed "remaining budget" without checking the sign:
+
+```jennifer
+def deadline as time.Time init time.add(time.now(), time.fromSeconds(5));
+# ... some work that may already overshoot ...
+def remaining as time.Duration init time.sub($deadline, time.now());
+time.sleep($remaining);   # no-op if work already took longer than 5s
+```
+
+`time.sleep` returns `null`; the caller who wants the wake-up
+instant calls `time.now()` after it returns. When M16.0
+concurrency ships, sleep blocks one task instead of the whole
+interpreter; until then it pauses the only thread.
 
 ## Zones
 

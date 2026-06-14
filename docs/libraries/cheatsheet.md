@@ -120,6 +120,7 @@ flat lookup view, not authoritative.
 | `time.parse(s, layout)`            | [time](time.md)                 | Strict strftime-style parse. Same code set as format (`%j` / `%u` are format-only).                                                 |
 | `time.second($t)`                  | [time](time.md)                 | Second 0-59.                                                                                                                        |
 | `time.seconds($d)`                 | [time](time.md)                 | Span as whole seconds (int).                                                                                                        |
+| `time.sleep($d)`                   | [time](time.md)                 | Block the running task for `$d`. Negative / zero returns immediately. Returns null.                                                 |
 | `time.sub($a, $b)`                 | [time](time.md)                 | Signed `time.Duration` between two `time.Time` values.                                                                              |
 | `time.unix($t)`                    | [time](time.md)                 | Unix-second instant of `$t` (int).                                                                                                  |
 | `time.unixMillis($t)`              | [time](time.md)                 | Unix-millisecond instant of `$t` (int).                                                                                             |
