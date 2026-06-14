@@ -21,6 +21,7 @@ import (
 	metalib "github.com/mplx/jennifer-lang/internal/lib/meta"
 	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
 	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
+	timelib "github.com/mplx/jennifer-lang/internal/lib/time"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 )
@@ -56,6 +57,7 @@ func runRepl() int {
 	mapslib.Install(in)
 	oslib.Install(in)
 	metalib.Install(in)
+	timelib.Install(in)
 
 	cwd, err := os.Getwd()
 	if err != nil {

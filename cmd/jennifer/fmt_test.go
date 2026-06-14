@@ -20,6 +20,7 @@ import (
 	metalib "github.com/mplx/jennifer-lang/internal/lib/meta"
 	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
 	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
+	timelib "github.com/mplx/jennifer-lang/internal/lib/time"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 )
@@ -86,6 +87,14 @@ func TestFmtPreservesRuntimeBehavior(t *testing.T) {
 		}
 		name := e.Name()
 		t.Run(name, func(t *testing.T) {
+			// Examples whose output depends on wall time can't be
+			// compared between two consecutive runs. They still get
+			// the formatter applied (errors would surface as parse
+			// failures), but we skip the equality check.
+			if name == "benchmark.j" {
+				t.Skipf("%s prints wall-clock timings; output varies between runs", name)
+				return
+			}
 			path := filepath.Join(dir, name)
 			origOut, err := runProgramOutput(path, "")
 			if err != nil {
@@ -143,6 +152,7 @@ func runProgramOutput(path, src string) (string, error) {
 	mapslib.Install(in)
 	oslib.Install(in)
 	metalib.Install(in)
+	timelib.Install(in)
 	if err := in.Run(prog); err != nil {
 		return "", err
 	}

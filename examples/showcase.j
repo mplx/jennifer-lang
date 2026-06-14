@@ -5,10 +5,9 @@
 # standard-library function that ships through M8. Used as a golden
 # integration test by cmd/jennifer/examples_test.go.
 #
-# JENNIFER_VERSION (from the auto-loaded `core` library) is
-# intentionally NOT printed - its value depends on git state and would
-# make the golden file non-deterministic. We exercise the constant via
-# convert.typeOf() instead.
+# meta.VERSION is intentionally NOT printed - its value depends on
+# git state and would make the golden file non-deterministic. We
+# exercise the constant via convert.typeOf() instead.
 
 use io;
 use convert;

@@ -20,6 +20,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/meta"
 	"github.com/mplx/jennifer-lang/internal/lib/os"
 	"github.com/mplx/jennifer-lang/internal/lib/strings"
+	"github.com/mplx/jennifer-lang/internal/lib/time"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 	"github.com/mplx/jennifer-lang/internal/version"
@@ -173,6 +174,7 @@ func runFile(path string) int {
 	mapslib.Install(in)
 	oslib.Install(in)
 	metalib.Install(in)
+	timelib.Install(in)
 	if err := in.Run(prog); err != nil {
 		// `exit;` / `exit EXPR;` (M11) - user-requested clean termination.
 		// Propagate the requested exit code without printing a runtime

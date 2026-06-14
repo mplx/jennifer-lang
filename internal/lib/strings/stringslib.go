@@ -32,9 +32,9 @@ const LibraryName = "strings"
 // library so they don't pollute the bare-name pool. Same rule that
 // drove `lists`, `maps`, and `os` into namespaced form.
 //
-// `len` used to live here as the rune-count function for strings; it now
-// lives in the auto-loaded `core` library so the same name covers strings,
-// lists, and maps with one polymorphic dispatch (see internal/lib/core).
+// `len` used to live here as the rune-count function for strings; it
+// is now a language built-in keyword (M15.4+) so the same name covers
+// strings, lists, maps, and bytes with one polymorphic dispatch.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "upper", upperFn)
 	in.RegisterNamespaced(LibraryName, "lower", lowerFn)

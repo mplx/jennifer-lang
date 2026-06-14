@@ -76,6 +76,42 @@ flat lookup view, not authoritative.
 | `strings.trimRight(s)`             | [strings](strings.md)           | Strip trailing whitespace.                                                                                                          |
 | `convert.typeOf(v)`                | [convert](convert.md)           | Runtime kind as string (`"int"`, `"float"`, `"string"`, `"bool"`, `"null"`, `"list"`, `"map"`).                                     |
 | `strings.upper(s)`                 | [strings](strings.md)           | Uppercase `s` (Unicode-aware).                                                                                                      |
+| `time.now()`                       | [time](time.md)                 | Current instant in the host's local zone (`time.Time`).                                                                             |
+| `time.utc()`                       | [time](time.md)                 | Current instant in UTC (`time.Time`).                                                                                               |
+| `time.fromUnix(seconds)`           | [time](time.md)                 | `time.Time` at the given Unix second.                                                                                               |
+| `time.fromUnixMillis(ms)`          | [time](time.md)                 | `time.Time` at the given Unix millisecond.                                                                                          |
+| `time.fromUnixNanos(ns)`           | [time](time.md)                 | `time.Time` at the given Unix nanosecond.                                                                                           |
+| `time.unix($t)`                    | [time](time.md)                 | Unix-second instant of `$t` (int).                                                                                                  |
+| `time.unixMillis($t)`              | [time](time.md)                 | Unix-millisecond instant of `$t` (int).                                                                                             |
+| `time.unixNanos($t)`               | [time](time.md)                 | Unix-nanosecond instant of `$t` (int).                                                                                              |
+| `time.year($t)`                    | [time](time.md)                 | Calendar year (int).                                                                                                                |
+| `time.month($t)`                   | [time](time.md)                 | Calendar month, January = 1.                                                                                                        |
+| `time.day($t)`                     | [time](time.md)                 | Day of month, 1-31.                                                                                                                 |
+| `time.hour($t)`                    | [time](time.md)                 | Hour 0-23.                                                                                                                          |
+| `time.minute($t)`                  | [time](time.md)                 | Minute 0-59.                                                                                                                        |
+| `time.second($t)`                  | [time](time.md)                 | Second 0-59.                                                                                                                        |
+| `time.nanosecond($t)`              | [time](time.md)                 | Fractional second, 0-999_999_999.                                                                                                   |
+| `time.weekday($t)`                 | [time](time.md)                 | ISO 8601 weekday: Monday = 1 ... Sunday = 7.                                                                                        |
+| `time.fromSeconds(n)`              | [time](time.md)                 | `time.Duration` of `n` seconds.                                                                                                     |
+| `time.fromMilliseconds(n)`         | [time](time.md)                 | `time.Duration` of `n` milliseconds.                                                                                                |
+| `time.fromMinutes(n)`              | [time](time.md)                 | `time.Duration` of `n` minutes.                                                                                                    |
+| `time.fromHours(n)`                | [time](time.md)                 | `time.Duration` of `n` hours.                                                                                                       |
+| `time.seconds($d)`                 | [time](time.md)                 | Span as whole seconds (int).                                                                                                        |
+| `time.milliseconds($d)`            | [time](time.md)                 | Span as whole milliseconds (int).                                                                                                   |
+| `time.minutes($d)`                 | [time](time.md)                 | Span as whole minutes (int).                                                                                                        |
+| `time.hours($d)`                   | [time](time.md)                 | Span as whole hours (int).                                                                                                          |
+| `time.add($t, $d)`                 | [time](time.md)                 | `time.Time` shifted by duration `$d`.                                                                                               |
+| `time.sub($a, $b)`                 | [time](time.md)                 | Signed `time.Duration` between two `time.Time` values.                                                                              |
+| `time.before($a, $b)`              | [time](time.md)                 | True if `$a` is strictly earlier than `$b`.                                                                                         |
+| `time.after($a, $b)`               | [time](time.md)                 | True if `$a` is strictly later than `$b`.                                                                                           |
+| `time.equal($a, $b)`               | [time](time.md)                 | True if `$a` and `$b` are the same UTC instant.                                                                                     |
+| `time.zone(offset, name)`          | [time](time.md)                 | Build a `time.Zone` from an integer offset (seconds east of UTC) and a display name.                                                |
+| `time.inZone($t, $z)`              | [time](time.md)                 | Re-render `$t` in `$z`'s wall-clock; UTC instant is preserved.                                                                      |
+| `time.local()`                     | [time](time.md)                 | Host's current `time.Zone` (name + offset).                                                                                         |
+| `time.format($t, layout)`          | [time](time.md)                 | Strftime-style format. Codes: `%Y %m %d %H %M %S %z %a %A %b %B %j %u %%`.                                                          |
+| `time.parse(s, layout)`            | [time](time.md)                 | Strict strftime-style parse. Same code set as format (`%j` / `%u` are format-only).                                                 |
+| `time.iso($t)`                     | [time](time.md)                 | RFC 3339 string: `Z` for UTC, `+HH:MM` otherwise; fractional seconds when non-zero.                                                 |
+| `time.fromIso(s)`                  | [time](time.md)                 | Parse RFC 3339; accepts `Z` or `+HH:MM`; optional fractional seconds.                                                               |
 
 ## Constants
 
@@ -91,6 +127,7 @@ flat lookup view, not authoritative.
 | `os.PATHSEP`   | [os](os.md)     | `string`       | PATH-list separator: `":"` Unix, `";"` Windows.                   |
 | `os.PLATFORM`  | [os](os.md)     | `string`       | OS tag: `"linux"`, `"darwin"`, `"windows"`, ...                   |
 | `PI`           | [math](math.md) | `float`        | π, 3.141592653589793.                                             |
+| `time.UTC`     | [time](time.md) | `time.Zone`    | Canonical UTC: `Zone{offset: 0, name: "UTC"}`.                    |
 
 ## Type-conversion calls
 
@@ -107,6 +144,7 @@ detail.
   organizing principles.
 - Per-library reference pages: [io.md](io.md), [convert.md](convert.md),
   [math.md](math.md), [strings.md](strings.md), [lists.md](lists.md),
-  [maps.md](maps.md), [os.md](os.md), [meta.md](meta.md).
+  [maps.md](maps.md), [os.md](os.md), [meta.md](meta.md),
+  [time.md](time.md).
 - [../user-guide/imports.md](../user-guide/imports.md) - how to import a
   library in a Jennifer source file.

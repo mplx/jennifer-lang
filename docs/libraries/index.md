@@ -28,6 +28,7 @@ restriction list; `jennifer-go` always supports the full surface.
 | `maps`    | `use maps;`    | full                                                  | `maps.keys`, `values`, `has`, `delete`, `merge` - all return a new map / list / bool                                                                                           | [maps.md](maps.md)       |
 | `os`      | `use os;`      | [partial](../technical/tinygo.md#tinygo-restrictions) | `os.getEnv`, `os.hasFlag`, `os.flag`, `os.run`, `os.spawn`, `os.wait`, `os.poll`, `os.kill`; constants `os.PLATFORM`, `os.ARCH`, `os.EOL`, `os.DIRSEP`, `os.PATHSEP`, `os.ARGS` | [os.md](os.md)           |
 | `meta`    | `use meta;`    | full                                                  | `meta.VERSION`, `meta.BUILD` - interpreter-self-identity constants                                                                                                             | [meta.md](meta.md)       |
+| `time`    | `use time;`    | full                                                  | M15.5.1+.2: instant/duration arithmetic, calendar + Unix accessors, fixed-offset zones (`time.zone`, `time.inZone`, `time.UTC`, `time.local`), strftime format/parse, ISO round-trip; structs `time.Time`, `time.Duration`, `time.Zone` | [time.md](time.md)       |
 
 A quick taste:
 
@@ -79,6 +80,8 @@ large ones. The organizing principle, captured for future extensions:
 - Operating-system glue (env, args, host info) -> `os`.
 - Interpreter-self-identity constants (version, build, future
   build-time / git-sha / GC stats) -> `meta`.
+- Time / instants / durations -> `time` (M15.5+; formatting,
+  parsing, and fixed-offset zones land in M15.5.2).
 - A genuinely new topic with **five or more** functions / constants
   -> a new library. Fewer than five names fold into the most-related
   existing library (the non-crypto random helpers were the first
@@ -99,7 +102,7 @@ Library names look mixed at first glance - `strings` is plural but
   something you can have multiples of. `strings`, `lists`, `maps`,
   `bytes`, `files`.
 - **Singular for mass nouns and conceptual wholes**: `math`, `meta`,
-  `time` (planned), `regex` (planned).
+  `time`, `regex` (planned).
 - **Bare verb when the library is named for what it does**, not what
   it touches: `convert`.
 - **Idiomatic abbreviations are fine**: `os`, `fs`, `net`, `regex`.

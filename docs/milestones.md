@@ -836,124 +836,64 @@ other wire format added in M15.5.2.
 
 ### M15.5.1 - core type, arithmetic, Unix
 
-- `def struct time.Time { ... };` - opaque struct representing
-  an instant on the wall-clock timeline with nanosecond
-  precision and zone awareness. Fields are private API; users
-  interact through the function set below. (Re-using the M13.1
-  struct machinery; `time.Time` is just a struct that the
-  library happens to ship and on which the library defines
-  operators.)
-- `def struct time.Duration { ... };` - a span. Subtracting two
-  `time.Time` produces a `Duration`; adding a `Duration` to a
-  `Time` produces a `Time`.
-- `time.now() -> time.Time` - current instant in the local
-  zone.
-- `time.utc() -> time.Time` - current instant in UTC.
-- `time.fromUnix(seconds as int) -> time.Time`,
-  `time.fromUnixMillis(ms as int) -> time.Time`,
-  `time.fromUnixNanos(ns as int) -> time.Time` - constructors
-  from common Unix integer encodings.
-- Accessors as plain functions:
-  `time.unix($t) -> int`, `time.unixMillis($t) -> int`,
-  `time.unixNanos($t) -> int`; calendar accessors
-  `time.year($t)`, `time.month($t)`, `time.day($t)`,
-  `time.hour($t)`, `time.minute($t)`, `time.second($t)`,
-  `time.nanosecond($t)`, `time.weekday($t)`. (Jennifer has no
-  methods on structs - see
-  [rejected.md > Methods on structs](technical/rejected.md#methods-on-structs)
-  for why; every library exposes accessors as
-  `lib.name(struct)`, not `$struct.name()`.)
-- Arithmetic: `time.add($t, $d) -> time.Time`,
-  `time.sub($t1, $t2) -> time.Duration`,
-  `time.before($a, $b) -> bool`, `time.after($a, $b) -> bool`,
-  `time.equal($a, $b) -> bool`. Operator overloading is not
-  in the language; these are explicit function calls.
-- Duration constructors mirror the `fromUnix` shape so
-  constructor and accessor never collide:
-  `time.fromSeconds(n)`, `time.fromMilliseconds(n)`,
-  `time.fromMinutes(n)`, `time.fromHours(n)`. Duration
-  accessors return the span as the requested unit:
-  `time.seconds($d)`, `time.milliseconds($d)`,
-  `time.minutes($d)`, `time.hours($d)`.
+**Status:** done. Shipped two namespaced structs
+(`time.Time {nanos as int, offset as int}` and
+`time.Duration {nanos as int}`), Unix-int constructors
+(`fromUnix{,Millis,Nanos}`), duration constructors
+(`fromSeconds/Milliseconds/Minutes/Hours`), calendar accessors
+(year/month/day/hour/minute/second/nanosecond/weekday - ISO 8601:
+Monday=1, Sunday=7), Unix accessors (`unix/unixMillis/unixNanos`),
+duration accessors (`seconds/milliseconds/minutes/hours`),
+arithmetic (`add`, `sub`), and comparison (`before`, `after`,
+`equal`). Comparisons run on the underlying UTC instant.
+`time.now()` / `time.utc()` use a Go-level `nowFunc` package var
+for deterministic tests; the user-facing surface has no clock
+override (a hookable clock at language level is deferred). See
+[libraries/time.md](libraries/time.md) for the reference and
+`examples/time.j` for a deterministic golden using `fromUnix`.
 
 ### M15.5.2 - formatting, parsing, fixed-offset zones
 
-- `time.format($t, layout as string) -> string` - layout
-  language settled at the start of M15.5.2 (`strftime`-style
-  vs Go's reference-time style; the former wins on
-  familiarity, the latter on copy-paste reliability).
-- `time.parse(s as string, layout as string) -> time.Time` -
-  strict parse, positioned error on mismatch.
-- `time.iso($t)` / `time.fromIso(s)` - ISO 8601 round-trip;
-  the common case shouldn't need a format string.
-- Fixed-offset zones:
-  `def struct time.Zone { offset as int, name as string };`
-  where `offset` is seconds east of UTC (`3600` for CET,
-  `-28800` for PST). Constructed via
-  `time.zone(offset as int, name as string) -> time.Zone`;
-  applied via `time.inZone($t, $z) -> time.Time`, which
-  re-renders the same instant in the given zone's wall-clock.
-  Two shortcuts cover the common cases: the constant
-  `time.UTC` (`Zone{offset: 0, name: "UTC"}`) and
-  `time.local() -> time.Zone`, which reads the host's current
-  offset from the OS - the only piece of zone state the
-  interpreter itself needs.
-
-**IANA names and DST are deliberately out of scope of the
-core library.** The interpreter ships no tzdata bundle and
-reads no `/usr/share/zoneinfo`; the `time.zone` constructor
-takes an integer offset, not a zone name like
-`"Europe/Vienna"`. Programs that need named IANA zones or
-daylight-saving transitions reach for the `timezones.j`
-library landing in M18.x: a pure-Jennifer map of names to
-offsets (with seasonal ranges where applicable), regenerated
-at build time from the host's tzdata, returning ordinary
-`time.Zone` values back to the caller. The split keeps the
-interpreter small (no embedded IANA bundle, no hosted-runtime
-dependency) and puts zone policy in inspectable Jennifer
-source the user can audit or patch.
+**Status:** done. Shipped the `time.Zone {offset as int, name as
+string}` struct (fields public so M18.4's `timezones.j` can
+construct them), `time.zone(offset, name)` constructor (|offset|
+capped at +/- 26h), `time.inZone($t, $z)` which preserves the UTC
+instant and re-renders calendar parts in `$z`, the `time.UTC`
+constant, and `time.local()` reading the host's current zone.
+`time.format` / `time.parse` use a strftime-style layout (chosen
+over Go's reference-time style for familiarity to C / Python /
+shell users); v1 verbs are `%Y %m %d %H %M %S %z %a %A %b %B %j
+%u %%` with `%j` and `%u` format-only and month/weekday names
+English-only. `time.iso($t)` / `time.fromIso(s)` round-trip RFC
+3339 with optional fractional seconds. The `time.utc()` function
+(M15.5.1, current instant in UTC) and the `time.UTC` constant
+(zone) coexist via case-sensitive namespace lookup. IANA names
+and DST stay out of the core library; that's the M18.4
+`timezones.j` job. See
+[libraries/time.md](libraries/time.md) for the reference and
+`examples/time-format.j` for a golden walkthrough.
 
 ### M15.5.3 - `examples/benchmark.j`
 
-Two purposes:
+**Status:** done. Shipped `examples/benchmark.j` covering eight
+workloads: `fib(N)` recursion, trial-division prime count,
+hand-rolled Newton's iteration for sqrt, Monte-Carlo pi (seeded
+for reproducibility), `lists.sort`/`reverse`/`slice` chain
+(value-copy stress), struct list build+read, `strings.join` of
+range-toString output, and map insert+read. Each block prints
+its wall-clock milliseconds and an iteration count; a final
+total summarises the run. Output is timing-dependent so no
+golden file is shipped; `TestExamples` auto-skips via the
+no-expected-file rule, and `TestFmtPreservesRuntimeBehavior`
+has an explicit skip entry for the same reason.
 
-1. **Demonstrate the `time` library**: `time.now()`,
-   `time.sub($end, $start)`, `time.milliseconds($d)`,
-   `time.fromUnix`. The script is the user-facing example of
-   "how do I measure how long my code took?"
-2. **Side-by-side workload for `jennifer` vs `jennifer-go`**:
-   a small, deterministic suite covering several load shapes so
-   programmers (and macflyos-embedding evaluators) can see where
-   the two binaries diverge on the same machine.
-
-Suggested workload shape (settle exact numbers at the start of
-M15.5.3 so they finish in O(seconds), not minutes, on a modern
-laptop):
-
-- **CPU-bound integer math.** Fibonacci recursion, primality
-  sieve, integer factorisation. Mostly stresses the evaluator
-  dispatch loop.
-- **Float-heavy.** Newton's iteration / Monte-Carlo pi estimate.
-  Same shape but with `KindFloat` arithmetic.
-- **Value-copy stress.** Big-list `lists.sort` + `lists.reverse`
-  + `lists.slice` chain - every operation is non-mutating and
-  deep-copies its input, so the per-binding `Value.Copy` cost
-  dominates.
-- **Struct copying.** Build a list of structs (e.g. `Point{x, y}`
-  via M13.1 user-defined struct) and transform / filter; exercises
-  the struct deep-copy path that lists / maps share.
-- **String building.** `lists.range(0, N)` + `convert.toString`
-  + `strings.join` to produce a single big string; stresses the
-  Unicode-aware string operations and allocator.
-- **Map churn.** Grow a `map of string to int` by N entries and
-  read each back; insertion-order preserved.
-
-Each block runs in isolation, prints its wall-clock time and
-roughly the number of operations it performed. Final output is a
-small table the user can copy into a bug report or commit message.
-Not part of the golden test suite (output is timing-dependent);
-the same skip-if-no-expected-file rule that covers `exec.j`
-applies here.
+The original spec called for a Sieve of Eratosthenes; we
+shipped trial division instead because Jennifer's value-semantic
+list mutation turns the sieve's `$s[i] = false;` write loop
+into an O(N^2) copy-on-write tour of the heap, which masks the
+evaluator-dispatch cost the workload was meant to stress.
+Trial division stays on scalars and accomplishes the same goal
+without the storage allocator dominating.
 
 ## M15.6 - `hash` and `crc`
 

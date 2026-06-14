@@ -1,0 +1,12 @@
+date=2024-06-15
+clock=12:34:56
+zone=+0000
+named=Saturday June, 15 2024 12:34:56
+dayofyear=167 isoweekday=6
+vienna=2024-06-15 13:34 +0100 offset=3600
+vienna.name=CET
+UTC=UTC offset=0
+iso=2024-06-15T12:34:56Z
+iso-vienna=2024-06-15T13:34:56+01:00
+parsed unix=1718454896
+round-trip=2024-06-15T12:34:56+0000

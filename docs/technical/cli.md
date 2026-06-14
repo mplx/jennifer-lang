@@ -172,11 +172,10 @@ Two consumers read `version.Version`:
 
 - `cmd/jennifer/main.go` prints it in the `help` banner and as the body
   of the `version` subcommand.
-- `internal/lib/core/corelib.go` mirrors it into the interpreter as the
-  `JENNIFER_VERSION` constant. `core` is auto-loaded, so Jennifer
-  programs read it directly: `printf("%s\n", JENNIFER_VERSION);` (no
-  `use` statement).
+- `internal/lib/meta/metalib.go` mirrors it into the interpreter as the
+  `meta.VERSION` constant. The `meta` library is opt-in like every
+  other library: `use meta; io.printf("%s\n", meta.VERSION);`.
 
-`go test ./...` skips codegen and uses the default `"dev"`. The core-lib
+`go test ./...` skips codegen and uses the default `"dev"`. The meta-lib
 test only checks that the constant matches `version.Version`, not a
 specific value, so it stays robust across builds.
