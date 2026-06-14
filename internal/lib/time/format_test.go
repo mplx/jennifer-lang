@@ -293,3 +293,63 @@ func TestFromIsoErrorPositioned(t *testing.T) {
 		t.Errorf("error doesn't mention time.fromIso: %v", err)
 	}
 }
+
+// TestProgramStartCapturedAtInstall: time.PROGRAM_START is the moment
+// the time library was installed, captured through `nowFunc` so the
+// test's frozen clock determines the value.
+func TestProgramStartCapturedAtInstall(t *testing.T) {
+	frozenAt(t, stdtime.Unix(1718452800, 0).UTC())
+	got := runProg(t, `
+		use io;
+		use time;
+		io.printf("%d", time.unix(time.PROGRAM_START));
+	`)
+	if got != "1718452800" {
+		t.Errorf("time.PROGRAM_START unix = %q, want 1718452800", got)
+	}
+}
+
+// TestProgramStartIsStable: multiple reads see the same instant
+// (it's a constant; the clock moving on doesn't affect it).
+func TestProgramStartIsStable(t *testing.T) {
+	frozenAt(t, stdtime.Unix(1718452800, 0).UTC())
+	got := runProg(t, `
+		use io;
+		use time;
+		def a as time.Time init time.PROGRAM_START;
+		def b as time.Time init time.PROGRAM_START;
+		io.printf("%t", time.equal($a, $b));
+	`)
+	if got != "true" {
+		t.Errorf("time.PROGRAM_START not stable across reads: %q", got)
+	}
+}
+
+// TestProgramStartAnchorsElapsed: composing time.PROGRAM_START with
+// time.now() and time.sub produces the documented elapsed-time
+// idiom. The clock advances 1500ms between Install and the now()
+// call, so the elapsed Duration should report 1500.
+func TestProgramStartAnchorsElapsed(t *testing.T) {
+	base := stdtime.Unix(1718452800, 0).UTC()
+	calls := 0
+	prev := nowFunc
+	nowFunc = func() stdtime.Time {
+		// First call (during Install) returns base; later calls add 1.5 s.
+		if calls == 0 {
+			calls++
+			return base
+		}
+		return base.Add(1500 * stdtime.Millisecond)
+	}
+	t.Cleanup(func() { nowFunc = prev })
+
+	got := runProg(t, `
+		use io;
+		use time;
+		def elapsed as time.Duration init time.sub(time.now(), time.PROGRAM_START);
+		io.printf("%d", time.milliseconds($elapsed));
+	`)
+	if got != "1500" {
+		t.Errorf("elapsed ms = %q, want 1500", got)
+	}
+}

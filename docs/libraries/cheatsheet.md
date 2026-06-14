@@ -143,6 +143,7 @@ flat lookup view, not authoritative.
 | `os.PATHSEP`   | [os](os.md)     | `string`       | PATH-list separator: `":"` Unix, `";"` Windows.                   |
 | `os.PLATFORM`  | [os](os.md)     | `string`       | OS tag: `"linux"`, `"darwin"`, `"windows"`, ...                   |
 | `PI`           | [math](math.md) | `float`        | π, 3.141592653589793.                                             |
+| `time.PROGRAM_START` | [time](time.md) | `time.Time` | Captured the moment the time library installed; "since program launched" anchor. |
 | `time.UTC`     | [time](time.md) | `time.Zone`    | Canonical UTC: `Zone{offset: 0, name: "UTC"}`.                    |
 
 ## Type-conversion calls

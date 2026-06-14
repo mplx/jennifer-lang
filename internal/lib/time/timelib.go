@@ -92,6 +92,14 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "local", localFn)
 	in.RegisterNamespacedConst(LibraryName, "UTC", utcConst)
 
+	// `time.PROGRAM_START` captures the moment the time library was
+	// installed. In the CLI / REPL that's the start of the user's
+	// program run, before the source file is even read (see main.go
+	// and repl.go, which call every library's Install up front).
+	// Captured through `nowFunc` so tests that freeze the clock pick
+	// up the frozen instant.
+	in.RegisterNamespacedConst(LibraryName, "PROGRAM_START", makeTime(nowFunc()))
+
 	in.RegisterNamespaced(LibraryName, "format", formatFn)
 	in.RegisterNamespaced(LibraryName, "parse", parseFn)
 	in.RegisterNamespaced(LibraryName, "iso", isoFn)

@@ -71,10 +71,19 @@ All scalar arguments are strict: a non-int / non-string argument is
 a positioned runtime error. There is no float-seconds form; pass
 milliseconds or nanoseconds when sub-second precision is needed.
 
-The constant **`time.UTC`** (= `Zone{offset: 0, name: "UTC"}`) is
-the canonical UTC zone. `time.utc()` (lowercase, function) returns
-the *current* instant in UTC - the two coexist because constants
-and functions live in separate namespace maps.
+Two constants live alongside the constructors:
+
+- **`time.UTC`** (= `Zone{offset: 0, name: "UTC"}`) - the canonical
+  UTC zone. Coexists with the `time.utc()` function (which returns
+  the *current* instant in UTC) because constants and functions
+  live in separate namespace maps.
+- **`time.PROGRAM_START`** (`time.Time`) - the moment the time
+  library was installed, which for the `jennifer` and
+  `jennifer-go` binaries is just before the user's source file is
+  read. Use it to anchor "total elapsed since program start"
+  timing without scattering a `def start = time.now();` line at
+  the top of every script. See
+  [Measuring total runtime](#measuring-total-runtime) below.
 
 ## Accessors
 
@@ -127,6 +136,38 @@ at the requested unit.
 Comparison is on the underlying UTC instant, so `13:00 CET` and
 `12:00 UTC` compare equal. The library has no operator overloading
 in v1: write `time.add($t, $d)`, not `$t + $d`.
+
+## Measuring total runtime
+
+`time.PROGRAM_START` is captured before the interpreter reads the
+user source, so anchoring elapsed-time against it gives "total
+runtime since the program launched" with no per-script setup.
+Subtract the current instant from it and read the duration at
+whatever unit you want:
+
+```jennifer
+use io;
+use time;
+
+# ... script body ...
+
+def elapsed as time.Duration init time.sub(time.now(), time.PROGRAM_START);
+io.printf("ran for %d ms\n", time.milliseconds($elapsed));
+```
+
+For per-section timing inside the script, take a local snapshot
+of `time.now()` and subtract that instead:
+
+```jennifer
+def stepStart as time.Time init time.now();
+# ... one step of the workload ...
+def stepMs as int init time.milliseconds(time.sub(time.now(), $stepStart));
+io.printf("step took %d ms\n", $stepMs);
+```
+
+`time.PROGRAM_START` is a constant - reading it multiple times
+always returns the same instant, so it's safe as a long-lived
+anchor without ever needing to "refresh" it.
 
 ## Zones
 
