@@ -936,93 +936,75 @@ reference and `examples/encoding.j` for a golden walkthrough.
 
 ## M15.8 - distribution + first public release
 
-The last step before Phase C. Phase B finishes the foundational
-library batch; M15.8 makes that batch a thing people can actually
-install and run before Phase C starts adding I/O on top. The
-items below have been on the parallel "Path to 1.0.0
-distribution" track for a while; promoting them to a real
-milestone means they get tested, polished, and released as a
-unit instead of trickled in piecemeal.
+**Status:** done. Packaging / CI / release-engineering milestone -
+no `.j`-source language change. Phase B's library batch becomes
+something users can actually install before Phase C starts adding
+I/O on top. Shipped in four phases:
 
-This is a packaging / CI / release-engineering milestone, not a
-language change. Nothing new ships in the `.j` source language.
+- **CI** (`.github/workflows/test.yml`, `release.yml`). `test.yml`
+  gates every PR with `go vet` + `gofmt` + `go test ./...` +
+  `make build` + a per-binary smoke run + a repository-wide
+  em-dash scan. `release.yml` triggers on bare-semver tags
+  matching `[0-9]*.[0-9]*.[0-9]*` (project convention: no `v`
+  prefix), cross-compiles both binaries for `linux/{amd64,arm64}`
+  from a single `ubuntu-latest` runner, smoke-tests non-native
+  artefacts via QEMU user-mode, runs `examples/benchmark.j` on
+  the native entry so the release notes carry fresh numbers, and
+  publishes a draft GitHub Release with every artefact attached.
+- **Packaging** under `packaging/{debian,arch,mime,man}/`. `.deb`
+  via `scripts/build-deb.sh` (assembles the FHS-correct tree from
+  already-built binaries: `/usr/bin/jennifer{,-go}`, gzipped man
+  pages, the shared `text/x-jennifer` MIME definition,
+  `update-mime-database` postinst/postrm hook); AUR
+  `PKGBUILD-bin` (downloads the release tarball) and
+  `PKGBUILD-git` (clones + `make build` + `go test ./...` on each
+  install); a shared `jennifer.install` hook for MIME refresh on
+  Arch. The `pacman` standalone artefact from the original spec
+  was dropped - `PKGBUILD-bin` + `makepkg` covers the same need
+  without a separate format. `release.yml` builds the per-arch
+  `.deb` and generates a pre-filled `PKGBUILD-bin` (real `pkgver`
+  + real `sha256sums_*` from the just-built sidecar `.sha256`
+  files) as a release asset so the AUR maintainer publishes via
+  `curl` + `git push` without hand-editing.
+- **Docs site** via mdBook (`book.toml` at repo root, `src =
+  "docs"`, navy theme, search enabled, Rust-playground hooks
+  disabled). `docs/SUMMARY.md` maps the existing tree into 5
+  parts (Intro / Getting started / Language reference /
+  Libraries / Technical reference / Project) covering 39 chapter
+  references; `docs/introduction.md` is the docs-site landing
+  page (separate from README which stays GitHub-repo-focused).
+  `.github/workflows/docs.yml` builds with a pinned mdBook 0.5.3
+  via direct download from `rust-lang/mdBook` releases (no
+  third-party action) and publishes to GitHub Pages on every
+  push to `main`.
+- **User-facing install docs**. README gained "Which binary?" +
+  "Install" sections with one canonical command per path
+  (`dpkg -i` / `yay -S jennifer-bin` / `yay -S jennifer-git` /
+  tarball / `make build`) and a link to the docs site.
+  `docs/user-guide/installing.md` restructured to put package
+  paths first with full checksumming + FHS layout details, with
+  build-from-source positioned as the developer path.
+  `RELEASE.md` at the repo root documents the steps CI genuinely
+  can't do (AUR SSH push, draft-to-published transition,
+  pre-tag readiness checks).
 
-**Two binaries per release (both supported).**
+**Project convention decisions worth keeping**:
+- **Bare semver tags** (`0.14.1`, no `v` prefix). All packaging
+  pipelines pass the tag straight through.
+- **No `LICENSE` file at repo root** in v1 - the LGPL-3.0 text
+  ships inline in `packaging/debian/copyright` (the form
+  distros actually consume) and the README points at
+  gnu.org's canonical URL. Adding a top-level `LICENSE` is a
+  one-line decision the maintainer can take any time.
 
-Benchmarks on the dev machine showed Go-compiled Jennifer is
-~3-4x faster than TinyGo-compiled Jennifer for CPU-bound code
-(loops, recursion, arithmetic), while TinyGo wins by ~1.7x on
-allocation-heavy patterns where its lighter GC pays off. The
-size delta is small (TinyGo ~2.4 MB vs Go ~3.9 MB on the dev
-machine; bare-metal numbers will differ from a VM). Both
-binaries ship per platform:
+**Stayed on the "Path to 1.0.0 distribution" parallel track**
+(post-M15.8 polish, not gated on this milestone): Homebrew tap,
+Snap, Nix flake, real apt repository, cross-build for
+macOS / Windows (waits on platform-portability work).
 
-- `jennifer` - **TinyGo build, canonical**. The design-target
-  binary: McFly OS embedding, wasm, embedded contexts all want
-  this one. Default download path in the README and docs.
-- `jennifer-go` - **Go build, performance variant**. For users
-  running compute-bound Jennifer where the 3-4x speedup matters
-  more than the size or embedding story. Same source, same
-  language; only the compiler differs.
-
-The release README ships with the benchmark numbers re-run on
-the release CI so users can pick informed. The "which binary?"
-guidance lives in `docs/user-guide/installing.md` so the
-decision is documented in one place.
-
-**GitHub Actions.**
-
-- **`test.yml`** - runs `go test ./...` and `make build`
-  (TinyGo) on every push and PR. Caches the Go and TinyGo
-  module caches so PR runs stay fast. Currently we run tests
-  locally only; this puts a green-checkmark gate on every PR
-  and stops broken-build PRs from landing.
-- **`release.yml`** - triggered on bare-semver git tag matching
-  `[0-9]*.[0-9]*.[0-9]*` (project convention: no `v` prefix).
-  Builds both `jennifer` (TinyGo) and `jennifer-go` (Go)
-  binaries for the supported platforms (linux/amd64 + arm64
-  initially; macOS + Windows once cross-platform support
-  lands in a follow-on sub-milestone), runs the benchmark
-  suite on the release runner, produces a release notes
-  template with the benchmark table filled in, and publishes
-  to GitHub Releases.
-
-**Packaging.**
-
-- **Debian** (`.deb`). Built from the release artifact. Ships
-  `/usr/bin/jennifer` (TinyGo) and `/usr/bin/jennifer-go` (Go
-  variant) plus man-page stubs and `.j` extension MIME
-  registration. The package is hosted as a GitHub Release
-  artifact initially; a real apt repository follows if/when
-  there's user demand.
-- **Arch** (`PKGBUILD`). Two AUR packages: `jennifer-bin`
-  (downloads the prebuilt artifact, fast install) and
-  `jennifer-git` (builds from source, tracks master). Both
-  install the TinyGo + Go binaries side by side.
-- **pacman** (`.pacman` package format). Pre-built for users
-  who want the binary form without going through AUR's
-  source-package workflow.
-
-**Documentation site.**
-
-GitHub Pages driven from `docs/` (mdBook is the leading
-candidate; needs a design pass for the navigation/landing
-shape). The site goes live with M15.8 so the release
-announcement has somewhere to link to that isn't a GitHub
-file tree. Versioned per release tag.
-
-**What stays on the "Path to 1.0.0 distribution" parallel
-track** (post-M15.8 polish, not gated on this milestone):
-
-- Homebrew tap for macOS users
-- Snap package
-- Nix flake / Nix package
-- Cross-build for macOS (waits on platform-portability work
-  first)
-- Cross-build for Windows (same)
-
-These are post-1.0 polish that the parallel track keeps tracking;
-they ship when they ship and don't block M16.0.
+**One-time manual setup** required before the first run: in repo
+Settings -> Pages, set "Source" to "GitHub Actions" so `docs.yml`
+can deploy.
 
 ---
 
