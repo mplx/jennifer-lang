@@ -42,20 +42,20 @@ var canonicalCodecOrder = []string{
 // lower-cases ASCII (see normalizeCodec in encodinglib.go), so the
 // keys here are already in that form.
 var codecAliases = map[string]string{
-	"ascii":       "ascii",
-	"usascii":     "ascii",
+	"ascii":   "ascii",
+	"usascii": "ascii",
 
-	"latin1":      "latin-1",
-	"iso88591":    "latin-1",
+	"latin1":   "latin-1",
+	"iso88591": "latin-1",
 
 	"windows1252": "windows-1252",
 	"cp1252":      "windows-1252",
 	"ms1252":      "windows-1252",
 	"win1252":     "windows-1252",
 
-	"ebcdic":      "ebcdic",
-	"ibm1047":     "ebcdic",
-	"cp1047":      "ebcdic",
+	"ebcdic":  "ebcdic",
+	"ibm1047": "ebcdic",
+	"cp1047":  "ebcdic",
 }
 
 // codecs holds the live codec implementations keyed by canonical

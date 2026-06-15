@@ -228,7 +228,8 @@ func (l *Lexer) peek(offset int) (rune, bool) {
 // nextTrivia consumes leading non-token material until it either
 // (a) produces one trivia token (comment or blank line), or
 // (b) reaches a non-trivia position (returns ok=false so the caller
-//     can read a regular token).
+//
+//	can read a regular token).
 //
 // Non-newline whitespace is silently skipped. Newlines are tracked
 // so a line containing only whitespace can be reported as a blank

@@ -34,12 +34,12 @@ type FormatSpec struct {
 
 	Mode stringMode
 
-	Base    int
-	Sign    signMode
-	HasGrp  bool
-	Group   int
-	HasSep  bool
-	Sep     byte
+	Base   int
+	Sign   signMode
+	HasGrp bool
+	Group  int
+	HasSep bool
+	Sep    byte
 
 	HasPrec bool
 	Prec    int

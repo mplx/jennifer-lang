@@ -1155,14 +1155,14 @@ func (p *parser) parseNot() (Expr, error) {
 // M12 inserts four new rungs between comparison and additive for the bit
 // operators (`|`, `^`, `&`, `<<` / `>>`) following Python's precedence:
 //
-//   comparison
-//     |   (bitwise OR)
-//     ^   (bitwise XOR)
-//     &   (bitwise AND)
-//     << >> (shifts)
-//   additive (+ -)
-//   multiplicative (* / // %)
-//   unary (- ~ not)
+//	comparison
+//	  |   (bitwise OR)
+//	  ^   (bitwise XOR)
+//	  &   (bitwise AND)
+//	  << >> (shifts)
+//	additive (+ -)
+//	multiplicative (* / // %)
+//	unary (- ~ not)
 //
 // Each level recurses into the next tighter one. Python ordering avoids
 // the C `x & 0xff == 0` footgun (which C parses as `x & (0xff == 0)`).

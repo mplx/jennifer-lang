@@ -31,11 +31,11 @@ type lineEditor struct {
 	fd       int           // file descriptor of stdin, used for term.MakeRaw
 	history  *replHistory
 	buf      []rune
-	cur      int            // 0..len(buf), insertion point
-	prompt   string         // currently-active prompt (>>> or ...)
-	browsing int            // history position; 0 = "below the bottom" (current buffer); positive walks back
-	stashed  []rune         // edited buffer saved when user starts walking history
-	stashedC int            // saved cursor position to restore when leaving history
+	cur      int    // 0..len(buf), insertion point
+	prompt   string // currently-active prompt (>>> or ...)
+	browsing int    // history position; 0 = "below the bottom" (current buffer); positive walks back
+	stashed  []rune // edited buffer saved when user starts walking history
+	stashedC int    // saved cursor position to restore when leaving history
 }
 
 // errLineCancelled is returned when the user hits Ctrl+C. The REPL treats

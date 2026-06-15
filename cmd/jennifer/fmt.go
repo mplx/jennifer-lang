@@ -64,7 +64,7 @@ func formatTokens(tokens []lexer.Token) string {
 // token, then `finish()` once for the trailing newline.
 type fmtState struct {
 	out         strings.Builder
-	indent      int  // current block depth in indent units
+	indent      int // current block depth in indent units
 	prev        lexer.Token
 	hasPrev     bool // false before the first token
 	atLineStart bool // true right after newline+indent has been written

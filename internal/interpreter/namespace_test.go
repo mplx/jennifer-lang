@@ -155,7 +155,7 @@ bio.translate("X");
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), `did you mean ` + "`b`") {
+	if !strings.Contains(err.Error(), `did you mean `+"`b`") {
 		t.Errorf("err = %v", err)
 	}
 }

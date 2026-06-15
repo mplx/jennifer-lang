@@ -55,10 +55,10 @@ const (
 	TOKEN_BYTES_TYPE  // M12: the word "bytes" used as a type
 
 	// Compound-type keywords (M6)
-	TOKEN_LIST // the word "list" used as a type
-	TOKEN_MAP  // the word "map" used as a type
-	TOKEN_OF   // "of" - element-type separator: `list of int`, `map of K to V`
-	TOKEN_TO   // "to" - K/V separator inside `map of K to V`
+	TOKEN_LIST   // the word "list" used as a type
+	TOKEN_MAP    // the word "map" used as a type
+	TOKEN_OF     // "of" - element-type separator: `list of int`, `map of K to V`
+	TOKEN_TO     // "to" - K/V separator inside `map of K to V`
 	TOKEN_IN     // "in" - for-each iterator: `for (def x in $coll)`
 	TOKEN_STRUCT // M13.1: `def struct Name { field as type, ... };`
 	TOKEN_LEN    // M15.4: `len(EXPR)` polymorphic structural-length built-in
@@ -222,18 +222,18 @@ func (t Token) String() string {
 }
 
 var keywords = map[string]TokenType{
-	"def":    TOKEN_DEFINE,
-	"func":   TOKEN_FUNC,
-	"as":     TOKEN_AS,
-	"init":   TOKEN_INIT,
-	"const":  TOKEN_CONST,
-	"include": TOKEN_INCLUDE,
-	"import":  TOKEN_IMPORT,
-	"use":     TOKEN_USE,
-	"return": TOKEN_RETURN,
-	"if":     TOKEN_IF,
-	"elseif": TOKEN_ELSEIF,
-	"else":   TOKEN_ELSE,
+	"def":      TOKEN_DEFINE,
+	"func":     TOKEN_FUNC,
+	"as":       TOKEN_AS,
+	"init":     TOKEN_INIT,
+	"const":    TOKEN_CONST,
+	"include":  TOKEN_INCLUDE,
+	"import":   TOKEN_IMPORT,
+	"use":      TOKEN_USE,
+	"return":   TOKEN_RETURN,
+	"if":       TOKEN_IF,
+	"elseif":   TOKEN_ELSEIF,
+	"else":     TOKEN_ELSE,
 	"while":    TOKEN_WHILE,
 	"for":      TOKEN_FOR,
 	"repeat":   TOKEN_REPEAT,
@@ -244,24 +244,24 @@ var keywords = map[string]TokenType{
 	"try":      TOKEN_TRY,
 	"catch":    TOKEN_CATCH,
 	"throw":    TOKEN_THROW,
-	"true":   TOKEN_TRUE,
-	"false":  TOKEN_FALSE,
-	"null":   TOKEN_NULL,
-	"and":    TOKEN_AND,
-	"or":     TOKEN_OR,
-	"not":    TOKEN_NOT,
-	"int":    TOKEN_INT_TYPE,
-	"float":  TOKEN_FLOAT_TYPE,
-	"string": TOKEN_STRING_TYPE,
-	"bool":   TOKEN_BOOL_TYPE,
-	"bytes":  TOKEN_BYTES_TYPE,
-	"list":   TOKEN_LIST,
-	"map":    TOKEN_MAP,
-	"of":     TOKEN_OF,
-	"to":     TOKEN_TO,
-	"in":     TOKEN_IN,
-	"struct": TOKEN_STRUCT,
-	"len":    TOKEN_LEN,
+	"true":     TOKEN_TRUE,
+	"false":    TOKEN_FALSE,
+	"null":     TOKEN_NULL,
+	"and":      TOKEN_AND,
+	"or":       TOKEN_OR,
+	"not":      TOKEN_NOT,
+	"int":      TOKEN_INT_TYPE,
+	"float":    TOKEN_FLOAT_TYPE,
+	"string":   TOKEN_STRING_TYPE,
+	"bool":     TOKEN_BOOL_TYPE,
+	"bytes":    TOKEN_BYTES_TYPE,
+	"list":     TOKEN_LIST,
+	"map":      TOKEN_MAP,
+	"of":       TOKEN_OF,
+	"to":       TOKEN_TO,
+	"in":       TOKEN_IN,
+	"struct":   TOKEN_STRUCT,
+	"len":      TOKEN_LEN,
 }
 
 func lookupKeyword(ident string) (TokenType, bool) {

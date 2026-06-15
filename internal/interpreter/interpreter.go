@@ -80,33 +80,33 @@ type Interpreter struct {
 	// name don't silently overwrite each other.
 	globalFnsByLib    map[string]map[string]Builtin
 	globalConstsByLib map[string]map[string]Value
-	imported        map[string]bool             // libraries the program has `use`d
-	nsPrefixes      map[string]string           // active call-site prefix -> canonical namespace (after aliasing)
-	nsAliasedAway   map[string]string           // canonical namespace -> alias chosen by `use NAME as ALIAS;`
-	methods         map[string]*parser.MethodDef
-	structs         map[string]*parser.StructDef // M13.1: top-level struct definitions hoisted at Run() time
-	global          *Environment                 // global scope where top-level statements live
+	imported          map[string]bool   // libraries the program has `use`d
+	nsPrefixes        map[string]string // active call-site prefix -> canonical namespace (after aliasing)
+	nsAliasedAway     map[string]string // canonical namespace -> alias chosen by `use NAME as ALIAS;`
+	methods           map[string]*parser.MethodDef
+	structs           map[string]*parser.StructDef // M13.1: top-level struct definitions hoisted at Run() time
+	global            *Environment                 // global scope where top-level statements live
 }
 
 func New() *Interpreter {
 	in := &Interpreter{
-		Out:             os.Stdout,
-		In:              os.Stdin,
-		Builtins:        map[string]builtinEntry{},
-		LibConstants:    map[string]libConstantEntry{},
-		NSBuiltins:      map[nsKey]Builtin{},
-		NSConstants:     map[nsKey]Value{},
-		NSStructs:       map[nsKey]*parser.StructDef{},
+		Out:               os.Stdout,
+		In:                os.Stdin,
+		Builtins:          map[string]builtinEntry{},
+		LibConstants:      map[string]libConstantEntry{},
+		NSBuiltins:        map[nsKey]Builtin{},
+		NSConstants:       map[nsKey]Value{},
+		NSStructs:         map[nsKey]*parser.StructDef{},
 		knownLibs:         map[string]bool{},
 		knownNamespaces:   map[string]bool{},
 		libsWithGlobals:   map[string]bool{},
 		globalFnsByLib:    map[string]map[string]Builtin{},
 		globalConstsByLib: map[string]map[string]Value{},
-		imported:        map[string]bool{},
-		nsPrefixes:      map[string]string{},
-		nsAliasedAway:   map[string]string{},
-		methods:         map[string]*parser.MethodDef{},
-		structs:         map[string]*parser.StructDef{},
+		imported:          map[string]bool{},
+		nsPrefixes:        map[string]string{},
+		nsAliasedAway:     map[string]string{},
+		methods:           map[string]*parser.MethodDef{},
+		structs:           map[string]*parser.StructDef{},
 	}
 	return in
 }
@@ -688,6 +688,7 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 //   - hasContinue: a `continue;` was executed (M11). Loop statements
 //     catch this and start the next iteration; non-loop statements
 //     pass it through. Same misuse rule as break.
+//
 // At most one of the three flags is true at a time. flowFile / flowLine
 // / flowCol carry the source position of the break/continue/return
 // statement so an unhandled signal can be reported with the right

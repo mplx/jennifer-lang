@@ -47,7 +47,7 @@ const (
 	TypeString
 	TypeBool
 	TypeNull
-	TypeBytes  // M12: mutable byte sequence; elements are int in [0, 255]
+	TypeBytes // M12: mutable byte sequence; elements are int in [0, 255]
 	TypeList
 	TypeMap
 	TypeStruct // M13.1: user-defined record; carries the struct's name in Type.StructName
@@ -405,12 +405,12 @@ func (*ExitStmt) stmtNode() {}
 // thrown value in a fresh per-handler scope. M13.2.
 type TryStmt struct {
 	pos
-	Body       *Block
-	CatchName  string
-	CatchBody  *Block
-	CatchFile  string // position of the `catch (NAME)` introducer for diagnostics
-	CatchLine  int
-	CatchCol   int
+	Body      *Block
+	CatchName string
+	CatchBody *Block
+	CatchFile string // position of the `catch (NAME)` introducer for diagnostics
+	CatchLine int
+	CatchCol  int
 }
 
 func (*TryStmt) stmtNode() {}
