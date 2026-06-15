@@ -1,0 +1,27 @@
+Source: jennifer
+Section: devel
+Priority: optional
+Maintainer: developer@mplx.eu <developer@mplx.eu>
+Homepage: https://github.com/mplx/jennifer-lang
+Vcs-Browser: https://github.com/mplx/jennifer-lang
+Vcs-Git: https://github.com/mplx/jennifer-lang.git
+Standards-Version: 4.6.2
+
+Package: jennifer
+Architecture: amd64 arm64
+Depends: ${misc:Depends}
+Recommends: shared-mime-info
+Description: Jennifer programming language interpreter
+ Jennifer is a small, experimental, interpreted programming language.
+ Source files use the .j extension.
+ .
+ This package installs two binaries:
+   * /usr/bin/jennifer    - TinyGo build (canonical, small, embeddable)
+   * /usr/bin/jennifer-go - standard Go build (performance variant)
+ .
+ Both binaries share the same source and language; only the compiler
+ differs. jennifer is the default; jennifer-go is the right choice
+ for compute-bound code where the size delta doesn't matter.
+ .
+ The .j extension is registered as text/x-jennifer so file managers
+ and editors recognise Jennifer source files.

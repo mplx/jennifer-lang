@@ -1,0 +1,243 @@
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 <developer@mplx.eu>
+#
+# Tag-triggered release. Builds both binaries (`jennifer` via TinyGo,
+# `jennifer-go` via Go) for every supported platform from a single
+# amd64 runner via cross-compilation, runs a smoke test on each
+# native-arch artifact via QEMU user-mode emulation when the runner
+# can't execute the target arch directly, runs the M15.5.3 benchmark
+# suite on the runner's native arch (linux/amd64) so the release
+# notes carry a fresh number, and publishes everything to GitHub
+# Releases as a draft for human review before going live.
+#
+# Initial supported platforms (M15.8 scope): linux/amd64,
+# linux/arm64. macOS and Windows are post-M15.8 work that adds new
+# matrix rows.
+
+name: release
+
+on:
+  push:
+    tags:
+      # Bare-version tags like `0.14.1` (no `v` prefix). The glob is
+      # `[0-9]*.[0-9]*.[0-9]*` so the first character of each segment
+      # must be a digit; that filters out spurious dotted refs that
+      # aren't versions.
+      - '[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}/${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            tinygo_target: linux/amd64
+          - os: linux
+            arch: arm64
+            tinygo_target: linux/arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up TinyGo
+        uses: acifani/setup-tinygo@v2
+        with:
+          tinygo-version: '0.41.1'
+
+      - name: Set up QEMU (for non-native arch smoke tests)
+        if: matrix.arch != 'amd64'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Regenerate version stamp
+        run: ./scripts/gen-version.sh
+
+      - name: Build TinyGo binary (jennifer)
+        env:
+          TINYGO_TARGET: ${{ matrix.tinygo_target }}
+        run: |
+          tinygo build -target="$TINYGO_TARGET" -o jennifer ./cmd/jennifer
+
+      - name: Build Go binary (jennifer-go)
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: '0'
+        run: |
+          go build -o jennifer-go ./cmd/jennifer
+
+      - name: Smoke-test the binaries
+        run: |
+          # On a native-arch run we execute directly; on a foreign
+          # arch QEMU user-mode emulation handles it.
+          ./jennifer run examples/hello.j
+          ./jennifer-go run examples/hello.j
+
+      - name: Run benchmark suite (native arch only)
+        if: matrix.arch == 'amd64'
+        timeout-minutes: 30
+        run: |
+          # Captured for the release-notes template; non-native
+          # runs would report QEMU's overhead rather than real
+          # numbers, so we run only on the matrix entry whose arch
+          # matches the runner.
+          mkdir -p bench-out
+          ./jennifer run examples/benchmark.j | tee bench-out/jennifer-${{ matrix.arch }}.txt
+          ./jennifer-go run examples/benchmark.j | tee bench-out/jennifer-go-${{ matrix.arch }}.txt
+
+      - name: Package artifacts
+        run: |
+          mkdir -p dist
+          # One archive per (platform, arch) carrying both binaries
+          # plus the packaging metadata downstream distros consume.
+          # Naming: jennifer-${TAG}-${OS}-${ARCH}.tar.gz
+          TAG="${GITHUB_REF_NAME}"
+          STAGE="jennifer-${TAG}-${{ matrix.os }}-${{ matrix.arch }}"
+          mkdir -p "$STAGE/share/man/man1" "$STAGE/share/mime/packages"
+          cp jennifer jennifer-go "$STAGE/"
+          cp packaging/man/jennifer.1    "$STAGE/share/man/man1/"
+          cp packaging/man/jennifer-go.1 "$STAGE/share/man/man1/"
+          cp packaging/mime/jennifer.xml "$STAGE/share/mime/packages/"
+          cp README.md "$STAGE/" 2>/dev/null || true
+          tar -czf "dist/${STAGE}.tar.gz" "$STAGE"
+          (cd dist && sha256sum "${STAGE}.tar.gz" > "${STAGE}.tar.gz.sha256")
+
+      - name: Build Debian .deb
+        run: |
+          mkdir -p dist
+          # Tags are bare semver (e.g. `0.14.1`), no `v` prefix to strip.
+          DEB_VERSION="${GITHUB_REF_NAME}"
+          case "${{ matrix.arch }}" in
+              amd64)  DEB_ARCH=amd64 ;;
+              arm64)  DEB_ARCH=arm64 ;;
+              *)      echo "unsupported arch ${{ matrix.arch }}" >&2; exit 1 ;;
+          esac
+          ./scripts/build-deb.sh "$DEB_VERSION" "$DEB_ARCH" dist
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jennifer-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.sha256
+          retention-days: 7
+
+      - name: Upload benchmark output
+        if: matrix.arch == 'amd64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks
+          path: bench-out/
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release (draft)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Assemble release directory
+        run: |
+          mkdir -p release
+          find artifacts -type f \
+              \( -name '*.tar.gz' -o -name '*.deb' -o -name '*.sha256' \) \
+              -exec cp {} release/ \;
+          ls -la release/
+
+      - name: Generate release-ready PKGBUILD-bin
+        run: |
+          # Take the committed packaging/arch/PKGBUILD-bin template
+          # and substitute the real pkgver + sha256sums so the AUR
+          # maintainer can publish without hand-editing. The output
+          # is attached to the GitHub Release; the in-tree template
+          # stays as the canonical source.
+          # Tags are bare semver, so PKGVER == tag.
+          PKGVER="${GITHUB_REF_NAME}"
+          # Pull the per-arch tarball hashes out of the sidecar
+          # .sha256 files (format: "HASH  FILENAME").
+          AMD64_TAR="jennifer-${PKGVER}-linux-amd64.tar.gz"
+          ARM64_TAR="jennifer-${PKGVER}-linux-arm64.tar.gz"
+          AMD64_HASH=$(awk '{print $1}' "release/${AMD64_TAR}.sha256")
+          ARM64_HASH=$(awk '{print $1}' "release/${ARM64_TAR}.sha256")
+          sed \
+              -e "s/^pkgver=.*/pkgver=${PKGVER}/" \
+              -e "s|^sha256sums_x86_64=.*|sha256sums_x86_64=('${AMD64_HASH}')|" \
+              -e "s|^sha256sums_aarch64=.*|sha256sums_aarch64=('${ARM64_HASH}')|" \
+              packaging/arch/PKGBUILD-bin > release/PKGBUILD-bin
+          echo "--- generated PKGBUILD-bin ---"
+          cat release/PKGBUILD-bin
+
+      - name: Compose release notes
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          {
+            echo "## Jennifer ${TAG}"
+            echo
+            echo "Two binaries per platform - both are supported:"
+            echo
+            echo "- \`jennifer\`     - TinyGo build. Canonical / shipping binary."
+            echo "- \`jennifer-go\`  - standard Go build. Performance variant for compute-bound code."
+            echo
+            echo "Pick whichever matches your workload; see \`docs/user-guide/installing.md\` for guidance."
+            echo
+            echo "### Benchmark on the release runner (linux/amd64)"
+            echo
+            if [ -f artifacts/benchmarks/jennifer-amd64.txt ]; then
+              echo "**\`jennifer\` (TinyGo):**"
+              echo
+              echo '```'
+              cat artifacts/benchmarks/jennifer-amd64.txt
+              echo '```'
+              echo
+            fi
+            if [ -f artifacts/benchmarks/jennifer-go-amd64.txt ]; then
+              echo "**\`jennifer-go\` (Go):**"
+              echo
+              echo '```'
+              cat artifacts/benchmarks/jennifer-go-amd64.txt
+              echo '```'
+              echo
+            fi
+            echo "### Artifacts"
+            echo
+            for f in release/*.tar.gz; do
+              [ -e "$f" ] || continue
+              echo "- \`$(basename "$f")\`"
+            done
+          } > release_notes.md
+          cat release_notes.md
+
+      - name: Create GitHub Release (draft)
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: false
+          body_path: release_notes.md
+          files: |
+            release/*.tar.gz
+            release/*.deb
+            release/*.sha256
+            release/PKGBUILD-bin

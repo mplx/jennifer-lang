@@ -1,0 +1,25 @@
+#!/bin/sh
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 <developer@mplx.eu>
+#
+# postrm: refresh the system MIME cache after removal so the now-gone
+# jennifer.xml entry stops being advertised. Only on `purge` and
+# `remove`; abort cases leave things alone.
+
+set -e
+
+case "$1" in
+    purge|remove)
+        if command -v update-mime-database >/dev/null 2>&1; then
+            update-mime-database /usr/share/mime || true
+        fi
+        ;;
+    upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+    *)
+        echo "postrm called with unknown argument: $1" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,90 @@
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 <developer@mplx.eu>
+#
+# PR gate: runs the full Go test suite and a TinyGo build on every
+# push to main and every pull request. Linux amd64 only - the same
+# pure-Go interpreter cross-compiles cleanly to arm64 and the other
+# supported platforms, so per-arch test runs would not catch
+# additional bugs at this stage. Cross-arch builds live in
+# release.yml.
+
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: go test + tinygo build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The version codegen reads `git describe --tags --long`,
+          # so a shallow checkout would produce a `dev` version
+          # marker on PR runs. Full history is cheap on this repo.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up TinyGo
+        uses: acifani/setup-tinygo@v2
+        with:
+          tinygo-version: '0.41.1'
+
+      - name: Show toolchain versions
+        run: |
+          go version
+          tinygo version
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt check
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt found unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go test
+        run: go test ./...
+
+      - name: make build (both binaries)
+        run: make build
+
+      - name: Smoke-test the TinyGo binary
+        run: ./jennifer run examples/hello.j
+
+      - name: Smoke-test the Go binary
+        run: ./jennifer-go run examples/hello.j
+
+      - name: em-dash scan (project rule)
+        run: |
+          # No usage of U+2014 (em-dash) and U+2013 (en-dash)
+          # anywhere in the repository. The pattern uses PCRE
+          # byte-escape so this YAML itself stays clean - the
+          # offending characters never appear in the source.
+          if grep -rPn '\xe2\x80\x94|\xe2\x80\x93' \
+              --include='*.md' --include='*.go' --include='*.j' \
+              --include='*.yml' --include='*.yaml' --include='*.toml' \
+              --include='*.sh' --include='*.1' --include='PKGBUILD*' \
+              --include='Makefile' \
+              --exclude-dir=.git --exclude-dir=book-output \
+              .; then
+            echo "em-dash or en-dash found - use plain ASCII '-' instead"
+            exit 1
+          fi

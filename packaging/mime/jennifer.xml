@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-License-Identifier: LGPL-3.0-only
+Copyright (C) 2026 <developer@mplx.eu>
+
+XDG shared-mime-info definition for Jennifer source files.
+Installed to /usr/share/mime/packages/jennifer.xml by both the
+.deb and the AUR packages; update-mime-database refreshes the
+system cache in the post-install hook.
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="text/x-jennifer">
+    <comment>Jennifer source</comment>
+    <glob pattern="*.j"/>
+    <sub-class-of type="text/plain"/>
+    <magic priority="40">
+      <match value="#!/usr/bin/env -S jennifer run" type="string" offset="0"/>
+      <match value="#!/usr/bin/jennifer" type="string" offset="0"/>
+    </magic>
+  </mime-type>
+</mime-info>

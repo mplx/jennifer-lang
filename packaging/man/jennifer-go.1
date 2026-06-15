@@ -1,0 +1,30 @@
+.\" SPDX-License-Identifier: LGPL-3.0-only
+.\" Copyright (C) 2026 <developer@mplx.eu>
+.TH JENNIFER-GO 1 "2026" "Jennifer" "Jennifer Programming Language"
+.SH NAME
+jennifer-go \- Jennifer programming language interpreter (standard Go build)
+.SH SYNOPSIS
+.B jennifer-go
+.I subcommand
+.RI [ args ...]
+.SH DESCRIPTION
+.B jennifer-go
+is the standard-Go build of the Jennifer interpreter, shipped
+alongside the canonical TinyGo build
+.BR jennifer (1).
+Same source code, same language; only the compiler differs. The
+Go build is the performance variant: roughly two to five times
+faster than
+.B jennifer
+on compute-bound workloads (recursion, tight numeric loops,
+arithmetic) at the cost of a larger binary. Pick this one when the
+script is computation-heavy and binary size doesn't matter.
+.PP
+The language surface and the subcommand set are identical to
+.BR jennifer (1) "; see that page for the full reference."
+.SH "SEE ALSO"
+.BR jennifer (1),
+.UR https://github.com/mplx/jennifer-lang
+.UE
+.SH LICENSE
+LGPL-3.0-only.

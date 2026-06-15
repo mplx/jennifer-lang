@@ -145,7 +145,7 @@ A few rules worth knowing up front:
 
 - **Out-of-bounds list reads and writes are errors**, not silent
   no-ops. Same for reads of missing map keys - use
-  [`has($m, key)`](../libraries/core.md) to test for presence first.
+  [`maps.has($m, key)`](../libraries/maps.md) to test for presence first.
 - **Lists and maps copy on assignment and on function-call binding.**
   `$ys = $xs;` makes an independent copy; mutating `$ys[0]` doesn't
   change `$xs`.

@@ -977,7 +977,8 @@ decision is documented in one place.
   module caches so PR runs stay fast. Currently we run tests
   locally only; this puts a green-checkmark gate on every PR
   and stops broken-build PRs from landing.
-- **`release.yml`** - triggered on git tag matching `v*.*.*`.
+- **`release.yml`** - triggered on bare-semver git tag matching
+  `[0-9]*.[0-9]*.[0-9]*` (project convention: no `v` prefix).
   Builds both `jennifer` (TinyGo) and `jennifer-go` (Go)
   binaries for the supported platforms (linux/amd64 + arm64
   initially; macOS + Windows once cross-platform support
@@ -1399,8 +1400,7 @@ fixable independently:
    deep-copy the root binding before mutating. For a sequence of
    N appends that's O(N^2) - the standout cost in
    `struct list build+read` (10.7 s), `map insert+read` (9.8 s),
-   and `string join` (4.2 s) on TinyGo. CLAUDE.md note #10
-   already calls this out as the right cleanup.
+   and `string join` (4.2 s) on TinyGo.
 2. **Name-based variable resolution at every reference.** Each
    `$n` reference walks the Environment chain by name; in a tight
    loop touching `$n`, `$d`, `$count` the resolver re-traverses

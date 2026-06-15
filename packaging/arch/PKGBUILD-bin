@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 <developer@mplx.eu>
+#
+# AUR PKGBUILD for `jennifer-bin`: downloads the prebuilt release
+# tarball and installs both binaries (`jennifer` TinyGo + `jennifer-go`
+# standard Go) side by side. Pair to `jennifer-git` which builds
+# from source.
+#
+# Maintainer: developer@mplx.eu <developer@mplx.eu>
+
+pkgname=jennifer-bin
+_realname=jennifer
+pkgver=0.14.0
+pkgrel=1
+pkgdesc='Jennifer programming language interpreter (prebuilt binary)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/mplx/jennifer-lang'
+license=('LGPL3')
+provides=('jennifer')
+conflicts=('jennifer' 'jennifer-git')
+optdepends=(
+    'shared-mime-info: registers the .j file extension with file managers'
+)
+install='jennifer.install'
+source_x86_64=("$_realname-$pkgver-linux-amd64.tar.gz::$url/releases/download/$pkgver/$_realname-$pkgver-linux-amd64.tar.gz")
+source_aarch64=("$_realname-$pkgver-linux-arm64.tar.gz::$url/releases/download/$pkgver/$_realname-$pkgver-linux-arm64.tar.gz")
+
+# The release pipeline writes a sidecar .sha256 for each tarball;
+# update these on each release. AUR maintainer note: replace SKIP
+# with the real sums when you bump pkgver. CI publishes a
+# pre-filled PKGBUILD-bin as a release asset; copy from there.
+sha256sums_x86_64=('SKIP')
+sha256sums_aarch64=('SKIP')
+
+# The release tarball lays out as `jennifer-X.Y.Z-linux-ARCH/` with
+# both binaries at the top of that directory.
+_srcdir_x86_64="$_realname-$pkgver-linux-amd64"
+_srcdir_aarch64="$_realname-$pkgver-linux-arm64"
+
+package() {
+    # Determine the source directory from the running arch.
+    case "$CARCH" in
+        x86_64)  _srcdir="$_srcdir_x86_64" ;;
+        aarch64) _srcdir="$_srcdir_aarch64" ;;
+        *)
+            echo "PKGBUILD: unsupported arch $CARCH" >&2
+            return 1
+            ;;
+    esac
+
+    cd "$srcdir/$_srcdir"
+
+    # Binaries.
+    install -Dm755 jennifer    "$pkgdir/usr/bin/jennifer"
+    install -Dm755 jennifer-go "$pkgdir/usr/bin/jennifer-go"
+
+    # Man pages (already gzipped by the release pipeline would be nice;
+    # we gzip here for the AUR package so the per-arch tarball stays
+    # universally consumable).
+    install -Dm644 share/man/man1/jennifer.1    "$pkgdir/usr/share/man/man1/jennifer.1"
+    install -Dm644 share/man/man1/jennifer-go.1 "$pkgdir/usr/share/man/man1/jennifer-go.1"
+    gzip -9n "$pkgdir/usr/share/man/man1/jennifer.1"
+    gzip -9n "$pkgdir/usr/share/man/man1/jennifer-go.1"
+
+    # XDG MIME info for the .j extension.
+    install -Dm644 share/mime/packages/jennifer.xml \
+        "$pkgdir/usr/share/mime/packages/jennifer.xml"
+}
