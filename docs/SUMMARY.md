@@ -37,6 +37,7 @@
 - [`crc`](libraries/crc.md)
 - [`encoding`](libraries/encoding.md)
 - [`task`](libraries/task.md)
+- [`fs`](libraries/fs.md)
 
 # Technical reference
 

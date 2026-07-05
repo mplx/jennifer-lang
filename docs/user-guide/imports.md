@@ -37,6 +37,7 @@ over string / list / map / bytes; no import needed.
 | `crc`     | `use crc;`     | M15.6: `crc.compute(b, algo)` for `"crc32"`/`"crc64"` (big-endian bytes); streaming via `crc.stream`/`update`/`finalize`; struct `crc.Stream`                                                                                     | [libraries/crc.md](../libraries/crc.md)         |
 | `encoding`| `use encoding;` | M15.7: `isAscii`/`lenBytes`/`lenRunes` introspection; `toText`/`fromText` for `"hex"`/`"base64"`/`"base64-url"`; `encode`/`decode` for character codecs `"ascii"`/`"latin-1"`/`"windows-1252"`/`"ebcdic"`                       | [libraries/encoding.md](../libraries/encoding.md) |
 | `task`    | `use task;`    | M16.0: observe / join `task of T` handles from `spawn { ... }`. `task.wait`, `task.poll`, `task.discard`, `task.waitAll`, `task.waitAny`                                          | [libraries/task.md](../libraries/task.md)       |
+| `fs`      | `use fs;`      | M16.1: filesystem I/O. Whole-file read/write/append (`readString`/`readBytes`/`writeString`/`writeBytes`/`appendString`/`appendBytes`), metadata (`exists`/`isFile`/`isDir`/`stat`), directory ops (`mkdir`/`mkdirAll`/`remove`/`removeAll`/`rename`/`list`/`walk`), buffered handles (`open`/`readLine`/`readChars`/`readBytes`/`writeString`/`writeBytes`/`eof`/`close`); structs `fs.Stat`, `fs.File` | [libraries/fs.md](../libraries/fs.md) |
 
 See [libraries/index.md](../libraries/index.md) for a fuller catalog
 and the library-organization principles, or

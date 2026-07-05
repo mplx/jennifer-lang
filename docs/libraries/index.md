@@ -33,6 +33,7 @@ restriction list; `jennifer-go` always supports the full surface.
 | [`crc`](crc.md)          | `use crc;`      | full                                                  | M15.6: `crc.compute(b, algo)` + streaming (`crc.stream`/`update`/`finalize`) for `"crc32"`, `"crc64"`; output is big-endian bytes; struct `crc.Stream`                                                                              |
 | [`encoding`](encoding.md) | `use encoding;` | full                                                  | M15.7: introspection (`isAscii`, `lenBytes`, `lenRunes`); binary-to-text `toText`/`fromText` for `"hex"`, `"base64"`, `"base64-url"`; character codecs `encode`/`decode` for `"ascii"`, `"latin-1"`, `"windows-1252"`, `"ebcdic"`     |
 | [`task`](task.md)        | `use task;`     | full                                                  | M16.0: observe and join `task of T` handles produced by `spawn { ... }`. `task.wait`, `task.poll`, `task.discard`, `task.waitAll`, `task.waitAny`; pairs with the [user-guide concurrency tour](../user-guide/concurrency.md)        |
+| [`fs`](fs.md)            | `use fs;`       | full                                                  | M16.1: filesystem I/O. Whole-file `readString`/`readBytes`/`writeString`/`writeBytes`/`appendString`/`appendBytes`; metadata `exists`/`isFile`/`isDir`/`stat`; dir ops `mkdir`/`mkdirAll`/`remove`/`removeAll`/`rename`/`list`/`walk`; handles `open`/`readLine`/`readChars`/`readBytes`/`writeString`/`writeBytes`/`eof`/`close`; structs `fs.Stat`, `fs.File` |
 
 A quick taste:
 
@@ -97,6 +98,9 @@ large ones. The organizing principle, captured for future extensions:
   -> `task` (M16.0). Concurrency itself is a language feature
   (the `spawn` keyword + `task of T` type); the library is just the
   observation surface.
+- Filesystem I/O (whole-file reads/writes, metadata, directory
+  operations, buffered file handles) -> `fs` (M16.1). Blocking on
+  purpose; non-blocking use composes with `spawn` from M16.0.
 - A genuinely new topic with **five or more** functions / constants
   -> a new library. Fewer than five names fold into the most-related
   existing library (the non-crypto random helpers were the first

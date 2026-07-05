@@ -15,6 +15,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/convert"
 	crclib "github.com/mplx/jennifer-lang/internal/lib/crc"
 	encodinglib "github.com/mplx/jennifer-lang/internal/lib/encoding"
+	fslib "github.com/mplx/jennifer-lang/internal/lib/fs"
 	hashlib "github.com/mplx/jennifer-lang/internal/lib/hash"
 	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
 	listslib "github.com/mplx/jennifer-lang/internal/lib/lists"
@@ -161,6 +162,7 @@ func runProgramOutput(path, src string) (string, error) {
 	crclib.Install(in)
 	encodinglib.Install(in)
 	tasklib.Install(in)
+	fslib.Install(in)
 	if err := in.Run(prog); err != nil {
 		return "", err
 	}

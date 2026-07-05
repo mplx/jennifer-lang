@@ -1,0 +1,26 @@
+read: hello, fs
+after append:
+hello, fs
+second line
+exists(note.txt) = true
+exists(missing)  = false
+isFile(note.txt) = true
+isDir(root)      = true
+stat size=22 isDir=false
+mkdir refused missing parents (good)
+mkdirAll created nested dir: true
+remove refused non-empty dir (good)
+after removeAll: exists(a) = false
+list: [alpha, bravo, charlie, note.txt]
+walk entries: 7
+  isDir=true size=-1
+  isDir=false size=3
+  isDir=false size=3
+  isDir=false size=5
+  isDir=false size=22
+  isDir=true size=-1
+  isDir=false size=9
+line: one
+line: two
+line: three
+cleanup: exists = false

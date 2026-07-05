@@ -946,11 +946,65 @@ See:
 
 ## M16.1 - `fs`
 
-File I/O. `fs.read`, `fs.write` for `string` and `bytes`,
-`fs.stat` returning a struct, directory walk. Requires M11
-(bytes) and M13.1 (structs). Brings the M7-deferred file handles
-and any non-stdin input source (`fs.open(path) -> handle`,
-`handle.readLine()`, etc.) under one library.
+**Status:** done.
+
+Ships blocking filesystem I/O built on M16.0's spawn-and-compose
+model: whole-file reads and writes, metadata, directory
+operations, buffered file handles for line-oriented reads. No
+`*Async` duplication - non-blocking use composes with `spawn`.
+
+- **One-shot ops.** `fs.readString(path)` / `readBytes(path)` for
+  whole-file reads; `writeString` / `writeBytes` for
+  overwrite-or-create; `appendString` / `appendBytes` for
+  append. Invalid UTF-8 in `readString` is a boundary error.
+- **Metadata.** `exists` / `isFile` / `isDir` return `bool`
+  without erroring on missing paths (permission errors still
+  surface). `fs.stat(path) -> fs.Stat` errors on missing.
+- **`fs.Stat`.** `path`, `size`, `isDir`, `mtimeNanos`, `mode`.
+  `mtimeNanos` is `int` (Unix nanoseconds), not `time.Time`, so
+  `fs` stays decoupled from `time` at the Go-package level;
+  users compose `time.fromUnixNanos($stat.mtimeNanos)`
+  explicitly. `size` is `-1` for directories.
+- **Directory ops.** `mkdir` / `mkdirAll` and `remove` /
+  `removeAll` ship as **two verbs each** (no-footguns stance:
+  the recursive form is grep-visible at the call site).
+  `rename`, `list` (sorted, non-recursive), `walk`
+  (depth-first, sorted, includes root, skips symlinks).
+- **Handles.** `fs.open(path, mode) -> fs.File{id as int}` with
+  `mode` in `"read"` / `"write"` / `"append"` (codec-table
+  shape). `readLine` / `readChars` / `readBytes($f, n)` /
+  `writeString` / `writeBytes` / `eof` / `close`. Handle
+  registry pattern from M15.6 (`map[int64]*handleState`
+  guarded by a mutex). `fs.eof` peeks one byte ahead through
+  the buffered reader so the canonical
+  `while (not fs.eof($f))` loop terminates cleanly on files
+  ending with `\n`.
+- **Polymorphic verbs.** `fs.readBytes`, `fs.writeString`,
+  `fs.writeBytes` dispatch on the first-arg kind - string
+  means path form, `fs.File` means handle form. Keeps the
+  surface compact without magic.
+- **Value-semantics carve-out.** `fs.File` handles share
+  underlying state between copies via the integer id (same
+  discipline as M16.0's `task of T`). Every other type keeps
+  whole-value semantics.
+- **Concurrency composition.** `spawn { return fs.readString(...); }`
+  gives non-blocking use in one line; `task.waitAll` fans in
+  multiple parallel reads. Under `jennifer-go` this
+  parallelises; under `jennifer` (TinyGo, cooperative
+  single-threaded) it's correct-but-sequential.
+- **What's deferred** (recorded so the design stays visible):
+  streaming line iterator (`for (def line in fs.lines(path))`),
+  `fs.copy` / `fs.chmod`, symlink ops, `fs.stat($f)` on an open
+  handle, watch / notify (inotify), temp file / dir helpers,
+  symlink-following in `fs.walk`.
+
+See:
+- [libraries/fs.md](libraries/fs.md) - reference doc with
+  surface tables, worked examples, error surface, and the
+  spawn-composition callout.
+- [user-guide/imports.md](user-guide/imports.md) - `fs` row.
+- [user-guide/concurrency.md](user-guide/concurrency.md) -
+  the `spawn`-and-compose story `fs` builds on.
 
 ## M16.2 - `net`
 

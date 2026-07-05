@@ -30,6 +30,28 @@ flat lookup view, not authoritative.
 | [`encoding`](encoding.md)`.lenBytes(s)`               | UTF-8 byte length of `s` (pair with `len(s)` for rune count).                                                                       |
 | [`encoding`](encoding.md)`.lenRunes(b)`               | Rune count of valid UTF-8 `bytes`; errors on invalid UTF-8.                                                                         |
 | [`encoding`](encoding.md)`.toText(b, format)`         | Encode `bytes` as printable text. `format`: `"hex"`, `"base64"`, `"base64-url"`.                                                    |
+| [`fs`](fs.md)`.appendBytes(path, content)`            | Append `bytes` to `path`; creates the file if missing.                                                                              |
+| [`fs`](fs.md)`.appendString(path, content)`           | Append UTF-8 `string` to `path`; creates the file if missing.                                                                       |
+| [`fs`](fs.md)`.close($f)`                             | Close an `fs.File` handle; removes it from the registry.                                                                            |
+| [`fs`](fs.md)`.eof($f)`                               | True iff the next read on `$f` would error or return partial. Sticky.                                                               |
+| [`fs`](fs.md)`.exists(path)`                          | True if `path` resolves; permission errors still surface.                                                                           |
+| [`fs`](fs.md)`.isDir(path)`                           | True iff `path` exists and is a directory.                                                                                          |
+| [`fs`](fs.md)`.isFile(path)`                          | True iff `path` exists and is a regular file.                                                                                       |
+| [`fs`](fs.md)`.list(path)`                            | Sorted entry names in `path`. Non-recursive; returns `list of string`.                                                              |
+| [`fs`](fs.md)`.mkdir(path)`                           | Create a single directory; errors if any parent is missing.                                                                         |
+| [`fs`](fs.md)`.mkdirAll(path)`                        | Create `path` and every missing parent (like `mkdir -p`).                                                                           |
+| [`fs`](fs.md)`.open(path, mode)`                      | Open `path` and return an `fs.File`. `mode`: `"read"`, `"write"`, `"append"`.                                                       |
+| [`fs`](fs.md)`.readBytes(path)` / `.readBytes($f, n)` | Whole-file read (1 arg) or up to `n` bytes from handle (2 args). Partial + sticky-EOF on short handle reads.                        |
+| [`fs`](fs.md)`.readChars($f, n)`                      | Up to `n` runes from handle, UTF-8 decoded. Partial + sticky-EOF on short reads.                                                    |
+| [`fs`](fs.md)`.readLine($f)`                          | One line from handle, `\r\n` / `\n` stripped. Errors on EOF - check `fs.eof` first.                                                 |
+| [`fs`](fs.md)`.readString(path)`                      | Whole file as UTF-8; invalid UTF-8 is a positioned runtime error.                                                                   |
+| [`fs`](fs.md)`.remove(path)`                          | Delete one file or empty directory. Non-empty dir errors.                                                                           |
+| [`fs`](fs.md)`.removeAll(path)`                       | Recursive delete. Explicit second verb (no-footguns stance).                                                                        |
+| [`fs`](fs.md)`.rename(old, new)`                      | Same-filesystem rename; cross-fs is a boundary error.                                                                               |
+| [`fs`](fs.md)`.stat(path)`                            | Returns `fs.Stat` (`path`, `size`, `isDir`, `mtimeNanos`, `mode`). Missing path errors.                                             |
+| [`fs`](fs.md)`.walk(path)`                            | Depth-first, sorted, includes `path`. Returns `list of fs.Stat`. Skips symlinks.                                                    |
+| [`fs`](fs.md)`.writeBytes(path, content)` / `.writeBytes($f, b)` | Whole-file overwrite (path form) or write via handle (fs.File form).                                                      |
+| [`fs`](fs.md)`.writeString(path, content)` / `.writeString($f, s)` | Whole-file overwrite (path form) or write via handle (fs.File form).                                                    |
 | [`hash`](hash.md)`.compute(b, algo)`                  | One-shot digest. `algo` is `"md5"`, `"sha1"`, or `"sha256"`. Returns raw bytes.                                                     |
 | [`hash`](hash.md)`.finalize($s)`                      | Final digest as bytes; consumes the handle (later calls error).                                                                     |
 | [`hash`](hash.md)`.stream(algo)`                      | Allocate a `hash.Stream` for `algo`; feed chunks via `hash.update` then close with `hash.finalize`.                                 |
@@ -169,6 +191,6 @@ detail.
   [math.md](math.md), [strings.md](strings.md), [lists.md](lists.md),
   [maps.md](maps.md), [os.md](os.md), [meta.md](meta.md),
   [time.md](time.md), [hash.md](hash.md), [crc.md](crc.md),
-  [encoding.md](encoding.md), [task.md](task.md).
+  [encoding.md](encoding.md), [task.md](task.md), [fs.md](fs.md).
 - [../user-guide/imports.md](../user-guide/imports.md) - how to import a
   library in a Jennifer source file.

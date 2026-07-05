@@ -15,6 +15,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/convert"
 	"github.com/mplx/jennifer-lang/internal/lib/crc"
 	"github.com/mplx/jennifer-lang/internal/lib/encoding"
+	"github.com/mplx/jennifer-lang/internal/lib/fs"
 	"github.com/mplx/jennifer-lang/internal/lib/hash"
 	"github.com/mplx/jennifer-lang/internal/lib/io"
 	"github.com/mplx/jennifer-lang/internal/lib/lists"
@@ -183,6 +184,7 @@ func runFile(path string) int {
 	crclib.Install(in)
 	encodinglib.Install(in)
 	tasklib.Install(in)
+	fslib.Install(in)
 	runErr := in.Run(prog)
 
 	// M16.0: the exit-time loud-fail. Even when Run returned cleanly,
