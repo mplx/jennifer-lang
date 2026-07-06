@@ -714,9 +714,9 @@ non-blocking, `os.wait/poll/kill(p)` for handle ops. `argv` is
 always `list of string` (no shell parsing; explicit
 `["sh", "-c", $cmd]` for that hop). Non-zero exit codes are
 values, not errors. **TinyGo limitation**: TinyGo's runtime
-doesn't implement `os/exec`, so the shipping `jennifer` binary
-returns a friendly "rebuild with `jennifer-go`" error instead of
-panicking - first place the two-binary story becomes
+doesn't implement `os/exec`, so the constrained `jennifer-tiny`
+binary returns a friendly "use the default `jennifer` binary" error
+instead of panicking - first place the two-binary story becomes
 user-visible. See
 [libraries/os.md > External programs](libraries/os.md#external-programs)
 and `examples/exec.j`.
@@ -914,9 +914,9 @@ races impossible by construction.
     call in many Go-stack frames; the TinyGo default (~8KB) is
     far too small for any recursive spawn body.
   - TinyGo's runtime is cooperative single-threaded as of 0.41,
-    so parallel speedups under TinyGo will be close to 1.0;
-    `jennifer-go` (standard Go) reaches real multi-core speedup
-    on the parallel benchmark.
+    so parallel speedups on `jennifer-tiny` will be close to 1.0;
+    the default `jennifer` (standard Go) reaches real multi-core
+    speedup on the parallel benchmark.
 - **What was deferred** (none of these blocked M16.0 ship;
   picked up later if a forcing function appears): channels,
   mutexes, cancellation, timeouts, `select`,
@@ -989,9 +989,9 @@ operations, buffered file handles for line-oriented reads. No
   whole-value semantics.
 - **Concurrency composition.** `spawn { return fs.readString(...); }`
   gives non-blocking use in one line; `task.waitAll` fans in
-  multiple parallel reads. Under `jennifer-go` this
-  parallelises; under `jennifer` (TinyGo, cooperative
-  single-threaded) it's correct-but-sequential.
+  multiple parallel reads. Under the default `jennifer` this
+  parallelises across cores; under `jennifer-tiny` (TinyGo,
+  cooperative single-threaded) it's correct-but-sequential.
 - **What's deferred** (recorded so the design stays visible):
   streaming line iterator (`for (def line in fs.lines(path))`),
   `fs.copy` / `fs.chmod`, symlink ops, `fs.stat($f)` on an open
@@ -1011,9 +1011,10 @@ See:
 **Status:** done.
 
 Ships TCP + UDP sockets and DNS lookups on top of M16.0's
-`spawn` composition model. `jennifer-go` (standard Go) carries
-the full surface; `jennifer` (TinyGo) ships friendly-error
-stubs at every entry point via build-tag split.
+`spawn` composition model. The default `jennifer` binary
+(standard Go) carries the full surface; `jennifer-tiny`
+(TinyGo) ships friendly-error stubs at every entry point via
+build-tag split.
 
 - **TCP.** `net.connect(address) -> net.Conn`,
   `net.listen(address) -> net.Listener`,
@@ -1326,15 +1327,16 @@ together at the end of the performance pass.
 
 Expected impact:
 - `fib(23)`: drops to ~80-150 ms (3-5x), in striking distance
-  of `jennifer-go`'s 84 ms.
+  of the default `jennifer` binary's 84 ms.
 
 ### Combined target
 
 Re-running `examples/benchmark.j` against the M16.5-final
-TinyGo binary should yield a total time in the 25-30 s range
-(down from ~75 s) and put TinyGo within ~1.5x of `jennifer-go`
-on every workload shape - that's the floor set by the
-TinyGo-vs-stdlib runtime gap and the right target to aim for.
+`jennifer-tiny` binary should yield a total time in the 25-30 s
+range (down from ~75 s) and put TinyGo within ~1.5x of the
+default `jennifer` binary on every workload shape - that's the
+floor set by the TinyGo-vs-stdlib runtime gap and the right
+target to aim for.
 Update `technical/tinygo.md`'s tables with the post-M16.5
 numbers as the closing deliverable.
 

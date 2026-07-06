@@ -79,7 +79,7 @@ Two constants live alongside the constructors:
   live in separate namespace maps.
 - **`time.PROGRAM_START`** (`time.Time`) - the moment the time
   library was installed, which for the `jennifer` and
-  `jennifer-go` binaries is just before the user's source file is
+  `jennifer-tiny` binaries is just before the user's source file is
   read. Use it to anchor "total elapsed since program start"
   timing without scattering a `def start = time.now();` line at
   the top of every script. See

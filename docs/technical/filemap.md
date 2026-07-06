@@ -78,7 +78,7 @@ internal/lib/fs/handles.go                 `fs` library (M16.1): fs.File handle 
 internal/lib/fs/fslib_test.go              fs library unit tests (t.TempDir()-based; one-shot ops, metadata, dir ops, handles, spawn+fs composition)
 internal/lib/net/netlib.go                 `net` library (M16.2): shared - Install, struct registration, polymorphic close/address dispatch, arg-boundary helpers
 internal/lib/net/netlib_std.go             `net` library (M16.2): !tinygo build - full TCP/UDP/DNS implementation
-internal/lib/net/netlib_tinygo.go          `net` library (M16.2): tinygo build - friendly-error stubs pointing at jennifer-go
+internal/lib/net/netlib_tinygo.go          `net` library (M16.2): tinygo build - friendly-error stubs pointing at the default `jennifer` binary
 internal/lib/net/netlib_test.go            net library unit tests (!tinygo; loopback with :0 ephemeral ports; TCP round-trip, UDP round-trip, DNS, polymorphic close, use-after-close)
 internal/lib/regex/regexlib.go             `regex` library (M16.3): matches/find/findAll/replace/split/escape + regex.Match struct + 128-entry LRU pattern cache
 internal/lib/regex/regexlib_test.go        regex library unit tests (predicate, positional + named groups, rune-index offsets, LRU behaviour under load, invalid pattern boundary)

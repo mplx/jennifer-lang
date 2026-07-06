@@ -49,18 +49,17 @@ different stdlib subset) - a program that needs build-specific behaviour
 or just wants to log "which interpreter is this for the bug report" can
 branch on this value.
 
-| Value      | Meaning                                       |
-| ---------- | --------------------------------------------- |
-| `"go"`     | Built with the standard Go toolchain (`gc`)   |
-| `"tinygo"` | Built with TinyGo (the shipping binary today) |
+| Value      | Meaning                                                            |
+| ---------- | ------------------------------------------------------------------ |
+| `"go"`     | Built with the standard Go toolchain (`gc`) - the default `jennifer` binary |
+| `"tinygo"` | Built with TinyGo - the constrained `jennifer-tiny` binary         |
 
-`make build` produces both binaries: the shipping `jennifer` binary
-(TinyGo, `meta.BUILD == "tinygo"`) and `jennifer-go` (standard Go,
-`meta.BUILD == "go"`). `make build-tinygo` and `make build-go`
-produce only one each. `go run` against the source also reports
-`"go"`. If a future alternative compiler shows up, its identifier
-passes through directly rather than being normalised - so the
-constant always reports honestly
+`make build` produces both binaries: the default `jennifer` (standard
+Go, `meta.BUILD == "go"`) and `jennifer-tiny` (TinyGo, `meta.BUILD ==
+"tinygo"`). `make build-go` and `make build-tinygo` produce only one
+each. `go run` against the source also reports `"go"`. If a future
+alternative compiler shows up, its identifier passes through directly
+rather than being normalised - so the constant always reports honestly
 what built the binary.
 
 ## Build flow

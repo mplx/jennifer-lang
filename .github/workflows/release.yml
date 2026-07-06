@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 #
-# Tag-triggered release. Builds both binaries (`jennifer` via TinyGo,
-# `jennifer-go` via Go) for every supported platform from a single
-# amd64 runner via cross-compilation, runs a smoke test on each
-# native-arch artifact via QEMU user-mode emulation when the runner
-# can't execute the target arch directly, runs the M15.5.3 benchmark
-# suite on the runner's native arch (linux/amd64) so the release
-# notes carry a fresh number, and publishes everything to GitHub
-# Releases as a draft for human review before going live.
+# Tag-triggered release. Builds both binaries (`jennifer` via Go -
+# the default, full-featured build - and `jennifer-tiny` via TinyGo -
+# the constrained, embeddable variant) for every supported platform
+# from a single amd64 runner via cross-compilation, runs a smoke
+# test on each native-arch artifact via QEMU user-mode emulation
+# when the runner can't execute the target arch directly, runs the
+# M15.5.3 benchmark suite on the runner's native arch (linux/amd64)
+# so the release notes carry a fresh number, and publishes everything
+# to GitHub Releases as a draft for human review before going live.
 #
 # Initial supported platforms (M15.8 scope): linux/amd64,
 # linux/arm64. macOS and Windows are post-M15.8 work that adds new
@@ -64,7 +65,15 @@ jobs:
       - name: Regenerate version stamp
         run: ./scripts/gen-version.sh
 
-      - name: Build TinyGo binary (jennifer)
+      - name: Build Go binary (jennifer)
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: '0'
+        run: |
+          go build -o jennifer ./cmd/jennifer
+
+      - name: Build TinyGo binary (jennifer-tiny)
         env:
           # TinyGo's `-target=` flag names board / arch presets
           # (`wasi`, `microbit`, ...); it does *not* accept `os/arch`
@@ -78,22 +87,14 @@ jobs:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
         run: |
-          tinygo build -stack-size=1mb -o jennifer ./cmd/jennifer
-
-      - name: Build Go binary (jennifer-go)
-        env:
-          GOOS: ${{ matrix.os }}
-          GOARCH: ${{ matrix.arch }}
-          CGO_ENABLED: '0'
-        run: |
-          go build -o jennifer-go ./cmd/jennifer
+          tinygo build -stack-size=1mb -o jennifer-tiny ./cmd/jennifer
 
       - name: Smoke-test the binaries
         run: |
           # On a native-arch run we execute directly; on a foreign
           # arch QEMU user-mode emulation handles it.
           ./jennifer run examples/hello.j
-          ./jennifer-go run examples/hello.j
+          ./jennifer-tiny run examples/hello.j
 
       - name: Run benchmark suite (native arch only)
         if: matrix.arch == 'amd64'
@@ -105,7 +106,7 @@ jobs:
           # matches the runner.
           mkdir -p bench-out
           ./jennifer run examples/benchmark.j | tee bench-out/jennifer-${{ matrix.arch }}.txt
-          ./jennifer-go run examples/benchmark.j | tee bench-out/jennifer-go-${{ matrix.arch }}.txt
+          ./jennifer-tiny run examples/benchmark.j | tee bench-out/jennifer-tiny-${{ matrix.arch }}.txt
 
       - name: Package artifacts
         run: |
@@ -116,9 +117,9 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           STAGE="jennifer-${TAG}-${{ matrix.os }}-${{ matrix.arch }}"
           mkdir -p "$STAGE/share/man/man1" "$STAGE/share/mime/packages"
-          cp jennifer jennifer-go "$STAGE/"
-          cp packaging/man/jennifer.1    "$STAGE/share/man/man1/"
-          cp packaging/man/jennifer-go.1 "$STAGE/share/man/man1/"
+          cp jennifer jennifer-tiny "$STAGE/"
+          cp packaging/man/jennifer.1      "$STAGE/share/man/man1/"
+          cp packaging/man/jennifer-tiny.1 "$STAGE/share/man/man1/"
           cp packaging/mime/jennifer.xml "$STAGE/share/mime/packages/"
           cp README.md "$STAGE/" 2>/dev/null || true
           tar -czf "dist/${STAGE}.tar.gz" "$STAGE"
@@ -206,26 +207,26 @@ jobs:
             echo
             echo "Two binaries per platform - both are supported:"
             echo
-            echo "- \`jennifer\`     - TinyGo build. Canonical / shipping binary."
-            echo "- \`jennifer-go\`  - standard Go build. Performance variant for compute-bound code."
+            echo "- \`jennifer\`       - standard Go build. Default, full-featured; what most users want."
+            echo "- \`jennifer-tiny\`  - TinyGo build. Smaller, embeddable; no \`os/exec\` or network stack."
             echo
-            echo "Pick whichever matches your workload; see \`docs/user-guide/installing.md\` for guidance."
+            echo "Install \`jennifer\` unless you have a specific reason to use the constrained variant; see \`docs/user-guide/installing.md\` for guidance."
             echo
             echo "### Benchmark on the release runner (linux/amd64)"
             echo
             if [ -f artifacts/benchmarks/jennifer-amd64.txt ]; then
-              echo "**\`jennifer\` (TinyGo):**"
+              echo "**\`jennifer\` (standard Go):**"
               echo
               echo '```'
               cat artifacts/benchmarks/jennifer-amd64.txt
               echo '```'
               echo
             fi
-            if [ -f artifacts/benchmarks/jennifer-go-amd64.txt ]; then
-              echo "**\`jennifer-go\` (Go):**"
+            if [ -f artifacts/benchmarks/jennifer-tiny-amd64.txt ]; then
+              echo "**\`jennifer-tiny\` (TinyGo):**"
               echo
               echo '```'
-              cat artifacts/benchmarks/jennifer-go-amd64.txt
+              cat artifacts/benchmarks/jennifer-tiny-amd64.txt
               echo '```'
               echo
             fi

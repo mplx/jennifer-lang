@@ -26,7 +26,7 @@ func execSupported() bool {
 }
 
 func execUnsupportedErr(fnName string) error {
-	return fmt.Errorf("%s: external-program execution is not supported by this build (`%s`); use the `jennifer-go` binary (`make build` produces both, or `make build-go` for just the Go binary)", fnName, runtime.Compiler)
+	return fmt.Errorf("%s: external-program execution is not supported by `jennifer-tiny` (TinyGo build; compiler=%s); use the default `jennifer` binary (`make build` produces both, or `make build-go` for just the Go binary)", fnName, runtime.Compiler)
 }
 
 // processState holds the Go-side state for an `os.spawn`'d child.

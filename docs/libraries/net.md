@@ -83,11 +83,11 @@ while (true) {
 }
 ```
 
-Under `jennifer-go` each `spawn` runs on its own OS thread and
-scales across cores; under `jennifer` (TinyGo) the server
-compiles but every net call surfaces the "not available"
-message - see [TinyGo compatibility](#tinygo-compatibility)
-below.
+Under the default `jennifer` binary each `spawn` runs on its own
+OS thread and scales across cores; under `jennifer-tiny` (TinyGo)
+the server compiles but every net call surfaces the "not
+available" message - see
+[TinyGo compatibility](#tinygo-compatibility) below.
 
 ## UDP
 
@@ -244,22 +244,22 @@ try {
 
 ## TinyGo compatibility
 
-The shipping `jennifer` binary (TinyGo build) **does not
-include a network stack**. TinyGo 0.41 compiles most of
-`net.Dial` / `net.Listen` but requires a netdev driver to be
-registered at runtime; UDP (`net.ListenPacket`) isn't part of
-TinyGo's surface at all. Rather than let each call fail with
-cryptic runtime errors from deep inside Go's `net` package,
-every `net` entry point on the TinyGo binary returns a
-friendly Jennifer-level error:
+The `jennifer-tiny` binary (TinyGo build) **does not include a
+network stack**. TinyGo 0.41 compiles most of `net.Dial` /
+`net.Listen` but requires a netdev driver to be registered at
+runtime; UDP (`net.ListenPacket`) isn't part of TinyGo's surface
+at all. Rather than let each call fail with cryptic runtime
+errors from deep inside Go's `net` package, every `net` entry
+point on `jennifer-tiny` returns a friendly Jennifer-level
+error:
 
 ```
-net.connect: the TinyGo build of `jennifer` does not include a
-network stack; use the `jennifer-go` binary for network I/O
+net.connect: `jennifer-tiny` (TinyGo build) does not include a
+network stack; use the default `jennifer` binary for network I/O
 ```
 
 Same pattern as M15.3 `os.run` / `os.spawn` on TinyGo. If
-you're writing network code, use `jennifer-go`. See
+you're writing network code, use the default `jennifer`. See
 [../technical/tinygo.md](../technical/tinygo.md).
 
 ## What's not in v1

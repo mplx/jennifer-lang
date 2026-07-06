@@ -5,10 +5,10 @@
 Jennifer ships as two binaries per platform. Same source, same
 language; only the compiler differs. Pick by use case:
 
-| Binary         | Build                  | Pick when                                                                                                                                          |
-| -------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `jennifer`     | TinyGo (default)       | Default choice. Small, embeddable, the design target. Suits scripting, REPL use, anything not CPU-bound.                                           |
-| `jennifer-go`  | standard Go toolchain  | Compute-heavy scripts (2-5x faster on tight numeric / recursive loops; see [technical/tinygo.md > Single-binary benchmark results](../technical/tinygo.md#single-binary-benchmark-results)), or when you need `os.run` / `os.spawn` / `os.wait` / `os.poll` / `os.kill` (TinyGo's `os/exec` isn't supported yet). |
+| Binary          | Build                  | Pick when                                                                                                                                          |
+| --------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jennifer`      | standard Go (default)  | **What most users want.** Full host-feature surface; fastest on compute-heavy work (2-5x over TinyGo on tight numeric / recursive loops; see [technical/tinygo.md > Single-binary benchmark results](../technical/tinygo.md#single-binary-benchmark-results)). Required for `os.run` / `os.spawn` / `os.wait` / `os.poll` / `os.kill` and the whole `net` library. |
+| `jennifer-tiny` | TinyGo                 | Constrained variant. Smaller binary, embeddable; the target for the macflyos kernel and other minimal-footprint deployments. Missing `os/exec` (TinyGo runtime gap) and the network stack (no netdev driver). Calls into those surfaces return a friendly error pointing back at `jennifer`. |
 
 Both binaries install side by side and never overlap. The packaged
 distributions below install both; for tarball or from-source builds
@@ -31,7 +31,7 @@ sha256sum -c "jennifer_X.Y.Z_${ARCH}.deb.sha256"
 sudo dpkg -i "jennifer_X.Y.Z_${ARCH}.deb"
 ```
 
-Installs `/usr/bin/jennifer` + `/usr/bin/jennifer-go`, man pages
+Installs `/usr/bin/jennifer` + `/usr/bin/jennifer-tiny`, man pages
 under `/usr/share/man/man1/`, and the XDG MIME definition that
 registers `.j` as `text/x-jennifer` with file managers and editors.
 
@@ -64,26 +64,26 @@ curl -LO "https://github.com/mplx/jennifer-lang/releases/download/X.Y.Z/jennifer
 tar -xzf "jennifer-X.Y.Z-linux-${ARCH}.tar.gz"
 cd "jennifer-X.Y.Z-linux-${ARCH}"
 ./jennifer version
-./jennifer-go version
+./jennifer-tiny version
 ```
 
 The tarball lays out as:
 
 ```
 jennifer-X.Y.Z-linux-ARCH/
-├── jennifer              # TinyGo binary
-├── jennifer-go           # standard-Go binary
+├── jennifer              # standard-Go binary (default)
+├── jennifer-tiny         # TinyGo binary (constrained)
 ├── README.md
 └── share/
-    ├── man/man1/         # jennifer.1, jennifer-go.1
+    ├── man/man1/         # jennifer.1, jennifer-tiny.1
     └── mime/packages/    # jennifer.xml (XDG MIME)
 ```
 
 To install system-wide:
 
 ```sh
-sudo install -m 0755 jennifer    /usr/local/bin/
-sudo install -m 0755 jennifer-go /usr/local/bin/
+sudo install -m 0755 jennifer      /usr/local/bin/
+sudo install -m 0755 jennifer-tiny /usr/local/bin/
 sudo install -m 0644 share/mime/packages/jennifer.xml /usr/local/share/mime/packages/
 sudo update-mime-database /usr/local/share/mime || true
 ```
@@ -106,8 +106,8 @@ standard Go. From the repository root:
 make build
 
 # Or just one:
-make build-tinygo  # produces ./jennifer
-make build-go      # produces ./jennifer-go
+make build-go      # produces ./jennifer      (standard Go, default)
+make build-tinygo  # produces ./jennifer-tiny (TinyGo, constrained)
 
 # Quick iteration without rebuilding:
 go run ./cmd/jennifer run examples/hello.j

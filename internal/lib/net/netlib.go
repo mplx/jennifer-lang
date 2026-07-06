@@ -7,12 +7,12 @@
 // use composed through M16.0 `spawn` rather than a duplicated
 // `*Async` surface.
 //
-// The library uses a build-tag split. The standard-Go binary
-// (`jennifer-go`) ships the real implementations in netlib_std.go;
-// the TinyGo binary (`jennifer`) ships stubs in netlib_tinygo.go
-// that return a friendly runtime error pointing the user at
-// `jennifer-go`. Same shape as `os.run` / `os.spawn` under TinyGo
-// (M15.3).
+// The library uses a build-tag split. The default `jennifer`
+// binary (standard-Go build) ships the real implementations in
+// netlib_std.go; `jennifer-tiny` (TinyGo build) ships stubs in
+// netlib_tinygo.go that return a friendly runtime error pointing
+// the user back at `jennifer`. Same shape as `os.run` /
+// `os.spawn` under TinyGo (M15.3).
 //
 // Handles use the integer-registry pattern from M15.6 hash and
 // M16.1 fs: `net.Conn{id as int}`, `net.Listener{id as int}`,

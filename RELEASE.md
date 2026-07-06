@@ -8,10 +8,10 @@ automatically; this document covers the steps a human still has to do.
 Triggered by pushing a bare-semver git tag (e.g. `0.14.1`, no `v`
 prefix per project convention), `.github/workflows/release.yml`:
 
-1. Cross-compiles both binaries (`jennifer` TinyGo, `jennifer-go` Go)
-   for `linux/amd64` and `linux/arm64` from a single `ubuntu-latest`
-   runner. QEMU user-mode emulation smoke-tests each non-native
-   artifact.
+1. Cross-compiles both binaries (`jennifer` standard Go - default;
+   `jennifer-tiny` TinyGo - constrained) for `linux/amd64` and
+   `linux/arm64` from a single `ubuntu-latest` runner. QEMU
+   user-mode emulation smoke-tests each non-native artifact.
 2. Runs `examples/benchmark.j` on the native (`linux/amd64`) entry
    so the release notes carry fresh numbers.
 3. Packages per arch:
@@ -115,7 +115,7 @@ machine after the release is live:
 # Debian / Ubuntu
 sudo dpkg -i jennifer_0.14.1_amd64.deb
 jennifer version
-jennifer-go version
+jennifer-tiny version
 jennifer run /usr/share/doc/jennifer/examples/hello.j 2>/dev/null \
     || echo 'hi' | jennifer run -
 

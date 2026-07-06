@@ -220,9 +220,9 @@ for (def p in $paths) {
 def contents as list of string init task.waitAll($tasks);
 ```
 
-Under `jennifer-go` this actually parallelises across cores;
-under `jennifer` (TinyGo, cooperative single-threaded 0.41)
-the composition is correct but sequential. See
+Under the default `jennifer` binary this actually parallelises across
+cores; under `jennifer-tiny` (TinyGo, cooperative single-threaded
+0.41) the composition is correct but sequential. See
 [../technical/tinygo.md](../technical/tinygo.md).
 
 ## Errors

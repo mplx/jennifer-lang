@@ -3,7 +3,7 @@
 # Copyright (C) 2026 <developer@mplx.eu>
 #
 # Assemble a `.deb` from already-built binaries. Run after
-# `make build` has produced ./jennifer and ./jennifer-go (or from
+# `make build` has produced ./jennifer and ./jennifer-tiny (or from
 # CI after the cross-compile step). The packaging metadata in
 # packaging/debian/ is copied into the staging directory; the
 # binaries, man pages, MIME definition, license, and changelog
@@ -23,8 +23,8 @@
 #   <out-dir>  - Directory to write the resulting .deb into.
 #
 # Expects in CWD:
-#   ./jennifer       - TinyGo binary
-#   ./jennifer-go    - standard Go binary
+#   ./jennifer       - standard Go binary (default, full-featured)
+#   ./jennifer-tiny  - TinyGo binary (constrained; no os/exec, no net)
 #
 # Output:
 #   <out-dir>/jennifer_<version>_<arch>.deb
@@ -54,7 +54,7 @@ if ! command -v dpkg-deb >/dev/null 2>&1; then
     exit 2
 fi
 
-for f in ./jennifer ./jennifer-go; do
+for f in ./jennifer ./jennifer-tiny; do
     if [ ! -f "$f" ]; then
         echo "missing required input: $f" >&2
         exit 2
@@ -76,11 +76,11 @@ mkdir -p "$STAGE/DEBIAN"
 
 # Binaries.
 install -m 0755 ./jennifer "$STAGE/usr/bin/jennifer"
-install -m 0755 ./jennifer-go "$STAGE/usr/bin/jennifer-go"
+install -m 0755 ./jennifer-tiny "$STAGE/usr/bin/jennifer-tiny"
 
 # Man pages, gzipped per Debian policy (max compression).
-gzip -9n -c "$PKG_DIR/man/jennifer.1"    > "$STAGE/usr/share/man/man1/jennifer.1.gz"
-gzip -9n -c "$PKG_DIR/man/jennifer-go.1" > "$STAGE/usr/share/man/man1/jennifer-go.1.gz"
+gzip -9n -c "$PKG_DIR/man/jennifer.1"      > "$STAGE/usr/share/man/man1/jennifer.1.gz"
+gzip -9n -c "$PKG_DIR/man/jennifer-tiny.1" > "$STAGE/usr/share/man/man1/jennifer-tiny.1.gz"
 
 # Shared MIME definition.
 install -m 0644 "$PKG_DIR/mime/jennifer.xml" "$STAGE/usr/share/mime/packages/jennifer.xml"

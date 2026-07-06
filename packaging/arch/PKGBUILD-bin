@@ -2,9 +2,9 @@
 # Copyright (C) 2026 <developer@mplx.eu>
 #
 # AUR PKGBUILD for `jennifer-bin`: downloads the prebuilt release
-# tarball and installs both binaries (`jennifer` TinyGo + `jennifer-go`
-# standard Go) side by side. Pair to `jennifer-git` which builds
-# from source.
+# tarball and installs both binaries (`jennifer` standard Go +
+# `jennifer-tiny` TinyGo) side by side. Pair to `jennifer-git`
+# which builds from source.
 #
 # Maintainer: developer@mplx.eu <developer@mplx.eu>
 
@@ -51,16 +51,16 @@ package() {
     cd "$srcdir/$_srcdir"
 
     # Binaries.
-    install -Dm755 jennifer    "$pkgdir/usr/bin/jennifer"
-    install -Dm755 jennifer-go "$pkgdir/usr/bin/jennifer-go"
+    install -Dm755 jennifer      "$pkgdir/usr/bin/jennifer"
+    install -Dm755 jennifer-tiny "$pkgdir/usr/bin/jennifer-tiny"
 
     # Man pages (already gzipped by the release pipeline would be nice;
     # we gzip here for the AUR package so the per-arch tarball stays
     # universally consumable).
-    install -Dm644 share/man/man1/jennifer.1    "$pkgdir/usr/share/man/man1/jennifer.1"
-    install -Dm644 share/man/man1/jennifer-go.1 "$pkgdir/usr/share/man/man1/jennifer-go.1"
+    install -Dm644 share/man/man1/jennifer.1      "$pkgdir/usr/share/man/man1/jennifer.1"
+    install -Dm644 share/man/man1/jennifer-tiny.1 "$pkgdir/usr/share/man/man1/jennifer-tiny.1"
     gzip -9n "$pkgdir/usr/share/man/man1/jennifer.1"
-    gzip -9n "$pkgdir/usr/share/man/man1/jennifer-go.1"
+    gzip -9n "$pkgdir/usr/share/man/man1/jennifer-tiny.1"
 
     # XDG MIME info for the .j extension.
     install -Dm644 share/mime/packages/jennifer.xml \

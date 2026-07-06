@@ -2,8 +2,8 @@
 # Copyright (C) 2026 <developer@mplx.eu>
 #
 # AUR PKGBUILD for `jennifer-git`: clones the upstream repository
-# and builds both binaries (`jennifer` TinyGo + `jennifer-go`
-# standard Go) from source. Tracks the `main` branch; rebuild to
+# and builds both binaries (`jennifer` standard Go + `jennifer-tiny`
+# TinyGo) from source. Tracks the `main` branch; rebuild to
 # follow upstream.
 #
 # Maintainer: developer@mplx.eu <developer@mplx.eu>
@@ -51,14 +51,14 @@ package() {
     cd "$srcdir/$_realname"
 
     # Binaries.
-    install -Dm755 jennifer    "$pkgdir/usr/bin/jennifer"
-    install -Dm755 jennifer-go "$pkgdir/usr/bin/jennifer-go"
+    install -Dm755 jennifer      "$pkgdir/usr/bin/jennifer"
+    install -Dm755 jennifer-tiny "$pkgdir/usr/bin/jennifer-tiny"
 
     # Man pages.
-    install -Dm644 packaging/man/jennifer.1    "$pkgdir/usr/share/man/man1/jennifer.1"
-    install -Dm644 packaging/man/jennifer-go.1 "$pkgdir/usr/share/man/man1/jennifer-go.1"
+    install -Dm644 packaging/man/jennifer.1      "$pkgdir/usr/share/man/man1/jennifer.1"
+    install -Dm644 packaging/man/jennifer-tiny.1 "$pkgdir/usr/share/man/man1/jennifer-tiny.1"
     gzip -9n "$pkgdir/usr/share/man/man1/jennifer.1"
-    gzip -9n "$pkgdir/usr/share/man/man1/jennifer-go.1"
+    gzip -9n "$pkgdir/usr/share/man/man1/jennifer-tiny.1"
 
     # XDG MIME info for the .j extension.
     install -Dm644 packaging/mime/jennifer.xml \

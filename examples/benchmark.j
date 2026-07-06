@@ -5,8 +5,8 @@
 #
 #   1. Demonstrate the M15.5 `time` library: `time.now()`,
 #      `time.sub(end, start)`, `time.milliseconds(d)`.
-#   2. Provide a side-by-side workload between the shipping `jennifer`
-#      (TinyGo) and the development `jennifer-go` (standard Go) so
+#   2. Provide a side-by-side workload between the default `jennifer`
+#      (standard Go) and the constrained `jennifer-tiny` (TinyGo) so
 #      programmers (and macflyos-embedding evaluators) can see where
 #      the two binaries diverge on the same machine.
 #

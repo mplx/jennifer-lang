@@ -1,16 +1,16 @@
 # Jennifer
 
 Jennifer is a small, experimental, interpreted programming language
-built as a learning exercise. The interpreter is written in Go and
-ships as two binaries:
+built as a learning exercise. The interpreter is written in (Tiny)Go
+and ships as two binaries:
 
-- **`jennifer`** - TinyGo build, small and embeddable. The canonical
-  shipping binary. Some host features (like `os/exec`) are
-  unsupported on TinyGo today and return a friendly limitation
-  error.
-- **`jennifer-go`** - standard Go build, full host-feature surface.
-  Same source, same language; the right pick when you want the
-  performance variant for compute-bound code.
+- **`jennifer`** - standard Go build, full host-feature surface.
+  This is the default binary you install and reach for.
+- **`jennifer-tiny`** - TinyGo build, smaller and embeddable.
+  Missing `os/exec` and the network stack (TinyGo runtime gaps);
+  calls into those surfaces return a friendly runtime error
+  pointing back at `jennifer`. Use this variant when binary size
+  or embeddability matters (e.g. the macflyos kernel target).
 
 Source files use the `.j` extension. Whitespace is not significant
 anywhere; statements end with `;`.

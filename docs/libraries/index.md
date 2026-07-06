@@ -14,9 +14,10 @@ links to the reference doc for each.
 > polymorphic over string / list / map / bytes.
 
 The **TinyGo** column reports whether the library runs in full on
-the shipping `jennifer` binary (TinyGo-built). A `partial` entry
-links to [../technical/tinygo.md](../technical/tinygo.md) for the
-restriction list; `jennifer-go` always supports the full surface.
+the constrained `jennifer-tiny` binary (TinyGo-built). A `partial`
+entry links to [../technical/tinygo.md](../technical/tinygo.md) for
+the restriction list; the default `jennifer` binary (standard Go)
+always supports the full surface.
 
 | Library                  | Enable with     | TinyGo                                                | Contents                                                                                                                                                                       |
 | ------------------------ | --------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -34,7 +35,7 @@ restriction list; `jennifer-go` always supports the full surface.
 | [`encoding`](encoding.md) | `use encoding;` | full                                                  | M15.7: introspection (`isAscii`, `lenBytes`, `lenRunes`); binary-to-text `toText`/`fromText` for `"hex"`, `"base64"`, `"base64-url"`; character codecs `encode`/`decode` for `"ascii"`, `"latin-1"`, `"windows-1252"`, `"ebcdic"`     |
 | [`task`](task.md)        | `use task;`     | full                                                  | M16.0: observe and join `task of T` handles produced by `spawn { ... }`. `task.wait`, `task.poll`, `task.discard`, `task.waitAll`, `task.waitAny`; pairs with the [user-guide concurrency tour](../user-guide/concurrency.md)        |
 | [`fs`](fs.md)            | `use fs;`       | full                                                  | M16.1: filesystem I/O. Whole-file `readString`/`readBytes`/`writeString`/`writeBytes`/`appendString`/`appendBytes`; metadata `exists`/`isFile`/`isDir`/`stat`; dir ops `mkdir`/`mkdirAll`/`remove`/`removeAll`/`rename`/`list`/`walk`; handles `open`/`readLine`/`readChars`/`readBytes`/`writeString`/`writeBytes`/`eof`/`close`; structs `fs.Stat`, `fs.File` |
-| [`net`](net.md)          | `use net;`      | [stubs only](../technical/tinygo.md#tinygo-restrictions) | M16.2: TCP `connect`/`listen`/`accept`/`readBytes`/`writeBytes`/`eof`/`address`, UDP `listenUDP`/`sendTo`/`recvFrom`, DNS `lookup`/`reverseLookup`, polymorphic `close`/`address`; structs `net.Conn`, `net.Listener`, `net.UDPSocket`, `net.Datagram`. TinyGo `jennifer` returns friendly errors; use `jennifer-go` for real net I/O. |
+| [`net`](net.md)          | `use net;`      | [stubs only](../technical/tinygo.md#tinygo-restrictions) | M16.2: TCP `connect`/`listen`/`accept`/`readBytes`/`writeBytes`/`eof`/`address`, UDP `listenUDP`/`sendTo`/`recvFrom`, DNS `lookup`/`reverseLookup`, polymorphic `close`/`address`; structs `net.Conn`, `net.Listener`, `net.UDPSocket`, `net.Datagram`. `jennifer-tiny` returns friendly errors; use the default `jennifer` binary for real net I/O. |
 | [`regex`](regex.md)      | `use regex;`    | full                                                  | M16.3: regular expressions over `string` (RE2 syntax). `regex.matches`/`find`/`findAll`/`replace`/`split`/`escape` + `regex.Match` struct with positional and named captures. Implicit LRU cache for compiled patterns. |
 | [`testing`](testing.md)  | `use testing;`  | full                                                  | M16.4: test-runner primitives. `testing.run`/`results`/`reset`/`report` + `testing.Result` struct. Catches runtime errors, throws, and (uniquely) `exit` inside test bodies. Three report formats: `"text"`, `"tap"`, `"junit"`. Foundation for the M18.x .j-side test framework. |
 
@@ -106,8 +107,9 @@ large ones. The organizing principle, captured for future extensions:
   purpose; non-blocking use composes with `spawn` from M16.0.
 - Network I/O (TCP + UDP sockets, DNS lookups) -> `net` (M16.2).
   Blocking calls, same spawn-composition story as `fs`. The
-  TinyGo `jennifer` binary returns friendly "use jennifer-go"
-  errors; the network stack lives only in the standard-Go binary.
+  constrained `jennifer-tiny` binary returns friendly "use the
+  default `jennifer`" errors; the network stack lives only in
+  the standard-Go binary.
 - Regular expressions over `string` -> `regex` (M16.3). RE2
   syntax (Go's `regexp` engine); implicit LRU cache. Pure
   string processing, no other library dependencies.

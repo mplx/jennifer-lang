@@ -66,11 +66,11 @@ jobs:
       - name: make build (both binaries)
         run: make build
 
-      - name: Smoke-test the TinyGo binary
+      - name: Smoke-test the Go binary (default)
         run: ./jennifer run examples/hello.j
 
-      - name: Smoke-test the Go binary
-        run: ./jennifer-go run examples/hello.j
+      - name: Smoke-test the TinyGo binary (constrained)
+        run: ./jennifer-tiny run examples/hello.j
 
       - name: em-dash scan (project rule)
         run: |

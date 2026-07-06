@@ -4,9 +4,9 @@
 //go:build !tinygo
 
 // Standard-Go implementation of the M16.2 `net` library. Used by
-// the `jennifer-go` binary. Under TinyGo the netlib_tinygo.go file
-// is selected instead and returns friendly runtime errors from
-// every entry point.
+// the default `jennifer` binary (standard-Go build). Under TinyGo
+// (`jennifer-tiny`), the netlib_tinygo.go file is selected instead
+// and returns friendly runtime errors from every entry point.
 
 package netlib
 

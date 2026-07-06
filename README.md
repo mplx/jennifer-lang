@@ -4,12 +4,12 @@
 
 Jennifer is a small, experimental, interpreted programming language.
 The interpreter is written in Go and ships as two binaries:
-**`jennifer`** (built with [TinyGo](https://tinygo.org/), small and
-embeddable; some host features like `os/exec` aren't implemented by
-the TinyGo runtime yet) and **`jennifer-go`** (built with the
-standard Go toolchain, full host-feature surface; what you reach for
-during development). `make build` produces both side by side. Source
-files use the `.j` extension.
+**`jennifer`** (built with the standard Go toolchain, full
+host-feature surface - the default you install and reach for) and
+**`jennifer-tiny`** (built with [TinyGo](https://tinygo.org/), smaller
+and embeddable; missing `os/exec` and the network stack). `make
+build` produces both side by side. Source files use the `.j`
+extension.
 
 This project exists primarily as a learning exercise: how to design a
 language and build an interpreter end-to-end (lexer → preprocessor → parser →
@@ -21,14 +21,16 @@ Jennifer currently targets **Linux**; Windows and macOS support is planned.
 
 Same source, same language; pick by use case:
 
-- **`jennifer`** (TinyGo, the default): small, embeddable, the design
-  target. Suits scripting, REPL use, anything not CPU-bound.
-- **`jennifer-go`** (standard Go toolchain): the performance variant.
-  2-5x faster on compute-bound code (tight numeric / recursive loops);
-  required when you need `os.run` / `os.spawn` / `os.wait` / `os.poll`
-  / `os.kill` (TinyGo's `os/exec` isn't supported yet). Use this when
-  your script's bottleneck is CPU work or it shells out to another
-  process.
+- **`jennifer`** (standard Go toolchain, the default): full
+  host-feature surface, faster on compute-bound code, supports
+  `os.run` / `os.spawn` / the whole `net` library. This is what
+  you want unless you have a specific reason to use the constrained
+  variant.
+- **`jennifer-tiny`** (TinyGo): smaller binary, embeddable; the
+  variant we target for embedding (e.g. into the macflyos kernel).
+  Trade-off: no `os/exec` (TinyGo runtime gap) and no network stack
+  (no netdev driver registered). Calls into those surfaces return
+  a friendly runtime error pointing back at `jennifer`.
 
 Both binaries install side by side. Benchmarks comparing the two on
 the same workload set live in
@@ -90,8 +92,8 @@ If you cloned the repo and want to build + iterate locally:
 ```sh
 # Build both binaries side by side
 make build
-./jennifer run examples/hello.j        # prints "42"
-./jennifer-go run examples/hello.j     # prints "42"
+./jennifer      run examples/hello.j   # prints "42"  (standard Go, default)
+./jennifer-tiny run examples/hello.j   # prints "42"  (TinyGo, constrained)
 
 # Quick iteration without rebuilding
 go run ./cmd/jennifer run examples/hello.j

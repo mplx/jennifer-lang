@@ -5,11 +5,12 @@
 
 // TinyGo stub for the M16.2 `net` library. TinyGo 0.41 compiles
 // most of the standard-Go `net` surface but requires a netdev
-// driver at runtime (which the shipping Jennifer binary doesn't
+// driver at runtime (which the `jennifer-tiny` binary doesn't
 // register), and lacks `net.ListenPacket` entirely for UDP. Rather
 // than surface cryptic runtime errors from deep inside Go's
 // runtime, every entry point returns a friendly Jennifer-level
-// message pointing the user at `jennifer-go`.
+// message pointing the user at the default `jennifer` binary
+// (standard-Go build).
 //
 // This mirrors the M15.3 `os.run` pattern.
 
@@ -25,7 +26,7 @@ import (
 // message stays uniform across the surface and future edits happen
 // in one place.
 func unavailable(fnName string) (Value, error) {
-	return interpreter.Null(), fmt.Errorf("%s: the TinyGo build of `jennifer` does not include a network stack; use the `jennifer-go` binary for network I/O", fnName)
+	return interpreter.Null(), fmt.Errorf("%s: `jennifer-tiny` (TinyGo build) does not include a network stack; use the default `jennifer` binary for network I/O", fnName)
 }
 
 // ResetForTest is a no-op under TinyGo since no state exists.
@@ -79,11 +80,11 @@ func reverseLookupFn(_ interpreter.BuiltinCtx, _ []Value) (Value, error) {
 // Close paths (called from the polymorphic net.close dispatcher).
 
 func closeConn(_ int64) error {
-	return fmt.Errorf("net.close: the TinyGo build of `jennifer` does not include a network stack; use the `jennifer-go` binary for network I/O")
+	return fmt.Errorf("net.close: `jennifer-tiny` (TinyGo build) does not include a network stack; use the default `jennifer` binary for network I/O")
 }
 func closeListener(_ int64) error {
-	return fmt.Errorf("net.close: the TinyGo build of `jennifer` does not include a network stack; use the `jennifer-go` binary for network I/O")
+	return fmt.Errorf("net.close: `jennifer-tiny` (TinyGo build) does not include a network stack; use the default `jennifer` binary for network I/O")
 }
 func closeUDP(_ int64) error {
-	return fmt.Errorf("net.close: the TinyGo build of `jennifer` does not include a network stack; use the `jennifer-go` binary for network I/O")
+	return fmt.Errorf("net.close: `jennifer-tiny` (TinyGo build) does not include a network stack; use the default `jennifer` binary for network I/O")
 }

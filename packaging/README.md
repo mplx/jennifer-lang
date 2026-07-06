@@ -9,9 +9,9 @@ packaging/
   README.md             - this file
   debian/               - .deb control files (control, copyright, postinst, postrm)
   arch/                 - AUR PKGBUILDs (-bin downloads release, -git builds from source)
-  mime/jennifer.xml     - XDG shared-mime-info; both .deb and AUR install it
-  man/jennifer.1        - man page for the TinyGo binary
-  man/jennifer-go.1     - man page for the standard-Go binary
+  mime/jennifer.xml       - XDG shared-mime-info; both .deb and AUR install it
+  man/jennifer.1          - man page for the default (standard-Go) binary
+  man/jennifer-tiny.1     - man page for the constrained (TinyGo) binary
 ```
 
 The actual `.deb` is built by `scripts/build-deb.sh` (invoked

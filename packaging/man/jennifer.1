@@ -2,19 +2,27 @@
 .\" Copyright (C) 2026 <developer@mplx.eu>
 .TH JENNIFER 1 "2026" "Jennifer" "Jennifer Programming Language"
 .SH NAME
-jennifer \- Jennifer programming language interpreter (TinyGo build)
+jennifer \- Jennifer programming language interpreter
 .SH SYNOPSIS
 .B jennifer
 .I subcommand
 .RI [ args ...]
 .SH DESCRIPTION
 .B jennifer
-is the canonical TinyGo build of the Jennifer interpreter.
-It is the small, embeddable variant of the language; the standard-Go
-build is shipped alongside as
-.BR jennifer-go (1)
-for users running compute-bound Jennifer where the performance gap
-matters more than binary size.
+is the default Jennifer interpreter, built with the standard Go
+toolchain. It supports the full host-feature surface: file I/O,
+external-program execution
+.RB ( os.run ", " os.spawn ),
+TCP/UDP sockets, DNS lookups, and the rest of the standard library.
+.PP
+The smaller, embeddable variant is shipped alongside as
+.BR jennifer-tiny (1);
+that build lacks
+.B os/exec
+and the network stack. Use
+.B jennifer-tiny
+only when binary size matters (embedded devices, minimal
+container images, the macflyos target).
 .PP
 Jennifer is a small, experimental, interpreted programming language.
 Source files use the
@@ -53,7 +61,7 @@ Shared MIME information that registers the
 extension as
 .BR text/x-jennifer .
 .SH "SEE ALSO"
-.BR jennifer-go (1),
+.BR jennifer-tiny (1),
 .UR https://github.com/mplx/jennifer-lang
 .UE
 .SH LICENSE

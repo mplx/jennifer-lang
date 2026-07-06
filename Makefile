@@ -9,26 +9,33 @@
 #
 # `make build` produces both binaries because Jennifer has a deliberate
 # two-binary story:
-#   - `jennifer`     - TinyGo build. The shipping interpreter; small binary,
-#                      embeddable; some host features missing (today: no
-#                      `os/exec`, so `os.run` / `os.spawn` etc. return a
-#                      friendly limitation error).
-#   - `jennifer-go`  - standard Go toolchain. Full host-feature surface;
-#                      what you reach for during development and on any
-#                      machine with the host runtime available.
+#   - `jennifer`       - standard Go toolchain. Full host-feature surface;
+#                        the default binary users install and reach for.
+#   - `jennifer-tiny`  - TinyGo build. Small binary, embeddable; some host
+#                        features missing (no `os/exec`, no netdev stack)
+#                        surface as friendly "not available in
+#                        jennifer-tiny; use the plain jennifer binary"
+#                        runtime errors.
 #
-# The `build-tinygo` and `build-go` targets each produce one of the two.
+# The `build-go` and `build-tinygo` targets each produce one of the two.
+# The language still stays TinyGo-clean (both binaries built in CI); the
+# name flip only reflects which one distributors ship as default.
 #
 # We use codegen rather than `-ldflags -X` because TinyGo 0.41 silently
 # ignores -X. Codegen works identically on both toolchains.
 
 .PHONY: build build-tinygo build-go test clean version gen-version
 
-# Default: build both binaries so the user always has a Go-toolchain binary
-# (`jennifer-go`) alongside the TinyGo shipping binary (`jennifer`).
-build: build-tinygo build-go
+# Default: build both binaries so the user always has both variants
+# side by side for local A/B comparison.
+build: build-go build-tinygo
 
-# TinyGo shipping binary. Embeddable; the smaller of the two.
+# Standard Go toolchain binary - the default `jennifer`. Fast iteration,
+# full host-feature support.
+build-go: gen-version
+	go build -o jennifer ./cmd/jennifer
+
+# TinyGo constrained binary. Embeddable; smaller; missing os/exec + net.
 #
 # -stack-size=1mb: TinyGo's default goroutine stack (~8KB) overflows on
 # Jennifer's tree-walking recursive evaluator. Each Jennifer-level call
@@ -38,19 +45,13 @@ build: build-tinygo build-go
 # parallel fib block in examples/benchmark.j) without segfaulting; bump
 # it if a future workload needs deeper recursion.
 build-tinygo: gen-version
-	tinygo build -o jennifer -stack-size=1mb ./cmd/jennifer
-
-# Standard Go toolchain binary. Fast iteration, full host-feature support.
-# Named with a `-go` suffix so `jennifer` always refers to the shipping
-# (TinyGo) build and a side-by-side install never overwrites it.
-build-go: gen-version
-	go build -o jennifer-go ./cmd/jennifer
+	tinygo build -o jennifer-tiny -stack-size=1mb ./cmd/jennifer
 
 test:
 	go test ./...
 
 clean:
-	rm -f jennifer jennifer-go internal/version/version_gen.go
+	rm -f jennifer jennifer-tiny internal/version/version_gen.go
 
 # Regenerate the version-init file from git state. Always runs; the .PHONY
 # declaration above ensures make doesn't skip it on rebuild.

@@ -13,10 +13,10 @@
 # internal/lib/os/exec_test.go. The example expects /bin/echo,
 # /bin/sh, and /bin/sleep on the host - any POSIX system has them.
 #
-# TinyGo note: this example does NOT run under the TinyGo-built
-# shipping binary (`make build`) because TinyGo's runtime does
-# not implement os/exec. Use the Go-built binary (`make build-go`)
-# or `go run ./cmd/jennifer run examples/exec.j` instead.
+# TinyGo note: this example does NOT run under `jennifer-tiny`
+# because TinyGo's runtime does not implement os/exec. Use the
+# default `jennifer` binary (built by `make build` or `make build-go`)
+# or `go run ./cmd/jennifer run examples/exec.j`.
 
 use io;
 use os;

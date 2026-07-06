@@ -135,17 +135,16 @@ interpreter's memory; for streaming workloads, redirect to a file
 via `["sh", "-c", "cmd > /tmp/out"]` or wait for a future streaming
 variant.
 
-**TinyGo limitation.** The shipping `jennifer` binary (TinyGo) does
-not currently support `os.run`, `os.spawn`, `os.wait`, `os.poll`, or
+**TinyGo limitation.** The `jennifer-tiny` binary (TinyGo build)
+does not support `os.run`, `os.spawn`, `os.wait`, `os.poll`, or
 `os.kill` - TinyGo's runtime hasn't implemented the underlying
-`os/exec` syscalls. Calling these functions returns a friendly
-runtime error pointing at the build choice. Use the
-`jennifer-go` binary that ships alongside (`make build` produces
-both, or `make build-go` produces just it) for exec support, or
-wait for TinyGo's `os/exec` support to mature. This is the first
-place Jennifer's two-binary story (TinyGo shipping, Go dev)
-becomes user-visible; future I/O work in `fs` / `net` will hit the
-same boundary.
+`os/exec` syscalls. Calling these functions on `jennifer-tiny`
+returns a friendly runtime error pointing at the default `jennifer`
+binary. The default `jennifer` (`make build` produces both, or
+`make build-go` for just it) supports the full exec surface. This
+was the first user-visible gap in Jennifer's two-binary story;
+`net` (M16.2) hit the same boundary and adopted the same
+friendly-error pattern.
 
 ## Constants
 

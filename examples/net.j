@@ -8,8 +8,8 @@
 #
 # Uses `:0` on the server so the kernel picks an ephemeral port,
 # then `net.address($listener)` to discover which port that was.
-# Under `jennifer` (TinyGo build) every net call surfaces a
-# friendly "not available" error - use `jennifer-go` for this.
+# Under `jennifer-tiny` (TinyGo build) every net call surfaces a
+# friendly "not available" error - use the default `jennifer` for this.
 
 use io;
 use net;
