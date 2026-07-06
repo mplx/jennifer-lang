@@ -1165,7 +1165,7 @@ func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environme
 	if err != nil {
 		return err
 	}
-	rootCopy := binding.Value.Copy()
+	rootCopy := binding.Value.Ensure()
 	if err := i.applyLvalueWrite(&rootCopy, steps, newVal, st); err != nil {
 		return err
 	}
@@ -1206,7 +1206,7 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 			file, line, col := posFor(st)
 			return &runtimeError{Msg: fmt.Sprintf("bytes element value %d out of range [0, 255]", newVal.Int), File: file, Line: line, Col: col}
 		}
-		rootCopy := binding.Value.Copy()
+		rootCopy := binding.Value.Ensure()
 		rootCopy.Bytes = append(rootCopy.Bytes, byte(newVal.Int))
 		if err := env.Assign(st.Target.Name, rootCopy); err != nil {
 			file, line, col := posFor(st)
@@ -1218,7 +1218,7 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: fmt.Sprintf("cannot append %s to list of declared element type %s", newVal.Kind, binding.Value.ElemTyp), File: file, Line: line, Col: col}
 	}
-	rootCopy := binding.Value.Copy()
+	rootCopy := binding.Value.Ensure()
 	rootCopy.List = append(rootCopy.List, newVal.Copy())
 	if err := env.Assign(st.Target.Name, rootCopy); err != nil {
 		file, line, col := posFor(st)
@@ -1259,7 +1259,7 @@ func (i *Interpreter) execFieldAssign(st *parser.FieldAssignStmt, env *Environme
 	if err != nil {
 		return err
 	}
-	rootCopy := binding.Value.Copy()
+	rootCopy := binding.Value.Ensure()
 	if err := i.applyLvalueWrite(&rootCopy, steps, newVal, st); err != nil {
 		return err
 	}
@@ -1914,7 +1914,15 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 			file, line, col := posFor(ex)
 			return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 		}
-		return v, nil
+		// M16.5.1: mark the value as potentially aliased. Any storage
+		// downstream (Define, Assign, param binding, list/map/struct
+		// literal element) now shares the same backing; a future
+		// mutation calls Ensure() and detaches only when the flag is
+		// set. In contrast, execAppend / execIndexAssign /
+		// execFieldAssign fetch their target via GetBinding (not
+		// evalExpr), so the append hot loop stays unshared and mutates
+		// in place - the O(N^2) fix.
+		return v.Share(), nil
 	case *parser.ConstRefExpr:
 		// 1. User scope first (variables and `def const`).
 		b, err := env.GetBinding(ex.Name)

@@ -1228,46 +1228,54 @@ lookup is just done once.
 
 ### M16.5.1 - Refcount-based copy-on-mutation for `Value`
 
-The biggest single win. Add a refcount to compound `Value`
-payloads (or to a shared wrapper around the underlying slice /
-map / struct-fields backing store). On assignment / parameter
-binding, bump the refcount instead of deep-copying. On mutation
-(`$xs[] = `, `$xs[i] = `, `$m[k] = `, `$p.field = `), check
-the refcount: refcount == 1 means no aliases exist, mutate in
-place; refcount > 1 means split (deep-copy this binding) before
-mutating.
+**Status:** done (shared-marker COW variant).
 
-The refactor touches:
+Ships the shared-marker copy-on-write protocol on compound
+`Value`s. Cheaper than full refcount, correct where it matters,
+and removes the O(N^2) tax on the "grow a list one item at a
+time" pattern.
 
-- `internal/interpreter/value.go` - refcount field on the
-  compound payloads (KindList, KindMap, KindStruct, KindBytes).
-  Currently `Value.Copy()` is the single deep-copy entry point;
-  it becomes "bump refcount" with the deep-copy reserved for
-  the mutation-site split.
-- `internal/interpreter/interpreter.go` - `execAppend`,
-  `execIndexAssign`, `execFieldAssign` all rewritten to use
-  the split protocol. Parameter binding (`evalCall`), assignment
-  (`Assign`), and for-each iteration variables also need their
-  Copy()-sites reviewed.
-- Test strategy: a dedicated `value_alias_test.go` that
-  constructs aliased compound `Value` graphs and asserts each
-  mutation site preserves the no-aliasing invariant
-  (mutating through one binding doesn't visibly affect another).
-  Run as part of `go test ./...`. Stress-cover the corner cases
-  (lists inside maps, structs containing lists, nested struct
-  fields, bytes inside structs) before considering the milestone
-  done.
+- **`Value.shared *bool` marker.** nil for freshly-constructed
+  compounds and scalars. `Share()` sets it to a `*bool = true`
+  when `evalExpr` returns a variable reference. Any downstream
+  storage (Define, Assign, param binding, list/map element,
+  struct field) sees the value as potentially aliased.
+- **`Ensure()` at mutation sites.** `execAppend`,
+  `execIndexAssign`, `execFieldAssign` all call
+  `binding.Value.Ensure()` before mutating. If shared, Ensure
+  DeepCopies to a private backing. Otherwise (append hot loop,
+  where the binding is the only reference), Ensure returns v
+  as-is and the mutation happens in place - no allocation.
+- **`Copy()` stays as the public deep-copy** for libraries
+  whose pattern is "Copy then mutate freely" (`lists.shuffle`,
+  `lists.reverse`). Historical name preserved so no library
+  needed changes. `snapshotForSpawn` calls `DeepCopy()`
+  explicitly for value-semantics capture across goroutine
+  boundaries.
+- **Impact.** The append-in-a-loop pattern (`$xs[] = i` inside
+  a while) dropped from ~35 s on 10K items (pre-M16.5.1) to
+  ~40 ms on `jennifer-tiny` (TinyGo) - roughly 1000x. The
+  M15.5.3 benchmark note about swapping a Sieve of
+  Eratosthenes for trial division no longer applies; the write
+  pattern is now cheap enough.
+- **Alias correctness.** The plan-required alias-stress suite
+  is `internal/interpreter/value_alias_test.go` - 15 tests
+  covering direct list aliasing, map aliasing, struct
+  aliasing, structs containing lists, lists of structs, nested
+  compounds, chained field writes, bytes append, function-arg
+  mutation, and the hot-loop append pattern. Anyone touching
+  mutation code must add coverage there.
+- **Trade-off recorded**: the marker is one-directional (once
+  true, never flips back). Pessimistic - a Value that was ever
+  aliased detaches on next mutation even after the alias goes
+  out of scope. A full refcounted COW would fix that; not
+  scheduled.
 
-Expected impact (from the M16.5 planning analysis):
-- `struct list build+read`: ~10752 ms → ~1500-2000 ms (5-7x)
-- `map insert+read`: ~9768 ms → ~1500-2500 ms (4-6x)
-- `string join`: ~4189 ms → ~600-900 ms (5-7x)
-- `list sort/reverse/slice`: smaller direct effect (sort /
-  reverse / slice return fresh lists anyway).
-
-Highest-risk sub-milestone too: aliasing bugs are the
-classic mode-of-failure for refcounted COW. The alias-stress
-test harness is non-negotiable - lands as part of M16.5.1.
+See:
+- [technical/interpreter.md > Value semantics](technical/interpreter.md#value-semantics) -
+  the shared-marker + Share/Ensure/DeepCopy protocol in full.
+- `internal/interpreter/value_alias_test.go` - the alias
+  correctness suite.
 
 ### M16.5.2 - Lexical slot resolution at parse time
 

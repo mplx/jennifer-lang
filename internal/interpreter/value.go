@@ -155,6 +155,21 @@ type Value struct {
 	KeyTyp     *parser.Type  // KindMap:  key type
 	ValTyp     *parser.Type  // KindMap:  value type
 	Task       *TaskState    // KindTask (M16.0): shared handle - copying a task copies the pointer
+
+	// shared (M16.5.1) is the aliasing marker for compound backings.
+	// nil for freshly-constructed compounds and for scalars; set by
+	// Share() to a *bool = true when the Value gets read via
+	// evalExpr(VarExpr) (any variable reference is a potential alias
+	// creator). Mutation sites call Ensure() to detach - if shared is
+	// non-nil AND *shared is true, Ensure DeepCopies into a private
+	// backing; otherwise it's an O(1) pass-through.
+	//
+	// The flag is one-directional: once set to true it never flips
+	// back. That's pessimistic but correct: a Value that was ever
+	// aliased will detach on next mutation even if the alias has
+	// since gone out of scope. Refcounted COW is a possible future
+	// optimisation.
+	shared *bool
 }
 
 func Null() Value              { return Value{Kind: KindNull} }
@@ -205,13 +220,60 @@ func MapVal(keyT, valT parser.Type, entries []MapEntry) Value {
 	return Value{Kind: KindMap, Map: entries, KeyTyp: &kt, ValTyp: &vt}
 }
 
-// Copy returns a deep clone of v. Used everywhere value-semantics matter:
-// variable assignment, function-parameter binding, returning a list/map
-// from a function. Primitives are already value-typed so they fall
-// through; lists and maps recurse so nested compound types are also
-// independent. Cost is O(total elements); copy-on-write is a future
-// optimization that won't change observable semantics.
+// Share (M16.5.1) marks v as an aliased view of its compound backing
+// and returns v unchanged (same slice headers, no allocation). Called
+// from evalExpr for VarExpr so any variable reference records that
+// the underlying data might now have multiple readers. A future
+// mutation goes through Ensure and pays the deep-copy cost only if
+// the shared flag is set.
+//
+// For scalars and KindTask (which shares state by design), Share is
+// a no-op.
+func (v Value) Share() Value {
+	switch v.Kind {
+	case KindList, KindMap, KindBytes, KindStruct:
+		if v.shared == nil {
+			t := true
+			v.shared = &t
+		} else {
+			*v.shared = true
+		}
+	}
+	return v
+}
+
+// Ensure (M16.5.1) is the mutation-site detach. If v was Shared
+// (sharedTag non-nil and *shared true), return a DeepCopy with a
+// private backing that the caller can safely mutate. Otherwise
+// return v as-is - the common append/rebind loop where nothing else
+// references the value.
+//
+// The Ensure/DeepCopy protocol replaces the previous
+// "binding.Value.Copy()" at every mutation site, cutting the
+// append-in-a-loop pattern from O(N^2) to amortised O(N).
+func (v Value) Ensure() Value {
+	if v.shared != nil && *v.shared {
+		return v.DeepCopy()
+	}
+	return v
+}
+
+// Copy returns a deep clone of v (M16.5.1: kept as the public
+// deep-copy alias). Libraries and other callers whose pattern is
+// "Copy then mutate freely" (e.g. lists.shuffle, lists.reverse)
+// keep working unchanged. Interpreter sites that can safely alias
+// use Share; mutation sites use Ensure.
 func (v Value) Copy() Value {
+	return v.DeepCopy()
+}
+
+// DeepCopy is the historical Copy() behaviour: recursively clone list
+// elements, map entries, struct fields, and bytes so no shared
+// backings remain. Called by Ensure at mutation time and by
+// snapshotForSpawn's value-semantics capture across goroutine
+// boundaries. The returned Value's shared marker is nil - owned by
+// nobody else.
+func (v Value) DeepCopy() Value {
 	switch v.Kind {
 	case KindList:
 		out := make([]Value, len(v.List))

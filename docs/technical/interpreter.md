@@ -44,18 +44,45 @@ KeyType, ValType *Type }`. Compound types nest naturally
 
 ### Value semantics
 
-Lists and maps are **value-typed** in Jennifer: `$ys = $xs;` copies,
-function parameters bind by copy, and `const` is deep. No aliasing.
-The interpreter enforces this at every binding boundary:
+Lists and maps are **value-typed** in Jennifer: `$ys = $xs;` behaves
+as a copy, function parameters bind by copy, and `const` is deep.
+No aliasing is observable from user code.
 
-- **`execDefine`** / **`execAssign`**: take an independent copy of the
-  right-hand-side value via `Value.Copy()`.
-- **`evalCall`** parameter binding: same `Value.Copy()` before
-  `callFrame.Define`.
-- **`execForEach`**: each iteration copies the bound value.
+**M16.5.1 - shared-marker COW.** The implementation uses a lazy
+copy-on-write protocol so the common "grow a list one element at a
+time" pattern doesn't pay an O(N) deep-copy per write. `Value` gains
+a `shared *bool` marker:
 
-Cost is O(n) per binding; copy-on-write is a future optimization that
-preserves the user-visible semantics.
+- `Value.Share()` is called by `evalExpr` for every `VarExpr`. It
+  points `shared` at a `*bool = true` so downstream storage of the
+  returned value (Define, Assign, param binding, list/map element
+  slot, etc.) sees the value as potentially aliased.
+- `Value.Ensure()` is called at every mutation site
+  (`execAppend`, `execIndexAssign`, `execFieldAssign`). If the flag
+  is set, Ensure DeepCopies into a fresh backing before returning.
+  Otherwise it's a pass-through - the append/assign hot loop
+  mutates in place with no allocation.
+- `Value.Copy()` is now the public deep-copy alias for library
+  callers whose pattern is "Copy then mutate freely" (e.g.
+  `lists.shuffle`, `lists.reverse`). Same historical behaviour;
+  the new name is `DeepCopy()`.
+- `snapshotForSpawn` calls `DeepCopy()` directly since goroutine-
+  boundary crossings need genuine independence.
+
+The marker is one-directional: once `true` it never flips back.
+That's pessimistic but correct - a Value that was ever aliased
+detaches on next mutation even if the alias has since gone out of
+scope. Full refcounted COW would let unaliased mutations stay
+in-place at the cost of a small counter; it's a possible future
+optimisation. The current design gives the O(1) win on the write
+pattern that matters (append in a loop where the binding is the
+sole reference) without maintenance of a real refcount.
+
+Aliasing correctness is exercised by
+[`internal/interpreter/value_alias_test.go`](https://github.com/mplx/jennifer-lang/blob/main/internal/interpreter/value_alias_test.go) -
+every "shared then mutated" corner case (nested lists, structs
+containing lists, function-argument mutation, chained lvalues,
+etc.). Anyone changing the mutation logic must add coverage there.
 
 ### Type stamping
 
