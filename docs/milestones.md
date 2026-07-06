@@ -1078,8 +1078,53 @@ See:
 
 ## M16.3 - `regex`
 
-Regular expressions over `string`. Large standalone milestone;
-pure string processing, no other dependencies.
+**Status:** done.
+
+Ships six verbs over `string` using Go's `regexp` package
+(RE2 syntax). Pure string processing; no other library
+dependencies; full TinyGo support.
+
+- **Six verbs.** `regex.matches(pattern, s) -> bool`,
+  `regex.find(pattern, s) -> regex.Match`,
+  `regex.findAll(pattern, s) -> list of regex.Match`,
+  `regex.replace(pattern, s, replacement) -> string` (`$1` and
+  `${name}` in the replacement expand to captures),
+  `regex.split(pattern, s) -> list of string`,
+  `regex.escape(s) -> string` (metacharacter escape for
+  literal matching).
+- **`regex.Match`.** Fields `text`, `start`, `end`, `groups`
+  (positional captures), `groupsNamed` (map for
+  `(?P<name>...)` captures). `start`/`end` are rune indices,
+  matching `strings.substring` and the rest of the string
+  surface.
+- **No-match sentinel.** `regex.find` returns a Match with
+  `start=-1` when nothing matches (no nullable return types
+  in the language today).
+- **Implicit LRU cache** (128 entries) of compiled patterns
+  keyed by the pattern string. Hot loops get compile-once
+  behaviour without user bookkeeping. An explicit
+  `regex.compile` + `regex.Pattern` handle would ship as
+  M16.3.x if a benchmark ever demands it.
+- **RE2 syntax.** No backreferences, no lookahead/lookbehind,
+  guaranteed linear-time matching. Invalid patterns surface
+  at the call site with the pattern quoted.
+- **No build-tag split needed.** Go's `regexp` package works
+  under TinyGo. Full surface in both binaries.
+- **`examples/regex.j`.** Walks the whole surface: predicate,
+  positional groups, named groups, no-match sentinel, replace
+  with `$1` and `${name}`, split, escape round-trip.
+- **What's deferred** (recorded so the design stays visible):
+  `regex.compile` + Pattern handle, regex-over-bytes, streaming
+  iterator, global-flag args (use `(?i)` in the pattern),
+  `regex.count` (compose with `len(findAll)`), the RE2-forbidden
+  features (backreferences, lookaround).
+
+See:
+- [libraries/regex.md](libraries/regex.md) - reference doc
+  with surface tables, syntax cheat sheet, and worked
+  examples for named groups + escape.
+- [user-guide/imports.md](user-guide/imports.md) - `regex`
+  row.
 
 ## M16.4 - `testing` (system-library primitives)
 

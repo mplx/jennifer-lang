@@ -39,6 +39,7 @@
 - [`task`](libraries/task.md)
 - [`fs`](libraries/fs.md)
 - [`net`](libraries/net.md)
+- [`regex`](libraries/regex.md)
 
 # Technical reference
 

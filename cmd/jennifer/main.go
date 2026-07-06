@@ -24,6 +24,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/meta"
 	"github.com/mplx/jennifer-lang/internal/lib/net"
 	"github.com/mplx/jennifer-lang/internal/lib/os"
+	"github.com/mplx/jennifer-lang/internal/lib/regex"
 	"github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/lib/task"
 	"github.com/mplx/jennifer-lang/internal/lib/time"
@@ -187,6 +188,7 @@ func runFile(path string) int {
 	tasklib.Install(in)
 	fslib.Install(in)
 	netlib.Install(in)
+	regexlib.Install(in)
 	runErr := in.Run(prog)
 
 	// M16.0: the exit-time loud-fail. Even when Run returned cleanly,

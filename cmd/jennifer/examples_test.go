@@ -24,6 +24,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/meta"
 	"github.com/mplx/jennifer-lang/internal/lib/net"
 	"github.com/mplx/jennifer-lang/internal/lib/os"
+	"github.com/mplx/jennifer-lang/internal/lib/regex"
 	"github.com/mplx/jennifer-lang/internal/lib/strings"
 	"github.com/mplx/jennifer-lang/internal/lib/task"
 	"github.com/mplx/jennifer-lang/internal/lib/time"
@@ -93,6 +94,7 @@ func TestExamples(t *testing.T) {
 			tasklib.Install(in)
 			fslib.Install(in)
 			netlib.Install(in)
+			regexlib.Install(in)
 			if err := in.Run(prog); err != nil {
 				t.Fatalf("run %s: %v", name, err)
 			}

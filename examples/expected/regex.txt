@@ -1,0 +1,31 @@
+matches "hello" in "hello, world" : true
+matches (?i)HELLO in "hello"       : true
+matches ^[A-Z]$ in "hi"            : false
+
+first match  : text=12:34 at 4..9
+  group 1    : 12
+  group 2    : 34
+no match     : start=-1 text=[]
+
+findAll      : 3 entries
+  8080 @ 5..9
+  9090 @ 15..19
+  22 @ 26..28
+
+named groups : text=port=8080
+  key=port val=8080
+  has(key) = true
+
+replace $1   : port <8080> host <22>
+replace name : host=cache.example.com port=11211
+
+split        : 6 parts
+  []
+  [one]
+  [two]
+  [three]
+  [four]
+  []
+
+escape       : literal=1+2=(3) pattern=1\+2=\(3\)
+  matches ok : true

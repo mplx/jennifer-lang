@@ -96,6 +96,12 @@ flat lookup view, not authoritative.
 | [`net`](net.md)`.reverseLookup(ip)`                   | Reverse DNS: IP address to a `list of string` of hostnames.                                                                         |
 | [`net`](net.md)`.sendTo($sock, peer, bytes)`          | Send one UDP datagram to `peer` (`"host:port"`).                                                                                    |
 | [`net`](net.md)`.writeBytes($conn, bytes)`            | Blocking write of every byte to a `net.Conn`.                                                                                       |
+| [`regex`](regex.md)`.escape(s)`                       | Escape RE2 metacharacters so `s` matches literally when used as a pattern.                                                          |
+| [`regex`](regex.md)`.find(pattern, s)`                | First match as `regex.Match`; sentinel with `start=-1` if no match.                                                                 |
+| [`regex`](regex.md)`.findAll(pattern, s)`             | Every non-overlapping match; returns `list of regex.Match`.                                                                         |
+| [`regex`](regex.md)`.matches(pattern, s)`             | True iff `pattern` matches somewhere in `s`.                                                                                        |
+| [`regex`](regex.md)`.replace(pattern, s, replacement)` | Replace every match. `$1`, `${name}` expand to captured groups; `$$` is a literal `$`.                                             |
+| [`regex`](regex.md)`.split(pattern, s)`               | Split `s` at every match; returns `list of string`.                                                                                 |
 | [`math`](math.md)`.ceil(x)`                           | Smallest int ≥ `x`. Accepts int (identity) or float.                                                                                |
 | [`math`](math.md)`.floor(x)`                          | Largest int ≤ `x`. Accepts int (identity) or float.                                                                                 |
 | [`math`](math.md)`.max(a, b)`                         | Larger of two numbers; mixed int/float promotes to float.                                                                           |
@@ -204,6 +210,6 @@ detail.
   [math.md](math.md), [strings.md](strings.md), [lists.md](lists.md),
   [maps.md](maps.md), [os.md](os.md), [meta.md](meta.md),
   [time.md](time.md), [hash.md](hash.md), [crc.md](crc.md),
-  [encoding.md](encoding.md), [task.md](task.md), [fs.md](fs.md), [net.md](net.md).
+  [encoding.md](encoding.md), [task.md](task.md), [fs.md](fs.md), [net.md](net.md), [regex.md](regex.md).
 - [../user-guide/imports.md](../user-guide/imports.md) - how to import a
   library in a Jennifer source file.

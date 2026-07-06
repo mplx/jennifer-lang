@@ -35,6 +35,7 @@ restriction list; `jennifer-go` always supports the full surface.
 | [`task`](task.md)        | `use task;`     | full                                                  | M16.0: observe and join `task of T` handles produced by `spawn { ... }`. `task.wait`, `task.poll`, `task.discard`, `task.waitAll`, `task.waitAny`; pairs with the [user-guide concurrency tour](../user-guide/concurrency.md)        |
 | [`fs`](fs.md)            | `use fs;`       | full                                                  | M16.1: filesystem I/O. Whole-file `readString`/`readBytes`/`writeString`/`writeBytes`/`appendString`/`appendBytes`; metadata `exists`/`isFile`/`isDir`/`stat`; dir ops `mkdir`/`mkdirAll`/`remove`/`removeAll`/`rename`/`list`/`walk`; handles `open`/`readLine`/`readChars`/`readBytes`/`writeString`/`writeBytes`/`eof`/`close`; structs `fs.Stat`, `fs.File` |
 | [`net`](net.md)          | `use net;`      | [stubs only](../technical/tinygo.md#tinygo-restrictions) | M16.2: TCP `connect`/`listen`/`accept`/`readBytes`/`writeBytes`/`eof`/`address`, UDP `listenUDP`/`sendTo`/`recvFrom`, DNS `lookup`/`reverseLookup`, polymorphic `close`/`address`; structs `net.Conn`, `net.Listener`, `net.UDPSocket`, `net.Datagram`. TinyGo `jennifer` returns friendly errors; use `jennifer-go` for real net I/O. |
+| [`regex`](regex.md)      | `use regex;`    | full                                                  | M16.3: regular expressions over `string` (RE2 syntax). `regex.matches`/`find`/`findAll`/`replace`/`split`/`escape` + `regex.Match` struct with positional and named captures. Implicit LRU cache for compiled patterns. |
 
 A quick taste:
 
@@ -106,6 +107,9 @@ large ones. The organizing principle, captured for future extensions:
   Blocking calls, same spawn-composition story as `fs`. The
   TinyGo `jennifer` binary returns friendly "use jennifer-go"
   errors; the network stack lives only in the standard-Go binary.
+- Regular expressions over `string` -> `regex` (M16.3). RE2
+  syntax (Go's `regexp` engine); implicit LRU cache. Pure
+  string processing, no other library dependencies.
 - A genuinely new topic with **five or more** functions / constants
   -> a new library. Fewer than five names fold into the most-related
   existing library (the non-crypto random helpers were the first

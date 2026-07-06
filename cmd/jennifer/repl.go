@@ -25,6 +25,7 @@ import (
 	metalib "github.com/mplx/jennifer-lang/internal/lib/meta"
 	netlib "github.com/mplx/jennifer-lang/internal/lib/net"
 	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
+	regexlib "github.com/mplx/jennifer-lang/internal/lib/regex"
 	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
 	tasklib "github.com/mplx/jennifer-lang/internal/lib/task"
 	timelib "github.com/mplx/jennifer-lang/internal/lib/time"
@@ -70,6 +71,7 @@ func runRepl() int {
 	tasklib.Install(in)
 	fslib.Install(in)
 	netlib.Install(in)
+	regexlib.Install(in)
 
 	cwd, err := os.Getwd()
 	if err != nil {
