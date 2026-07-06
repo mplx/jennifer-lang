@@ -40,6 +40,7 @@
 - [`fs`](libraries/fs.md)
 - [`net`](libraries/net.md)
 - [`regex`](libraries/regex.md)
+- [`testing`](libraries/testing.md)
 
 # Technical reference
 

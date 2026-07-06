@@ -1,0 +1,58 @@
+running suite:
+  ran 5 tests
+
+=== text report ===
+PASS addPasses (0 ms)
+FAIL addFails (0 ms)
+     [assertion] expected 42, got 41
+FAIL indexTooFar (0 ms)
+     [runtime] list index 5 out of bounds (len 0)
+FAIL earlyExit (0 ms)
+     [exit] exit code 7
+FAIL missingMethod (0 ms)
+     [unknown] method "missingMethod" is not defined
+
+1 passed, 4 failed, 5 total
+
+=== tap report ===
+TAP version 14
+1..5
+ok 1 - addPasses
+not ok 2 - addFails
+  ---
+  kind: assertion
+  message: expected 42, got 41
+  ...
+not ok 3 - indexTooFar
+  ---
+  kind: runtime
+  message: list index 5 out of bounds (len 0)
+  ...
+not ok 4 - earlyExit
+  ---
+  kind: exit
+  message: exit code 7
+  ...
+not ok 5 - missingMethod
+  ---
+  kind: unknown
+  message: method "missingMethod" is not defined
+  ...
+
+=== junit report ===
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="jennifer" tests="5" failures="4">
+  <testcase name="addPasses" time="0.000"></testcase>
+  <testcase name="addFails" time="0.000">
+    <failure type="assertion" message="expected 42, got 41">expected 42, got 41</failure>
+  </testcase>
+  <testcase name="indexTooFar" time="0.000">
+    <failure type="runtime" message="list index 5 out of bounds (len 0)">list index 5 out of bounds (len 0)</failure>
+  </testcase>
+  <testcase name="earlyExit" time="0.000">
+    <failure type="exit" message="exit code 7">exit code 7</failure>
+  </testcase>
+  <testcase name="missingMethod" time="0.000">
+    <failure type="unknown" message="method &#34;missingMethod&#34; is not defined">method &#34;missingMethod&#34; is not defined</failure>
+  </testcase>
+</testsuite>

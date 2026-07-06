@@ -36,6 +36,7 @@ restriction list; `jennifer-go` always supports the full surface.
 | [`fs`](fs.md)            | `use fs;`       | full                                                  | M16.1: filesystem I/O. Whole-file `readString`/`readBytes`/`writeString`/`writeBytes`/`appendString`/`appendBytes`; metadata `exists`/`isFile`/`isDir`/`stat`; dir ops `mkdir`/`mkdirAll`/`remove`/`removeAll`/`rename`/`list`/`walk`; handles `open`/`readLine`/`readChars`/`readBytes`/`writeString`/`writeBytes`/`eof`/`close`; structs `fs.Stat`, `fs.File` |
 | [`net`](net.md)          | `use net;`      | [stubs only](../technical/tinygo.md#tinygo-restrictions) | M16.2: TCP `connect`/`listen`/`accept`/`readBytes`/`writeBytes`/`eof`/`address`, UDP `listenUDP`/`sendTo`/`recvFrom`, DNS `lookup`/`reverseLookup`, polymorphic `close`/`address`; structs `net.Conn`, `net.Listener`, `net.UDPSocket`, `net.Datagram`. TinyGo `jennifer` returns friendly errors; use `jennifer-go` for real net I/O. |
 | [`regex`](regex.md)      | `use regex;`    | full                                                  | M16.3: regular expressions over `string` (RE2 syntax). `regex.matches`/`find`/`findAll`/`replace`/`split`/`escape` + `regex.Match` struct with positional and named captures. Implicit LRU cache for compiled patterns. |
+| [`testing`](testing.md)  | `use testing;`  | full                                                  | M16.4: test-runner primitives. `testing.run`/`results`/`reset`/`report` + `testing.Result` struct. Catches runtime errors, throws, and (uniquely) `exit` inside test bodies. Three report formats: `"text"`, `"tap"`, `"junit"`. Foundation for the M18.x .j-side test framework. |
 
 A quick taste:
 
@@ -110,6 +111,12 @@ large ones. The organizing principle, captured for future extensions:
 - Regular expressions over `string` -> `regex` (M16.3). RE2
   syntax (Go's `regexp` engine); implicit LRU cache. Pure
   string processing, no other library dependencies.
+- Test-runner primitives (name-based method dispatch,
+  per-process result accumulator, format dispatcher for
+  text/TAP/JUnit) -> `testing` (M16.4). Lives here because
+  Jennifer has no function references yet; the `.j`-side
+  assertion vocabulary and CLI harness ship in M18.x on top
+  of these primitives.
 - A genuinely new topic with **five or more** functions / constants
   -> a new library. Fewer than five names fold into the most-related
   existing library (the non-crypto random helpers were the first

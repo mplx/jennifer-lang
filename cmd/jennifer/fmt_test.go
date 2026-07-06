@@ -27,6 +27,7 @@ import (
 	regexlib "github.com/mplx/jennifer-lang/internal/lib/regex"
 	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
 	tasklib "github.com/mplx/jennifer-lang/internal/lib/task"
+	testinglib "github.com/mplx/jennifer-lang/internal/lib/testing"
 	timelib "github.com/mplx/jennifer-lang/internal/lib/time"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
@@ -167,6 +168,7 @@ func runProgramOutput(path, src string) (string, error) {
 	fslib.Install(in)
 	netlib.Install(in)
 	regexlib.Install(in)
+	testinglib.Install(in)
 	if err := in.Run(prog); err != nil {
 		return "", err
 	}

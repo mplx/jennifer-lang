@@ -1128,72 +1128,63 @@ See:
 
 ## M16.4 - `testing` (system-library primitives)
 
-Irreducible system-side surface a Jennifer-coded test framework
-needs: a run-by-name primitive, a per-process result
-accumulator, and a format dispatcher for human-readable / TAP /
-JUnit-XML output. The `.j` half (assertion vocabulary, suite
-organisation, CLI filtering) ships in M18.x as a separate
-sub-milestone built on top of these primitives - this layer is
-the minimum that has to live in the interpreter.
+**Status:** done.
 
-**Why a system library at all.** A pure `.j` test runner would
-have to take "the test body" as a value and call it. Jennifer
-has no function references / first-class methods today, so a
-`.j` runner can't say `testing.run("myTest", myTest)`. The
-interpreter already does method-name lookup at call sites for
-`prefix.fn()`; this milestone exposes that lookup as one
-builtin so a Jennifer-coded module can dispatch user methods by
-name without each runner reinventing the indirection.
+Ships the irreducible system-side surface a Jennifer-coded test
+framework needs: `testing.run(name)` invokes a user method by
+name, `testing.results()` / `reset()` manage the accumulator,
+and `testing.report(results, format)` renders to text / TAP /
+JUnit. The `.j`-side assertion vocabulary + CLI harness ship
+in M18.x on top of these primitives.
 
-**Surface.**
+- **`testing.run(name)`.** Looks up a zero-arg user method via
+  the new `Interpreter.CallByName` primitive, times the run in
+  Go, catches every failure mode into a `testing.Result`, and
+  appends to the process-wide accumulator. Runs even when the
+  named method doesn't exist (records `errorKind="unknown"`).
+- **`testing.Result`.** `name`, `ms`, `passed`, `errorKind`,
+  `errorMessage`, `file`, `line`, `col`. `errorKind` mirrors
+  the try/catch strings (`"runtime"`, thrown-Error's `kind`,
+  ...) plus a new `"exit"` value.
+- **Exit interception.** `testing.run` is the ONE place in the
+  language where `exit` is caught. Language-level `try`/`catch`
+  deliberately does NOT catch exit; the runner catches it at
+  the Go level so a runaway `exit` in a test body stays scoped
+  to the runner without weakening the language guarantee. This
+  carve-out is why the primitive can't live in `.j`.
+- **Three report formats** via `testing.report(results, format)`:
+  `"text"` (human terminal), `"tap"` (Test Anything Protocol
+  v14), `"junit"` (JUnit XML). Codec-table shape - format
+  strings are case-sensitive, matching `hash.compute` /
+  `encoding.toText` / `fs.open`.
+- **New interpreter helpers.** `Interpreter.CallByName(name)`
+  invokes a zero-arg user method by string; `MethodNames()`
+  enumerates every defined top-level method (for future
+  test-discovery-by-prefix in the .j harness);
+  `interpreter.ClassifyError(err)` extracts
+  `(kind, message, file, line, col)` from any of the three
+  interpreter sentinels (`*runtimeError`, `*ErrorSignal`,
+  `*ExitSignal`) into the uniform tuple the library serialises.
+- **Process-wide accumulator** guarded by a mutex, so
+  `spawn { testing.run(...) }` from concurrent tasks doesn't
+  race. Suites that share a process (or the fmt round-trip test
+  path) should `testing.reset()` at the top of the run.
+- **What's deferred** (recorded so the design stays visible):
+  subprocess isolation for divergent tests (a future
+  `--isolated` flag on the M18.x harness re-invokes
+  `jennifer run testfile.j --testing-single name` per test
+  via `os.spawn`), setup / teardown / fixtures, skip / xfail,
+  parameterised tests, test discovery by prefix (primitive is
+  there via `MethodNames`; policy lives in M18.x).
 
-- `def struct testing.Result { name as string, ms as int,
-  passed as bool, errorKind as string, errorMessage as string,
-  file as string, line as int, col as int };` - one entry
-  per test run. An empty `errorKind` denotes a pass; on
-  failure the fields mirror the auto-hoisted `Error` struct
-  (M13.2) so the failure positions are usable.
-- `testing.run(name as string) -> testing.Result` - looks up
-  the named top-level method, calls it inside an implicit
-  `try { ... } catch (e) { ... }`. Times the run via the
-  `time` library (M15.5). If the call throws an `Error` the
-  result carries its fields. An `exit` inside the test is
-  also captured here - this is the one place in the language
-  where `exit` is interceptable, the test-runner exception
-  (cleanly scoped: the runner sees it as a special failure,
-  but it does not propagate to the surrounding program).
-  Appended to the per-process accumulator.
-- `testing.results() -> list of testing.Result` - read the
-  accumulator (returns a copy).
-- `testing.reset() -> null` - clear the accumulator between
-  independent runs.
-- `testing.report(results, format as string) -> string` -
-  codec-table dispatch matching the
-  [`encoding.toText`](#m157---encoding) shape:
-  - `"text"` - human terminal output: pass / fail per test,
-    failure context, totals, timings.
-  - `"tap"` - Test Anything Protocol v14, machine-readable,
-    works with `prove` and most CI harnesses.
-  - `"junit"` - JUnit XML, the ubiquitous CI input format.
-
-  Format strings stay case-sensitive (small set), matching
-  the M15.7 precedent.
-
-**Subprocess isolation deferred.** A runaway `exit` or
-infinite loop in one test would in principle kill the in-process
-runner; in practice the `exit` capture above plus a future
-`--isolated` flag (re-invoking `jennifer run testfile.j
---testing-single name` per test via M15.3 `os.spawn`)
-gives complete isolation when the user opts in. The building
-blocks ship already; the runner CLI wiring lives with the
-`.j` module's CLI surface in M18.x.
-
-**Dependencies:** M13.2 (`try`/`catch`/`throw` + Error struct),
-M15.5 (`time` for run duration), M13.1 structs, M15.2
-library-provided namespaced struct types.
-
-**See also:** the M18.5 `testing` module (Jennifer-coded
-assertions and suite driver built on these primitives).
+See:
+- [libraries/testing.md](libraries/testing.md) - reference doc
+  with worked failure-mode examples and the three-format
+  walkthrough.
+- [user-guide/imports.md](user-guide/imports.md) - `testing`
+  row.
+- The M18.5 `testing` module (Jennifer-coded assertions and
+  suite driver built on these primitives).
 
 ## M16.5 - Interpreter performance pass
 

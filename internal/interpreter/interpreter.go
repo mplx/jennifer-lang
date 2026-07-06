@@ -347,6 +347,81 @@ func canonicalErrorStructDef() *parser.StructDef {
 	}
 }
 
+// ClassifyError extracts the (kind, message, file, line, col) tuple
+// from any interpreter error. Exported so libraries that intercept
+// errors at the Go level (M16.4 `testing`) can populate their
+// Jennifer-visible result structs without duplicating the
+// classification logic.
+//
+// The `kind` values are the same strings surfaced to Jennifer via
+// M13.2 `try`/`catch`:
+//
+//   - `"runtime"` (or the runtimeError's own Kind if set) - the
+//     built-in class of positioned interpreter errors
+//     (out-of-bounds, missing key, type mismatch, ...).
+//   - `"error"` - a user `throw`; if the thrown value was an
+//     `Error` struct, its fields override this tuple.
+//   - `"exit"` - an `ExitSignal`; `message` is
+//     "exit code N".
+//   - `"unknown"` - anything else (e.g. a boundary error from a
+//     Go-side library that doesn't go through *runtimeError).
+//
+// Positions are zero when the underlying error didn't carry them
+// (or is a non-Jennifer error).
+func ClassifyError(err error) (kind, message, file string, line, col int) {
+	if err == nil {
+		return "", "", "", 0, 0
+	}
+	if re, ok := err.(*runtimeError); ok {
+		k := re.Kind
+		if k == "" {
+			k = "runtime"
+		}
+		return k, re.Msg, re.File, re.Line, re.Col
+	}
+	if es, ok := err.(*ErrorSignal); ok {
+		// If the thrown value is an Error struct, prefer its fields
+		// (matches how try/catch presents them).
+		if es.Value.Kind == KindStruct && es.Value.StructName == canonicalErrorStructName {
+			var k, m, f string
+			var ln, cl int
+			for _, fld := range es.Value.Fields {
+				switch fld.Name {
+				case "kind":
+					if fld.Value.Kind == KindString {
+						k = fld.Value.Str
+					}
+				case "message":
+					if fld.Value.Kind == KindString {
+						m = fld.Value.Str
+					}
+				case "file":
+					if fld.Value.Kind == KindString {
+						f = fld.Value.Str
+					}
+				case "line":
+					if fld.Value.Kind == KindInt {
+						ln = int(fld.Value.Int)
+					}
+				case "col":
+					if fld.Value.Kind == KindInt {
+						cl = int(fld.Value.Int)
+					}
+				}
+			}
+			if k == "" {
+				k = "error"
+			}
+			return k, m, f, ln, cl
+		}
+		return "error", es.Value.Display(), es.File, es.Line, es.Col
+	}
+	if ex, ok := err.(*ExitSignal); ok {
+		return "exit", fmt.Sprintf("exit code %d", ex.Code), "", 0, 0
+	}
+	return "unknown", err.Error(), "", 0, 0
+}
+
 // runtimeErrorToValue converts a *runtimeError into the conventional
 // `Error` struct Value so it can be bound to a catch variable. Kind
 // falls back to `"runtime"` when the originating site didn't set one.
@@ -438,6 +513,55 @@ func (i *Interpreter) MarkObserved(t *TaskState) {
 // through evalSpawn. Production code uses registerTask via
 // evalSpawn.
 func (i *Interpreter) RegisterTaskForTest(t *TaskState) { i.registerTask(t) }
+
+// CallByName invokes a top-level user method by name, with no
+// arguments. Exported so libraries that need to dispatch by string
+// name can do so - the M16.4 `testing` library uses this to run
+// user-defined test methods.
+//
+// The method must exist and take zero parameters; anything else
+// surfaces as a positioned runtime error. The call runs against the
+// interpreter's global env (same shape as calling the method from
+// top-level source), and every downstream error (runtimeError,
+// ErrorSignal, ExitSignal) propagates unchanged. The caller
+// decides how to classify each sentinel.
+func (i *Interpreter) CallByName(name string) (Value, error) {
+	m, ok := i.methods[name]
+	if !ok {
+		return Value{}, fmt.Errorf("method %q is not defined", name)
+	}
+	if len(m.Params) != 0 {
+		return Value{}, fmt.Errorf("method %q takes %d parameter(s); CallByName only invokes zero-parameter methods", name, len(m.Params))
+	}
+	if i.global == nil {
+		i.global = NewEnvironment(nil)
+	}
+	callFrame := NewEnvironment(effectiveGlobal(i.global))
+	res, err := i.execBlock(m.Body, callFrame)
+	if err != nil {
+		return Value{}, err
+	}
+	if res.hasBreak || res.hasContinue {
+		return Value{}, unhandledLoopFlowError(res)
+	}
+	if res.hasReturn {
+		return res.value, nil
+	}
+	return Null(), nil
+}
+
+// MethodNames returns the names of every top-level user method
+// currently defined. Exported so a test runner can enumerate tests
+// (e.g. by common prefix) without a separate registration mechanism.
+// Order matches the map iteration order (not source order); callers
+// that need stable ordering should sort the result.
+func (i *Interpreter) MethodNames() []string {
+	out := make([]string, 0, len(i.methods))
+	for name := range i.methods {
+		out = append(out, name)
+	}
+	return out
+}
 
 func (i *Interpreter) Run(prog *parser.Program) error {
 	if i.Out == nil {

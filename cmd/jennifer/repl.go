@@ -28,6 +28,7 @@ import (
 	regexlib "github.com/mplx/jennifer-lang/internal/lib/regex"
 	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
 	tasklib "github.com/mplx/jennifer-lang/internal/lib/task"
+	testinglib "github.com/mplx/jennifer-lang/internal/lib/testing"
 	timelib "github.com/mplx/jennifer-lang/internal/lib/time"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
@@ -72,6 +73,7 @@ func runRepl() int {
 	fslib.Install(in)
 	netlib.Install(in)
 	regexlib.Install(in)
+	testinglib.Install(in)
 
 	cwd, err := os.Getwd()
 	if err != nil {
