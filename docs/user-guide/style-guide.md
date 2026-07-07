@@ -52,9 +52,49 @@ nothing here will surprise you.
   preceding `}`.
 - **`fmt` always expands blocks across multiple lines** - the canonical
   form has the opening brace at end-of-line, each body statement on its
-  own indented line, and the closing brace on its own line. Single-line
-  blocks are still legal source (the parser accepts them), but `fmt`
-  rewrites them to the expanded form for consistency.
+  own indented line, and the closing brace on its own line. Applies
+  uniformly to method bodies, control-flow blocks (`if / elseif / else`,
+  `while`, `for`, `repeat`), `try { } catch (e) { }`, and `spawn { }`
+  block expressions. Single-line blocks are still legal source (the
+  parser accepts them), but `fmt` rewrites them to the expanded form
+  for consistency.
+- **Struct declarations expand to one field per line.**
+  `def struct Point { x as int, y as int };` reflows to
+
+  ```jennifer
+  def struct Point {
+      x as int,
+      y as int
+  };
+  ```
+
+  Struct *literals* (`Point{x: 1, y: 2}`) stay inline - they read like
+  map literals and the two form styles match.
+- **Tail keywords cuddle the preceding `}`.** `} else { ... }`,
+  `} elseif (cond) { ... }`, `} catch (e) { ... }`, and
+  `} until (cond);` all keep the trailing keyword on the same line as
+  the closing brace. `};` (a struct-decl terminator) also cuddles.
+
+## Line length
+
+- **Soft limit: 100 columns.** `fmt` doesn't hard-wrap arbitrary code
+  (that would risk changing meaning), but it will break at the
+  binary joiners `+`, `and`, and `or` when a line has already grown
+  past 100 columns. The break lands *after* the joiner - the
+  operator hangs at end-of-line and the continuation is indented one
+  level deeper:
+
+  ```jennifer
+  def body as string init "line one\r\n" +
+      "line two\r\n" +
+      "line three\r\n";
+  ```
+
+  Source-level line breaks at these joiners are also preserved even
+  when the line would fit under 100 - so the shape above survives a
+  `fmt` round-trip byte-for-byte. Long argument lists, deeply nested
+  calls, and everything else stay on one line unless you break them
+  by hand; `fmt` isn't going to guess where.
 
 ## Statements
 

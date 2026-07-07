@@ -302,6 +302,141 @@ func TestFmtSpacingRules(t *testing.T) {
 	}
 }
 
+// TestFmtBlockOpeners covers the block-opener token set: `{` after
+// `try`, `spawn`, and `repeat` must expand as a statement block
+// (newline+indent), not collapse to a map-literal-style inline body.
+// Regression for the M14-era bug where these three braced constructs
+// stayed inline because openBlock only fired for `)` and `else`.
+func TestFmtBlockOpeners(t *testing.T) {
+	cases := []struct {
+		name, src, want string
+	}{
+		{
+			"try/catch expands",
+			`try{def x as int init 1;$x=$x+1;}catch(e){io.printf("boom");}`,
+			"try {\n    def x as int init 1;\n    $x = $x + 1;\n} catch (e) {\n    io.printf(\"boom\");\n}\n",
+		},
+		{
+			"spawn block expands",
+			`def t as task of int init spawn{return 42;};`,
+			"def t as task of int init spawn {\n    return 42;\n};\n",
+		},
+		{
+			"repeat/until expands with cuddled until",
+			`repeat{$i=$i+1;}until($i>3);`,
+			"repeat {\n    $i = $i + 1;\n} until ($i > 3);\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := fmtSource(t, c.src)
+			if got != c.want {
+				t.Errorf("got %q\nwant %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestFmtStructDeclMultiline covers the struct-declaration reflow:
+// `def struct Name { f as T, g as U };` must land one field per line,
+// with `};` cuddled on the closing brace. Struct literals
+// (`Name{ f: v, g: w }`) stay inline - they share the map-literal
+// classifier and read like maps at the call site.
+func TestFmtStructDeclMultiline(t *testing.T) {
+	cases := []struct {
+		name, src, want string
+	}{
+		{
+			"two-field struct decl expands",
+			`def struct Point{x as int,y as int};`,
+			"def struct Point {\n    x as int,\n    y as int\n};\n",
+		},
+		{
+			"struct decl with list-of-int field",
+			`def struct Bag{items as list of int,count as int};`,
+			"def struct Bag {\n    items as list of int,\n    count as int\n};\n",
+		},
+		{
+			"struct literal stays inline",
+			`def p as Point init Point{x:1,y:2};`,
+			"def p as Point init Point {x: 1, y: 2};\n",
+		},
+		{
+			"struct decl inside a program keeps outer indent",
+			`func f(){def p as Point init Point{x:1,y:2};return $p;}`,
+			"func f() {\n    def p as Point init Point {x: 1, y: 2};\n    return $p;\n}\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := fmtSource(t, c.src)
+			if got != c.want {
+				t.Errorf("got %q\nwant %q", got, c.want)
+			}
+		})
+	}
+}
+
+// TestFmtColumnReflow covers the column-based reflow at `+` / `and`
+// / `or`. Source line breaks at these joiners are preserved even
+// when the whole expression would fit on one line, so a human's
+// deliberate multi-line string-concat survives round-trip. Short
+// expressions never wrap - the formatter doesn't insert breaks
+// where the user didn't ask for them.
+func TestFmtColumnReflow(t *testing.T) {
+	cases := []struct {
+		name, src, want string
+	}{
+		{
+			"short concat stays on one line",
+			`def s as string init "a" + "b" + "c";`,
+			"def s as string init \"a\" + \"b\" + \"c\";\n",
+		},
+		{
+			"source break after + is preserved",
+			"def s as string init \"aa\" +\n\"bb\" +\n\"cc\";\n",
+			"def s as string init \"aa\" +\n    \"bb\" +\n    \"cc\";\n",
+		},
+		{
+			"source break after and preserved",
+			"if ($ok and\n$ready) {\nreturn;\n}\n",
+			"if ($ok and\n    $ready) {\n    return;\n}\n",
+		},
+		{
+			"long concat auto-wraps after +",
+			`def s as string init "` + strings.Repeat("x", 40) + `" + "` + strings.Repeat("y", 40) + `" + "` + strings.Repeat("z", 40) + `";`,
+			"def s as string init \"" + strings.Repeat("x", 40) + "\" + \"" + strings.Repeat("y", 40) + "\" +\n    \"" + strings.Repeat("z", 40) + "\";\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := fmtSource(t, c.src)
+			if got != c.want {
+				t.Errorf("got %q\nwant %q", got, c.want)
+			}
+			// Idempotency: formatting the output again produces the
+			// same output. Column-reflow decisions from the first
+			// pass have to be preserved by the source-line-break
+			// rule on the second pass.
+			twice := fmtSource(t, got)
+			if twice != got {
+				t.Errorf("not idempotent:\n--- once ---\n%s\n--- twice ---\n%s", got, twice)
+			}
+		})
+	}
+}
+
+// TestFmtLenHugsParen covers the `len(EXPR)` built-in: as a
+// keyword-shaped call it must hug its `(`, matching how user
+// method calls and type-conversion casts render.
+func TestFmtLenHugsParen(t *testing.T) {
+	got := fmtSource(t, `def n as int init len ( $xs );`)
+	want := "def n as int init len($xs);\n"
+	if got != want {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+}
+
 // TestFmtPreservesComments exercises M14 trivia preservation: line
 // comments (leading and trailing), block comments, blank lines, and
 // shebang.

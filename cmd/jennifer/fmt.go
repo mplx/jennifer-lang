@@ -65,6 +65,7 @@ func formatTokens(tokens []lexer.Token) string {
 type fmtState struct {
 	out         strings.Builder
 	indent      int // current block depth in indent units
+	col         int // current output column (rune count since last '\n')
 	prev        lexer.Token
 	hasPrev     bool // false before the first token
 	atLineStart bool // true right after newline+indent has been written
@@ -74,9 +75,10 @@ type fmtState struct {
 	prevIsOperand    bool
 	prevIsUnaryMinus bool // true when prev was a `-` parsed as unary
 	// braceStack records, for every open `{`, whether it's a block
-	// (statements) or a map literal (key:value pairs). Matching `}`
-	// pops; the kind determines indenting and newline behavior.
-	braceStack []byte // 'b' for block, 'm' for map literal
+	// (statements), a struct-decl body (one field per line), or a map
+	// literal (key:value pairs). Matching `}` pops; the kind
+	// determines indenting and newline behavior.
+	braceStack []byte // 'b' block, 'm' map literal, 's' struct decl
 	// lastBraceKind remembers the kind of the most recently emitted
 	// `{` or `}` so the next token's separator logic can ask "was that
 	// `}` a block close or a map close?" after the stack was already
@@ -89,14 +91,26 @@ type fmtState struct {
 	// This is what makes `printf(/* note */ $x)` come out with the
 	// expected internal space rather than `printf( /* note */$x)`.
 	pendingTriviaSpace bool
+	// pendingStructBrace flags "the next `{` opens a struct-decl body,
+	// not a map literal". Set on emit of TOKEN_STRUCT; consumed on the
+	// next TOKEN_LBRACE. Reset defensively on `;` so a stray `struct`
+	// keyword doesn't corrupt later formatting.
+	pendingStructBrace bool
 }
 
 const (
-	braceBlock = byte('b')
-	braceMap   = byte('m')
+	braceBlock  = byte('b')
+	braceMap    = byte('m')
+	braceStruct = byte('s')
 )
 
 const fmtIndent = "    " // 4 spaces, per style-guide.md
+
+// maxLineLength is the soft column limit. When a line grows past this
+// and the next token is a binary joiner (`+`, `and`, `or`), the
+// formatter breaks after the joiner and hangs subsequent lines one
+// indent level in. Chosen to match docs/user-guide/style-guide.md.
+const maxLineLength = 100
 
 func (f *fmtState) emit(t, next lexer.Token) {
 	// M14: trivia (comments, blank lines) is emitted by a dedicated
@@ -111,31 +125,40 @@ func (f *fmtState) emit(t, next lexer.Token) {
 		f.emitTrivia(t)
 		return
 	}
-	// Classify `{` before writing it: prev token decides whether this is
-	// a block opener (after `)` or `else`) or a map literal (anywhere
-	// else - the parser only allows `{` in expression position when it's
-	// a map literal, so any non-block context must be a map).
+	// Classify `{` before writing it. Three kinds:
+	//   - struct-decl body: the `def struct Name {` form (marked by
+	//     pendingStructBrace, set when TOKEN_STRUCT was emitted).
+	//   - block: after a token that begins a statement block
+	//     (`)`, `else`, `try`, `spawn`, `repeat`).
+	//   - map literal: anywhere else (the parser only allows `{` in
+	//     expression position when it's a map literal, so any
+	//     non-block, non-struct context must be a map).
 	openBlock := false
 	if t.Type == lexer.TOKEN_LBRACE {
-		openBlock = f.hasPrev && (f.prev.Type == lexer.TOKEN_RPAREN || f.prev.Type == lexer.TOKEN_ELSE)
-		if openBlock {
-			f.braceStack = append(f.braceStack, braceBlock)
-			f.lastBraceKind = braceBlock
-		} else {
-			f.braceStack = append(f.braceStack, braceMap)
-			f.lastBraceKind = braceMap
+		var kind byte
+		switch {
+		case f.pendingStructBrace:
+			kind = braceStruct
+			f.pendingStructBrace = false
+		case f.hasPrev && isBlockOpener(f.prev.Type):
+			kind = braceBlock
+		default:
+			kind = braceMap
 		}
+		f.braceStack = append(f.braceStack, kind)
+		f.lastBraceKind = kind
+		openBlock = kind == braceBlock || kind == braceStruct
 	}
 	// Closing brace: pop and find out what kind we're closing. For block
-	// `}` we dedent before writing so the brace lands at the outer
-	// indent; for map literal `}` we don't touch indent. The popped kind
-	// is also remembered in lastBraceKind so the next token's separator
-	// logic can branch correctly.
+	// and struct `}` we dedent before writing so the brace lands at the
+	// outer indent; for map literal `}` we don't touch indent. The
+	// popped kind is also remembered in lastBraceKind so the next
+	// token's separator logic can branch correctly.
 	if t.Type == lexer.TOKEN_RBRACE && len(f.braceStack) > 0 {
 		kind := f.braceStack[len(f.braceStack)-1]
 		f.braceStack = f.braceStack[:len(f.braceStack)-1]
 		f.lastBraceKind = kind
-		if kind == braceBlock {
+		if kind == braceBlock || kind == braceStruct {
 			if f.indent > 0 {
 				f.indent--
 			}
@@ -146,6 +169,16 @@ func (f *fmtState) emit(t, next lexer.Token) {
 	isUnaryMinus := t.Type == lexer.TOKEN_MINUS && !f.prevIsOperand
 	f.writeSeparator(t)
 	f.writeToken(t, next)
+	// Track "next `{` is a struct-decl body" across the intervening
+	// identifier: set on STRUCT, reset by LBRACE (consumed above) or
+	// by SEMI (defensive - keeps a stray `struct` from tainting later
+	// braces).
+	switch t.Type {
+	case lexer.TOKEN_STRUCT:
+		f.pendingStructBrace = true
+	case lexer.TOKEN_SEMI:
+		f.pendingStructBrace = false
+	}
 	f.prev = t
 	f.hasPrev = true
 	f.atLineStart = false
@@ -167,8 +200,8 @@ func (f *fmtState) emitTrivia(t lexer.Token) {
 	case lexer.TOKEN_COMMENT_SHEBANG:
 		// Shebang must be at file head, col 1. Re-emit verbatim and
 		// move to a new line.
-		f.out.WriteString(t.Lexeme)
-		f.out.WriteByte('\n')
+		f.writeString(t.Lexeme)
+		f.writeByte('\n')
 		f.atLineStart = true
 	case lexer.TOKEN_COMMENT_LINE:
 		// A line comment on the same source line as the previous real
@@ -176,15 +209,15 @@ func (f *fmtState) emitTrivia(t lexer.Token) {
 		// comment. Trailing: ` # ...`. Leading: indent + ` # ...`.
 		// Either way, the line ends after the comment.
 		if f.hasPrev && f.prev.Line == t.Line {
-			f.out.WriteByte(' ')
+			f.writeByte(' ')
 		} else if !f.atLineStart {
 			f.newline()
 		}
-		f.out.WriteString(t.Lexeme)
-		f.out.WriteByte('\n')
+		f.writeString(t.Lexeme)
+		f.writeByte('\n')
 		// Next real token starts a fresh line at the current indent.
 		for i := 0; i < f.indent; i++ {
-			f.out.WriteString(fmtIndent)
+			f.writeString(fmtIndent)
 		}
 		f.atLineStart = true
 	case lexer.TOKEN_COMMENT_BLOCK:
@@ -199,9 +232,9 @@ func (f *fmtState) emitTrivia(t lexer.Token) {
 		// / start of line.
 		needLeadingSpace := f.hasPrev && !f.atLineStart && !tightOnRight(f.prev.Type)
 		if needLeadingSpace {
-			f.out.WriteByte(' ')
+			f.writeByte(' ')
 		}
-		f.out.WriteString(t.Lexeme)
+		f.writeString(t.Lexeme)
 		if strings.HasSuffix(t.Lexeme, "\n") {
 			f.atLineStart = true
 		} else {
@@ -218,11 +251,11 @@ func (f *fmtState) emitTrivia(t lexer.Token) {
 		// leave the formatter at line-start so the next separator
 		// decides what indent goes in.
 		if !f.atLineStart {
-			f.out.WriteByte('\n')
+			f.writeByte('\n')
 		}
-		f.out.WriteByte('\n')
+		f.writeByte('\n')
 		for i := 0; i < f.indent; i++ {
-			f.out.WriteString(fmtIndent)
+			f.writeString(fmtIndent)
 		}
 		f.atLineStart = true
 	}
@@ -254,8 +287,20 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 			lexer.TOKEN_DOT, lexer.TOKEN_RBRACKET, lexer.TOKEN_COLON:
 			return
 		}
-		f.out.WriteByte(' ')
+		f.writeByte(' ')
 		return
+	}
+	// Column-based reflow at binary joiners. When a line has already
+	// grown past maxLineLength, or when the source itself put a break
+	// at this point, wrap AFTER the joiner so the operator hangs at
+	// end-of-line (matches the string-concat idiom in the wild). One
+	// extra indent level per hanging continuation line, matching what
+	// the style guide recommends.
+	if isBinaryJoiner(f.prev.Type) && !f.prevIsUnaryMinus {
+		if t.Line > f.prev.Line || f.col > maxLineLength {
+			f.continuationLine()
+			return
+		}
 	}
 	// Statement terminator: ";" closes a statement; the next token starts
 	// a new line at the current indent. Exception: the two `;`s inside
@@ -266,18 +311,30 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 			f.newline()
 			return
 		}
-		f.out.WriteByte(' ')
+		f.writeByte(' ')
 		return
 	}
-	// Closing brace: block `}` ends a statement-bearing block; the next
-	// token starts a new line, except for the cuddled `} else` /
-	// `} elseif` forms. Map-literal `}` stays inline (no newline) -
-	// `prevBraceKind` reports what kind of `{` matched the brace we just
-	// emitted.
+	// Struct-decl `,`: each field on its own line. The comma itself
+	// was already emitted (tight-on-left); the next field's leading
+	// token gets a newline here instead of a space.
+	if f.prev.Type == lexer.TOKEN_COMMA && f.currentBraceKind() == braceStruct {
+		f.newline()
+		return
+	}
+	// Closing brace: block or struct `}` ends a multi-line container;
+	// the next token starts a new line, except for the cuddled tail
+	// forms - `} else`, `} elseif`, `} catch`, `} until`, and
+	// `};` where the semicolon hugs the brace so a struct decl reads
+	// as `};` on one line. Map-literal `}` stays inline (no newline).
 	if f.prev.Type == lexer.TOKEN_RBRACE {
-		if f.prevBraceKind() == braceBlock {
-			if t.Type == lexer.TOKEN_ELSE || t.Type == lexer.TOKEN_ELSEIF {
-				f.out.WriteByte(' ')
+		if t.Type == lexer.TOKEN_SEMI {
+			return
+		}
+		if f.prevBraceKind() == braceBlock || f.prevBraceKind() == braceStruct {
+			switch t.Type {
+			case lexer.TOKEN_ELSE, lexer.TOKEN_ELSEIF,
+				lexer.TOKEN_CATCH, lexer.TOKEN_UNTIL:
+				f.writeByte(' ')
 				return
 			}
 			f.newline()
@@ -285,11 +342,18 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 		}
 		// Map literal close: fall through to default-space-or-tight-rules.
 	}
-	// Opening brace: block `{` triggers a newline so the body starts on
-	// its own indented line. Map-literal `{` keeps the contents inline
-	// with no padding (matches the existing `(` rule).
+	// About-to-emit `}` for a struct decl: newline first so the closing
+	// brace lands on its own line at the outer indent (indent was
+	// already decremented in emit()).
+	if t.Type == lexer.TOKEN_RBRACE && f.lastBraceKind == braceStruct {
+		f.newline()
+		return
+	}
+	// Opening brace: block and struct `{` trigger a newline so the body
+	// starts on its own indented line. Map-literal `{` keeps the
+	// contents inline with no padding (matches the existing `(` rule).
 	if f.prev.Type == lexer.TOKEN_LBRACE {
-		if f.prevBraceKind() == braceBlock {
+		if f.prevBraceKind() == braceBlock || f.prevBraceKind() == braceStruct {
 			f.newline()
 			return
 		}
@@ -335,7 +399,32 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 		return
 	}
 	// Default: single space.
-	f.out.WriteByte(' ')
+	f.writeByte(' ')
+}
+
+// writeByte / writeString are the only two paths that reach f.out;
+// both keep f.col in sync so writeSeparator can consult the current
+// column when deciding whether to reflow at a binary joiner. Column
+// counts runes rather than bytes so non-ASCII string literals don't
+// throw off the maxLineLength check.
+func (f *fmtState) writeByte(b byte) {
+	f.out.WriteByte(b)
+	if b == '\n' {
+		f.col = 0
+	} else {
+		f.col++
+	}
+}
+
+func (f *fmtState) writeString(s string) {
+	f.out.WriteString(s)
+	for _, r := range s {
+		if r == '\n' {
+			f.col = 0
+		} else {
+			f.col++
+		}
+	}
 }
 
 // writeToken emits the token's text in its canonical form. Strings get
@@ -343,19 +432,30 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 func (f *fmtState) writeToken(t, _ lexer.Token) {
 	switch t.Type {
 	case lexer.TOKEN_VARREF:
-		f.out.WriteByte('$')
-		f.out.WriteString(t.Lexeme)
+		f.writeByte('$')
+		f.writeString(t.Lexeme)
 	case lexer.TOKEN_STRING:
-		f.out.WriteString(quoteJenniferString(t.Lexeme))
+		f.writeString(quoteJenniferString(t.Lexeme))
 	default:
-		f.out.WriteString(canonicalLexeme(t))
+		f.writeString(canonicalLexeme(t))
 	}
 }
 
 func (f *fmtState) newline() {
-	f.out.WriteByte('\n')
+	f.writeByte('\n')
 	for i := 0; i < f.indent; i++ {
-		f.out.WriteString(fmtIndent)
+		f.writeString(fmtIndent)
+	}
+	f.atLineStart = true
+}
+
+// continuationLine ends the current line and starts a new one at a
+// hanging indent (one level in from the enclosing block). Used to
+// reflow long expressions at `+ / and / or` joiners.
+func (f *fmtState) continuationLine() {
+	f.writeByte('\n')
+	for i := 0; i < f.indent+1; i++ {
+		f.writeString(fmtIndent)
 	}
 	f.atLineStart = true
 }
@@ -441,6 +541,53 @@ func quoteJenniferString(s string) string {
 	return b.String()
 }
 
+// isBlockOpener reports whether tt introduces a `{` that starts a
+// statement-bearing block (as opposed to a map-literal or struct-decl
+// body). The parser lets `{` follow:
+//   - `)` from the head of `if / while / for / func / catch`;
+//   - `else` (unconditional else body);
+//   - `try` (M13.2);
+//   - `spawn` (M16.0 block primary expression);
+//   - `repeat` (M11 post-test loop).
+//
+// Struct-decl bodies are recognised through a separate one-shot flag
+// (pendingStructBrace) because their `{` follows the struct's name
+// identifier, not a keyword.
+func isBlockOpener(tt lexer.TokenType) bool {
+	switch tt {
+	case lexer.TOKEN_RPAREN, lexer.TOKEN_ELSE,
+		lexer.TOKEN_TRY, lexer.TOKEN_SPAWN, lexer.TOKEN_REPEAT:
+		return true
+	}
+	return false
+}
+
+// isBinaryJoiner reports whether tt is a binary joiner that the
+// formatter is allowed to break AFTER when the current line has
+// grown past maxLineLength. Keep the set small: only operators that
+// commonly stitch expressions together across lines in real code
+// (string concat with `+`, boolean chains with `and`/`or`). `-` is
+// deliberately excluded because unary-minus disambiguation would
+// otherwise need to be re-checked at every reflow point.
+func isBinaryJoiner(tt lexer.TokenType) bool {
+	switch tt {
+	case lexer.TOKEN_PLUS, lexer.TOKEN_AND, lexer.TOKEN_OR:
+		return true
+	}
+	return false
+}
+
+// currentBraceKind returns the kind of the innermost `{` currently
+// open, or 0 if none. Used by the separator logic to decide, for
+// example, whether a `,` should be followed by a newline (struct
+// decls) or a space (map literals, calls).
+func (f *fmtState) currentBraceKind() byte {
+	if len(f.braceStack) == 0 {
+		return 0
+	}
+	return f.braceStack[len(f.braceStack)-1]
+}
+
 // isOperandToken reports whether t produces a value (so a following `-`
 // is binary, not unary). The negation - "not an operand" - means t leaves
 // the formatter in an expression-start context.
@@ -456,12 +603,15 @@ func isOperandToken(t lexer.Token) bool {
 }
 
 // noSpaceBeforeLParen lists the token types that hug a following `(`:
-// function calls and type-conversion casts.
+// function calls, type-conversion casts, and the `len` built-in (a
+// keyword-shaped primary expression that syntactically behaves like
+// a call).
 func noSpaceBeforeLParen(tt lexer.TokenType) bool {
 	switch tt {
 	case lexer.TOKEN_IDENT,
 		lexer.TOKEN_INT_TYPE, lexer.TOKEN_FLOAT_TYPE,
-		lexer.TOKEN_STRING_TYPE, lexer.TOKEN_BOOL_TYPE:
+		lexer.TOKEN_STRING_TYPE, lexer.TOKEN_BOOL_TYPE,
+		lexer.TOKEN_LEN:
 		return true
 	}
 	return false
