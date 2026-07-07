@@ -335,7 +335,7 @@ below.
 | `NullLit`               | expr | -                                                                                                          |
 | `VarExpr`               | expr | `Name` (no `$`), `Depth`, `Slot` (M16.5.2; both -1 = unresolved, use name lookup) - mutable-variable reference |
 | `ConstRefExpr`          | expr | `Name`, `Depth`, `Slot` (M16.5.2; -1 = unresolved) - bare-IDENT reference; interpreter expects it to resolve to a constant |
-| `CallExpr`              | expr | `Callee`, `Args []Expr`                                                                                    |
+| `CallExpr`              | expr | `Callee`, `Args []Expr`, `Method *MethodDef` (M16.5.3 pre-resolved pointer for hoisted user methods; nil for builtins and resolver-less paths) |
 | `LenExpr`               | expr | `Operand Expr` - `len(EXPR)` language built-in (M15.4)                                                     |
 | `QualifiedCallExpr`     | expr | `Prefix`, `Callee`, `Args []Expr`                                                                          |
 | `QualifiedConstRefExpr` | expr | `Prefix`, `Name`                                                                                           |
@@ -398,6 +398,13 @@ interpreter:
   enclosing scope, so references inside a spawn body stay at
   `(Depth=-1, Slot=-1)` and the interpreter falls back to name-based
   lookup at runtime.
+
+**Method-call pre-resolution (M16.5.3).** The resolver also pre-fills
+`CallExpr.Method` whenever the callee names a hoisted top-level user
+method. The interpreter's `evalCall` consults the pointer first and
+skips the `i.methods` hash lookup on every recursive call. Builtins
+keep `Method = nil` because the namespaced / global registries need
+the runtime `use`-activation check.
 
 See [interpreter.md > Environment](interpreter.md#environment) for
 the runtime side.

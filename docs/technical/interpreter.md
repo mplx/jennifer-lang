@@ -255,6 +255,38 @@ one runtime frame":
   lookup at runtime. Spawn is coarse-grained concurrency dispatch,
   not hot-loop territory, so the perf regression is bounded.
 
+### Method call frames (M16.5.3)
+
+Three compounded moves cut the recursive-call cost:
+
+- **Environment pool.** `environment.go` exports `borrowBlockEnv` /
+  `releaseBlockEnv` on top of a package-level `sync.Pool`. Every
+  `execBlock`, every `evalCall`, and every `CallByName` borrows a
+  frame on entry and returns it before returning to the caller.
+  Release zeroes both the `vars` map (delete-in-place) and every
+  used slot entry so the pool doesn't retain compound-value
+  backings live between uses. Jennifer has no closures - no value,
+  no library, no AST node can capture an env pointer past its
+  block's dynamic extent - so the pool is safe by construction.
+  The two envs that outlive their creating call (`i.global`, the
+  goroutine-root snapshots from `snapshotForSpawn`) stay on the
+  non-pooled `NewEnvironment` path.
+- **Pre-resolved callees.** `CallExpr` carries a `Method
+  *MethodDef` pointer (see `internal/parser/ast.go`). During
+  `Resolve` the resolver stamps the pointer when the callee names
+  a hoisted top-level user method. `evalCall` consults the pointer
+  first; only when it's `nil` (REPL turns, hand-built ASTs) does
+  it fall back to `i.methods[c.Callee]`. Builtins keep the
+  pointer `nil` because the namespaced / global registries still
+  need the `use`-activation check on every call.
+- **Slot-based parameter binding.** The resolver's `resolveMethod`
+  assigns parameters to slots `0..N-1` in the call frame. At
+  runtime `evalCall` borrows the call frame via
+  `borrowBlockEnv(effectiveGlobal(env), len(m.Params))` and binds
+  each parameter through `DefineAt(idx, ...)`. No map hashing per
+  parameter; the resolver's slot numbers align with the
+  interpreter's storage layout automatically.
+
 ## Execution model
 
 1. `Interpreter.Run(prog)` calls `parser.Resolve(prog)` first (M16.5.2)
@@ -274,10 +306,15 @@ one runtime frame":
 5. Method calls execute the body in a fresh call frame whose parent is
    `effectiveGlobal(env)` (walks to the outermost ancestor - `i.global`
    in serial code, the spawn-globals snapshot inside a `spawn` body).
-   Top-level variables are visible inside methods (subject to the
-   no-shadowing rule). The body's return value (bare `return;` -> `null`;
-   `return EXPR;` -> the expression's value; falling off the end -> `null`)
-   propagates back to the caller.
+   M16.5.3: the call frame is borrowed from the environment pool
+   pre-sized to the parameter count; parameters bind through
+   `DefineAt` into slots `0..N-1`; the callee is looked up via the
+   pre-resolved `CallExpr.Method` pointer when set, falling back to
+   `i.methods` when it isn't (REPL turns). Top-level variables are
+   visible inside methods (subject to the no-shadowing rule). The
+   body's return value (bare `return;` -> `null`; `return EXPR;` ->
+   the expression's value; falling off the end -> `null`) propagates
+   back to the caller.
 
 `EvalInteractive` (the REPL entry point) skips step 1 - each REPL turn
 is a fresh parse whose scope can't be resolved without the accumulated

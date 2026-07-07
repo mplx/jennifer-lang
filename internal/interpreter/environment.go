@@ -5,9 +5,72 @@ package interpreter
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
+
+// envPool recycles short-lived Environment frames (block bodies + method
+// call frames). Jennifer has no closures and no first-class functions,
+// so every frame's lifetime ends deterministically when the block /
+// call returns - the interpreter's execBlock, evalCall, and CallByName
+// borrow an env on entry and return it on the way out. sync.Pool is
+// per-P internally, so contention across the goroutine boundaries
+// `spawn` introduces stays local.
+//
+// The New() closure returns an env with an already-allocated vars map;
+// borrowBlockEnv resets slots per request (either re-slicing the
+// existing backing array or growing it when NumSlots demands more).
+// releaseBlockEnv clears the vars map and truncates the slot slice so
+// the next Get sees a clean frame. Frames escape the pool through
+// snapshotForSpawn's deep-copy path, so post-spawn parent-goroutine
+// resets don't reach the goroutine's captured state.
+var envPool = sync.Pool{
+	New: func() any {
+		return &Environment{vars: make(map[string]Binding)}
+	},
+}
+
+// borrowBlockEnv borrows an Environment from the pool for a fresh
+// frame with the given parent and slot count. Callers MUST release via
+// releaseBlockEnv when the frame's dynamic extent ends (deferred at
+// the callsite covers the error / signal paths).
+func borrowBlockEnv(parent *Environment, numSlots int) *Environment {
+	e := envPool.Get().(*Environment)
+	e.parent = parent
+	// releaseBlockEnv zeroes every used slot before returning the env
+	// to the pool, so the backing array's [0, cap) range is Binding{}
+	// on entry - we just re-slice to the requested length. When
+	// numSlots exceeds the retained capacity we allocate a fresh
+	// backing.
+	if numSlots > 0 {
+		if cap(e.slots) >= numSlots {
+			e.slots = e.slots[:numSlots]
+		} else {
+			e.slots = make([]Binding, numSlots)
+		}
+	} else {
+		e.slots = e.slots[:0]
+	}
+	return e
+}
+
+// releaseBlockEnv returns a previously-borrowed Environment to the
+// pool. Only safe to call when no code retains a pointer to `e` - the
+// interpreter's block frames satisfy this because Jennifer has no
+// closure form that could capture the env. Slot entries are zeroed
+// so the pool doesn't hold compound-value backings live between uses.
+func releaseBlockEnv(e *Environment) {
+	for k := range e.vars {
+		delete(e.vars, k)
+	}
+	for i := range e.slots {
+		e.slots[i] = Binding{}
+	}
+	e.parent = nil
+	e.slots = e.slots[:0]
+	envPool.Put(e)
+}
 
 // Binding is one entry in an Environment frame: the current value plus the
 // declared static type and whether it's a constant. M16.5.2 adds Slot

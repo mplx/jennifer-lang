@@ -40,12 +40,15 @@ type resolver struct {
 	// method calls jump directly to globals via effectiveGlobal
 	// and don't inherit the caller's locals).
 	scopes []*scopeFrame
-	// methods records the names of every top-level `func` so bare
-	// unqualified references can distinguish "call a method" from
-	// "reference an undefined name." Populated during the hoist
-	// pass; consulted by VarExpr / ConstRefExpr resolution when
-	// the name doesn't match any slot on the scope stack.
-	methods map[string]struct{}
+	// methods records the top-level `func` names + their MethodDef
+	// pointers so bare unqualified references can distinguish
+	// "call a method" from "reference an undefined name," and so
+	// M16.5.3's CallExpr.Method pre-resolution has a target to
+	// point at. Populated during the hoist pass; consulted by
+	// VarExpr / ConstRefExpr resolution when the name doesn't
+	// match any slot on the scope stack, and by CallExpr
+	// resolution to fill in the pre-resolved method pointer.
+	methods map[string]*MethodDef
 	// structs records struct-decl names for the same reason:
 	// `Point{...}` literals and `def x as Point;` don't require
 	// a slot lookup but the resolver still needs to know they
@@ -76,9 +79,9 @@ type slotInfo struct {
 func (r *resolver) resolveProgram(p *Program) error {
 	// Hoist method + struct names so their bodies can reference each
 	// other in any order (mirrors the interpreter's Run() hoisting).
-	r.methods = make(map[string]struct{}, len(p.Methods))
+	r.methods = make(map[string]*MethodDef, len(p.Methods))
 	for _, m := range p.Methods {
-		r.methods[m.Name] = struct{}{}
+		r.methods[m.Name] = m
 	}
 	r.structs = make(map[string]struct{}, len(p.Structs))
 	for _, s := range p.Structs {
@@ -505,6 +508,14 @@ func (r *resolver) resolveExpr(e Expr) error {
 		// that expect "hint to use $" and similar error text.
 		return nil
 	case *CallExpr:
+		// M16.5.3: pre-resolve the callee to a method pointer when
+		// it names a hoisted top-level user method. Builtins stay
+		// nil - the interpreter dispatches those through the
+		// namespaced / global registries which check `use`
+		// activation state at runtime.
+		if m, ok := r.methods[ex.Callee]; ok {
+			ex.Method = m
+		}
 		for _, a := range ex.Args {
 			if err := r.resolveExpr(a); err != nil {
 				return err

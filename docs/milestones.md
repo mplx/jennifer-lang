@@ -1366,33 +1366,57 @@ meaningless. When the benchmark is re-run:
 
 ### M16.5.3 - Method call frame optimization
 
+**Status:** shipped
+
 Three independent moves that compound:
 
-- **Pool environments.** Currently every call allocates a fresh
-  `Environment`; under recursive workloads this churns the
-  allocator hard. A free-list of recycled environments,
-  cleared on push and pushed back on pop, eliminates the
-  allocation.
-- **Pre-resolve callees at parse time.** Method calls today
-  look up the callee name in `i.methods` on every call. With
-  M16.5.2 in place we can resolve method references at parse
-  time too (top-level methods form a fixed set after hoisting),
-  so the runtime call goes straight to the resolved function
-  pointer.
-- **Slot-based parameter binding.** Under M16.5.2 parameters
-  are slots; binding becomes an array write per parameter,
-  not a map operation.
+- **Pool environments.** Every method call and block used to
+  allocate a fresh `Environment` (struct + `map[string]Binding`
+  + slot slice); under recursive workloads this churned the
+  allocator hard. `internal/interpreter/environment.go` now
+  exports `borrowBlockEnv` / `releaseBlockEnv` on top of a
+  package-level `sync.Pool`. `execBlock`, `evalCall`, and
+  `CallByName` borrow on entry and release on the way out.
+  Release zeros both the `vars` map (delete-in-place, no
+  reallocation) and every used slot entry, so pooled envs
+  don't hold compound-value backings live between uses.
+  Jennifer's no-closures rule guarantees no code retains a
+  frame pointer past the block's dynamic extent, so the
+  pool is safe by construction.
+- **Pre-resolve callees at parse time.** `CallExpr` grew a
+  `Method *MethodDef` field (`internal/parser/ast.go`);
+  `resolver.methods` promoted from `map[string]struct{}` to
+  `map[string]*MethodDef` so it can hand the pointer out.
+  During `Resolve`, when a `CallExpr`'s callee names a hoisted
+  top-level method, the resolver stamps the pointer directly
+  on the AST node. `evalCall` consults the pointer first and
+  falls back to `i.methods` only for resolver-less paths
+  (REPL turns, hand-built ASTs). The hot recursion path
+  (`fib`, tree walks) skips one hash lookup per call.
+- **Slot-based parameter binding.** The resolver's
+  `resolveMethod` already puts parameters at slots
+  `0..N-1` of the call frame; `evalCall` now creates that
+  frame via `borrowBlockEnv(effectiveGlobal(env), len(m.Params))`
+  and binds parameters through `DefineAt(idx, ...)` instead
+  of `Define(name, ...)`. Parameter binding becomes an array
+  write per parameter with no map hashing.
 
-All three depend on M16.5.2 (slot resolution), so they ship
+All three depend on M16.5.2 (slot resolution), so they shipped
 together at the end of the performance pass.
 
 Expected impact (baseline M16.5.1: `fib(23)` = 415 ms tiny /
 89 ms go):
-- `fib(23)` on `jennifer-tiny`: 415 ms -> ~80-150 ms (3-5x),
-  in striking distance of the default `jennifer` binary's
-  89 ms.
+- `fib(23)` on `jennifer-tiny`: 415 ms -> target ~80-150 ms
+  (3-5x), in striking distance of the default `jennifer`
+  binary's 89 ms.
 - `jennifer` `fib(23)` similarly shrinks; the ratio narrows
   to near-1x on both binaries.
+
+Not yet re-run against the reference Ryzen 5 7600X3D; the
+working machine differs so cross-host numbers would be
+meaningless. Correctness is validated via the full test suite
++ `-race` clean pass + hand-checked recursive fib output on
+both binaries.
 
 ### Combined target
 

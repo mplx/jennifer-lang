@@ -619,6 +619,15 @@ type CallExpr struct {
 	pos
 	Callee string
 	Args   []Expr
+	// M16.5.3: pre-resolved pointer to the top-level user method
+	// this call targets. Filled in by Resolve() when Callee matches
+	// a hoisted method name. nil for builtin calls (dispatched
+	// through the Builtins / NSBuiltins registries) and for
+	// resolver-less paths (REPL, tests that bypass Resolve). The
+	// interpreter's evalCall consults this before the methods-map
+	// lookup, so the hot recursion path (fib, walk) skips a hash
+	// lookup per call.
+	Method *MethodDef
 }
 
 func (*CallExpr) exprNode() {}

@@ -536,8 +536,9 @@ func (i *Interpreter) CallByName(name string) (Value, error) {
 	if i.global == nil {
 		i.global = NewEnvironment(nil)
 	}
-	callFrame := NewEnvironment(effectiveGlobal(i.global))
+	callFrame := borrowBlockEnv(effectiveGlobal(i.global), 0)
 	res, err := i.execBlock(m.Body, callFrame)
+	releaseBlockEnv(callFrame)
 	if err != nil {
 		return Value{}, err
 	}
@@ -912,10 +913,14 @@ func (r blockResult) flowsOut() bool {
 // vars declared inside the block don't leak out. The caller passes the
 // enclosing env; nested blocks inherit through the parent chain. M16.5.2:
 // the resolver's NumSlots hint pre-sizes the slot slice so DefineAt
-// avoids a grow on every write.
+// avoids a grow on every write. M16.5.3: the fresh env is borrowed
+// from envPool and returned on the way out; Jennifer has no closures
+// so no code retains a reference to the frame after the block ends.
 func (i *Interpreter) execBlock(b *parser.Block, parent *Environment) (blockResult, error) {
-	env := NewEnvironmentSized(parent, b.NumSlots)
-	return i.execStmts(b.Stmts, env)
+	env := borrowBlockEnv(parent, b.NumSlots)
+	res, err := i.execStmts(b.Stmts, env)
+	releaseBlockEnv(env)
+	return res, err
 }
 
 func (i *Interpreter) execStmts(stmts []parser.Stmt, env *Environment) (blockResult, error) {
@@ -2624,8 +2629,17 @@ func wrapTask(state *TaskState) Value {
 }
 
 func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, error) {
-	// User method?
-	if m, ok := i.methods[c.Callee]; ok {
+	// User method? Prefer the pre-resolved pointer the M16.5.3
+	// resolver pass stamped onto the CallExpr; fall back to the
+	// method-name map for resolver-less paths (REPL turns, tests
+	// that hand-build ASTs).
+	m := c.Method
+	if m == nil {
+		if hit, ok := i.methods[c.Callee]; ok {
+			m = hit
+		}
+	}
+	if m != nil {
 		if len(c.Args) != len(m.Params) {
 			file, line, col := posFor(c)
 			return Value{}, &runtimeError{
@@ -2635,8 +2649,11 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 		}
 		// Evaluate args in the caller's env, then bind them in a fresh
 		// call frame that inherits from globals. Each arg is type-checked
-		// against the parameter's declared type.
-		args := make([]Value, len(c.Args))
+		// against the parameter's declared type. M16.5.3: the call
+		// frame is borrowed from the pool and pre-sized to hold the
+		// N parameter slots the resolver assigned (slots 0..N-1).
+		numParams := len(m.Params)
+		args := make([]Value, numParams)
 		for idx, a := range c.Args {
 			v, err := i.evalExpr(a, env)
 			if err != nil {
@@ -2651,18 +2668,22 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 			}
 			args[idx] = v
 		}
-		callFrame := NewEnvironment(effectiveGlobal(env))
+		callFrame := borrowBlockEnv(effectiveGlobal(env), numParams)
 		for idx, p := range m.Params {
 			// Value semantics: arguments copy into the call frame, so
 			// callee mutations don't leak back to the caller. Stamp the
 			// declared parameter type so compound parameters know their
-			// element / key+value type for index-write checks.
+			// element / key+value type for index-write checks. M16.5.3:
+			// DefineAt writes straight to the pre-sized slot slice,
+			// avoiding the name-map hash per parameter.
 			bound := stampDeclaredType(args[idx].Copy(), p.Type)
-			if err := callFrame.Define(p.Name, bound, p.Type, false); err != nil {
+			if err := callFrame.DefineAt(idx, p.Name, bound, p.Type, false); err != nil {
+				releaseBlockEnv(callFrame)
 				return Value{}, &runtimeError{Msg: err.Error(), Line: p.Line, Col: p.Col}
 			}
 		}
 		res, err := i.execBlock(m.Body, callFrame)
+		releaseBlockEnv(callFrame)
 		if err != nil {
 			return Value{}, err
 		}
