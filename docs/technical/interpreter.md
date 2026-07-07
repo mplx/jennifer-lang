@@ -172,38 +172,119 @@ this iteration deterministic and testable.
 
 ## Environment
 
-`Environment` is a parent-linked map of names → `Binding{Value, DeclType, IsConst}`.
+`Environment` is a parent-linked scope frame. Each frame carries two
+storage backends for the same set of bindings:
+
+- **`vars map[string]Binding`** - the name-keyed view. Present in
+  every frame; the only view the REPL exercises because each REPL
+  turn is a fresh parse with no resolver context linking it to
+  prior-turn globals.
+- **`slots []Binding`** (M16.5.2) - the slot-indexed view. Sized
+  from `Block.NumSlots` at frame construction (`NewEnvironmentSized`)
+  or grown on demand from `DefineAt`. Empty when the resolver
+  didn't run.
+
+`Binding{Value, DeclType, IsConst, Slot}` carries an extra `Slot`
+field so name-based writes can mirror into slot storage. `Slot` is
+`-1` on bindings installed by name-only `Define` (REPL, ad-hoc AST);
+non-negative when the resolver's `DefineAt` created it.
+
 Storing the declared type lets `Assign` reject type-mismatching writes (you
 cannot assign a string to a variable declared as int).
 
-- **`Define(name, val, declType, isConst)`** - adds to the current frame;
-  errors if the name exists *anywhere in the chain* (the spec forbids
-  shadowing).
-- **`Assign(name, val)`** - walks up the chain to find the binding; errors if
-  the binding is a constant, the value's kind doesn't match its declared
-  type, or the name is undefined.
-- **`Get(name)`** - walks up the chain.
+**Name-based API** (fallback path):
+
+- **`Define(name, val, declType, isConst)`** - adds to the current
+  frame; errors if the name exists *anywhere in the chain* (the spec
+  forbids shadowing). Sets `Binding.Slot = -1`.
+- **`Assign(name, val)`** - walks up the chain to find the binding;
+  errors if the binding is a constant, the value's kind doesn't match
+  its declared type, or the name is undefined. When the target's
+  `Binding.Slot >= 0`, the write also lands in `cur.slots[Slot]` so
+  the two views stay in sync.
+- **`Get(name)`** and **`GetBinding(name)`** - walks up the chain.
+
+**Slot-based API** (M16.5.2 fast path):
+
+- **`DefineAt(slot, name, val, declType, isConst)`** - installs the
+  binding at `slots[slot]` (growing the slice if needed) and mirrors
+  into `vars[name]` with `Binding.Slot = slot`.
+- **`GetAt(depth, slot, name)`** - walks `depth` parents then indexes
+  `slots[slot]`. Falls back to `vars[name]` at the same depth when
+  the slot is out of range (covers execution paths added to a
+  resolver-less frame).
+- **`GetBindingAt(depth, slot, name)`** - metadata companion to
+  `GetAt`.
+- **`AssignAt(depth, slot, name, val)`** - const / type-mismatch
+  checks match the name path; on success writes to both `slots[slot]`
+  and `vars[name]`.
+
+`NewEnvironmentSized(parent, numSlots)` is the M16.5.2 constructor
+that pre-sizes `slots` from the resolver's hint, avoiding a grow on
+every `DefineAt` in hot loops. `NewEnvironment(parent)` (no size)
+is still used by REPL paths and by ad-hoc paths where the slot
+count isn't known upfront.
 
 `execBlock` opens a fresh child `Environment` for each `{...}` block, so
 variables declared inside don't leak out. `for` opens its own scope wrapping
 init/cond/step/body so the init variable is visible throughout the loop
 without escaping it.
 
+### Resolver / runtime scope alignment (M16.5.2)
+
+The resolver's static scope stack has to match the runtime's env
+chain exactly, or `(Depth, Slot)` addresses land in the wrong place.
+Three carve-outs where the resolver deviates from "one AST scope =
+one runtime frame":
+
+- **`try` body runs in the enclosing env**, not a fresh frame:
+  `execTry` calls `execStmts(body.Stmts, env)` directly. The resolver
+  walks try-body statements inline in the current scope to match.
+  Only the catch handler gets a proper scope push (matches the
+  runtime's `catchEnv := NewEnvironment(env)`).
+- **For-header init lives in `forEnv`**, body lives in a nested
+  block frame: `execFor` creates one env for the header and
+  `execBlock` nests another for the body. The resolver tracks them
+  as separate scopes.
+- **Spawn bodies are deliberately unresolved.** The runtime's
+  `snapshotForSpawn` produces a two-frame duplex (globals-snap +
+  locals-snap) that doesn't align with the resolver's single-frame
+  view of "the enclosing scope." Rather than invent depth arithmetic
+  to reconcile the two, the resolver skips spawn-body statements
+  entirely and every reference inside falls back to name-based
+  lookup at runtime. Spawn is coarse-grained concurrency dispatch,
+  not hot-loop territory, so the perf regression is bounded.
+
 ## Execution model
 
-1. `Interpreter.Run(prog)` records `Imports` into `i.imported`.
-2. Collects every `MethodDef` into `i.methods` (methods are hoisted: callable
+1. `Interpreter.Run(prog)` calls `parser.Resolve(prog)` first (M16.5.2)
+   so the AST carries `(Depth, Slot)` annotations before any structural
+   check runs. Resolve is idempotent: re-running on an already-resolved
+   program produces the same annotations. Any undefined-variable or
+   shadowing error surfaces here as a positioned parse-time
+   diagnostic, not a runtime error.
+2. Records `Imports` into `i.imported`.
+3. Collects every `MethodDef` into `i.methods` (methods are hoisted: callable
    regardless of source order). During collection it enforces two rules:
    no duplicate method names, and no method name that collides with a
    registered builtin whose owning library has been imported (the no-shadowing
    rule extended to builtins - see `evalCall` below).
-3. Creates the global `Environment` (`i.global`) and executes `prog.TopLevel`
+4. Creates the global `Environment` (`i.global`) and executes `prog.TopLevel`
    statements in source order in that global scope.
-4. Method calls execute the body in a fresh call frame whose parent is
-   `i.global`, so top-level variables are visible inside methods (subject to
-   the no-shadowing rule). The body's return value (bare `return;` -> `null`;
+5. Method calls execute the body in a fresh call frame whose parent is
+   `effectiveGlobal(env)` (walks to the outermost ancestor - `i.global`
+   in serial code, the spawn-globals snapshot inside a `spawn` body).
+   Top-level variables are visible inside methods (subject to the
+   no-shadowing rule). The body's return value (bare `return;` -> `null`;
    `return EXPR;` -> the expression's value; falling off the end -> `null`)
    propagates back to the caller.
+
+`EvalInteractive` (the REPL entry point) skips step 1 - each REPL turn
+is a fresh parse whose scope can't be resolved without the accumulated
+global context from prior turns. The runtime handles this by leaving
+resolver annotations at their `-1` sentinel and using the name-based
+Environment API. The perf cost is limited to REPL sessions, which
+aren't hot loops.
 
 There is no required entry point. A program with only imports and method
 defs is valid and runs to completion immediately (those methods are simply

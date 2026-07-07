@@ -43,7 +43,8 @@ table.
 
 ## Pipeline
 
-The compiler/interpreter is a five-stage pipeline:
+The compiler/interpreter is a six-stage pipeline (M16.5.2 added
+scope analysis between parse and evaluation):
 
 ```
    source (string)
@@ -63,6 +64,15 @@ The compiler/interpreter is a five-stage pipeline:
    │ parser │   internal/parser
    └────────┘
        │ *Program (AST)
+       ▼
+   ┌──────────┐
+   │ resolver │   internal/parser (Resolve)
+   └──────────┘    scope pass: numbers slots per frame,
+       │           annotates every reference with (Depth, Slot),
+       │           promotes undefined-variable / shadowing errors
+       │           to parse-time diagnostics. Idempotent; REPL
+       │           bypasses and falls back to name-based lookup.
+       │ resolved *Program
        ▼
    ┌─────────────┐
    │ interpreter │   internal/interpreter + internal/lib/io (and other libs)

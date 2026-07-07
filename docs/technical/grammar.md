@@ -296,37 +296,45 @@ mapLit      = "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
 Recursive descent with precedence climbing for binary operators. The
 grammar the parser implements is the EBNF above.
 
+The exported entry points (`Parse`, `ParseTokens`) return a raw
+`*Program` without running the M16.5.2 scope-analysis pass. Callers
+that intend to execute the program must invoke `parser.Resolve(prog)`
+themselves (`Interpreter.Run` does this automatically). Splitting the
+two lets grammar tests focus on parse trees without wiring up scope
+context for every fragment; see [scope analysis](#scope-analysis-m1652)
+below.
+
 ### AST nodes
 
 | Node                    | Kind | Fields                                                                                                     |
 | ----------------------- | ---- | ---------------------------------------------------------------------------------------------------------- |
-| `Program`               | root | `Imports []*ImportStmt`, `Methods []*MethodDef`, `Structs []*StructDef`, `TopLevel []Stmt`                 |
+| `Program`               | root | `Imports []*ImportStmt`, `Methods []*MethodDef`, `Structs []*StructDef`, `TopLevel []Stmt`, `NumGlobals int` (M16.5.2)                 |
 | `ImportStmt`            | stmt | `Name`, `AsName` (empty unless `use NAME as ALIAS;`)                                                       |
 | `MethodDef`             | stmt | `Name`, `Params []Param`, `Body *Block`                                                                    |
 | `Param`                 | -    | `Name`, `Type`                                                                                             |
 | `StructDef`             | stmt | `Name`, `Fields []StructField` (M13.1; top-level only, hoisted before execution)                           |
 | `StructField`           | -    | `Name`, `Type` (each field of a struct definition)                                                         |
-| `Block`                 | stmt | `Stmts []Stmt`                                                                                             |
-| `DefineStmt`            | stmt | `IsConst`, `VarName`, `VarType Type`, `InitExpr Expr` (nil = uninit)                                       |
-| `AssignStmt`            | stmt | `VarName`, `Value Expr`                                                                                    |
+| `Block`                 | stmt | `Stmts []Stmt`, `NumSlots int` (M16.5.2 hint used by `NewEnvironmentSized`)                                |
+| `DefineStmt`            | stmt | `IsConst`, `VarName`, `VarType Type`, `InitExpr Expr` (nil = uninit), `Slot int` (M16.5.2; -1 = unresolved) |
+| `AssignStmt`            | stmt | `VarName`, `Value Expr`, `Depth`, `Slot` (M16.5.2; both -1 = unresolved)                                   |
 | `IndexAssignStmt`       | stmt | `Target *IndexExpr`, `Value Expr` - `$xs[i][j] = ...` (M13.1: chain may include `FieldAccessExpr` nodes)   |
 | `FieldAssignStmt`       | stmt | `Target *FieldAccessExpr`, `Value Expr` - `$p.field = ...` (M13.1)                                         |
-| `TryStmt`               | stmt | `Body *Block`, `CatchName`, `CatchBody *Block` - `try { ... } catch (NAME) { ... }` (M13.2)                |
+| `TryStmt`               | stmt | `Body *Block`, `CatchName`, `CatchBody *Block`, `CatchSlot` (M16.5.2 slot for `CatchName` in the handler frame) - `try { ... } catch (NAME) { ... }` (M13.2)                |
 | `ThrowStmt`             | stmt | `Value Expr` - `throw EXPR;` (M13.2)                                                                       |
 | `AppendStmt`            | stmt | `Target *VarExpr`, `Value Expr` - `$xs[] = item;` (M9)                                                     |
 | `ReturnStmt`            | stmt | `Value Expr` (nil for bare `return;`)                                                                      |
 | `IfStmt`                | stmt | `Cond`, `Then *Block`, `ElseIfs []Expr`, `ElseIfBodies []*Block`, `Else *Block`                            |
 | `WhileStmt`             | stmt | `Cond`, `Body *Block`                                                                                      |
 | `ForStmt`               | stmt | `Init Stmt`, `Cond Expr`, `Step Stmt`, `Body *Block` (any may be nil)                                      |
-| `ForEachStmt`           | stmt | `VarName`, `Coll Expr`, `Body *Block`                                                                      |
+| `ForEachStmt`           | stmt | `VarName`, `Coll Expr`, `Body *Block`, `IterSlot` (M16.5.2 slot for the iterator in each iteration frame)  |
 | `ExprStmt`              | stmt | `Expr`                                                                                                     |
 | `IntLit`                | expr | `Value int64`                                                                                              |
 | `FloatLit`              | expr | `Value float64`                                                                                            |
 | `StringLit`             | expr | `Value string`                                                                                             |
 | `BoolLit`               | expr | `Value bool`                                                                                               |
 | `NullLit`               | expr | -                                                                                                          |
-| `VarExpr`               | expr | `Name` (no `$`) - mutable-variable reference                                                               |
-| `ConstRefExpr`          | expr | `Name` - bare-IDENT reference; interpreter expects it to resolve to a constant                             |
+| `VarExpr`               | expr | `Name` (no `$`), `Depth`, `Slot` (M16.5.2; both -1 = unresolved, use name lookup) - mutable-variable reference |
+| `ConstRefExpr`          | expr | `Name`, `Depth`, `Slot` (M16.5.2; -1 = unresolved) - bare-IDENT reference; interpreter expects it to resolve to a constant |
 | `CallExpr`              | expr | `Callee`, `Args []Expr`                                                                                    |
 | `LenExpr`               | expr | `Operand Expr` - `len(EXPR)` language built-in (M15.4)                                                     |
 | `QualifiedCallExpr`     | expr | `Prefix`, `Callee`, `Args []Expr`                                                                          |
@@ -345,3 +353,51 @@ it via `Node.Pos()` (line/col) and `Node.Filename()` (file path). The file
 is populated from the originating token so cross-file diagnostics work.
 
 `Sprint(node)` produces a stable textual representation used by tests.
+
+### Scope analysis (M16.5.2)
+
+`internal/parser/resolver.go` is a post-parse pass that walks the AST
+and fills in the M16.5.2 slot fields (`Depth`, `Slot`, `NumSlots`,
+`Program.NumGlobals`, `Block.NumSlots`, etc.). It also promotes two
+classes of error from first-execution runtime errors to positioned
+parse-time diagnostics:
+
+- **Undefined variables** - `Resolve` walks its own scope stack in
+  parallel with the AST and reports any `VarExpr` / `AssignStmt`
+  whose name isn't in scope.
+- **Shadowing** - a `def` (variable or constant) whose name is
+  already visible in an enclosing scope. Same rule the runtime's
+  name-based `Define` used to enforce; now caught earlier.
+
+The resolver is idempotent: running twice on the same AST produces
+the same annotations. `Interpreter.Run` calls it before any structural
+check; `EvalInteractive` (REPL) does not (each REPL turn lacks the
+accumulated global context that would let resolution succeed). The
+runtime handles the resolver-less path by leaving all slot fields at
+the `-1` sentinel and using name-based Environment methods.
+
+**Scope-frame model.** The resolver tracks scopes as a stack. Each
+frame carries a name -> slot map and a `count` allocator. A frame is
+`isRoot=true` at the boundaries where the runtime chain jumps
+directly to globals (the globals frame itself, and a method's
+callFrame). Reference lookup walks innermost-out, respects those
+root boundaries, and terminates at globals.
+
+Three scope-shape carve-outs where the resolver deliberately deviates
+from "one AST scope = one runtime frame" to stay aligned with the
+interpreter:
+
+- **`try` body** runs in the enclosing env at runtime; the resolver
+  walks its stmts inline in the current scope rather than pushing a
+  fresh frame.
+- **For-header init** lands in `forEnv` (a frame the resolver pushes
+  for the header), body lands in a nested body-frame (pushed by
+  `resolveBlock`).
+- **Spawn body** is skipped entirely. The runtime's two-frame spawn
+  snapshot doesn't line up with a static single-frame view of the
+  enclosing scope, so references inside a spawn body stay at
+  `(Depth=-1, Slot=-1)` and the interpreter falls back to name-based
+  lookup at runtime.
+
+See [interpreter.md > Environment](interpreter.md#environment) for
+the runtime side.
