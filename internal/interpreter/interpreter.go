@@ -2222,6 +2222,13 @@ func readByteAt(parent Value, idx Value, node parser.Node) (Value, error) {
 }
 
 func (i *Interpreter) evalBinary(b *parser.BinaryExpr, env *Environment) (Value, error) {
+	// M16.5.5: constant-fold shortcut. Set by the resolver when both
+	// operands were compile-time literals (or nested folded chains).
+	// The folded value is itself a literal so evalExpr returns
+	// immediately.
+	if b.Folded != nil {
+		return i.evalExpr(b.Folded, env)
+	}
 	// Logical and/or evaluate the left operand first and short-circuit before
 	// touching the right - important when the right has side effects (calls).
 	if b.Op.IsLogical() {
@@ -2344,6 +2351,12 @@ func (i *Interpreter) evalLogical(b *parser.BinaryExpr, env *Environment) (Value
 }
 
 func (i *Interpreter) evalUnary(u *parser.UnaryExpr, env *Environment) (Value, error) {
+	// M16.5.5: constant-fold shortcut. Set by the resolver when the
+	// operand was a compile-time literal; the folded value is itself
+	// a literal so evalExpr returns immediately.
+	if u.Folded != nil {
+		return i.evalExpr(u.Folded, env)
+	}
 	v, err := i.evalExpr(u.Operand, env)
 	if err != nil {
 		return Value{}, err

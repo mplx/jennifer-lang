@@ -1189,7 +1189,7 @@ See:
 
 ## M16.5 - Interpreter performance pass
 
-**Status:** shipped as four sub-milestones (M16.5.1 through M16.5.4).
+**Status:** shipped as five sub-milestones (M16.5.1 through M16.5.5).
 
 Closed the largest gaps `examples/benchmark.j` exposed before Phase D
 (json, csv, http, testing.j, ...) lands on top, so those Jennifer-coded
@@ -1240,6 +1240,15 @@ under "Pre-M16.5.1 comparison, same workloads."
   int-int / float-float fast paths mirroring `evalArithmetic`.
   `bindParamValue` skips `Copy` + stamp for scalar-Kind args.
   `effectiveGlobal` becomes an O(1) read via `Environment.root`.
+- **M16.5.5 - Expression micro-optimizations.** `BinaryExpr` /
+  `UnaryExpr` gained a `Folded Expr` field the resolver stamps
+  when the whole subtree is a compile-time literal
+  (`internal/parser/fold.go`; chains transitively so
+  `((1+2)*3)+4` collapses to `IntLit(11)`). Runtime-erroring
+  ops (div by zero, negative shift) stay unfolded so the
+  runtime hits the same error at the same source position.
+  `Value.Share()` grew a range-compare fast path so the
+  inliner eliminates the call at scalar VarExpr reads.
 
 **Combined target.** Re-running `examples/benchmark.j` against the
 M16.5-final `jennifer-tiny` binary should yield a serial total in the

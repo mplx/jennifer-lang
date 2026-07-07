@@ -332,6 +332,31 @@ Four more moves compound on top of M16.5.3:
   `releaseBlockEnv` clears `root = nil` on release so the pool
   doesn't retain a reference across borrow cycles.
 
+### Expression micro-optimizations (M16.5.5)
+
+Two moves close out the M16.5 pass:
+
+- **Constant folding at parse time.** `BinaryExpr` and
+  `UnaryExpr` gained a `Folded Expr` field
+  (`internal/parser/ast.go`). The resolver runs
+  `tryFoldBinary` / `tryFoldUnary` (`internal/parser/fold.go`)
+  after each subtree's operands resolve; when both operands
+  are literal (transitively through their own `Folded` fields
+  via the `asLit` helper), the operation runs at parse time
+  and the result gets stamped on `Folded`. `evalBinary` /
+  `evalUnary` check `Folded` first and delegate to it,
+  skipping the operand walk + op switch. Runtime errors
+  (division by zero, negative shift count) leave the node
+  unfolded so the runtime hits the same error at the same
+  source position - the fold pass never surfaces a parse-time
+  error the runtime wouldn't have raised.
+- **`Value.Share()` scalar fast path.** The M16.5.1 mark-as-
+  shared helper is called from every `VarExpr` eval. Its inner
+  Kind switch became a range compare (`KindBytes <= Kind <=
+  KindStruct`) small enough for the Go inliner to fold the
+  call at the callsite; scalar variable reads (the common
+  case in numeric loops) skip the function call entirely.
+
 ## Execution model
 
 1. `Interpreter.Run(prog)` calls `parser.Resolve(prog)` first (M16.5.2)

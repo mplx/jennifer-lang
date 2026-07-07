@@ -576,12 +576,24 @@ func (r *resolver) resolveExpr(e Expr) error {
 		}
 		return nil
 	case *UnaryExpr:
-		return r.resolveExpr(ex.Operand)
+		if err := r.resolveExpr(ex.Operand); err != nil {
+			return err
+		}
+		// M16.5.5: attempt constant folding once the operand is
+		// resolved. tryFoldUnary returns nil when the operand isn't
+		// a compile-time literal.
+		ex.Folded = tryFoldUnary(ex)
+		return nil
 	case *BinaryExpr:
 		if err := r.resolveExpr(ex.Left); err != nil {
 			return err
 		}
-		return r.resolveExpr(ex.Right)
+		if err := r.resolveExpr(ex.Right); err != nil {
+			return err
+		}
+		// M16.5.5: same fold pass as UnaryExpr.
+		ex.Folded = tryFoldBinary(ex)
+		return nil
 	case *IntLit, *FloatLit, *StringLit, *BoolLit, *NullLit:
 		return nil
 	}

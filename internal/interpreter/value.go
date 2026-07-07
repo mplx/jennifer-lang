@@ -228,16 +228,19 @@ func MapVal(keyT, valT parser.Type, entries []MapEntry) Value {
 // the shared flag is set.
 //
 // For scalars and KindTask (which shares state by design), Share is
-// a no-op.
+// a no-op. M16.5.5: the scalar fast path is a single range compare
+// (`KindBytes <= Kind <= KindStruct`) so the Go inliner can fold the
+// call at every VarExpr eval site, eliminating the function-call
+// overhead for the common scalar-variable read.
 func (v Value) Share() Value {
-	switch v.Kind {
-	case KindList, KindMap, KindBytes, KindStruct:
-		if v.shared == nil {
-			t := true
-			v.shared = &t
-		} else {
-			*v.shared = true
-		}
+	if v.Kind < KindBytes || v.Kind > KindStruct {
+		return v
+	}
+	if v.shared == nil {
+		t := true
+		v.shared = &t
+	} else {
+		*v.shared = true
 	}
 	return v
 }

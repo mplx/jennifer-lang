@@ -339,8 +339,8 @@ below.
 | `LenExpr`               | expr | `Operand Expr` - `len(EXPR)` language built-in (M15.4)                                                     |
 | `QualifiedCallExpr`     | expr | `Prefix`, `Callee`, `Args []Expr`, `Fn any` (M16.5.4 pre-resolved `Builtin`; nil for resolver-less paths)     |
 | `QualifiedConstRefExpr` | expr | `Prefix`, `Name`, `Const any` (M16.5.4 pre-resolved `Value`; nil for resolver-less paths)                    |
-| `BinaryExpr`            | expr | `Op BinaryOp`, `Left`, `Right` (comparison/logical ops return bool; `and`/`or` short-circuit at eval time) |
-| `UnaryExpr`             | expr | `Op UnaryOp` (`OpNeg`/`OpNot`), `Operand`                                                                  |
+| `BinaryExpr`            | expr | `Op BinaryOp`, `Left`, `Right`, `Folded Expr` (M16.5.5 pre-computed fold result; nil for runtime-only exprs) |
+| `UnaryExpr`             | expr | `Op UnaryOp` (`OpNeg`/`OpNot`/`OpBitNot`), `Operand`, `Folded Expr` (M16.5.5)                              |
 | `ListLit`               | expr | `Elements []Expr` - `[1, 2, 3]`                                                                            |
 | `MapLit`                | expr | `Keys []Expr`, `Values []Expr` (parallel) - `{"a": 1}`                                                     |
 | `IndexExpr`             | expr | `Target Expr`, `Index Expr` - `$xs[i]`, chained                                                            |
@@ -413,6 +413,16 @@ the namespace / import tables don't exist until `processImports` has
 run. `Interpreter.resolveQualifiedRefs` is a second pass invoked from
 `Interpreter.Run` after `processImports` that walks the same AST and
 stamps the exact `Builtin` / `Value` a call would otherwise look up.
+
+**Constant folding (M16.5.5).** `internal/parser/fold.go` runs from
+inside `Resolve` as a post-step on `BinaryExpr` / `UnaryExpr`. When
+both operands are literal (checked transitively through their own
+`Folded` fields via `asLit`), the operator is applied at parse time
+and the result stamped on `Folded` as a fresh literal node. Chains
+collapse in a single pass - `((1+2)*3)+4` folds to `IntLit(11)`.
+Operations that would error at runtime (division by zero, negative
+shift count, unknown op) leave `Folded` nil so the runtime hits the
+error at its actual source position.
 
 See [interpreter.md > Environment](interpreter.md#environment) for
 the runtime side.

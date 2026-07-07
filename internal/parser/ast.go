@@ -802,6 +802,12 @@ type UnaryExpr struct {
 	pos
 	Op      UnaryOp
 	Operand Expr
+	// M16.5.5: pre-computed constant-fold result stamped by Resolve
+	// when Operand collapses to a compile-time literal. The
+	// interpreter's evalUnary returns Folded's value directly when
+	// present, skipping the operand walk + op switch. nil for
+	// runtime-only expressions and resolver-less paths.
+	Folded Expr
 }
 
 func (*UnaryExpr) exprNode() {}
@@ -811,6 +817,14 @@ type BinaryExpr struct {
 	Op    BinaryOp
 	Left  Expr
 	Right Expr
+	// M16.5.5: pre-computed constant-fold result. Same convention
+	// as UnaryExpr.Folded - the resolver stamps this when both
+	// Left and Right collapse to literals (transitively through
+	// their own Folded fields, so `(1+2)*3` folds to 9). Ops that
+	// would error at fold time (division by zero, shift-count
+	// negative) are left unfolded so the runtime hits them with
+	// proper source-position information.
+	Folded Expr
 }
 
 func (*BinaryExpr) exprNode() {}
