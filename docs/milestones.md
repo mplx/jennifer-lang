@@ -1418,6 +1418,71 @@ meaningless. Correctness is validated via the full test suite
 + `-race` clean pass + hand-checked recursive fib output on
 both binaries.
 
+### M16.5.4 - Namespaced-call fast paths + micro fast paths
+
+**Status:** shipped
+
+Four moves that trim per-call overhead on paths M16.5.3 didn't
+touch. Same "no user-visible semantics change" contract; all four
+sit behind fallback paths so the REPL and hand-built ASTs keep
+working.
+
+- **Pre-resolved namespaced calls and constants.** `QualifiedCallExpr`
+  gained an opaque `Fn any` field, `QualifiedConstRefExpr` an
+  opaque `Const any` field (both in `internal/parser/ast.go`,
+  kept `any` to avoid a parser -> interpreter import cycle).
+  A new `Interpreter.resolveQualifiedRefs(prog)` pass runs from
+  `Run` right after `processImports` (the namespace tables
+  finally exist at that point) and walks the AST once, stamping
+  the exact `Builtin` / `Value` the runtime would otherwise
+  look up per call. `evalQualifiedCall` and `evalQualifiedConst`
+  use the pre-filled pointer when present; unresolvable
+  prefixes stay nil and hit the original
+  `resolveNamespacePrefix + NSBuiltins` path with its original
+  error messages. On the hot library-call path this trades
+  three map hits (`nsPrefixes` + `NSBuiltins` + occasional
+  `nsAliasedAway` / `knownNamespaces`) for one type assertion.
+- **Int-int / float-float fast paths in `evalComparison`.**
+  `evalArithmetic` already had an int-int block; comparison
+  now mirrors it. Numeric `for` loops (`$i < N`) skip the
+  two `AsFloat` conversions per compare.
+- **Immutable-Value copy elision in method-call arg binding.**
+  `evalCall`'s arg loop now routes through a
+  `bindParamValue(v, declType)` helper. For scalar Kinds
+  (`int / float / bool / null / string`) it returns `v`
+  unchanged; both `Value.Copy` and `stampDeclaredType` were
+  no-ops on those Kinds, so the elision drops two function
+  calls per parameter. Compound Kinds (list / map / bytes /
+  struct / task) still go through the copy + stamp path so
+  value-semantics + declared-type propagation stay correct.
+- **`effectiveGlobal` cache on `Environment.root`.**
+  `Environment` grew a `root *Environment` field set at
+  construction time (both `NewEnvironment*` and
+  `borrowBlockEnv`). `effectiveGlobal(env)` becomes an O(1)
+  field read instead of an O(depth) parent-chain walk;
+  saves ~600K pointer dereferences on a `fib(23)` call tree
+  (~50K method calls each up to ~23 deep). `snapshotForSpawn`'s
+  two-frame duplex inherits the correct root automatically
+  because `NewEnvironment(nil)` on the globals snap sets
+  `root = self` and `NewEnvironment(globalSnap)` on the
+  locals snap inherits `root = globalSnap`.
+
+Expected impact (targets, to be measured on the reference
+Ryzen 5 7600X3D):
+- Namespaced-call-heavy workloads (`examples/showcase.j`,
+  library-heavy programs): 20-40% cut on Go, similar on TinyGo.
+- Numeric loops (`primes`, `newton`): 10-20% cut from the
+  int-int comparison fast path.
+- Recursive workloads (`fib`): mostly unchanged - M16.5.3
+  already closed the method-call overhead; the
+  `effectiveGlobal` cache saves a small O(depth) walk per
+  call.
+
+Correctness validated via the full test suite + `-race` clean
+pass + hand-checked recursive `fib(20) = 6765` output on both
+binaries + `examples/showcase.j` + `examples/osinfo.j`
+(namespaced-const path).
+
 ### Combined target
 
 Re-running `examples/benchmark.j` against the M16.5-final

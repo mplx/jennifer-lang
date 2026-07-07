@@ -668,6 +668,14 @@ type QualifiedCallExpr struct {
 	Prefix string
 	Callee string
 	Args   []Expr
+	// M16.5.4: pre-resolved namespaced-builtin descriptor stamped by
+	// Interpreter.resolveQualifiedRefs after processImports runs.
+	// Kept `any` to avoid a parser -> interpreter import cycle; the
+	// interpreter treats it as an *builtinEntry-shaped value and
+	// falls back to the resolveNamespacePrefix + NSBuiltins map
+	// lookup when this is nil (REPL turns, hand-built ASTs,
+	// resolver-less paths).
+	Fn any
 }
 
 func (*QualifiedCallExpr) exprNode() {}
@@ -678,6 +686,11 @@ type QualifiedConstRefExpr struct {
 	pos
 	Prefix string
 	Name   string
+	// M16.5.4: pre-resolved namespaced-constant Value pointer stamped
+	// by Interpreter.resolveQualifiedRefs. Kept `any` for the same
+	// import-cycle reason as QualifiedCallExpr.Fn; the interpreter
+	// dereferences it as a *Value.
+	Const any
 }
 
 func (*QualifiedConstRefExpr) exprNode() {}

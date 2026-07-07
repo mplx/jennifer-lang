@@ -183,6 +183,13 @@ storage backends for the same set of bindings:
   from `Block.NumSlots` at frame construction (`NewEnvironmentSized`)
   or grown on demand from `DefineAt`. Empty when the resolver
   didn't run.
+- **`root *Environment`** (M16.5.4) - cached pointer to the
+  outermost ancestor. Set at construction via `rootFor(parent,
+  self)`; both `NewEnvironment*` and `borrowBlockEnv` populate it.
+  `effectiveGlobal(env)` reads this field in O(1) with a
+  defensive parent-chain walk as fallback. `releaseBlockEnv`
+  clears it on release so pooled envs don't retain refs across
+  borrow cycles.
 
 `Binding{Value, DeclType, IsConst, Slot}` carries an extra `Slot`
 field so name-based writes can mirror into slot storage. `Slot` is
@@ -287,6 +294,44 @@ Three compounded moves cut the recursive-call cost:
   parameter; the resolver's slot numbers align with the
   interpreter's storage layout automatically.
 
+### Namespaced-call fast paths (M16.5.4)
+
+Four more moves compound on top of M16.5.3:
+
+- **Pre-resolved namespaced calls / constants.** `QualifiedCallExpr`
+  carries an opaque `Fn any` field; `QualifiedConstRefExpr` carries
+  an opaque `Const any` field (see `internal/parser/ast.go`, kept
+  `any` to avoid a parser -> interpreter import cycle). Because
+  `parser.Resolve` runs before `processImports`, the pre-fill
+  can't live in the resolver pass. `Interpreter.resolveQualifiedRefs`
+  runs from `Run` right after `processImports` and walks the AST
+  once, stamping the exact `Builtin` / `Value` the runtime would
+  otherwise look up per call. `evalQualifiedCall` and
+  `evalQualifiedConst` use the pre-filled pointer via type
+  assertion; unresolvable prefixes stay nil and hit the original
+  `resolveNamespacePrefix + NSBuiltins` path with its original
+  error messages.
+- **Int-int / float-float comparison fast paths.** `evalComparison`
+  now checks both operand Kinds before falling through to
+  `AsFloat`, mirroring the int-int block that already lived in
+  `evalArithmetic`. Numeric loops (`$i < N`) skip two float
+  conversions per iteration.
+- **Immutable-Value copy elision in arg binding.** `evalCall`'s
+  arg loop routes through `bindParamValue(v, declType)`. For
+  scalar Kinds (`int / float / bool / null / string`) it returns
+  `v` unchanged - both `Value.Copy` and `stampDeclaredType` were
+  no-ops for those Kinds. Compound Kinds still go through the
+  full copy + stamp path so value semantics + declared-type
+  propagation stay correct.
+- **`effectiveGlobal` caching via `Environment.root`.**
+  Environment grew a `root *Environment` field set at
+  construction time by the `rootFor(parent, self)` helper. Both
+  `NewEnvironment*` and `borrowBlockEnv` populate it.
+  `effectiveGlobal(env)` becomes an O(1) field read with a
+  defensive parent-chain walk as fallback for hand-built envs.
+  `releaseBlockEnv` clears `root = nil` on release so the pool
+  doesn't retain a reference across borrow cycles.
+
 ## Execution model
 
 1. `Interpreter.Run(prog)` calls `parser.Resolve(prog)` first (M16.5.2)
@@ -295,7 +340,13 @@ Three compounded moves cut the recursive-call cost:
    program produces the same annotations. Any undefined-variable or
    shadowing error surfaces here as a positioned parse-time
    diagnostic, not a runtime error.
-2. Records `Imports` into `i.imported`.
+2. Records `Imports` into `i.imported`. Right after that, M16.5.4's
+   `resolveQualifiedRefs(prog)` walks the AST once and pre-fills
+   every `QualifiedCallExpr.Fn` / `QualifiedConstRefExpr.Const`
+   against the now-populated namespace tables. This pass has to run
+   AFTER import processing (the tables didn't exist during Resolve)
+   and is skipped by the REPL, which builds its namespaces
+   incrementally.
 3. Collects every `MethodDef` into `i.methods` (methods are hoisted: callable
    regardless of source order). During collection it enforces two rules:
    no duplicate method names, and no method name that collides with a
@@ -304,17 +355,18 @@ Three compounded moves cut the recursive-call cost:
 4. Creates the global `Environment` (`i.global`) and executes `prog.TopLevel`
    statements in source order in that global scope.
 5. Method calls execute the body in a fresh call frame whose parent is
-   `effectiveGlobal(env)` (walks to the outermost ancestor - `i.global`
-   in serial code, the spawn-globals snapshot inside a `spawn` body).
-   M16.5.3: the call frame is borrowed from the environment pool
-   pre-sized to the parameter count; parameters bind through
-   `DefineAt` into slots `0..N-1`; the callee is looked up via the
-   pre-resolved `CallExpr.Method` pointer when set, falling back to
-   `i.methods` when it isn't (REPL turns). Top-level variables are
-   visible inside methods (subject to the no-shadowing rule). The
-   body's return value (bare `return;` -> `null`; `return EXPR;` ->
-   the expression's value; falling off the end -> `null`) propagates
-   back to the caller.
+   `effectiveGlobal(env)` (M16.5.4: an O(1) `env.root` field read; in
+   serial code that's `i.global`, inside a `spawn` body it's the
+   spawn-globals snapshot). M16.5.3: the call frame is borrowed from
+   the environment pool pre-sized to the parameter count; parameters
+   bind through `DefineAt` into slots `0..N-1`; the callee is looked up
+   via the pre-resolved `CallExpr.Method` pointer when set, falling
+   back to `i.methods` when it isn't (REPL turns). M16.5.4: scalar-Kind
+   arguments skip the Copy + declared-type-stamp step via
+   `bindParamValue`. Top-level variables are visible inside methods
+   (subject to the no-shadowing rule). The body's return value (bare
+   `return;` -> `null`; `return EXPR;` -> the expression's value;
+   falling off the end -> `null`) propagates back to the caller.
 
 `EvalInteractive` (the REPL entry point) skips step 1 - each REPL turn
 is a fresh parse whose scope can't be resolved without the accumulated

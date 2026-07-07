@@ -38,6 +38,7 @@ var envPool = sync.Pool{
 func borrowBlockEnv(parent *Environment, numSlots int) *Environment {
 	e := envPool.Get().(*Environment)
 	e.parent = parent
+	e.root = rootFor(parent, e)
 	// releaseBlockEnv zeroes every used slot before returning the env
 	// to the pool, so the backing array's [0, cap) range is Binding{}
 	// on entry - we just re-slice to the requested length. When
@@ -68,6 +69,7 @@ func releaseBlockEnv(e *Environment) {
 		e.slots[i] = Binding{}
 	}
 	e.parent = nil
+	e.root = nil
 	e.slots = e.slots[:0]
 	envPool.Put(e)
 }
@@ -101,13 +103,35 @@ type Environment struct {
 	parent *Environment
 	vars   map[string]Binding
 	slots  []Binding
+	// M16.5.4: cached pointer to the outermost ancestor of this
+	// environment (the "root" - either the interpreter's global env
+	// or a spawn snapshot's globals frame). Set once at construction
+	// and inherited from the parent, so effectiveGlobal() becomes an
+	// O(1) field read instead of an O(depth) parent-chain walk.
+	root *Environment
+}
+
+// rootFor computes the root marker for a fresh Environment. When
+// parent is nil the env IS the root (globals frame or a spawn
+// globals snapshot); otherwise inherit whatever the parent's root
+// points at.
+func rootFor(parent, self *Environment) *Environment {
+	if parent == nil {
+		return self
+	}
+	if parent.root != nil {
+		return parent.root
+	}
+	return parent
 }
 
 func NewEnvironment(parent *Environment) *Environment {
-	return &Environment{
+	env := &Environment{
 		parent: parent,
 		vars:   make(map[string]Binding),
 	}
+	env.root = rootFor(parent, env)
+	return env
 }
 
 // NewEnvironmentSized creates an environment pre-sized to hold
@@ -119,6 +143,7 @@ func NewEnvironmentSized(parent *Environment, numSlots int) *Environment {
 		parent: parent,
 		vars:   make(map[string]Binding),
 	}
+	env.root = rootFor(parent, env)
 	if numSlots > 0 {
 		env.slots = make([]Binding, numSlots)
 	}

@@ -337,8 +337,8 @@ below.
 | `ConstRefExpr`          | expr | `Name`, `Depth`, `Slot` (M16.5.2; -1 = unresolved) - bare-IDENT reference; interpreter expects it to resolve to a constant |
 | `CallExpr`              | expr | `Callee`, `Args []Expr`, `Method *MethodDef` (M16.5.3 pre-resolved pointer for hoisted user methods; nil for builtins and resolver-less paths) |
 | `LenExpr`               | expr | `Operand Expr` - `len(EXPR)` language built-in (M15.4)                                                     |
-| `QualifiedCallExpr`     | expr | `Prefix`, `Callee`, `Args []Expr`                                                                          |
-| `QualifiedConstRefExpr` | expr | `Prefix`, `Name`                                                                                           |
+| `QualifiedCallExpr`     | expr | `Prefix`, `Callee`, `Args []Expr`, `Fn any` (M16.5.4 pre-resolved `Builtin`; nil for resolver-less paths)     |
+| `QualifiedConstRefExpr` | expr | `Prefix`, `Name`, `Const any` (M16.5.4 pre-resolved `Value`; nil for resolver-less paths)                    |
 | `BinaryExpr`            | expr | `Op BinaryOp`, `Left`, `Right` (comparison/logical ops return bool; `and`/`or` short-circuit at eval time) |
 | `UnaryExpr`             | expr | `Op UnaryOp` (`OpNeg`/`OpNot`), `Operand`                                                                  |
 | `ListLit`               | expr | `Elements []Expr` - `[1, 2, 3]`                                                                            |
@@ -405,6 +405,14 @@ method. The interpreter's `evalCall` consults the pointer first and
 skips the `i.methods` hash lookup on every recursive call. Builtins
 keep `Method = nil` because the namespaced / global registries need
 the runtime `use`-activation check.
+
+**Namespaced-call pre-resolution (M16.5.4).** For
+`QualifiedCallExpr.Fn` and `QualifiedConstRefExpr.Const` the pre-fill
+happens on the interpreter side, not in the parser resolver, because
+the namespace / import tables don't exist until `processImports` has
+run. `Interpreter.resolveQualifiedRefs` is a second pass invoked from
+`Interpreter.Run` after `processImports` that walks the same AST and
+stamps the exact `Builtin` / `Value` a call would otherwise look up.
 
 See [interpreter.md > Environment](interpreter.md#environment) for
 the runtime side.

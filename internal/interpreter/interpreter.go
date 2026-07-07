@@ -582,6 +582,12 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	if err := i.processImports(prog, false); err != nil {
 		return err
 	}
+	// M16.5.4: pre-resolve every QualifiedCallExpr / QualifiedConstRefExpr
+	// against the now-populated namespace / builtin / const tables so the
+	// runtime skips the resolveNamespacePrefix + map lookup on the hot
+	// path. Runs after processImports because the namespace tables are
+	// what dictate which prefixes are valid.
+	i.resolveQualifiedRefs(prog)
 	// Structs: hoist before methods so a method body can reference a
 	// struct type declared later in source order.
 	//
@@ -1130,6 +1136,22 @@ func stampDeclaredType(v Value, declType parser.Type) Value {
 		}
 	}
 	return v
+}
+
+// bindParamValue is the M16.5.4 arg-binding fast path used by
+// evalCall. For scalar Kinds (int / float / bool / null / string)
+// both Value.Copy and stampDeclaredType are no-ops, so we skip both
+// function calls and return v directly. Compound Kinds (list / map /
+// bytes / struct / task) still go through the copy + stamp path so
+// value-semantics + declared-type propagation stay correct. Strings
+// count as scalar here because Go strings are immutable at the host
+// level; Jennifer never mutates a string in place.
+func bindParamValue(v Value, declType parser.Type) Value {
+	switch v.Kind {
+	case KindInt, KindFloat, KindBool, KindNull, KindString:
+		return v
+	}
+	return stampDeclaredType(v.Copy(), declType)
 }
 
 func (i *Interpreter) execAssign(st *parser.AssignStmt, env *Environment) error {
@@ -2365,6 +2387,36 @@ func (i *Interpreter) evalComparison(op parser.BinaryOp, lv, rv Value, file stri
 	if op == parser.OpEq {
 		return BoolVal(lv.Equal(rv)), nil
 	}
+	// M16.5.4: pure-int fast path. Every numeric `for` loop
+	// (`$i < N`, `$i <= max`) hits this per iteration and would
+	// otherwise pay two `AsFloat` conversions per compare.
+	if lv.Kind == KindInt && rv.Kind == KindInt {
+		a, b := lv.Int, rv.Int
+		switch op {
+		case parser.OpLt:
+			return BoolVal(a < b), nil
+		case parser.OpGt:
+			return BoolVal(a > b), nil
+		case parser.OpLe:
+			return BoolVal(a <= b), nil
+		case parser.OpGe:
+			return BoolVal(a >= b), nil
+		}
+	}
+	// M16.5.4: pure-float fast path. Symmetrical to the int case.
+	if lv.Kind == KindFloat && rv.Kind == KindFloat {
+		a, b := lv.Float, rv.Float
+		switch op {
+		case parser.OpLt:
+			return BoolVal(a < b), nil
+		case parser.OpGt:
+			return BoolVal(a > b), nil
+		case parser.OpLe:
+			return BoolVal(a <= b), nil
+		case parser.OpGe:
+			return BoolVal(a >= b), nil
+		}
+	}
 	a, aok := lv.AsFloat()
 	b, bok := rv.AsFloat()
 	if !aok || !bok {
@@ -2563,10 +2615,20 @@ func (i *Interpreter) registerTask(state *TaskState) {
 // the snapshot itself. Routing method-call frames through that
 // snapshot - instead of the live i.global the parent goroutine is
 // still mutating - is what makes spawn bodies that call user
-// functions data-race-free.
+// functions data-race-free. M16.5.4: cached as env.root at
+// construction time, so this is an O(1) field read.
 func effectiveGlobal(env *Environment) *Environment {
+	if env == nil {
+		return nil
+	}
+	if env.root != nil {
+		return env.root
+	}
+	// Defensive fallback for envs constructed outside the pool / New*
+	// paths (should not happen in shipping code but keeps hand-built
+	// test fixtures working).
 	cur := env
-	for cur != nil && cur.parent != nil {
+	for cur.parent != nil {
 		cur = cur.parent
 	}
 	return cur
@@ -2675,8 +2737,10 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 			// declared parameter type so compound parameters know their
 			// element / key+value type for index-write checks. M16.5.3:
 			// DefineAt writes straight to the pre-sized slot slice,
-			// avoiding the name-map hash per parameter.
-			bound := stampDeclaredType(args[idx].Copy(), p.Type)
+			// avoiding the name-map hash per parameter. M16.5.4:
+			// scalar arg kinds skip Copy + stampDeclaredType (both are
+			// no-ops for immutable kinds) via bindParamValue.
+			bound := bindParamValue(args[idx], p.Type)
 			if err := callFrame.DefineAt(idx, p.Name, bound, p.Type, false); err != nil {
 				releaseBlockEnv(callFrame)
 				return Value{}, &runtimeError{Msg: err.Error(), Line: p.Line, Col: p.Col}
@@ -2753,15 +2817,28 @@ func (i *Interpreter) resolveNamespacePrefix(prefix string) (string, error) {
 // resolved to a namespace (alias-aware), then the (namespace, callee)
 // pair is looked up in the namespaced-builtin registry.
 func (i *Interpreter) evalQualifiedCall(c *parser.QualifiedCallExpr, env *Environment) (Value, error) {
-	ns, err := i.resolveNamespacePrefix(c.Prefix)
-	if err != nil {
-		file, line, col := posFor(c)
-		return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+	// M16.5.4: prefer the pre-resolved Builtin pointer stamped by
+	// resolveQualifiedRefs. Falls back to the resolveNamespacePrefix
+	// + NSBuiltins path for resolver-less callers (REPL, hand-built
+	// ASTs, prefixes that weren't valid at resolve time).
+	var fn Builtin
+	if c.Fn != nil {
+		if hit, ok := c.Fn.(Builtin); ok {
+			fn = hit
+		}
 	}
-	fn, ok := i.NSBuiltins[nsKey{NS: ns, Name: c.Callee}]
-	if !ok {
-		file, line, col := posFor(c)
-		return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown function %q in namespace %q", c.Callee, ns), File: file, Line: line, Col: col}
+	if fn == nil {
+		ns, err := i.resolveNamespacePrefix(c.Prefix)
+		if err != nil {
+			file, line, col := posFor(c)
+			return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+		}
+		hit, ok := i.NSBuiltins[nsKey{NS: ns, Name: c.Callee}]
+		if !ok {
+			file, line, col := posFor(c)
+			return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown function %q in namespace %q", c.Callee, ns), File: file, Line: line, Col: col}
+		}
+		fn = hit
 	}
 	args := make([]Value, 0, len(c.Args))
 	for _, a := range c.Args {
@@ -2783,6 +2860,14 @@ func (i *Interpreter) evalQualifiedCall(c *parser.QualifiedCallExpr, env *Enviro
 // evalQualifiedConst handles `prefix.NAME`. Resolution mirrors
 // evalQualifiedCall; the result is the constant's value.
 func (i *Interpreter) evalQualifiedConst(c *parser.QualifiedConstRefExpr) (Value, error) {
+	// M16.5.4: prefer the pre-resolved Value stamped by
+	// resolveQualifiedRefs. Same fallback structure as
+	// evalQualifiedCall.
+	if c.Const != nil {
+		if v, ok := c.Const.(Value); ok {
+			return v, nil
+		}
+	}
 	ns, err := i.resolveNamespacePrefix(c.Prefix)
 	if err != nil {
 		file, line, col := posFor(c)
@@ -2794,4 +2879,150 @@ func (i *Interpreter) evalQualifiedConst(c *parser.QualifiedConstRefExpr) (Value
 		return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown constant %q in namespace %q", c.Name, ns), File: file, Line: line, Col: col}
 	}
 	return v, nil
+}
+
+// resolveQualifiedRefs is the M16.5.4 second resolver pass. Runs from
+// Interpreter.Run after processImports has populated the namespace /
+// alias / import tables, walks the AST once, and pre-fills
+// QualifiedCallExpr.Fn / QualifiedConstRefExpr.Const with the exact
+// Builtin / Value the interpreter would otherwise look up on every
+// call. Unresolvable prefixes (bad alias, unimported namespace,
+// unknown callee) stay nil - the runtime fallback path handles them
+// with the original positioned error messages.
+//
+// Idempotent: re-running on an already-annotated AST just replaces
+// the pointers with the same values.
+func (i *Interpreter) resolveQualifiedRefs(prog *parser.Program) {
+	if prog == nil {
+		return
+	}
+	for _, s := range prog.TopLevel {
+		i.walkStmtForQualifiedRefs(s)
+	}
+	for _, m := range prog.Methods {
+		if m == nil || m.Body == nil {
+			continue
+		}
+		for _, s := range m.Body.Stmts {
+			i.walkStmtForQualifiedRefs(s)
+		}
+	}
+}
+
+func (i *Interpreter) walkStmtForQualifiedRefs(s parser.Stmt) {
+	switch st := s.(type) {
+	case *parser.DefineStmt:
+		i.walkExprForQualifiedRefs(st.InitExpr)
+	case *parser.AssignStmt:
+		i.walkExprForQualifiedRefs(st.Value)
+	case *parser.IndexAssignStmt:
+		i.walkExprForQualifiedRefs(st.Target)
+		i.walkExprForQualifiedRefs(st.Value)
+	case *parser.AppendStmt:
+		i.walkExprForQualifiedRefs(st.Target)
+		i.walkExprForQualifiedRefs(st.Value)
+	case *parser.FieldAssignStmt:
+		i.walkExprForQualifiedRefs(st.Target)
+		i.walkExprForQualifiedRefs(st.Value)
+	case *parser.IfStmt:
+		i.walkExprForQualifiedRefs(st.Cond)
+		i.walkBlockForQualifiedRefs(st.Then)
+		for idx := range st.ElseIfs {
+			i.walkExprForQualifiedRefs(st.ElseIfs[idx])
+			i.walkBlockForQualifiedRefs(st.ElseIfBodies[idx])
+		}
+		i.walkBlockForQualifiedRefs(st.Else)
+	case *parser.WhileStmt:
+		i.walkExprForQualifiedRefs(st.Cond)
+		i.walkBlockForQualifiedRefs(st.Body)
+	case *parser.ForStmt:
+		i.walkStmtForQualifiedRefs(st.Init)
+		i.walkExprForQualifiedRefs(st.Cond)
+		i.walkStmtForQualifiedRefs(st.Step)
+		i.walkBlockForQualifiedRefs(st.Body)
+	case *parser.ForEachStmt:
+		i.walkExprForQualifiedRefs(st.Coll)
+		i.walkBlockForQualifiedRefs(st.Body)
+	case *parser.RepeatStmt:
+		i.walkBlockForQualifiedRefs(st.Body)
+		i.walkExprForQualifiedRefs(st.Cond)
+	case *parser.ReturnStmt:
+		i.walkExprForQualifiedRefs(st.Value)
+	case *parser.ExitStmt:
+		i.walkExprForQualifiedRefs(st.Code)
+	case *parser.ThrowStmt:
+		i.walkExprForQualifiedRefs(st.Value)
+	case *parser.TryStmt:
+		i.walkBlockForQualifiedRefs(st.Body)
+		i.walkBlockForQualifiedRefs(st.CatchBody)
+	case *parser.ExprStmt:
+		i.walkExprForQualifiedRefs(st.Expr)
+	case *parser.Block:
+		i.walkBlockForQualifiedRefs(st)
+	}
+}
+
+func (i *Interpreter) walkBlockForQualifiedRefs(b *parser.Block) {
+	if b == nil {
+		return
+	}
+	for _, s := range b.Stmts {
+		i.walkStmtForQualifiedRefs(s)
+	}
+}
+
+func (i *Interpreter) walkExprForQualifiedRefs(e parser.Expr) {
+	if e == nil {
+		return
+	}
+	switch ex := e.(type) {
+	case *parser.QualifiedCallExpr:
+		if ns, ok := i.nsPrefixes[ex.Prefix]; ok {
+			if fn, hit := i.NSBuiltins[nsKey{NS: ns, Name: ex.Callee}]; hit {
+				ex.Fn = fn
+			}
+		}
+		for _, a := range ex.Args {
+			i.walkExprForQualifiedRefs(a)
+		}
+	case *parser.QualifiedConstRefExpr:
+		if ns, ok := i.nsPrefixes[ex.Prefix]; ok {
+			if v, hit := i.NSConstants[nsKey{NS: ns, Name: ex.Name}]; hit {
+				ex.Const = v
+			}
+		}
+	case *parser.CallExpr:
+		for _, a := range ex.Args {
+			i.walkExprForQualifiedRefs(a)
+		}
+	case *parser.BinaryExpr:
+		i.walkExprForQualifiedRefs(ex.Left)
+		i.walkExprForQualifiedRefs(ex.Right)
+	case *parser.UnaryExpr:
+		i.walkExprForQualifiedRefs(ex.Operand)
+	case *parser.LenExpr:
+		i.walkExprForQualifiedRefs(ex.Operand)
+	case *parser.IndexExpr:
+		i.walkExprForQualifiedRefs(ex.Target)
+		i.walkExprForQualifiedRefs(ex.Index)
+	case *parser.FieldAccessExpr:
+		i.walkExprForQualifiedRefs(ex.Target)
+	case *parser.ListLit:
+		for _, el := range ex.Elements {
+			i.walkExprForQualifiedRefs(el)
+		}
+	case *parser.MapLit:
+		for k := range ex.Keys {
+			i.walkExprForQualifiedRefs(ex.Keys[k])
+			i.walkExprForQualifiedRefs(ex.Values[k])
+		}
+	case *parser.StructLit:
+		for _, f := range ex.Fields {
+			i.walkExprForQualifiedRefs(f.Expr)
+		}
+	case *parser.SpawnExpr:
+		for _, s := range ex.Body {
+			i.walkStmtForQualifiedRefs(s)
+		}
+	}
 }
