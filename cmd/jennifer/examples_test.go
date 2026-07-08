@@ -12,27 +12,9 @@ import (
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 	"github.com/mplx/jennifer-lang/internal/lexer"
-	"github.com/mplx/jennifer-lang/internal/lib/convert"
-	"github.com/mplx/jennifer-lang/internal/lib/crc"
-	"github.com/mplx/jennifer-lang/internal/lib/encoding"
-	"github.com/mplx/jennifer-lang/internal/lib/fs"
-	"github.com/mplx/jennifer-lang/internal/lib/hash"
-	"github.com/mplx/jennifer-lang/internal/lib/io"
-	"github.com/mplx/jennifer-lang/internal/lib/json"
-	"github.com/mplx/jennifer-lang/internal/lib/lists"
-	"github.com/mplx/jennifer-lang/internal/lib/maps"
-	"github.com/mplx/jennifer-lang/internal/lib/math"
-	"github.com/mplx/jennifer-lang/internal/lib/meta"
-	"github.com/mplx/jennifer-lang/internal/lib/net"
-	"github.com/mplx/jennifer-lang/internal/lib/os"
-	"github.com/mplx/jennifer-lang/internal/lib/regex"
-	"github.com/mplx/jennifer-lang/internal/lib/strings"
-	"github.com/mplx/jennifer-lang/internal/lib/task"
-	"github.com/mplx/jennifer-lang/internal/lib/testing"
-	"github.com/mplx/jennifer-lang/internal/lib/time"
-	"github.com/mplx/jennifer-lang/internal/lib/uuid"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
+	"github.com/mplx/jennifer-lang/internal/stdlib"
 )
 
 // TestExamples runs every *.j file under ../../examples/ and asserts its stdout
@@ -82,25 +64,7 @@ func TestExamples(t *testing.T) {
 			in := interpreter.New()
 			var buf bytes.Buffer
 			in.Out = &buf
-			iolib.Install(in)
-			convert.Install(in)
-			mathlib.Install(in)
-			stringslib.Install(in)
-			listslib.Install(in)
-			mapslib.Install(in)
-			oslib.Install(in)
-			metalib.Install(in)
-			timelib.Install(in)
-			hashlib.Install(in)
-			crclib.Install(in)
-			encodinglib.Install(in)
-			jsonlib.Install(in)
-			tasklib.Install(in)
-			fslib.Install(in)
-			netlib.Install(in)
-			regexlib.Install(in)
-			testinglib.Install(in)
-			uuidlib.Install(in)
+			stdlib.InstallAll(in)
 			if err := in.Run(prog); err != nil {
 				t.Fatalf("run %s: %v", name, err)
 			}

@@ -2236,6 +2236,30 @@ willing to keep it green; they're not blocking anything.
   introspection." Deferred - build-tag complexity across ~6 files and a
   larger dev-tiny binary, for a diagnostic reached for only
   occasionally.
+- **Build-time library selection.** Choose which system (Go) libraries
+  are baked into a binary at compile time. Motivated by `jennifer-tiny`
+  size (an embedded target needing only `io` + `math` shouldn't carry
+  `net` / `regex` / `hash`) and by opt-in niche Go libraries that don't
+  merit defaulting. The install point is already consolidated - every
+  entry path (`run` / `repl` / `profile` / `test` and the test
+  harnesses) calls `internal/stdlib.InstallAll`, so a library is one
+  line there - and that is the seam a build-tag scheme would cut along:
+  gate each entry behind `//go:build lib_net` (or a `minimal` / `full`
+  profile) and grow `make build-minimal` / `make build TAGS=...`,
+  exactly like the existing `!tinygo` dev-tool split. **Compile-time
+  only** - Go's `plugin` package is Linux/macOS-only and unsupported by
+  TinyGo, and dynamic linking contradicts `jennifer-tiny`'s
+  no-hosted-runtime goal, so PHP-style loadable `.so` extensions are
+  out. Two caveats to design for: (1) a trimmed build breaks the "any
+  `.j` runs on any binary" portability promise (`use net;` becomes a
+  runtime error), so the default build stays full and trimmed builds are
+  an explicit opt-out - ideally with a `meta`-level "is library X
+  present?" query for graceful degradation; (2) CI grows a couple of
+  profiles (default / minimal), not 2^N. Complementary to, not a
+  substitute for, the M17 module system: `.j`-level extensibility
+  (community / uncommon libraries writable in Jennifer) is M17's job with
+  zero binary cost; build-time selection is only for the curated
+  Go-level core.
 - **`io.lines() -> list of string`.** Slurp the whole stdin into a
   list. Additive on top of the streaming `readLine()` + `eof()`
   idiom; nice-to-have for tiny scripts, not blocking. Deferred from

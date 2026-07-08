@@ -102,6 +102,8 @@ internal/lib/testing/assertions_test.go    assertion + runWith unit tests
 internal/lib/uuid/uuidlib.go               `uuid` library: generate("v4"/"v7") + parse/isValid/version + NIL; RFC 9562, hand-formatted hex, math shared RNG
 internal/lib/uuid/uuidlib_test.go          uuid library unit tests (v4/v7 version+variant bits, v7 time-ordering via nowFunc, parse round-trip + invalids, dispatch)
 
+internal/stdlib/stdlib.go                  InstallAll: single registration point for every system library; run/repl/profile/test all call it (seam for build-time selection)
+
 internal/lint/lint.go                      `lint` checks: Diagnostic + grouped-ID registry (L0nn source / L1nn correctness / L2nn style / L3nn lifecycle) + KnownIDs/selectable/Catalog
 internal/lint/run.go                       Check driver + threshold Config + source-error diagnostic builder
 internal/lint/checks.go                    the individual check implementations
