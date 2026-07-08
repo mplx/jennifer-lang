@@ -1834,9 +1834,15 @@ func (i *Interpreter) execForEach(st *parser.ForEachStmt, env *Environment) (blo
 	}
 
 	emit := func(iter Value) (blockResult, error) {
-		// Each iteration opens its own scope so the binding is fresh.
-		iterEnv := NewEnvironment(env)
-		if err := iterEnv.Define(st.VarName, iter.Copy(), iterType, false); err != nil {
+		// Each iteration opens its own scope so the binding is fresh. The
+		// iterator and the body's defs share this one frame (matching the
+		// resolver, which numbers the iterator slot 0 and body defs after
+		// it). Pre-size to Body.NumSlots and bind the iterator at its
+		// resolved slot: binding name-only would leave slot 0 empty, and the
+		// first body `def` grows the slot slice over it, shadowing the
+		// iterator with a zero binding.
+		iterEnv := NewEnvironmentSized(env, st.Body.NumSlots)
+		if err := iterEnv.DefineAt(st.IterSlot, st.VarName, iter.Copy(), iterType, false); err != nil {
 			file, line, col := posFor(st)
 			return blockResult{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 		}

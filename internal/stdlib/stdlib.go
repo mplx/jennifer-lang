@@ -13,6 +13,7 @@ package stdlib
 
 import (
 	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"github.com/mplx/jennifer-lang/internal/lib/archive"
 	"github.com/mplx/jennifer-lang/internal/lib/compress"
 	"github.com/mplx/jennifer-lang/internal/lib/convert"
 	"github.com/mplx/jennifer-lang/internal/lib/crc"
@@ -51,6 +52,7 @@ func InstallAll(in *interpreter.Interpreter) {
 	hashlib.Install(in)
 	crclib.Install(in)
 	compresslib.Install(in)
+	archivelib.Install(in)
 	encodinglib.Install(in)
 	jsonlib.Install(in)
 	tasklib.Install(in)

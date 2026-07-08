@@ -1,0 +1,3 @@
+tar: entries=2 first=hi.txt:hello
+zip: entries=2 first=hi.txt:hello
+tar.gz: entries=2 first=hi.txt:hello

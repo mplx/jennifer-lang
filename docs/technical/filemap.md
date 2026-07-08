@@ -80,6 +80,8 @@ internal/lib/crc/crclib.go                 `crc` library: crc32/crc64 (big-endia
 internal/lib/crc/crclib_test.go            crc library unit tests
 internal/lib/compress/compresslib.go       `compress` library: pack/unpack (gzip/zlib/deflate) + streaming (compress.Stream handle); optional fast/default/best level
 internal/lib/compress/compresslib_test.go  compress unit tests (round-trips, gzip magic + shrink, levels, streaming matches one-shot, errors)
+internal/lib/archive/archivelib.go         `archive` library: tar/zip/tar.gz pack/unpack over bytes (archive.Entry struct); no fs dependency
+internal/lib/archive/archivelib_test.go    archive unit tests (round-trips tar/zip/tar.gz, mode/mtime, default mode, gzip magic, empty, errors)
 internal/lib/encoding/encodinglib.go       `encoding` library: introspection + toText/fromText + encode/decode dispatch
 internal/lib/encoding/codecs.go            character codec tables for ascii / latin-1 / windows-1252 / ebcdic (IBM-1047)
 internal/lib/encoding/encodinglib_test.go  encoding library unit tests

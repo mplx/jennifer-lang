@@ -13,6 +13,8 @@ flat lookup view, not authoritative.
 
 | Call                                                  | What it does                                                                                                                        |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| [`archive`](archive.md)`.pack(entries, fmt)`         | Bundle a `list of archive.Entry` into `bytes`; `fmt` `"tar"`/`"zip"`/`"tar.gz"`.                                                 |
+| [`archive`](archive.md)`.unpack(b, fmt)`             | Read a bundle back into a `list of archive.Entry`.                                                                                 |
 | [`compress`](compress.md)`.finalize(stream)`         | Close a streaming compressor; returns all compressed `bytes`.                                                                      |
 | [`compress`](compress.md)`.pack(b, algo [, level])`  | Compress `bytes`; `algo` `"gzip"`/`"zlib"`/`"deflate"`, optional level `"fast"`/`"default"`/`"best"`.                                |
 | [`compress`](compress.md)`.stream(algo [, level])`   | Start a streaming compressor -> `compress.Stream`.                                                                                 |

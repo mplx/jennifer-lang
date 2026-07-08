@@ -143,6 +143,27 @@ io.printf("\n");
 	}
 }
 
+// A body-local def must not clobber the iteration variable. Both live in one
+// frame (iterator at slot 0, body defs after it); binding the iterator
+// name-only used to leave slot 0 empty, so the first body def grew the slot
+// slice over it and later reads of the iterator saw null.
+func TestForEachIteratorSurvivesBodyDef(t *testing.T) {
+	out, err := run(t, `
+use io;
+for (def x in [10, 20]) {
+    io.printf("before %d ", $x);
+    def y as int init 5;
+    io.printf("after %d %d\n", $x, $y);
+}
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "before 10 after 10 5\nbefore 20 after 20 5\n" {
+		t.Errorf("iterator clobbered by body def: got %q", out)
+	}
+}
+
 func TestForEachMapIteratesKeysInInsertionOrder(t *testing.T) {
 	out, err := run(t, `
 use io;
