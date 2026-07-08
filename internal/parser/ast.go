@@ -47,11 +47,11 @@ const (
 	TypeString
 	TypeBool
 	TypeNull
-	TypeBytes // M12: mutable byte sequence; elements are int in [0, 255]
+	TypeBytes // mutable byte sequence; elements are int in [0, 255]
 	TypeList
 	TypeMap
-	TypeStruct // M13.1: user-defined record; carries the struct's name in Type.StructName
-	TypeTask   // M16.0: `task of T` - a pending or completed spawned computation
+	TypeStruct // user-defined record; carries the struct's name in Type.StructName
+	TypeTask   // `task of T` - a pending or completed spawned computation
 )
 
 func (k TypeKind) String() string {
@@ -91,8 +91,8 @@ type Type struct {
 	Element    *Type  // TypeList: element type
 	KeyType    *Type  // TypeMap:  key type
 	ValType    *Type  // TypeMap:  value type
-	StructName string // TypeStruct: name of the struct definition (M13.1)
-	StructNS   string // TypeStruct: optional library namespace prefix (M15.2).
+	StructName string // TypeStruct: name of the struct definition
+	StructNS   string // TypeStruct: optional library namespace prefix.
 	//                  Empty for user-defined structs (`def struct Name`);
 	//                  set for library-registered structs (`os.Result`).
 }
@@ -173,7 +173,7 @@ func MapType(k, v Type) Type        { return Type{Kind: TypeMap, KeyType: &k, Va
 func StructType(name string) Type   { return Type{Kind: TypeStruct, StructName: name} }
 func TaskType(elem Type) Type       { return Type{Kind: TypeTask, Element: &elem} }
 
-// NamespacedStructType is the M15.2 form: a struct type registered by a
+// NamespacedStructType is a struct type registered by a
 // library and reachable behind that library's namespace prefix
 // (`os.Result`). `ns` is the library prefix at the use site; the
 // interpreter resolves aliases (`use os as o;` -> `o.Result`) when
@@ -188,9 +188,9 @@ type Program struct {
 	pos
 	Imports  []*ImportStmt
 	Methods  []*MethodDef
-	Structs  []*StructDef // M13.1: top-level `def struct Name { ... };` declarations
+	Structs  []*StructDef // top-level `def struct Name { ... };` declarations
 	TopLevel []Stmt       // top-level statements executed in source order after method hoisting
-	// M16.5.2: number of slots the global frame needs. Populated by
+	// Number of slots the global frame needs. Populated by
 	// Resolve() during parse. Zero when Resolve() hasn't run - the
 	// interpreter falls back to name-based lookup in that case, which
 	// keeps unit tests that hand-build AST fragments working without
@@ -221,7 +221,7 @@ type Param struct {
 	Col  int
 }
 
-// StructField is one declared field of a struct definition (M13.1).
+// StructField is one declared field of a struct definition.
 // Mirrors Param but is owned by StructDef rather than MethodDef.
 type StructField struct {
 	Name string
@@ -232,7 +232,7 @@ type StructField struct {
 }
 
 // StructDef is a top-level `def struct Name { field as type, ... };`
-// declaration (M13.1). Hoisted at Run() time alongside method
+// declaration. Hoisted at Run() time alongside method
 // definitions so order of declaration doesn't matter.
 type StructDef struct {
 	pos
@@ -254,7 +254,7 @@ func (*MethodDef) stmtNode() {}
 type Block struct {
 	pos
 	Stmts []Stmt
-	// M16.5.2: number of slots this block's fresh frame needs.
+	// Number of slots this block's fresh frame needs.
 	// Populated by Resolve() during parse. Zero when Resolve() hasn't
 	// run - the interpreter's fallback path grows the slot slice on
 	// demand in that case.
@@ -272,7 +272,7 @@ type DefineStmt struct {
 	VarName  string // for variables: the $-name; for constants: the UPPERCASE name
 	VarType  Type
 	InitExpr Expr // may be nil for uninitialized variables; never nil for constants
-	// M16.5.2: slot the binding will occupy in its enclosing frame.
+	// Slot the binding will occupy in its enclosing frame.
 	// Populated by Resolve(); default -1 means "not resolved".
 	Slot int
 }
@@ -284,7 +284,7 @@ type AssignStmt struct {
 	pos
 	VarName string
 	Value   Expr
-	// M16.5.2: (Depth, Slot) address the binding to update. Default -1.
+	// (Depth, Slot) address the binding to update. Default -1.
 	Depth int
 	Slot  int
 }
@@ -305,10 +305,10 @@ type IndexAssignStmt struct {
 
 func (*IndexAssignStmt) stmtNode() {}
 
-// AppendStmt: `$xs[] = <expr>;` - the M9 syntax-level append. The empty
+// AppendStmt: `$xs[] = <expr>;` - the syntax-level append. The empty
 // brackets are a write-only target meaning "the position just past the
 // end of the list"; reading `$xs[]` is a parse error. Only valid on a
-// plain VARREF root (no chained `$xs[0][]` form in M9); the targeted
+// plain VARREF root (no chained `$xs[0][]` form); the targeted
 // variable must be a list at runtime, value's type is checked against
 // the list's declared element type, and const targets are rejected as
 // usual.
@@ -320,7 +320,7 @@ type AppendStmt struct {
 
 func (*AppendStmt) stmtNode() {}
 
-// FieldAssignStmt: `$p.field = <expr>;` (M13.1). Same shape as
+// FieldAssignStmt: `$p.field = <expr>;`. Same shape as
 // IndexAssignStmt: the target chain is rooted on a VarExpr so the
 // const-target rejection and write-back-to-binding bookkeeping live
 // here. Only valid on a struct value; the assigned value's type is
@@ -379,7 +379,7 @@ type ForEachStmt struct {
 	VarName string
 	Coll    Expr
 	Body    *Block
-	// M16.5.2: slot the iterator variable takes in the per-iteration
+	// Slot the iterator variable takes in the per-iteration
 	// frame. Default -1 = not resolved. The iterator lives in a fresh
 	// frame chained on top of the enclosing scope; the body's own
 	// defs get slots after IterSlot in the same frame (via Body.NumSlots).
@@ -397,7 +397,7 @@ type ReturnStmt struct {
 func (*ReturnStmt) stmtNode() {}
 
 // BreakStmt: `break;` - exit the innermost enclosing loop. Errors at
-// runtime if no loop is active. M11.
+// runtime if no loop is active.
 type BreakStmt struct {
 	pos
 }
@@ -406,7 +406,7 @@ func (*BreakStmt) stmtNode() {}
 
 // ContinueStmt: `continue;` - skip to the next iteration of the
 // innermost enclosing loop. Same rule as BreakStmt; errors outside a
-// loop. M11.
+// loop.
 type ContinueStmt struct {
 	pos
 }
@@ -417,7 +417,7 @@ func (*ContinueStmt) stmtNode() {}
 // runs the body at least once and stops when `cond` evaluates true.
 // New keywords `repeat` and `until` were chosen over the
 // `do { } while ...` shape so the inversion ("loop until done")
-// reads as English and matches Jennifer's word-operator style. M11.
+// reads as English and matches Jennifer's word-operator style.
 type RepeatStmt struct {
 	pos
 	Body *Block
@@ -430,7 +430,7 @@ func (*RepeatStmt) stmtNode() {}
 // to int). Terminates the program immediately, skipping the rest of
 // the current method's body, any caller frames, and any remaining
 // top-level statements. Distinct from `return` (which is
-// method-scoped). M11.
+// method-scoped).
 type ExitStmt struct {
 	pos
 	Code Expr // nil for `exit;` -> 0
@@ -441,10 +441,10 @@ func (*ExitStmt) stmtNode() {}
 // TryStmt: `try { body } catch (NAME) { handler }` - catchable error
 // block. The body runs first; if any `throw` (user-issued or runtime)
 // reaches this `try`, the handler runs with `NAME` bound to the
-// thrown value in a fresh per-handler scope. M13.2.
-// TryStmt: `try { body } catch (name) { handler };` (M13.2). CatchName
+// thrown value in a fresh per-handler scope.
+// TryStmt: `try { body } catch (name) { handler };`. CatchName
 // is the identifier the handler binds. CatchSlot is the slot the caught
-// value takes in the handler's fresh frame (M16.5.2). Default -1 = not
+// value takes in the handler's fresh frame. Default -1 = not
 // resolved.
 type TryStmt struct {
 	pos
@@ -454,14 +454,14 @@ type TryStmt struct {
 	CatchFile string // position of the `catch (NAME)` introducer for diagnostics
 	CatchLine int
 	CatchCol  int
-	CatchSlot int // M16.5.2: slot for CatchName in the handler frame; -1 = unresolved
+	CatchSlot int // slot for CatchName in the handler frame; -1 = unresolved
 }
 
 func (*TryStmt) stmtNode() {}
 
 // ThrowStmt: `throw EXPR;` - raises a catchable error. EXPR may
 // produce any value (the convention is an `Error` struct - see
-// docs/milestones.md M13.2). M13.2.
+// docs/milestones.md).
 type ThrowStmt struct {
 	pos
 	Value Expr
@@ -549,8 +549,8 @@ type IndexExpr struct {
 
 func (*IndexExpr) exprNode() {}
 
-// StructLit is `Name{ field: expr, ... }` (M13.1) or
-// `lib.Name{ field: expr, ... }` (M15.2). The struct's name must
+// StructLit is `Name{ field: expr, ... }` or
+// `lib.Name{ field: expr, ... }`. The struct's name must
 // reference a top-level `def struct` declaration (bare form) or a
 // library-registered namespaced struct (qualified form). Field
 // expressions are evaluated in source order; the interpreter
@@ -558,7 +558,7 @@ func (*IndexExpr) exprNode() {}
 // type.
 type StructLit struct {
 	pos
-	NS     string // optional library prefix at the use site (M15.2); empty for user-defined structs
+	NS     string // optional library prefix at the use site; empty for user-defined structs
 	Name   string
 	Fields []StructLitField
 }
@@ -574,7 +574,7 @@ type StructLitField struct {
 
 func (*StructLit) exprNode() {}
 
-// FieldAccessExpr is `$p.field` (M13.1). The parser produces this
+// FieldAccessExpr is `$p.field`. The parser produces this
 // when it sees `.` after a value expression (after the existing
 // qualified-call special case rules out namespace-prefix usage).
 // Used as both r-value (read) and l-value (assignment target).
@@ -589,7 +589,7 @@ func (*FieldAccessExpr) exprNode() {}
 type VarExpr struct {
 	pos
 	Name string // without the leading $
-	// M16.5.2: (Depth, Slot) locate the binding in the runtime scope
+	// (Depth, Slot) locate the binding in the runtime scope
 	// chain. Depth is how many parent pointers to walk from the
 	// current environment; Slot is the slot index in that frame.
 	// Both default to -1, meaning "not resolved" - the interpreter
@@ -608,7 +608,7 @@ func (*VarExpr) exprNode() {}
 type ConstRefExpr struct {
 	pos
 	Name string
-	// M16.5.2: same shape as VarExpr - see the comment there.
+	// Same shape as VarExpr - see the comment there.
 	Depth int
 	Slot  int
 }
@@ -619,7 +619,7 @@ type CallExpr struct {
 	pos
 	Callee string
 	Args   []Expr
-	// M16.5.3: pre-resolved pointer to the top-level user method
+	// Pre-resolved pointer to the top-level user method
 	// this call targets. Filled in by Resolve() when Callee matches
 	// a hoisted method name. nil for builtin calls (dispatched
 	// through the Builtins / NSBuiltins registries) and for
@@ -632,11 +632,11 @@ type CallExpr struct {
 
 func (*CallExpr) exprNode() {}
 
-// LenExpr is the `len(EXPR)` language built-in (M15.4). Polymorphic
+// LenExpr is the `len(EXPR)` language built-in. Polymorphic
 // over string (rune count), list (element count), map (entry count),
 // and bytes (byte count); any other kind is a positioned runtime
 // error. `len` is a reserved keyword in expression position, not a
-// library function - removing the M5-era `core` library dropped the
+// library function - removing the `core` library dropped the
 // last name registered via the global-builtin path.
 type LenExpr struct {
 	pos
@@ -645,7 +645,7 @@ type LenExpr struct {
 
 func (*LenExpr) exprNode() {}
 
-// SpawnExpr is the M16.0 `spawn { ... }` block primary expression. The
+// SpawnExpr is the `spawn { ... }` block primary expression. The
 // body is a statement list run in a separate goroutine (Phase 2); the
 // expression's value is a `task of T` where `T` is the body's return
 // type. Variables referenced from the enclosing scope are deep-copied
@@ -668,7 +668,7 @@ type QualifiedCallExpr struct {
 	Prefix string
 	Callee string
 	Args   []Expr
-	// M16.5.4: pre-resolved namespaced-builtin descriptor stamped by
+	// Pre-resolved namespaced-builtin descriptor stamped by
 	// Interpreter.resolveQualifiedRefs after processImports runs.
 	// Kept `any` to avoid a parser -> interpreter import cycle; the
 	// interpreter treats it as an *builtinEntry-shaped value and
@@ -686,7 +686,7 @@ type QualifiedConstRefExpr struct {
 	pos
 	Prefix string
 	Name   string
-	// M16.5.4: pre-resolved namespaced-constant Value pointer stamped
+	// Pre-resolved namespaced-constant Value pointer stamped
 	// by Interpreter.resolveQualifiedRefs. Kept `any` for the same
 	// import-cycle reason as QualifiedCallExpr.Fn; the interpreter
 	// dereferences it as a *Value.
@@ -712,7 +712,7 @@ const (
 	OpAnd
 	OpOr
 
-	// Bitwise (M12) - int only, never short-circuit.
+	// Bitwise - int only, never short-circuit.
 	OpBitOr  // |
 	OpBitXor // ^
 	OpBitAnd // &
@@ -782,7 +782,7 @@ type UnaryOp int
 const (
 	OpNeg    UnaryOp = iota // -x  (numeric)
 	OpNot                   // not x  (bool)
-	OpBitNot                // ~x  (bitwise NOT on int, M12)
+	OpBitNot                // ~x  (bitwise NOT on int)
 )
 
 func (o UnaryOp) String() string {
@@ -802,7 +802,7 @@ type UnaryExpr struct {
 	pos
 	Op      UnaryOp
 	Operand Expr
-	// M16.5.5: pre-computed constant-fold result stamped by Resolve
+	// Pre-computed constant-fold result stamped by Resolve
 	// when Operand collapses to a compile-time literal. The
 	// interpreter's evalUnary returns Folded's value directly when
 	// present, skipping the operand walk + op switch. nil for
@@ -817,7 +817,7 @@ type BinaryExpr struct {
 	Op    BinaryOp
 	Left  Expr
 	Right Expr
-	// M16.5.5: pre-computed constant-fold result. Same convention
+	// Pre-computed constant-fold result. Same convention
 	// as UnaryExpr.Folded - the resolver stamps this when both
 	// Left and Right collapse to literals (transitively through
 	// their own Folded fields, so `(1+2)*3` folds to 9). Ops that

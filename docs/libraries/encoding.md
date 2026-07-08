@@ -66,7 +66,7 @@ Jennifer string into the named encoding's byte representation;
 | `encoding.decode(b, codec)`  | `string` | Errors when a byte has no mapping in the codec.                      |
 | `encoding.codecs()`          | `list of string` | The canonical codec names in registration order.             |
 
-### Codec set shipped in M15.7
+### Codec set
 
 | Codec string     | Notes                                                                                              |
 | ---------------- | -------------------------------------------------------------------------------------------------- |
@@ -76,7 +76,7 @@ Jennifer string into the named encoding's byte representation;
 | `"ebcdic"`       | IBM Code Page 1047 (Open Systems Latin-1 EBCDIC variant).                                          |
 
 The long-tail single-byte codecs (`iso-8859-{2..16}`,
-`windows-{1250,1251,1253..1258}`) are parked in **M24+** to be
+`windows-{1250,1251,1253..1258}`) are parked to be
 picked up when a real program asks for one - they're just rows
 in the same table when added.
 
@@ -122,5 +122,5 @@ All errors are positioned at the call site.
   `stringFromBytes`).
 - [hash.md](hash.md), [crc.md](crc.md) - digest libraries whose
   output bytes you'll often `encoding.toText($digest, "hex")`.
-- [milestones.md](../milestones.md) - M15.7 surface and the long-tail
-  codecs parked in M24+.
+- [milestones.md](../milestones.md) - the `encoding` surface and the long-tail
+  codecs parked for later.

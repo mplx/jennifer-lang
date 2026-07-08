@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// ---- M13.1 Structs: positive path ----
+// ---- Structs: positive path ----
 
 func TestStructBasicConstructionAndRead(t *testing.T) {
 	out, err := run(t, `
@@ -139,7 +139,7 @@ io.printf("a=%v b=%v\n", $a, $b);
 	}
 }
 
-// ---- M13.1 Structs: error paths ----
+// ---- Structs: error paths ----
 
 func TestStructUnknownTypeAtDefine(t *testing.T) {
 	_, err := run(t, `def x as Widget;`)

@@ -69,7 +69,7 @@ func TestAstJSONShape(t *testing.T) {
 	}
 }
 
-// TestAstJSONM6Shape covers the new AST nodes added in M6: list/map
+// TestAstJSONM6Shape covers the new AST nodes: list/map
 // literals, index expressions, for-each. We assert a handful of field
 // signatures per node to catch a future refactor that drops a field or
 // renames it.

@@ -2,7 +2,7 @@
 # Copyright (C) 2026 <developer@mplx.eu>
 #
 # fizzbuzz.j - classic FizzBuzz from 1 to 15.
-# Demonstrates M2 features: for loop, if/elseif/else, comparison, modulo.
+# Demonstrates for loop, if/elseif/else, comparison, modulo.
 
 use io;
 

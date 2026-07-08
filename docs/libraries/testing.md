@@ -5,7 +5,7 @@ irreducible system-side surface a Jennifer-coded test framework
 needs: name-based method invocation, a per-process result
 accumulator, and a format dispatcher for human / TAP / JUnit
 output. The `.j` half (assertion vocabulary, suite organisation,
-CLI harness) lives in the M18.x `testing` module and layers on
+CLI harness) lives in the `testing` module and layers on
 top of these primitives.
 
 ```jennifer
@@ -199,13 +199,13 @@ Recorded so the design decisions stay visible.
 
 - **Subprocess isolation.** A runaway infinite loop in one test
   still holds up the runner (only `exit` is intercepted, not
-  divergence). A future `--isolated` flag on the M18.x CLI harness
+  divergence). A future `--isolated` flag on the CLI harness
   would re-invoke `jennifer run testfile.j --testing-single name`
-  per test via M15.3 `os.spawn` for complete isolation.
+  per test via `os.spawn` for complete isolation.
 - **Setup / teardown / fixtures.** Belong in the .j-side
   framework; primitives stay narrow.
 - **Test discovery by prefix.** `Interpreter.MethodNames()` is
-  exported for the M18.x harness; discovery lives up there, not
+  exported for the harness; discovery lives up there, not
   here.
 - **Skip / xfail.** Same rationale - runner-level policy.
 - **Parameterised tests.** Zero-argument methods only in v1; a
@@ -214,8 +214,8 @@ Recorded so the design decisions stay visible.
 
 ## See also
 
-- [milestones.md](../milestones.md) - M16.4 design spec and the
-  M18.x follow-on.
+- [milestones.md](../milestones.md) - design spec and the
+  follow-on.
 - [control-flow.md](../user-guide/control-flow.md#try-catch-throw)
   - the `try`/`catch` machinery `testing.run` builds on.
 - [concurrency.md](../user-guide/concurrency.md) - `spawn` under

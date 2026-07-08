@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// M15.5.2 formatting and parsing. `time.format` / `time.parse` use a
+// Formatting and parsing. `time.format` / `time.parse` use a
 // strftime-style layout: `%Y-%m-%d %H:%M:%S` rather than Go's
 // reference-time spelling, since the strftime codes are widely
 // familiar (C / Python / shell / many languages). `time.iso` and

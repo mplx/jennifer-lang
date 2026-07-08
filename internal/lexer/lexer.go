@@ -79,7 +79,7 @@ func TokenizeWithFile(source, file string) ([]Token, error) {
 
 // Next returns the next token. At end of input it repeatedly returns TOKEN_EOF.
 //
-// M14: comments and blank lines are emitted as trivia tokens
+// Comments and blank lines are emitted as trivia tokens
 // (TOKEN_COMMENT_*, TOKEN_BLANK_LINE) rather than silently skipped, so
 // the formatter can round-trip them. Regular whitespace between
 // non-trivia tokens is still skipped; blank lines (a line containing
@@ -305,8 +305,8 @@ func (l *Lexer) readLineComment() Token {
 	return Token{Type: kind, Lexeme: b.String(), Line: startLine, Col: startCol}
 }
 
-// readBlockComment consumes a `/* ... */` block comment. M14: nested
-// block comments are now legal; the scanner uses a depth counter
+// readBlockComment consumes a `/* ... */` block comment. Nested
+// block comments are legal; the scanner uses a depth counter
 // (increment on `/*`, decrement on `*/`, exit when depth hits 0).
 // Unterminated comments still error positionally at the outermost
 // `/*` so the message points at where the user meant to start.
@@ -411,7 +411,7 @@ func (l *Lexer) readVarRef(startLine, startCol int) (Token, error) {
 }
 
 func (l *Lexer) readNumber(startLine, startCol int) (Token, error) {
-	// Non-decimal integer prefixes (M12). `0x`, `0o`, `0b` followed by
+	// Non-decimal integer prefixes. `0x`, `0o`, `0b` followed by
 	// at least one digit of the right base; `_` may appear between digits
 	// as a visual separator. The lexeme stored on the token includes the
 	// prefix so the parser can pick the base back out, but excludes the

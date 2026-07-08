@@ -1,4 +1,4 @@
-# `maps` - map manipulation (M9)
+# `maps` - map manipulation
 
 Enable with `use maps;`. Namespaced under `maps.`; every function is
 called as `maps.NAME(...)`. Each function **returns a new map (or
@@ -37,7 +37,7 @@ if (maps.has($m, "a")) {
 }
 ```
 
-Pre-M9 this lived in core as bare `has(...)`; it moved here because
+This lived in core as bare `has(...)`; it moved here because
 map-only membership is domain-specific and didn't fit core's
 "universally needed structural primitives" charter (`len`, by
 contrast, is genuinely polymorphic across string / list / map and

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Codec definitions for the M15.7 set: ascii, latin-1, windows-1252,
+// Codec definitions for the set: ascii, latin-1, windows-1252,
 // ebcdic (IBM-1047). The long-tail codecs (ISO-8859-{2..16},
-// Windows-{1250,1251,1253..1258}) are parked in M24+ - the
+// Windows-{1250,1251,1253..1258}) are parked - the
 // table-driven infrastructure here handles new entries by just
 // adding a 256-rune decode table plus its aliases.
 //

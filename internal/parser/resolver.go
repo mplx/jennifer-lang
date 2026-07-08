@@ -5,7 +5,7 @@ package parser
 
 import "fmt"
 
-// M16.5.2: scope analyser that resolves every variable / constant
+// Scope analyser that resolves every variable / constant
 // reference to a (Depth, Slot) coordinate at parse time. Depth is the
 // number of parent frames to walk from the innermost enclosing scope;
 // Slot is the index in that frame's slot slice.
@@ -43,7 +43,7 @@ type resolver struct {
 	// methods records the top-level `func` names + their MethodDef
 	// pointers so bare unqualified references can distinguish
 	// "call a method" from "reference an undefined name," and so
-	// M16.5.3's CallExpr.Method pre-resolution has a target to
+	// CallExpr.Method pre-resolution has a target to
 	// point at. Populated during the hoist pass; consulted by
 	// VarExpr / ConstRefExpr resolution when the name doesn't
 	// match any slot on the scope stack, and by CallExpr
@@ -508,7 +508,7 @@ func (r *resolver) resolveExpr(e Expr) error {
 		// that expect "hint to use $" and similar error text.
 		return nil
 	case *CallExpr:
-		// M16.5.3: pre-resolve the callee to a method pointer when
+		// Pre-resolve the callee to a method pointer when
 		// it names a hoisted top-level user method. Builtins stay
 		// nil - the interpreter dispatches those through the
 		// namespaced / global registries which check `use`
@@ -534,7 +534,7 @@ func (r *resolver) resolveExpr(e Expr) error {
 	case *LenExpr:
 		return r.resolveExpr(ex.Operand)
 	case *SpawnExpr:
-		// M16.5.2: spawn bodies are deliberately left unresolved.
+		// Spawn bodies are deliberately left unresolved.
 		// The runtime's snapshotForSpawn produces a two-frame
 		// duplex (globals-snap + locals-snap) that doesn't line up
 		// with the resolver's single-frame view of "the enclosing
@@ -579,7 +579,7 @@ func (r *resolver) resolveExpr(e Expr) error {
 		if err := r.resolveExpr(ex.Operand); err != nil {
 			return err
 		}
-		// M16.5.5: attempt constant folding once the operand is
+		// Attempt constant folding once the operand is
 		// resolved. tryFoldUnary returns nil when the operand isn't
 		// a compile-time literal.
 		ex.Folded = tryFoldUnary(ex)
@@ -591,7 +591,7 @@ func (r *resolver) resolveExpr(e Expr) error {
 		if err := r.resolveExpr(ex.Right); err != nil {
 			return err
 		}
-		// M16.5.5: same fold pass as UnaryExpr.
+		// Same fold pass as UnaryExpr.
 		ex.Folded = tryFoldBinary(ex)
 		return nil
 	case *IntLit, *FloatLit, *StringLit, *BoolLit, *NullLit:

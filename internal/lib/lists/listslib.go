@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package listslib implements Jennifer's `lists` library (M9): the
+// Package listslib implements Jennifer's `lists` library: the
 // non-mutating manipulation helpers for `list of T` values. Every
 // function returns a *new* list (or a primitive value); the input is
 // never modified. Callers commit results with `$xs = lists.push($xs,
 // x);` - matching Jennifer's value-semantics rule and the explicit
 // "one way per thing" stance.
 //
-// All names are namespaced under the `lists.` prefix per M8's hybrid
+// All names are namespaced under the `lists.` prefix per the hybrid
 // model. Verbs like `contains` / `concat` collide with `strings.contains`
 // / `strings.concat` etc., and namespacing keeps the call-site
 // unambiguous.
@@ -27,7 +27,7 @@ import (
 // functions, and doubles as the namespace prefix.
 const LibraryName = "lists"
 
-// Install registers every M9 lists builtin with the interpreter.
+// Install registers every lists builtin with the interpreter.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "push", pushFn)
 	in.RegisterNamespaced(LibraryName, "pop", popFn)

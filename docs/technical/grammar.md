@@ -25,7 +25,7 @@ param       = IDENT "as" type ;
 block       = "{" { statement } "}" ;
 
 structDef   = "def" "struct" IDENT "{" structField { "," structField } [ "," ] "}" ";" ;
-                                       (* M13.1: top-level only;
+                                       (* top-level only;
                                           IDENT names the struct type;
                                           field names follow the IDENT
                                           rule too. Hoisted before the
@@ -47,13 +47,13 @@ statement   = defineStmt
             | exprStmt ;
 
 tryStmt     = "try" block "catch" "(" IDENT ")" block ;
-                                       (* M13.2: IDENT is the catch
+                                       (* IDENT is the catch
                                           binding, follows the
                                           iteration-variable name rule
                                           (letters only). No `finally`
                                           in v1. *)
 throwStmt   = "throw" expr ";" ;
-                                       (* M13.2: expr may produce any
+                                       (* expr may produce any
                                           value; convention is an
                                           `Error` struct. *)
 
@@ -74,13 +74,13 @@ assignStmt  = VARREF "=" expr ";" ;
 
 indexAssign = VARREF lvalueTail { lvalueTail } "[" expr "]" "=" expr ";" ;
                                        (* l-value chain ending in `[index]`;
-                                          root is a VARREF. M13.1: tail
+                                          root is a VARREF. Tail
                                           steps may freely mix `[index]`
                                           and `.field`. *)
 
 fieldAssign = VARREF lvalueTail { lvalueTail } "." IDENT "=" expr ";" ;
-                                       (* l-value chain ending in `.field`
-                                          (M13.1). Root is a VARREF; tail
+                                       (* l-value chain ending in `.field`.
+                                          Root is a VARREF; tail
                                           may mix `[index]` and `.field`. *)
 
 lvalueTail  = "[" expr "]" | "." IDENT ;
@@ -119,7 +119,7 @@ type        = primType | listType | mapType | taskType | structType ;
 primType    = "int" | "float" | "string" | "bool" | "null" | "bytes" ;
 listType    = "list" "of" type ;
 mapType     = "map" "of" type "to" type ;
-taskType    = "task" "of" type ;       (* M16.0: `task of T` - handle to
+taskType    = "task" "of" type ;       (* `task of T` - handle to
                                           a `spawn`ed computation. Same
                                           shape as `list of T`; recurses
                                           the same way (`task of list of
@@ -129,9 +129,9 @@ taskType    = "task" "of" type ;       (* M16.0: `task of T` - handle to
                                           `map of string to list of int`
                                           falls out naturally *)
 structType  = IDENT [ "." IDENT ] ;    (* User-defined struct type (bare
-                                          IDENT, M13.1) or library-provided
+                                          IDENT) or library-provided
                                           namespaced struct type
-                                          (`IDENT.IDENT`, M15.2). Resolved
+                                          (`IDENT.IDENT`). Resolved
                                           at runtime against the
                                           user-struct table or the
                                           NSStructs table respectively;
@@ -152,9 +152,9 @@ primary     = ( INT | FLOAT | STRING | "true" | "false" | "null"
               | listLit | mapLit | lenExpr | spawnExpr )
               { "[" expr "]" | "." IDENT } ;
                                        (* any primary can be index- or
-                                          field-chained; M13.1 adds the
+                                          field-chained, including the
                                           `.field` form *)
-spawnExpr   = "spawn" block ;          (* M16.0: launches the block as a
+spawnExpr   = "spawn" block ;          (* launches the block as a
                                           goroutine and evaluates
                                           immediately to a `task of T`
                                           where T is the body's return
@@ -165,15 +165,15 @@ spawnExpr   = "spawn" block ;          (* M16.0: launches the block as a
                                           at the spawn site is
                                           deep-copied into a fresh frame
                                           at launch. *)
-lenExpr     = "len" "(" expr ")" ;     (* M15.4: polymorphic
+lenExpr     = "len" "(" expr ")" ;     (* polymorphic
                                           structural-length built-in
                                           (string / list / map /
                                           bytes). Reserved keyword,
-                                          not a library function;
-                                          M15.4 deleted the `core`
-                                          library that hosted it. *)
+                                          not a library function; the
+                                          `core` library that once
+                                          hosted it no longer exists. *)
 structLit   = IDENT [ "." IDENT ] "{" structLitField { "," structLitField } [ "," ] "}" ;
-                                       (* M13.1 / M15.2: struct literal.
+                                       (* struct literal.
                                           Bare IDENT names a user-defined
                                           struct; `IDENT.IDENT` names a
                                           library-provided namespaced
@@ -297,56 +297,56 @@ Recursive descent with precedence climbing for binary operators. The
 grammar the parser implements is the EBNF above.
 
 The exported entry points (`Parse`, `ParseTokens`) return a raw
-`*Program` without running the M16.5.2 scope-analysis pass. Callers
+`*Program` without running the scope-analysis pass. Callers
 that intend to execute the program must invoke `parser.Resolve(prog)`
 themselves (`Interpreter.Run` does this automatically). Splitting the
 two lets grammar tests focus on parse trees without wiring up scope
-context for every fragment; see [scope analysis](#scope-analysis-m1652)
+context for every fragment; see [scope analysis](#scope-analysis)
 below.
 
 ### AST nodes
 
 | Node                    | Kind | Fields                                                                                                     |
 | ----------------------- | ---- | ---------------------------------------------------------------------------------------------------------- |
-| `Program`               | root | `Imports []*ImportStmt`, `Methods []*MethodDef`, `Structs []*StructDef`, `TopLevel []Stmt`, `NumGlobals int` (M16.5.2)                 |
+| `Program`               | root | `Imports []*ImportStmt`, `Methods []*MethodDef`, `Structs []*StructDef`, `TopLevel []Stmt`, `NumGlobals int`                 |
 | `ImportStmt`            | stmt | `Name`, `AsName` (empty unless `use NAME as ALIAS;`)                                                       |
 | `MethodDef`             | stmt | `Name`, `Params []Param`, `Body *Block`                                                                    |
 | `Param`                 | -    | `Name`, `Type`                                                                                             |
-| `StructDef`             | stmt | `Name`, `Fields []StructField` (M13.1; top-level only, hoisted before execution)                           |
+| `StructDef`             | stmt | `Name`, `Fields []StructField` (top-level only, hoisted before execution)                           |
 | `StructField`           | -    | `Name`, `Type` (each field of a struct definition)                                                         |
-| `Block`                 | stmt | `Stmts []Stmt`, `NumSlots int` (M16.5.2 hint used by `NewEnvironmentSized`)                                |
-| `DefineStmt`            | stmt | `IsConst`, `VarName`, `VarType Type`, `InitExpr Expr` (nil = uninit), `Slot int` (M16.5.2; -1 = unresolved) |
-| `AssignStmt`            | stmt | `VarName`, `Value Expr`, `Depth`, `Slot` (M16.5.2; both -1 = unresolved)                                   |
-| `IndexAssignStmt`       | stmt | `Target *IndexExpr`, `Value Expr` - `$xs[i][j] = ...` (M13.1: chain may include `FieldAccessExpr` nodes)   |
-| `FieldAssignStmt`       | stmt | `Target *FieldAccessExpr`, `Value Expr` - `$p.field = ...` (M13.1)                                         |
-| `TryStmt`               | stmt | `Body *Block`, `CatchName`, `CatchBody *Block`, `CatchSlot` (M16.5.2 slot for `CatchName` in the handler frame) - `try { ... } catch (NAME) { ... }` (M13.2)                |
-| `ThrowStmt`             | stmt | `Value Expr` - `throw EXPR;` (M13.2)                                                                       |
-| `AppendStmt`            | stmt | `Target *VarExpr`, `Value Expr` - `$xs[] = item;` (M9)                                                     |
+| `Block`                 | stmt | `Stmts []Stmt`, `NumSlots int` (hint used by `NewEnvironmentSized`)                                |
+| `DefineStmt`            | stmt | `IsConst`, `VarName`, `VarType Type`, `InitExpr Expr` (nil = uninit), `Slot int` (-1 = unresolved) |
+| `AssignStmt`            | stmt | `VarName`, `Value Expr`, `Depth`, `Slot` (both -1 = unresolved)                                   |
+| `IndexAssignStmt`       | stmt | `Target *IndexExpr`, `Value Expr` - `$xs[i][j] = ...` (chain may include `FieldAccessExpr` nodes)   |
+| `FieldAssignStmt`       | stmt | `Target *FieldAccessExpr`, `Value Expr` - `$p.field = ...`                                         |
+| `TryStmt`               | stmt | `Body *Block`, `CatchName`, `CatchBody *Block`, `CatchSlot` (slot for `CatchName` in the handler frame) - `try { ... } catch (NAME) { ... }`                |
+| `ThrowStmt`             | stmt | `Value Expr` - `throw EXPR;`                                                                       |
+| `AppendStmt`            | stmt | `Target *VarExpr`, `Value Expr` - `$xs[] = item;`                                                     |
 | `ReturnStmt`            | stmt | `Value Expr` (nil for bare `return;`)                                                                      |
 | `IfStmt`                | stmt | `Cond`, `Then *Block`, `ElseIfs []Expr`, `ElseIfBodies []*Block`, `Else *Block`                            |
 | `WhileStmt`             | stmt | `Cond`, `Body *Block`                                                                                      |
 | `ForStmt`               | stmt | `Init Stmt`, `Cond Expr`, `Step Stmt`, `Body *Block` (any may be nil)                                      |
-| `ForEachStmt`           | stmt | `VarName`, `Coll Expr`, `Body *Block`, `IterSlot` (M16.5.2 slot for the iterator in each iteration frame)  |
+| `ForEachStmt`           | stmt | `VarName`, `Coll Expr`, `Body *Block`, `IterSlot` (slot for the iterator in each iteration frame)  |
 | `ExprStmt`              | stmt | `Expr`                                                                                                     |
 | `IntLit`                | expr | `Value int64`                                                                                              |
 | `FloatLit`              | expr | `Value float64`                                                                                            |
 | `StringLit`             | expr | `Value string`                                                                                             |
 | `BoolLit`               | expr | `Value bool`                                                                                               |
 | `NullLit`               | expr | -                                                                                                          |
-| `VarExpr`               | expr | `Name` (no `$`), `Depth`, `Slot` (M16.5.2; both -1 = unresolved, use name lookup) - mutable-variable reference |
-| `ConstRefExpr`          | expr | `Name`, `Depth`, `Slot` (M16.5.2; -1 = unresolved) - bare-IDENT reference; interpreter expects it to resolve to a constant |
-| `CallExpr`              | expr | `Callee`, `Args []Expr`, `Method *MethodDef` (M16.5.3 pre-resolved pointer for hoisted user methods; nil for builtins and resolver-less paths) |
-| `LenExpr`               | expr | `Operand Expr` - `len(EXPR)` language built-in (M15.4)                                                     |
-| `QualifiedCallExpr`     | expr | `Prefix`, `Callee`, `Args []Expr`, `Fn any` (M16.5.4 pre-resolved `Builtin`; nil for resolver-less paths)     |
-| `QualifiedConstRefExpr` | expr | `Prefix`, `Name`, `Const any` (M16.5.4 pre-resolved `Value`; nil for resolver-less paths)                    |
-| `BinaryExpr`            | expr | `Op BinaryOp`, `Left`, `Right`, `Folded Expr` (M16.5.5 pre-computed fold result; nil for runtime-only exprs) |
-| `UnaryExpr`             | expr | `Op UnaryOp` (`OpNeg`/`OpNot`/`OpBitNot`), `Operand`, `Folded Expr` (M16.5.5)                              |
+| `VarExpr`               | expr | `Name` (no `$`), `Depth`, `Slot` (both -1 = unresolved, use name lookup) - mutable-variable reference |
+| `ConstRefExpr`          | expr | `Name`, `Depth`, `Slot` (-1 = unresolved) - bare-IDENT reference; interpreter expects it to resolve to a constant |
+| `CallExpr`              | expr | `Callee`, `Args []Expr`, `Method *MethodDef` (pre-resolved pointer for hoisted user methods; nil for builtins and resolver-less paths) |
+| `LenExpr`               | expr | `Operand Expr` - `len(EXPR)` language built-in                                                     |
+| `QualifiedCallExpr`     | expr | `Prefix`, `Callee`, `Args []Expr`, `Fn any` (pre-resolved `Builtin`; nil for resolver-less paths)     |
+| `QualifiedConstRefExpr` | expr | `Prefix`, `Name`, `Const any` (pre-resolved `Value`; nil for resolver-less paths)                    |
+| `BinaryExpr`            | expr | `Op BinaryOp`, `Left`, `Right`, `Folded Expr` (pre-computed fold result; nil for runtime-only exprs) |
+| `UnaryExpr`             | expr | `Op UnaryOp` (`OpNeg`/`OpNot`/`OpBitNot`), `Operand`, `Folded Expr`                              |
 | `ListLit`               | expr | `Elements []Expr` - `[1, 2, 3]`                                                                            |
 | `MapLit`                | expr | `Keys []Expr`, `Values []Expr` (parallel) - `{"a": 1}`                                                     |
 | `IndexExpr`             | expr | `Target Expr`, `Index Expr` - `$xs[i]`, chained                                                            |
-| `StructLit`             | expr | `NS`, `Name`, `Fields []StructLitField` - `Point{...}` bare (M13.1) or `lib.Point{...}` namespaced (M15.2) |
+| `StructLit`             | expr | `NS`, `Name`, `Fields []StructLitField` - `Point{...}` bare or `lib.Point{...}` namespaced |
 | `StructLitField`        | -    | `Name`, `Expr` (one named field in a struct literal)                                                       |
-| `FieldAccessExpr`       | expr | `Target Expr`, `Field` - `$p.field`, chainable with `IndexExpr` (M13.1)                                    |
+| `FieldAccessExpr`       | expr | `Target Expr`, `Field` - `$p.field`, chainable with `IndexExpr`                                    |
 
 Every node embeds a `pos{File, Line, Col}` for error reporting and exposes
 it via `Node.Pos()` (line/col) and `Node.Filename()` (file path). The file
@@ -354,10 +354,10 @@ is populated from the originating token so cross-file diagnostics work.
 
 `Sprint(node)` produces a stable textual representation used by tests.
 
-### Scope analysis (M16.5.2)
+### Scope analysis
 
 `internal/parser/resolver.go` is a post-parse pass that walks the AST
-and fills in the M16.5.2 slot fields (`Depth`, `Slot`, `NumSlots`,
+and fills in the slot fields (`Depth`, `Slot`, `NumSlots`,
 `Program.NumGlobals`, `Block.NumSlots`, etc.). It also promotes two
 classes of error from first-execution runtime errors to positioned
 parse-time diagnostics:
@@ -399,14 +399,14 @@ interpreter:
   `(Depth=-1, Slot=-1)` and the interpreter falls back to name-based
   lookup at runtime.
 
-**Method-call pre-resolution (M16.5.3).** The resolver also pre-fills
+**Method-call pre-resolution.** The resolver also pre-fills
 `CallExpr.Method` whenever the callee names a hoisted top-level user
 method. The interpreter's `evalCall` consults the pointer first and
 skips the `i.methods` hash lookup on every recursive call. Builtins
 keep `Method = nil` because the namespaced / global registries need
 the runtime `use`-activation check.
 
-**Namespaced-call pre-resolution (M16.5.4).** For
+**Namespaced-call pre-resolution.** For
 `QualifiedCallExpr.Fn` and `QualifiedConstRefExpr.Const` the pre-fill
 happens on the interpreter side, not in the parser resolver, because
 the namespace / import tables don't exist until `processImports` has
@@ -414,7 +414,7 @@ run. `Interpreter.resolveQualifiedRefs` is a second pass invoked from
 `Interpreter.Run` after `processImports` that walks the same AST and
 stamps the exact `Builtin` / `Value` a call would otherwise look up.
 
-**Constant folding (M16.5.5).** `internal/parser/fold.go` runs from
+**Constant folding.** `internal/parser/fold.go` runs from
 inside `Resolve` as a post-step on `BinaryExpr` / `UnaryExpr`. When
 both operands are literal (checked transitively through their own
 `Folded` fields via `asLit`), the operator is applied at parse time

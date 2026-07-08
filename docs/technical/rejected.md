@@ -407,3 +407,110 @@ The chosen rule: stance #5 stands without exception. The
 "Performance & memory" Long horizon entry covers the
 optimizations that close the cost gap; users who genuinely
 need aliased mutation are using the wrong language.
+
+## Auto-invoked module setup hook (M17)
+
+Considered while designing the module system (M17). A module
+could declare a magic `func setup()` (or `init`) that the
+loader calls automatically the first time the module is
+imported, giving a defined place for one-time initialization.
+
+Rejected because:
+
+- **Redundant with `def const ... init EXPR;`.** Value-producing
+  one-time work is already expressible: `export def const TABLE
+  as list of int init buildTable();` where `buildTable` is a
+  private module `func` that runs a loop and returns the result.
+  The initializer runs exactly once at load (M17's run-once
+  semantics), so a separate hook buys nothing for the common
+  case.
+- **A pure-side-effect hook reintroduces the footgun M17 removed.**
+  M17 modules are declarations-only with no mutable top-level
+  state, so `setup()` could only do I/O or seed a shared source -
+  exactly the "import does work" surprise the declarations-only
+  rule is meant to eliminate (the lesson behind Python's "imports
+  should be cheap").
+- **Cuts against "no required entry point."** Jennifer
+  deliberately has no auto-invoked entry point; an auto-called
+  module hook is the same idea by another name.
+- **Stance #1 (one way).** `def const ... init ...;` already runs
+  code once at load; a hook is a second spelling for "run at
+  import."
+
+The chosen rule: a module that genuinely needs imperative setup
+exports an ordinary function the consumer calls explicitly
+(`points.prepare();`) - more explicit (stance #2) and it keeps
+the work off the import path. No new language surface, no
+auto-invocation.
+
+## Directory-as-module and cross-file re-export (M17)
+
+Considered for multi-file modules: let a directory be a module,
+imported by directory name (`import "bigmod" as bigmod;`)
+resolving to a conventional entry file, and/or let several files
+in the module each `export` with the module's public surface
+being their union (a cross-file re-export / package model, as in
+Python packages, Go packages, or ES module re-exports).
+
+Rejected because:
+
+- **`include`-assembly already covers it with one mechanism.** A
+  multi-file module is a single entry `.j` file that `include`s
+  its parts (subdirectories allowed); the splice shares one
+  module scope and one `export` surface, and the consumer imports
+  just the entry file. That is the M10 textual-splice mechanism
+  plus M17.0's declarations-only-and-export rule, with no new
+  surface. See M17.1.
+- **Stance #1 (one way).** Directory-as-module would be a second,
+  parallel way to compose a module on top of include-assembly,
+  for the same outcome.
+- **Re-export reopens a closed question.** Cross-file re-export is
+  the same "reach a name from elsewhere and republish it" shape as
+  the `from FOO import BAR` symbol import M17.2 already turned
+  down; adding it here would reintroduce that surface by another
+  name.
+- **Relaxing must-end-in-`.j` for directory imports** removes the
+  lexical marker that keeps import strings unambiguous, for an
+  ergonomic gain include-assembly already delivers.
+
+The chosen rule: multi-file modules assemble via `include` behind
+one entry file (M17.1). Directory-as-module and cross-file
+re-export can be revisited as their own milestone if real-world
+module sizes ever make include-assembly unwieldy.
+
+## Mandatory `public`/`private` keyword on module declarations (M17.4)
+
+Considered as a stronger form of M17.4's export model: instead of
+private-by-default with a single `export` marker, require an
+explicit `public` or `private` keyword on every top-level `def
+const`, `def struct`, and `func` in a module (omitting it would
+be a parse error), on the "explicit over implicit" (stance #2)
+argument.
+
+Rejected because:
+
+- **Stance #2 is already satisfied by `export`.** The property
+  that must be explicit is the module's public surface - "what
+  does this expose?" - and `export` answers it by grep
+  (`grep '^export' mod.j` is the whole public API). The only
+  implicit fact left is "unmarked means private," a one-line
+  documented rule, not a hidden surprise.
+- **Private-by-default is the fail-safe direction.** A forgotten
+  marker keeps a name internal; there is no path where omission
+  leaks a name into the public surface, which is the failure mode
+  the M17.3/M17.4 supply-chain-hygiene argument cares about.
+- **Every cited language uses marker-for-public, default-private.**
+  Rust `pub`, TypeScript `export`, Go capitalization, Java
+  package-private + `public` - none requires a visibility keyword
+  on every declaration. The ecosystem converged on exactly the
+  chosen model.
+- **Cheaper script-to-module promotion.** Promoting a script means
+  adding `export` only to the names being committed to a public
+  API (M17.4's deliberate "I now have a public API" moment).
+  Mandatory keywords would force annotating every top-level name
+  on promotion, a noisier diff for no safety gain.
+- **Stance #1 (one way).** Mandatory `public`/`private` doubles the
+  visibility vocabulary; `export`-or-nothing is one axis, one
+  token. (This is also why the parallel `public` synonym for
+  `export` and a standalone `private` marker are rejected - see
+  M17.4.)

@@ -26,8 +26,8 @@ io.printf("%s\n", convert.typeOf(5 // 2));     # "int"
 | `convert.toString(v)`                      | any                         | always succeeds; uses the value's display form                        |
 | `convert.toBool(v)`                        | bool / int / float / string | identity / canonical only (`0`/`1`, `0.0`/`1.0`, `"true"`/`"false"`)  |
 | `convert.typeOf(v)`                        | any                         | returns the kind as a string: `"int"`, `"float"`, etc.                |
-| `convert.bytesFromString(s, codec)` (M12+) | (string, string)            | string → bytes; only `"utf-8"` codec today                            |
-| `convert.stringFromBytes(b, codec)` (M12+) | (bytes, string)             | bytes → string; only `"utf-8"` codec today; invalid UTF-8 is an error |
+| `convert.bytesFromString(s, codec)` | (string, string)            | string → bytes; only `"utf-8"` codec today                            |
+| `convert.stringFromBytes(b, codec)` | (bytes, string)             | bytes → string; only `"utf-8"` codec today; invalid UTF-8 is an error |
 
 ## Errors
 
@@ -40,7 +40,7 @@ io.printf("%s\n", convert.typeOf(5 // 2));     # "int"
   UTF-8 - strict at boundaries; no silent replacement characters.
 - `convert.bytesFromString(s, "latin-1")` or any non-`"utf-8"`
   codec name - rejected as unsupported (further codecs ship in
-  the M15.7 `encoding` library).
+  the `encoding` library).
 - Arity errors (too many or too few arguments).
 
 For "any nonzero counts as true" semantics, write the comparison explicitly:
@@ -62,7 +62,7 @@ keeps those reserved for declarations (`def x as int ...`). The
 `convert.toInt("42")` says "convert to int." `typeOf` is a normal
 identifier and is not a type keyword.
 
-Writing the bare pre-M10 form (`int("42")`, `string(42)`, ...) is
+Writing the bare form (`int("42")`, `string(42)`, ...) is
 a parse error directing you at the `convert.to*` form.
 
 See also: [../user-guide/index.md](../user-guide/index.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

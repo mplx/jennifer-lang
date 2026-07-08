@@ -3,7 +3,7 @@
 Enable with `use fs;`. Blocking whole-file reads and writes,
 filesystem metadata, directory operations, and buffered file
 handles for line-oriented reads. Non-blocking use composes with
-M16.0 [`spawn`](../user-guide/concurrency.md) rather than
+[`spawn`](../user-guide/concurrency.md) rather than
 duplicating each call as a `*Async` variant.
 
 ```jennifer
@@ -172,7 +172,7 @@ kind is a positioned boundary error.
 ### Handles share state between copies
 
 An `fs.File{id}` value is small; copies share the underlying
-Go `*os.File` state via the integer id. This mirrors M16.0's
+Go `*os.File` state via the integer id. This mirrors the
 `task of T` carve-out to the "value semantics everywhere"
 rule:
 
@@ -187,7 +187,7 @@ Handles are the second "handles wrap shared state" carve-out
 in the language, sitting alongside `task of T`. Every other
 type keeps whole-value semantics.
 
-## Concurrency composition (M16.0)
+## Concurrency composition
 
 `fs` is blocking on purpose. Non-blocking use is a one-line
 composition with `spawn`:
@@ -248,7 +248,7 @@ path or handle id in the message.
 - **Non-negative int required**: `fs.readChars: n must be
   non-negative, got -1`.
 
-Every error is catchable with M13.2 `try` / `catch`:
+Every error is catchable with `try` / `catch`:
 
 ```jennifer
 try {
@@ -285,4 +285,4 @@ concrete workload forces it.
   `fs.Stat.mtimeNanos` into a `time.Time`.
 - [`os`](os.md) - process-level operations that pair with `fs`:
   env vars, argv, external commands.
-- [../milestones.md](../milestones.md) - M16.1 design spec.
+- [../milestones.md](../milestones.md) - design spec.

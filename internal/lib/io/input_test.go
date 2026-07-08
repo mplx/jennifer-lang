@@ -14,7 +14,7 @@ import (
 // callReadLine and callEof invoke the registered namespaced builtins
 // with a fully-populated BuiltinCtx. Each test calls resetInputForTest
 // first so the package-level buffered reader doesn't leak state across
-// cases. After M10 the io library is namespaced, so the lookup goes
+// cases. The io library is namespaced, so the lookup goes
 // through the interpreter's namespaced lookup helper.
 func callReadLine(in *interpreter.Interpreter, ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	return in.LookupNamespacedBuiltin("io", "readLine")(ctx, args)

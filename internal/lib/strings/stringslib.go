@@ -25,15 +25,15 @@ const LibraryName = "strings"
 
 // Install registers strings library functions on an interpreter.
 //
-// **M9: strings is namespaced.** Every name lives behind the `strings.`
+// **strings is namespaced.** Every name lives behind the `strings.`
 // prefix - call as `strings.upper(s)`, `strings.contains(s, sub)`, etc.
-// Pre-M9 the library was flat; the M9 hybrid model relocates collision-
+// The library was previously flat; the hybrid model relocates collision-
 // prone verbs (`contains`, `split`, `replace`, ...) under their domain
 // library so they don't pollute the bare-name pool. Same rule that
 // drove `lists`, `maps`, and `os` into namespaced form.
 //
 // `len` used to live here as the rune-count function for strings; it
-// is now a language built-in keyword (M15.4+) so the same name covers
+// is now a language built-in keyword so the same name covers
 // strings, lists, maps, and bytes with one polymorphic dispatch.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "upper", upperFn)

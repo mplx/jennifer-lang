@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 #
-# hash.j - exercises the M15.6 `hash` + `crc` libraries. Both
+# hash.j - exercises the `hash` + `crc` libraries. Both
 # libraries use the codec-table shape: a single function per
-# category with the algorithm as a string argument. Until M15.7
-# ships `encoding.hex`, this example carries a tiny `bytesToHex`
-# helper so the digests are printable for a golden comparison.
+# category with the algorithm as a string argument. This example
+# carries a tiny `bytesToHex` helper so the digests are printable
+# for a golden comparison.
 
 use io;
 use convert;

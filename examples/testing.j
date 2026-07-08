@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 #
-# testing.j - exercises the M16.4 `testing` library. Defines a
+# testing.j - exercises the `testing` library. Defines a
 # handful of test methods hitting every failure mode
 # (pass, user throw, runtime error, exit inside a test) and
 # renders the accumulated results in each of the three shipping

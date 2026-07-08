@@ -5,8 +5,8 @@ called as `strings.NAME(...)`. Fourteen functions for the common things you
 do with strings: case conversion, search, trim, replace, repeat,
 substring extraction, and split / join.
 
-> **M9 breaking change.** `strings` moved from flat to namespaced in M9.
-> Pre-M9 callers wrote `upper(s)`, `contains(s, sub)`, etc.; the M9 form
+> **Breaking change.** `strings` moved from flat to namespaced.
+> Callers used to write `upper(s)`, `contains(s, sub)`, etc.; the namespaced form
 > is `strings.upper(s)`, `strings.contains(s, sub)`. Same library, just
 > the call-site prefix is mandatory now. The rationale matches the
 > lists/maps move: collision-prone verbs (`contains`, `split`,

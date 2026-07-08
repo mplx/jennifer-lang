@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// ---- Non-decimal int literals + digit separators (M12) ----
+// ---- Non-decimal int literals + digit separators ----
 
 func TestHexLiteral(t *testing.T) {
 	out, err := run(t, `
@@ -79,7 +79,7 @@ func TestSeparatorAtBoundaryErrors(t *testing.T) {
 	}
 }
 
-// ---- Bit operators (M12) ----
+// ---- Bit operators ----
 
 func TestBitwiseAndOrXor(t *testing.T) {
 	out, err := run(t, `
@@ -177,7 +177,7 @@ func TestBitNotOnNonIntErrors(t *testing.T) {
 	}
 }
 
-// ---- bytes type (M12) ----
+// ---- bytes type ----
 
 func TestBytesFromStringRoundTrip(t *testing.T) {
 	out, err := run(t, `
@@ -326,7 +326,7 @@ def b as bytes init convert.bytesFromString("hi", "latin-1");
 	}
 }
 
-// ---- io.readBytes / io.readChars end-to-end (M12) ----
+// ---- io.readBytes / io.readChars end-to-end ----
 
 func TestReadBytesExactCount(t *testing.T) {
 	out, err := runWithStdin(t, `

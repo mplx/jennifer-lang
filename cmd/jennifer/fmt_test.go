@@ -305,7 +305,7 @@ func TestFmtSpacingRules(t *testing.T) {
 // TestFmtBlockOpeners covers the block-opener token set: `{` after
 // `try`, `spawn`, and `repeat` must expand as a statement block
 // (newline+indent), not collapse to a map-literal-style inline body.
-// Regression for the M14-era bug where these three braced constructs
+// Regression for the bug where these three braced constructs
 // stayed inline because openBlock only fired for `)` and `else`.
 func TestFmtBlockOpeners(t *testing.T) {
 	cases := []struct {
@@ -437,7 +437,7 @@ func TestFmtLenHugsParen(t *testing.T) {
 	}
 }
 
-// TestFmtPreservesComments exercises M14 trivia preservation: line
+// TestFmtPreservesComments exercises trivia preservation: line
 // comments (leading and trailing), block comments, blank lines, and
 // shebang.
 func TestFmtPreservesComments(t *testing.T) {

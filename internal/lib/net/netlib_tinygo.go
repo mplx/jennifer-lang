@@ -3,7 +3,7 @@
 
 //go:build tinygo
 
-// TinyGo stub for the M16.2 `net` library. TinyGo 0.41 compiles
+// TinyGo stub for the `net` library. TinyGo 0.41 compiles
 // most of the standard-Go `net` surface but requires a netdev
 // driver at runtime (which the `jennifer-tiny` binary doesn't
 // register), and lacks `net.ListenPacket` entirely for UDP. Rather
@@ -12,7 +12,7 @@
 // message pointing the user at the default `jennifer` binary
 // (standard-Go build).
 //
-// This mirrors the M15.3 `os.run` pattern.
+// This mirrors the `os.run` pattern.
 
 package netlib
 

@@ -186,7 +186,7 @@ which is what makes the language usable for untrusted input.
 - **Wrong argument count.** Boundary error: `regex.replace
   expects 3 arguments (pattern, s, replacement), got 2`.
 
-Every error is catchable with M13.2 `try` / `catch`.
+Every error is catchable with `try` / `catch`.
 
 ## Pattern caching
 
@@ -221,6 +221,6 @@ Recorded so the design decisions stay visible.
   (`contains`, `split`, `indexOf`).
 - [`convert`](convert.md) - `toString` for building patterns
   from mixed values.
-- [../milestones.md](../milestones.md) - M16.3 design spec.
+- [../milestones.md](../milestones.md) - design spec.
 - <https://github.com/google/re2/wiki/Syntax> - full RE2
   syntax reference.

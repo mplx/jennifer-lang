@@ -9,8 +9,8 @@
 // include. Includes are processed recursively, with a cycle check to
 // prevent infinite inclusion.
 //
-// The pre-M10 spelling `import "name.j";` is no longer accepted. The
-// `import` keyword is reserved for the M17 module system; an `import`
+// The spelling `import "name.j";` is no longer accepted. The
+// `import` keyword is reserved for the module system; an `import`
 // token reaching the preprocessor produces a positioned error pointing
 // the caller at `include`.
 //
@@ -60,7 +60,7 @@ func Process(tokens []lexer.Token, baseDir, selfPath string) ([]lexer.Token, err
 			visited[abs] = true
 		}
 	}
-	// M14: trivia tokens (comments, blank lines) carry no semantic
+	// Trivia tokens (comments, blank lines) carry no semantic
 	// content. Drop them here so the include / use / import
 	// recognizers can rely on adjacent tokens being meaningful. The
 	// formatter doesn't go through the preprocessor; the parser
@@ -101,7 +101,7 @@ func processTokens(tokens []lexer.Token, baseDir string, visited map[string]bool
 			continue
 		}
 
-		// `import ...;` - the pre-M10 spelling is no longer accepted. Map it
+		// `import ...;` - the spelling is no longer accepted. Map it
 		// to the canonical "use `include`" error so the migration message
 		// is visible at the source position the user wrote.
 		if tok.Type == lexer.TOKEN_IMPORT {
@@ -180,7 +180,7 @@ func handleInclude(tokens []lexer.Token, i int, baseDir string, visited map[stri
 }
 
 // importReservedError produces the migration message a user sees when they
-// write the pre-M10 `import "..."` (or `import foo;`) spelling. The
+// write the `import "..."` (or `import foo;`) spelling. The
 // `import` keyword itself is still reserved at the lexer level so the
 // error is positioned precisely.
 func importReservedError(tokens []lexer.Token, i int) error {

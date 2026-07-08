@@ -32,7 +32,7 @@ func (e *ParseError) Position() (file string, line, col int) {
 }
 
 // Parse tokenizes the source and returns a *Program AST. Does NOT
-// run the M16.5.2 scope-analysis pass; call Resolve(prog) separately
+// run the scope-analysis pass; call Resolve(prog) separately
 // when preparing a program for execution. Splitting the two lets
 // grammar-level tests focus on parse trees without wiring up scope
 // context for every fragment.
@@ -45,7 +45,7 @@ func Parse(source string) (*Program, error) {
 	return p.parseProgram()
 }
 
-// ParseTokens parses an already-lexed token stream. M14: trivia
+// ParseTokens parses an already-lexed token stream. Trivia
 // tokens (comments, blank lines) are stripped before parsing - they
 // pass through the formatter on the raw lexer stream and don't reach
 // here. Same scope-analysis contract as Parse: run Resolve(prog)
@@ -108,7 +108,7 @@ func (p *parser) expect(tt lexer.TokenType, ctx string) (lexer.Token, error) {
 	return p.advance(), nil
 }
 
-// ---- Grammar (M1) ----
+// ---- Grammar ----
 //
 //   program     := { importStmt | methodDef } EOF
 //   importStmt  := "import" IDENT ";"
@@ -121,7 +121,7 @@ func (p *parser) expect(tt lexer.TokenType, ctx string) (lexer.Token, error) {
 //   expr        := addExpr
 //   addExpr     := mulExpr { ("+"|"-") mulExpr }
 //   mulExpr     := unary { ("*"|"/"|"%") unary }
-//   unary       := primary           (M1: no prefix operators yet)
+//   unary       := primary           (no prefix operators at this level)
 //   primary     := INT | STRING | VARREF | call | "(" expr ")"
 //   call        := IDENT "(" [ expr { "," expr } ] ")"
 
@@ -182,7 +182,7 @@ func (p *parser) parseProgram() (*Program, error) {
 // any other Jennifer name (letters only, no `_`).
 func (p *parser) parseImport() (*ImportStmt, error) {
 	use, _ := p.match(lexer.TOKEN_USE)
-	// M16.0: `use task;` activates the task library. `task` is a type
+	// `use task;` activates the task library. `task` is a type
 	// keyword so it doesn't land in the IDENT bucket; accept it here
 	// as a one-off so the library name matches the namespace prefix
 	// (`task.wait` at call sites).
@@ -280,8 +280,8 @@ func (p *parser) parseMethodDef() (*MethodDef, error) {
 	return &MethodDef{pos: pos{File: def.File, Line: def.Line, Col: def.Col}, Name: name.Lexeme, Params: params, Body: body}, nil
 }
 
-// parseStructDef parses `def struct Name { field as type, ... };`
-// (M13.1). The leading `def` and `struct` tokens are at the head of
+// parseStructDef parses `def struct Name { field as type, ... };`.
+// The leading `def` and `struct` tokens are at the head of
 // the program token stream; we consume both, then the name, then a
 // brace-delimited comma-separated field list, then the closing `;`.
 // Top-level only - parseProgram does the dispatch.
@@ -400,7 +400,7 @@ func (p *parser) parseStatement() (Stmt, error) {
 		}
 		// `$xs[...] = expr ;` (or chained `$xs[i][j] = ...`) is an
 		// index-assignment. `$p.field = expr;` (or chained) is a
-		// field-assignment (M13.1). Both share the same lvalue-chain
+		// field-assignment. Both share the same lvalue-chain
 		// shape (VARREF followed by some mix of `[]` and `.field`),
 		// so we use one tryParse for either.
 		if p.peekN(1).Type == lexer.TOKEN_LBRACKET || p.peekN(1).Type == lexer.TOKEN_DOT {
@@ -603,7 +603,7 @@ func (p *parser) parseExit() (Stmt, error) {
 
 // parseTry parses `try { ... } catch (NAME) { ... }`. The catch
 // binding is a bare IDENT following the iteration-variable rule (no
-// `_`, letters-only). No `finally` in v1 (see M13.2 spec). M13.2.
+// `_`, letters-only). No `finally` in v1.
 func (p *parser) parseTry() (Stmt, error) {
 	tk, _ := p.match(lexer.TOKEN_TRY)
 	body, err := p.parseBlock()
@@ -647,7 +647,7 @@ func (p *parser) parseTry() (Stmt, error) {
 }
 
 // parseThrow parses `throw EXPR;`. The EXPR may produce any value;
-// convention is an `Error` struct - see the M13.2 spec. M13.2.
+// convention is an `Error` struct.
 func (p *parser) parseThrow() (Stmt, error) {
 	tk, _ := p.match(lexer.TOKEN_THROW)
 	expr, err := p.parseExpr()
@@ -664,7 +664,7 @@ func (p *parser) parseThrow() (Stmt, error) {
 }
 
 // tryParseIndexAssign attempts to parse `$xs[i]...[j] = expr ;` as an
-// IndexAssignStmt, or `$xs[] = expr ;` as an AppendStmt (M9).
+// IndexAssignStmt, or `$xs[] = expr ;` as an AppendStmt.
 // Returns (stmt, true, nil) on success. Returns (nil, false, nil) when
 // the lvalue chain parses but no `=` follows (meaning the original
 // token stream was an expression statement, not an assignment) - in
@@ -679,9 +679,9 @@ func (p *parser) parseThrow() (Stmt, error) {
 func (p *parser) tryParseIndexAssign() (Stmt, bool, error) {
 	saved := p.pos
 	vref, _ := p.match(lexer.TOKEN_VARREF)
-	// Detect the M9 append form `$xs[] = expr ;` before walking any
-	// index chain - chained appends like `$xs[0][] = ...` aren't part
-	// of M9 and would just confuse the chain-parsing loop below.
+	// Detect the append form `$xs[] = expr ;` before walking any
+	// index chain - chained appends like `$xs[0][] = ...` aren't
+	// supported and would just confuse the chain-parsing loop below.
 	if p.check(lexer.TOKEN_LBRACKET) && p.peekN(1).Type == lexer.TOKEN_RBRACKET {
 		p.advance() // [
 		p.advance() // ]
@@ -708,7 +708,7 @@ func (p *parser) tryParseIndexAssign() (Stmt, bool, error) {
 		}, true, nil
 	}
 	var target Expr = &VarExpr{pos: pos{File: vref.File, Line: vref.Line, Col: vref.Col}, Name: vref.Lexeme, Depth: -1, Slot: -1}
-	// Consume any mix of `[expr]` and `.field` suffixes (M13.1).
+	// Consume any mix of `[expr]` and `.field` suffixes.
 	for {
 		switch p.peek().Type {
 		case lexer.TOKEN_LBRACKET:
@@ -1034,7 +1034,7 @@ func (p *parser) parseType() (Type, error) {
 	case lexer.TOKEN_IDENT:
 		// Struct type reference. Bare IDENT (`def x as Name;`) names a
 		// top-level user struct; `IDENT.IDENT` (`def x as os.Result;`)
-		// names a library-registered namespaced struct (M15.2). Both
+		// names a library-registered namespaced struct. Both
 		// resolve at run time against their respective hoisted tables,
 		// producing a positioned error if the name isn't known.
 		p.advance()
@@ -1102,7 +1102,7 @@ func containsUnderscore(s string) bool {
 // `lists.for` (if anyone wrote that) all read fine. Lets reserved
 // words coexist with library names that happen to spell the same way.
 //
-// M13.1 reuses the same rule for struct field names: `def struct Line {
+// The same rule covers struct field names: `def struct Line {
 // from as Point, to as Point };` works even though `to` is a keyword
 // (the `to` in `map of K to V`), because the field-name position is
 // unambiguous between the surrounding `{` / `,` / `as` / `}` tokens.
@@ -1123,7 +1123,7 @@ func isPostDotName(t lexer.Token) bool {
 }
 
 // expectFieldName consumes an identifier-shaped token for a struct
-// field name (M13.1). Accepts IDENT plus any keyword whose lexeme
+// field name. Accepts IDENT plus any keyword whose lexeme
 // looks like an identifier - the field-name position is contextually
 // unambiguous so reserved-word collisions don't apply.
 func (p *parser) expectFieldName(ctx string) (lexer.Token, error) {
@@ -1193,7 +1193,7 @@ func (p *parser) parseNot() (Expr, error) {
 // a chain (`a < b == c`) syntactically but it's almost certainly a bug; for
 // now we parse left-associatively and let semantics reject mixed-kind ops.
 //
-// M12 inserts four new rungs between comparison and additive for the bit
+// Four rungs sit between comparison and additive for the bit
 // operators (`|`, `^`, `&`, `<<` / `>>`) following Python's precedence:
 //
 //	comparison
@@ -1461,8 +1461,8 @@ func (p *parser) parseQualifiedTail(prefix lexer.Token) (Expr, error) {
 	// reserved word (`repeat`, `until`, `for`, ...) reads as a name in
 	// this position. Accept any identifier-shaped keyword in addition
 	// to a plain IDENT. This preserves library names like
-	// `strings.repeat` even after we add `repeat` as a loop keyword
-	// in M11, and pre-emptively dodges similar collisions for any
+	// `strings.repeat` even though `repeat` is also a loop keyword,
+	// and pre-emptively dodges similar collisions for any
 	// future keyword.
 	var name lexer.Token
 	if isPostDotName(p.peek()) {
@@ -1503,7 +1503,7 @@ func (p *parser) parseQualifiedTail(prefix lexer.Token) (Expr, error) {
 			Args:   args,
 		}, nil
 	}
-	// Namespaced struct literal: prefix.Name { field: expr, ... } (M15.2).
+	// Namespaced struct literal: prefix.Name { field: expr, ... }.
 	// Checked before the qualified-const path so a struct's
 	// PascalCase / camelCase name doesn't trip the constant-name rule.
 	if p.check(lexer.TOKEN_LBRACE) {
@@ -1587,7 +1587,7 @@ func (p *parser) parsePrimary() (Expr, error) {
 				Index:  idx,
 			}
 		case lexer.TOKEN_DOT:
-			// M13.1 struct field access `e.field`. The qualified-call
+			// Struct field access `e.field`. The qualified-call
 			// path that takes IDENT.IDENT is handled in parsePrimaryAtom
 			// before we get here; this branch only fires after a
 			// non-IDENT atom or further down a chain like `$p.q.r`.
@@ -1613,7 +1613,7 @@ func (p *parser) parsePrimaryAtom() (Expr, error) {
 	switch t.Type {
 	case lexer.TOKEN_INT:
 		p.advance()
-		// M12: literal may be prefixed `0x`/`0o`/`0b` for non-decimal
+		// Literal may be prefixed `0x`/`0o`/`0b` for non-decimal
 		// bases. Pass base=0 to ParseInt so it picks the base from the
 		// prefix (or 10 if none). 64-bit signed range applies in every
 		// base.
@@ -1647,7 +1647,7 @@ func (p *parser) parsePrimaryAtom() (Expr, error) {
 		p.advance()
 		return &NullLit{pos: pos{File: t.File, Line: t.Line, Col: t.Col}}, nil
 	case lexer.TOKEN_LEN:
-		// M15.4: `len(EXPR)` is a language built-in primary, not a
+		// `len(EXPR)` is a language built-in primary, not a
 		// library function. Parses as a fixed shape with exactly one
 		// argument; any other arity is a parse-time error rather than
 		// the historical runtime arity check.
@@ -1664,7 +1664,7 @@ func (p *parser) parsePrimaryAtom() (Expr, error) {
 		}
 		return &LenExpr{pos: pos{File: t.File, Line: t.Line, Col: t.Col}, Operand: operand}, nil
 	case lexer.TOKEN_SPAWN:
-		// M16.0: `spawn { body }` is a block primary expression that
+		// `spawn { body }` is a block primary expression that
 		// returns a `task of T`. The body is a statement list - same
 		// shape as a method body or a `try` block. Phase 1 runs the
 		// body inline; Phase 2 lowers it to a goroutine.
@@ -1675,7 +1675,7 @@ func (p *parser) parsePrimaryAtom() (Expr, error) {
 		}
 		return &SpawnExpr{pos: pos{File: t.File, Line: t.Line, Col: t.Col}, Body: body.Stmts}, nil
 	case lexer.TOKEN_TASK:
-		// M16.0: `task` is primarily a type keyword (`task of T`),
+		// `task` is primarily a type keyword (`task of T`),
 		// but the `task.wait` / `task.poll` / ... library exposes
 		// builtins behind the `task.` namespace prefix at call sites.
 		// In expression position, `task.IDENT` parses as a qualified
@@ -1701,7 +1701,7 @@ func (p *parser) parsePrimaryAtom() (Expr, error) {
 		// A bare IDENT in expression context is either:
 		//   - a qualified call/constant `prefix.name(...)` / `prefix.NAME`,
 		//   - a function call `name(...)`,
-		//   - a struct literal `Name{ field: expr, ... }` (M13.1),
+		//   - a struct literal `Name{ field: expr, ... }`,
 		//   - or a constant reference `MAX`.
 		// The token immediately after the IDENT decides.
 		p.advance()
@@ -1716,11 +1716,11 @@ func (p *parser) parsePrimaryAtom() (Expr, error) {
 		}
 		return p.parseCallTail(t)
 	case lexer.TOKEN_INT_TYPE, lexer.TOKEN_FLOAT_TYPE, lexer.TOKEN_STRING_TYPE, lexer.TOKEN_BOOL_TYPE, lexer.TOKEN_BYTES_TYPE:
-		// Type keywords have no expression-position meaning. The pre-M10
+		// Type keywords have no expression-position meaning. The
 		// `int(v)` / `float(v)` / `string(v)` / `bool(v)` conversion-call
-		// shortcut moved to the convert library under names that avoid
+		// shortcut lives in the convert library under names that avoid
 		// the keyword collision: `convert.toInt(v)`, `convert.toFloat(v)`,
-		// `convert.toString(v)`, `convert.toBool(v)`. The M12 `bytes`
+		// `convert.toString(v)`, `convert.toBool(v)`. The `bytes`
 		// type doesn't take a single-arg conversion (it ships
 		// `convert.bytesFromString(s, codec)` instead); rejecting it
 		// here keeps the type-keyword treatment uniform.

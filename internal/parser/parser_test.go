@@ -112,7 +112,7 @@ func TestParseErrors(t *testing.T) {
 		{"missing semi", `use stdlib func app() {}`, "expected SEMI"},
 		// `42;` and `def x ...;` are now both valid at top level - no
 		// equivalent rejection test belongs here.
-		// Since M13.1 (structs), the parser accepts any IDENT as a type
+		// The parser accepts any IDENT as a type
 		// name; unknown struct types are surfaced at runtime by the
 		// interpreter ("unknown struct type"), not by the parser.
 		{"const needs uppercase", `func app() { def const lower as int init 1; }`, "must be uppercase"},
@@ -159,7 +159,7 @@ func TestConstNameAccepts(t *testing.T) {
 	}
 }
 
-// TestParseM6Constructs covers the new list/map syntax forms added in M6:
+// TestParseM6Constructs covers the list/map syntax forms:
 // type declarations, literals, indexing reads + writes, and for-each.
 // We use Sprint() to assert AST shape rather than poking at internal
 // fields - keeps the test stable across small AST refactors.

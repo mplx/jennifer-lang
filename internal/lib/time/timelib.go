@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package timelib implements Jennifer's `time` library (M15.5.1): the
+// Package timelib implements Jennifer's `time` library: the
 // core type set, Unix conversions, and arithmetic. Formatting, parsing,
-// and the fixed-offset Zone type land in M15.5.2.
+// and the fixed-offset Zone type live in format.go and zone.go.
 //
 // Two namespaced structs anchor the library:
 //
@@ -39,7 +39,7 @@ var nowFunc = stdtime.Now
 // stub) so the test suite doesn't actually block. Parallels nowFunc.
 var sleepFunc = stdtime.Sleep
 
-// Install registers the `time` library: two structs and the M15.5.1
+// Install registers the `time` library: two structs and the
 // function set (constructors, accessors, arithmetic, comparison).
 func Install(in *interpreter.Interpreter) {
 	intT := parser.PrimitiveType(parser.TypeInt)
@@ -92,7 +92,7 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "equal", equalFn)
 	in.RegisterNamespaced(LibraryName, "sleep", sleepFn)
 
-	// M15.5.2: zones, format/parse, ISO round-trip.
+	// Zones, format/parse, ISO round-trip.
 	in.RegisterNamespaced(LibraryName, "zone", zoneFn)
 	in.RegisterNamespaced(LibraryName, "inZone", inZoneFn)
 	in.RegisterNamespaced(LibraryName, "local", localFn)

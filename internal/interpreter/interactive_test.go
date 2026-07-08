@@ -108,10 +108,9 @@ func TestEvalInteractiveImportPersists(t *testing.T) {
 }
 
 func TestEvalInteractiveBuiltinShadowStillRejected(t *testing.T) {
-	// `len` is a language keyword (M15.4 promoted it from a `core`
-	// global to a language built-in primary), so `func len()` is a
-	// parse-time rejection rather than the M5-era "shadows builtin"
-	// runtime check.
+	// `len` is a language keyword (a language built-in primary), so
+	// `func len()` is a parse-time rejection rather than a "shadows
+	// builtin" runtime check.
 	_, err := parser.Parse("func len() { return 1; }")
 	if err == nil {
 		t.Fatal("expected parse error rejecting `func len`, got nil")

@@ -18,7 +18,7 @@ import (
 // otherwise inline them) and any parentheses the user wrote (the AST
 // erases redundant grouping).
 //
-// M14: comments and blank lines now survive `fmt`. The lexer emits them
+// Comments and blank lines now survive `fmt`. The lexer emits them
 // as trivia tokens (TOKEN_COMMENT_*, TOKEN_BLANK_LINE); the formatter
 // recognises each kind and re-emits it at the position it had in the
 // source. Comments inside an expression (`printf(/* note */ $x)`) are
@@ -45,7 +45,7 @@ func runFmt(path string) int {
 // it with file I/O.
 func formatTokens(tokens []lexer.Token) string {
 	// File starts at column 1 of line 1 with no output yet, which is
-	// effectively "line start" for separator purposes. M14: that makes
+	// effectively "line start" for separator purposes. That makes
 	// a leading comment skip the spurious blank line that would
 	// otherwise appear before it.
 	f := &fmtState{indent: 0, atLineStart: true}
@@ -113,7 +113,7 @@ const fmtIndent = "    " // 4 spaces, per style-guide.md
 const maxLineLength = 100
 
 func (f *fmtState) emit(t, next lexer.Token) {
-	// M14: trivia (comments, blank lines) is emitted by a dedicated
+	// Trivia (comments, blank lines) is emitted by a dedicated
 	// path that doesn't touch the prev/operand/brace state. That keeps
 	// unary-vs-binary and brace classification working as if the
 	// trivia weren't there.
@@ -277,7 +277,7 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 		f.pendingTriviaSpace = false
 		return
 	}
-	// M14: a preceding inline block comment forces a space before this
+	// A preceding inline block comment forces a space before this
 	// token unless the token is itself tight-on-left (`)`, `,`, `;`,
 	// `]`, `.`, `:`).
 	if f.pendingTriviaSpace {
@@ -546,9 +546,9 @@ func quoteJenniferString(s string) string {
 // body). The parser lets `{` follow:
 //   - `)` from the head of `if / while / for / func / catch`;
 //   - `else` (unconditional else body);
-//   - `try` (M13.2);
-//   - `spawn` (M16.0 block primary expression);
-//   - `repeat` (M11 post-test loop).
+//   - `try`;
+//   - `spawn` (block primary expression);
+//   - `repeat` (post-test loop).
 //
 // Struct-decl bodies are recognised through a separate one-shot flag
 // (pendingStructBrace) because their `{` follows the struct's name

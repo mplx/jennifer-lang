@@ -3,7 +3,7 @@
 
 package parser
 
-// M16.5.5 - Constant folding at parse time.
+// Constant folding at parse time.
 //
 // Runs from inside Resolve() as a post-step on BinaryExpr and
 // UnaryExpr: after the resolver has walked the operands, tryFold*

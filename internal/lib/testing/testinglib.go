@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package testinglib implements Jennifer's `testing` library
-// (M16.4): the irreducible system-side surface a Jennifer-coded
+// Package testinglib implements Jennifer's `testing` library:
+// the irreducible system-side surface a Jennifer-coded
 // test framework needs. Five verbs (run / results / reset / report)
 // plus the `testing.Result` struct. The Jennifer-coded assertion
-// vocabulary and CLI harness live in the M18.x testing module and
+// vocabulary and CLI harness live in the testing module and
 // build on top of these primitives.
 //
 // Why it lives here (not in .j):
@@ -14,7 +14,7 @@
 //     has no function references / first-class methods today; a
 //     pure .j runner can't take "the test body" as a value. This
 //     library uses the interpreter's method registry directly via
-//     Interpreter.CallByName (M16.4).
+//     Interpreter.CallByName.
 //   - `testing.run` also catches `exit` at the Go level. Language-
 //     level `try`/`catch` deliberately does NOT catch `exit` (spec:
 //     exit is program-level escape). Testing is the one place where
@@ -70,7 +70,7 @@ func ResetForTest() {
 
 // -------- Install --------
 
-// Install registers the M16.4 testing surface. Unlike most
+// Install registers the testing surface. Unlike most
 // libraries, `testing.run` needs to invoke user methods; capture
 // the interpreter reference so runFn can dispatch.
 func Install(in *interpreter.Interpreter) {

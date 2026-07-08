@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package netlib implements Jennifer's `net` library (M16.2):
+// Package netlib implements Jennifer's `net` library:
 // blocking TCP and UDP sockets plus two DNS lookup helpers. The
-// design mirrors M16.1 `fs`: blocking on purpose, with non-blocking
-// use composed through M16.0 `spawn` rather than a duplicated
+// design mirrors `fs`: blocking on purpose, with non-blocking
+// use composed through `spawn` rather than a duplicated
 // `*Async` surface.
 //
 // The library uses a build-tag split. The default `jennifer`
@@ -12,10 +12,10 @@
 // netlib_std.go; `jennifer-tiny` (TinyGo build) ships stubs in
 // netlib_tinygo.go that return a friendly runtime error pointing
 // the user back at `jennifer`. Same shape as `os.run` /
-// `os.spawn` under TinyGo (M15.3).
+// `os.spawn` under TinyGo.
 //
-// Handles use the integer-registry pattern from M15.6 hash and
-// M16.1 fs: `net.Conn{id as int}`, `net.Listener{id as int}`,
+// Handles use the integer-registry pattern from hash and
+// fs: `net.Conn{id as int}`, `net.Listener{id as int}`,
 // `net.UDPSocket{id as int}` on the Jennifer side; live Go state
 // lives in per-registry maps guarded by mutexes.
 package netlib
@@ -33,7 +33,7 @@ const LibraryName = "net"
 // Value type alias keeps signatures short.
 type Value = interpreter.Value
 
-// Install registers the M16.2 net surface with the interpreter.
+// Install registers the net surface with the interpreter.
 // The actual implementations of connect / listen / accept / read /
 // write / eof / address / listenUDP / sendTo / recvFrom / lookup /
 // reverseLookup are provided by the build-tag-selected file

@@ -15,14 +15,14 @@ cmd/jennifer/dump_test.go                  AST-JSON validity and token-name test
 cmd/jennifer/fmt_test.go                   Formatter idempotence + behaviour + comment-preservation tests
 cmd/jennifer/cross_file_error_test.go      Cross-file error reporting tests
 
-internal/lexer/token.go                    Token type definitions (incl. M14 trivia tokens)
+internal/lexer/token.go                    Token type definitions (incl. trivia tokens)
 internal/lexer/lexer.go                    Scanner with optional file tagging; nested block comments
 internal/lexer/lexer_test.go               Lexer tests
 
 internal/preproc/preproc.go                File-import preprocessor; trivia stripping
 internal/preproc/preproc_test.go           Preprocessor tests
 
-internal/parser/ast.go                     AST node types + Sprint (incl. M15.2 namespaced struct types)
+internal/parser/ast.go                     AST node types + Sprint (incl. namespaced struct types)
 internal/parser/parser.go                  Recursive-descent parser; namespaced struct literals
 internal/parser/parser_test.go             Parser tests
 
@@ -32,18 +32,18 @@ internal/interpreter/interpreter.go        Tree-walking evaluator; namespaced-st
 internal/interpreter/interpreter_test.go   End-to-end interpreter tests
 internal/interpreter/interactive_test.go   REPL EvalInteractive tests
 internal/interpreter/namespace_test.go     Namespaced builtins + constants tests
-internal/interpreter/namespaced_struct_test.go  M15.2 namespaced struct tests (synthetic `widgets` lib)
-internal/interpreter/structs_test.go       M13.1 user-defined struct tests
-internal/interpreter/trycatch_test.go      M13.2 try/catch/throw tests
-internal/interpreter/spawn_test.go         M16.0 spawn / task-of-T runtime + registry tests
-internal/interpreter/control_flow_test.go  break/continue/repeat/exit tests (M11)
+internal/interpreter/namespaced_struct_test.go  namespaced struct tests (synthetic `widgets` lib)
+internal/interpreter/structs_test.go       user-defined struct tests
+internal/interpreter/trycatch_test.go      try/catch/throw tests
+internal/interpreter/spawn_test.go         spawn / task-of-T runtime + registry tests
+internal/interpreter/control_flow_test.go  break/continue/repeat/exit tests
 internal/interpreter/collections_test.go   Lists, maps, iteration tests
 internal/interpreter/compound_test.go      Nested list-of-list / map-of-list / chained-index tests
-internal/interpreter/bytes_test.go         Bytes type + non-decimal literals + bit-op tests (M12)
+internal/interpreter/bytes_test.go         Bytes type + non-decimal literals + bit-op tests
 
 internal/lib/io/iolib.go                   `io` library entrypoint
 internal/lib/io/format.go                  printf / sprintf + verb-modifier mini-language
-internal/lib/io/input.go                   io.readLine / readBytes / readChars / eof (M7 + M12)
+internal/lib/io/input.go                   io.readLine / readBytes / readChars / eof
 internal/lib/io/iolib_test.go              io library unit tests
 internal/lib/io/input_test.go              stdin-input tests
 internal/lib/convert/convert.go            `convert` library: toInt/toFloat/toString/toBool/typeOf + UTF-8 codecs
@@ -55,34 +55,34 @@ internal/lib/maps/mapslib.go               `maps` library: keys/values/has/delet
 internal/lib/maps/mapslib_test.go          maps library unit tests
 internal/lib/os/oslib.go                   `os` library: PLATFORM/ARCH/EOL/DIRSEP/PATHSEP/ARGS + getEnv/hasFlag/flag
 internal/lib/os/oslib_test.go              os library unit tests
-internal/lib/os/exec.go                    M15.3 external-program execution (run/spawn/wait/poll/kill)
+internal/lib/os/exec.go                    external-program execution (run/spawn/wait/poll/kill)
 internal/lib/os/exec_test.go               exec tests (skip on non-Linux; TinyGo-gated at runtime)
 internal/lib/meta/metalib.go               `meta` library: VERSION / BUILD (interpreter-self-identity)
 internal/lib/meta/metalib_test.go          meta library unit tests
-internal/lib/time/timelib.go               `time` library entrypoint + M15.5.1 surface (Time/Duration, Unix, calendar, arithmetic)
-internal/lib/time/zone.go                  M15.5.2 fixed-offset Zone struct, time.UTC, time.local, time.inZone
-internal/lib/time/format.go                M15.5.2 strftime format / parse + ISO round-trip
-internal/lib/time/timelib_test.go          M15.5.1 unit tests
-internal/lib/time/format_test.go           M15.5.2 unit tests (format/parse/zone/UTC/local)
-internal/lib/hash/hashlib.go               `hash` library (M15.6): md5/sha1/sha256 one-shot + streaming via codec-table
+internal/lib/time/timelib.go               `time` library entrypoint + base surface (Time/Duration, Unix, calendar, arithmetic)
+internal/lib/time/zone.go                  fixed-offset Zone struct, time.UTC, time.local, time.inZone
+internal/lib/time/format.go                strftime format / parse + ISO round-trip
+internal/lib/time/timelib_test.go          base surface unit tests
+internal/lib/time/format_test.go           unit tests (format/parse/zone/UTC/local)
+internal/lib/hash/hashlib.go               `hash` library: md5/sha1/sha256 one-shot + streaming via codec-table
 internal/lib/hash/hashlib_test.go          hash library unit tests (canonical vectors + stream/one-shot equality)
-internal/lib/crc/crclib.go                 `crc` library (M15.6): crc32/crc64 (big-endian) one-shot + streaming
+internal/lib/crc/crclib.go                 `crc` library: crc32/crc64 (big-endian) one-shot + streaming
 internal/lib/crc/crclib_test.go            crc library unit tests
-internal/lib/encoding/encodinglib.go       `encoding` library (M15.7): introspection + toText/fromText + encode/decode dispatch
+internal/lib/encoding/encodinglib.go       `encoding` library: introspection + toText/fromText + encode/decode dispatch
 internal/lib/encoding/codecs.go            character codec tables for ascii / latin-1 / windows-1252 / ebcdic (IBM-1047)
 internal/lib/encoding/encodinglib_test.go  encoding library unit tests
-internal/lib/task/tasklib.go               `task` library (M16.0): wait/poll/discard/waitAll/waitAny over `task of T` handles
+internal/lib/task/tasklib.go               `task` library: wait/poll/discard/waitAll/waitAny over `task of T` handles
 internal/lib/task/tasklib_test.go          task library unit tests (wait/discard/loud-fail/waitAll/waitAny + boundary checks)
-internal/lib/fs/fslib.go                   `fs` library (M16.1): one-shot ops (read/write/append), metadata (exists/isFile/isDir/stat), dir ops (mkdir/mkdirAll/remove/removeAll/rename/list/walk), fs.Stat struct
-internal/lib/fs/handles.go                 `fs` library (M16.1): fs.File handle registry, open/close/readLine/readChars/readBytes/writeString/writeBytes/eof
+internal/lib/fs/fslib.go                   `fs` library: one-shot ops (read/write/append), metadata (exists/isFile/isDir/stat), dir ops (mkdir/mkdirAll/remove/removeAll/rename/list/walk), fs.Stat struct
+internal/lib/fs/handles.go                 `fs` library: fs.File handle registry, open/close/readLine/readChars/readBytes/writeString/writeBytes/eof
 internal/lib/fs/fslib_test.go              fs library unit tests (t.TempDir()-based; one-shot ops, metadata, dir ops, handles, spawn+fs composition)
-internal/lib/net/netlib.go                 `net` library (M16.2): shared - Install, struct registration, polymorphic close/address dispatch, arg-boundary helpers
-internal/lib/net/netlib_std.go             `net` library (M16.2): !tinygo build - full TCP/UDP/DNS implementation
-internal/lib/net/netlib_tinygo.go          `net` library (M16.2): tinygo build - friendly-error stubs pointing at the default `jennifer` binary
+internal/lib/net/netlib.go                 `net` library: shared - Install, struct registration, polymorphic close/address dispatch, arg-boundary helpers
+internal/lib/net/netlib_std.go             `net` library: !tinygo build - full TCP/UDP/DNS implementation
+internal/lib/net/netlib_tinygo.go          `net` library: tinygo build - friendly-error stubs pointing at the default `jennifer` binary
 internal/lib/net/netlib_test.go            net library unit tests (!tinygo; loopback with :0 ephemeral ports; TCP round-trip, UDP round-trip, DNS, polymorphic close, use-after-close)
-internal/lib/regex/regexlib.go             `regex` library (M16.3): matches/find/findAll/replace/split/escape + regex.Match struct + 128-entry LRU pattern cache
+internal/lib/regex/regexlib.go             `regex` library: matches/find/findAll/replace/split/escape + regex.Match struct + 128-entry LRU pattern cache
 internal/lib/regex/regexlib_test.go        regex library unit tests (predicate, positional + named groups, rune-index offsets, LRU behaviour under load, invalid pattern boundary)
-internal/lib/testing/testinglib.go         `testing` library (M16.4): run/results/reset/report + testing.Result struct + three renderers (text / TAP / JUnit XML) + exit interception
+internal/lib/testing/testinglib.go         `testing` library: run/results/reset/report + testing.Result struct + three renderers (text / TAP / JUnit XML) + exit interception
 internal/lib/testing/testinglib_test.go    testing library unit tests (pass/fail/runtime/exit paths, accumulator, each of the three report formats, boundary errors)
 
 internal/version/version.go                Default Version = "dev"

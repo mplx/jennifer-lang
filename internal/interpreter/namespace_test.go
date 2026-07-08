@@ -194,9 +194,9 @@ io.printf("%s\n", b.translate("Y"));
 }
 
 func TestMathAliasingWorks(t *testing.T) {
-	// After M10 every library is namespaced (including math), so
-	// `use math as m;` is a valid rename. The pre-M10 "flat-only,
-	// alias meaningless" rejection rule was removed in M10.
+	// Every library is namespaced (including math), so
+	// `use math as m;` is a valid rename. The "flat-only,
+	// alias meaningless" rejection rule does not apply.
 	out, err := runNS(t, `
 use io;
 use math as m;
@@ -239,12 +239,12 @@ io.printf("%s", os.EOL);
 	}
 }
 
-// ---- Globals collision and alias-meaningless tests (M10 hardening) ----
+// ---- Globals collision and alias-meaningless tests ----
 
 // twoGlobalsInterp registers two synthetic libraries `alfa` and `beta`,
 // each publishing a `VER` constant via RegisterGlobalConst, plus a
 // globals-only `solo` library with no namespaced names. Tests use this
-// to exercise the M10 cross-library-collision and alias-meaningless
+// to exercise the cross-library-collision and alias-meaningless
 // rules without shipping bogus libraries in the standard set.
 func twoGlobalsInterp() *interpreter.Interpreter {
 	in, _ := newNSInterp()
@@ -303,7 +303,7 @@ io.printf("%s\n", VER);
 }
 
 // Importing both libraries that publish the same global is the
-// collision case from the M10 hardening. The second `use` errors.
+// collision case. The second `use` errors.
 func TestTwoLibsPublishingSameGlobalCollides(t *testing.T) {
 	_, err := runWithExtraGlobals(t, `
 use io;

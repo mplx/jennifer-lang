@@ -2,7 +2,7 @@
 
 Enable with `use task;`. Five builtins for observing and joining
 `task of T` values produced by `spawn { ... }` blocks. The library
-ships with M16.0 alongside the `spawn` keyword and the `task of T`
+ships alongside the `spawn` keyword and the `task of T`
 type kind; together they form Jennifer's concurrency surface.
 
 For the broader story (when to use `spawn`, what value-semantics
@@ -41,7 +41,7 @@ A `task of T` carries either a value or an error after its body
 finishes. `task.wait` returns the value when there is one and
 re-raises the error otherwise - the rethrow surfaces as a
 positioned runtime error at the wait site, so an enclosing
-`try`/`catch` (M13.2) catches it the same way it catches any
+`try`/`catch` catches it the same way it catches any
 runtime error:
 
 ```jennifer
@@ -67,7 +67,7 @@ result.
 
 ## Exit-time loud-fail
 
-The M16.0 contract: a task that ends in an error and is never
+The contract: a task that ends in an error and is never
 observed (never `task.wait`'d, never `task.discard`'d) has its
 error printed to stderr at program exit, and the process exits
 non-zero. No spawn error can silently disappear from the run.
@@ -177,6 +177,6 @@ site.
 - [../technical/interpreter.md > Concurrency](../technical/interpreter.md#concurrency-m160) -
   internals: goroutine mapping, frame snapshot, error routing,
   registry, exit-time scan.
-- [../milestones.md](../milestones.md) - M16.0 ships `spawn` +
-  `task of T` + the `task` library; later M16.x milestones use
+- [../milestones.md](../milestones.md) - ships `spawn` +
+  `task of T` + the `task` library; later milestones use
   them to build `fs`, `net`, `httpd`.

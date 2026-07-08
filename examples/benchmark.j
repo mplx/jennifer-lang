@@ -3,7 +3,7 @@
 #
 # benchmark.j - small Jennifer benchmark suite. Two purposes:
 #
-#   1. Demonstrate the M15.5 `time` library: `time.now()`,
+#   1. Demonstrate the `time` library: `time.now()`,
 #      `time.sub(end, start)`, `time.milliseconds(d)`.
 #   2. Provide a side-by-side workload between the default `jennifer`
 #      (standard Go) and the constrained `jennifer-tiny` (TinyGo) so
@@ -49,7 +49,7 @@ func fib(n as int) {
 }
 
 # printRow renders one column-aligned timing row. The pad/align
-# modifiers come from io's M7 format-verb mini-language. `base` is
+# modifiers come from io's format-verb mini-language. `base` is
 # the per-workload size constant (FIB_N, PRIME_LIMIT, ...); `iters`
 # is the outer-loop iteration count (often 1 for "single sweep"
 # workloads).
@@ -213,7 +213,7 @@ func benchMapChurn() {
     return time.milliseconds($gap);
 }
 
-# --- Parallel workloads (M16.0 spawn / task) -----------------------
+# --- Parallel workloads (spawn / task) -----------------------------
 # Each parallel variant partitions the same workload across N
 # `spawn` workers and joins with `task.waitAll`. The serial
 # baseline above is the apples-to-apples comparison; speedup =
@@ -418,7 +418,7 @@ printDivider();
 io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %d|pad=12|align=right\n",
     "total", "", "", $total);
 
-# --- Parallel comparison (M16.0) -----------------------------------
+# --- Parallel comparison ------------------------------------------
 # Re-run the workloads that fan out naturally with PARALLEL_WORKERS
 # spawn tasks, and print the speedup over the serial baseline above.
 

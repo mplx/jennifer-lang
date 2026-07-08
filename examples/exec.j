@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 #
-# exec.j - demonstrate the M15.3 external-program execution API
-# (os.run, os.spawn, os.wait, os.poll, os.kill) and the M15.2
+# exec.j - demonstrate the external-program execution API
+# (os.run, os.spawn, os.wait, os.poll, os.kill) and the
 # library-provided namespaced structs that underpin it
 # (os.Result, os.Process).
 #
@@ -26,7 +26,7 @@ use os;
 # os.run takes an argv-style list and blocks until the child exits.
 # It returns an os.Result struct with the exit code and the captured
 # stdout and stderr streams. The struct is a library-provided
-# namespaced struct (M15.2) - you write `as os.Result` and
+# namespaced struct - you write `as os.Result` and
 # `os.Result{...}` the same way you write `as Point` for a
 # user-defined struct.
 def r as os.Result init os.run(["echo", "hello from os.run"]);

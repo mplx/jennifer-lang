@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 #
-# fs.j - exercises the M16.1 `fs` library. Shows whole-file
+# fs.j - exercises the `fs` library. Shows whole-file
 # read/write/append, metadata predicates + fs.stat, the two-verbs
 # pattern for directory create (mkdir vs mkdirAll) and delete
 # (remove vs removeAll), directory listing + walk, and buffered

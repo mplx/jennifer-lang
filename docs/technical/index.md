@@ -43,8 +43,8 @@ table.
 
 ## Pipeline
 
-The compiler/interpreter is a six-stage pipeline (M16.5.2 added
-scope analysis between parse and evaluation):
+The compiler/interpreter is a six-stage pipeline (scope analysis
+sits between parse and evaluation):
 
 ```
    source (string)

@@ -48,7 +48,7 @@ type FormatSpec struct {
 
 	Case caseMode
 
-	// %a (aggregate) modifiers - M11. Defaults reproduce Jennifer's
+	// %a (aggregate) modifiers. Defaults reproduce Jennifer's
 	// literal syntax for the kind being rendered: `[a, b, c]` for
 	// lists, `{k: v, k: v}` for maps. Override via:
 	//   sep="..."   element separator (default ", ")
@@ -91,7 +91,7 @@ const (
 	alignDefault alignMode = iota
 	alignLeft
 	alignRight
-	alignCenter // M11: %s only - splits padding around the value
+	alignCenter // %s only - splits padding around the value
 )
 
 type stringMode uint8
@@ -359,7 +359,7 @@ func setNull(spec *FormatSpec, value string) error {
 	return nil
 }
 
-// setAggMod handles modifiers for the `%a` aggregate verb (M11).
+// setAggMod handles modifiers for the `%a` aggregate verb.
 // The modifiers shape the *render*, not the values: separators,
 // brackets, recursion depth, and the per-element null-handling.
 func setAggMod(spec *FormatSpec, key, value string) error {
@@ -520,7 +520,7 @@ func setAlign(spec *FormatSpec, value string) error {
 	case "right":
 		spec.Align = alignRight
 	case "center":
-		// M11: `center` is only meaningful for `%s` - splitting padding
+		// `center` is only meaningful for `%s` - splitting padding
 		// around a number breaks columnar alignment for numeric output.
 		if spec.Verb != 's' {
 			return fmt.Errorf("align=center is only valid on %%s, not %%%c", spec.Verb)
@@ -603,7 +603,7 @@ func renderValue(spec FormatSpec, v interpreter.Value) (string, error) {
 	return "", fmt.Errorf("unknown format verb `%%%c`", spec.Verb)
 }
 
-// renderAggregate handles `%a` (M11). Recurses into nested lists and
+// renderAggregate handles `%a`. Recurses into nested lists and
 // maps using the same spec, so a single `%a|sep=" | "` on the top
 // level applies consistently all the way down. `level` tracks the
 // current recursion depth so `depth=N` can collapse deeper trees to

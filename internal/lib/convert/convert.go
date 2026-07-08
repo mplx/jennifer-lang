@@ -17,7 +17,7 @@ import (
 const LibraryName = "convert"
 
 // Install registers convert library functions on an interpreter. Every
-// name is namespaced behind `convert.` (M10+). The four conversion
+// name is namespaced behind `convert.`. The four conversion
 // callees are named `toInt`, `toFloat`, `toString`, `toBool` so they
 // don't collide with the type keywords (`int`, `float`, ...); the
 // `to`-prefixed verb also reads as English at the call site
@@ -29,10 +29,10 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "toString", toStringFn)
 	in.RegisterNamespaced(LibraryName, "toBool", toBoolFn)
 	in.RegisterNamespaced(LibraryName, "typeOf", typeOfFn)
-	// M12: bytes <-> string codecs. Two-argument shape (value, codec)
+	// bytes <-> string codecs. Two-argument shape (value, codec)
 	// follows the `toInt(v)` / `toFloat(v)` style; codec selects the
 	// encoding (only "utf-8" today). Further codecs ship with the
-	// `encoding` library in M15.7.
+	// `encoding` library.
 	in.RegisterNamespaced(LibraryName, "bytesFromString", bytesFromStringFn)
 	in.RegisterNamespaced(LibraryName, "stringFromBytes", stringFromBytesFn)
 }
@@ -175,7 +175,7 @@ func typeOfFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 // bytesFromStringFn implements `convert.bytesFromString(s, codec) -> bytes`.
 // `codec` selects the encoding; only "utf-8" is supported today. The
 // returned bytes are a fresh slice; modifying them does not affect the
-// source string. M12.
+// source string.
 func bytesFromStringFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if len(args) != 2 {
 		return interpreter.Null(), fmt.Errorf("bytesFromString expects 2 arguments, got %d", len(args))
@@ -202,7 +202,7 @@ func bytesFromStringFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (inte
 // stringFromBytesFn implements `convert.stringFromBytes(b, codec) -> string`.
 // `codec` selects the encoding; only "utf-8" is supported today. Invalid
 // UTF-8 input is rejected (matches Jennifer's "strict at boundaries"
-// stance - no silent replacement characters). M12.
+// stance - no silent replacement characters).
 func stringFromBytesFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if len(args) != 2 {
 		return interpreter.Null(), fmt.Errorf("stringFromBytes expects 2 arguments, got %d", len(args))

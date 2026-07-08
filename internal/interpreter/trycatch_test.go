@@ -10,7 +10,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 )
 
-// ---- M13.2 try / catch / throw ----
+// ---- try / catch / throw ----
 
 func TestTryCatchBasic(t *testing.T) {
 	out, err := run(t, `

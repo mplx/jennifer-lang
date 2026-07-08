@@ -3,7 +3,7 @@
 
 package interpreter_test
 
-// M16.5.1 alias-stress tests. The refcount-lite shared-marker
+// Alias-stress tests. The refcount-lite shared-marker
 // optimisation replaces the "Copy() before every mutation" pattern
 // with "Share() on read; Ensure() at mutation." These tests
 // exercise every "shared then mutated" corner case to make sure no
@@ -327,6 +327,6 @@ func TestAliasChainedFieldWrite(t *testing.T) {
 }
 
 // Spawn-frame independence is covered by spawn_test.go's
-// TestSpawnDeepCopiesCapturedVars (and the M16.0 test suite in
+// TestSpawnDeepCopiesCapturedVars (and the test suite in
 // general). We don't duplicate that surface here - it's
 // snapshotForSpawn's job, not the shared-marker's.

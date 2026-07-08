@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 #
-# net.j - exercises the M16.2 `net` library. A tiny in-process TCP
+# net.j - exercises the `net` library. A tiny in-process TCP
 # echo: a `spawn`'d server accepts one connection and echoes
 # whatever it reads; the main flow connects, sends a message, reads
 # it back, and prints it.

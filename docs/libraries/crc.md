@@ -79,4 +79,4 @@ All errors are positioned at the call site.
 ## See also
 
 - [hash.md](hash.md) - cryptographic-style digests (MD5, SHA-1, SHA-256).
-- [milestones.md](../milestones.md) - M15.6 ships hash/crc.
+- [milestones.md](../milestones.md) - ships hash/crc.

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 #
-# trycatch.j - the M13.2 try / catch / throw walkthrough.
+# trycatch.j - the try / catch / throw walkthrough.
 #
 # `try { body } catch (NAME) { handler }` runs the body; if anything
 # inside it throws (user-issued `throw EXPR;` or a runtime error like

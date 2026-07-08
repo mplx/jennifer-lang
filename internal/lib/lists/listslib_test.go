@@ -99,7 +99,7 @@ func TestSliceBoundsErrors(t *testing.T) {
 	}
 }
 
-// ---- M15.0: shuffle + range ----
+// ---- shuffle + range ----
 
 func TestRangeAscendingHalfOpen(t *testing.T) {
 	// Half-open: range(1, 5) yields 1, 2, 3, 4 (4 elements; 5 excluded).

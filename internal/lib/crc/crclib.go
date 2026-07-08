@@ -6,7 +6,7 @@
 // streaming API matching `hash`'s shape. Output is the raw
 // big-endian digest as `bytes` (4 bytes for CRC-32, 8 bytes for
 // CRC-64) - hex / base64 encoding belongs to the future `encoding`
-// library (M15.7).
+// library.
 //
 // CRCs are not cryptographic primitives; they live in their own
 // library so the difference between "checksum for transport
@@ -63,7 +63,7 @@ type streamEntry struct {
 	width int
 }
 
-// Install registers the M15.6 crc surface.
+// Install registers the crc surface.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespacedStruct(LibraryName, "Stream", []parser.StructField{
 		{Name: "id", Type: parser.PrimitiveType(parser.TypeInt)},

@@ -13,7 +13,7 @@ import (
 )
 
 // callPrintf and callSprintf invoke the registered namespaced builtins.
-// After M10 every io builtin lives under the `io.` namespace, so we
+// Every io builtin lives under the `io.` namespace, so we
 // go through the interpreter's namespaced lookup helper rather than
 // the flat Builtins map.
 func callPrintf(in *interpreter.Interpreter, out io.Writer, args []interpreter.Value) (interpreter.Value, error) {
@@ -328,7 +328,7 @@ func TestPrintfModifierErrors(t *testing.T) {
 		{"non-null type still mismatches", vals("%d", interpreter.StringVal("x")), "requires int"},
 		{"null still mismatches without null=", vals("%d", interpreter.Null()), "requires int"},
 		{"fill=0 with align=left is rejected", vals("%d|pad=5|fill=0|align=left", interpreter.IntVal(1)), "fill=0"},
-		// M11 additions
+		// additions
 		{"align=center on %d is rejected", vals("%d|pad=5|align=center", interpreter.IntVal(1)), "only valid on %s"},
 		{"align=center on %f is rejected", vals("%f|pad=5|align=center", interpreter.FloatVal(1.0)), "only valid on %s"},
 		{"null=skip on %s is rejected", vals("%s|null=skip", interpreter.Null()), "only valid on %a"},
@@ -362,7 +362,7 @@ func listOfInts(xs ...int64) interpreter.Value {
 	return v
 }
 
-// TestAlignCenterAndAggregate exercises the M11 printf additions:
+// TestAlignCenterAndAggregate exercises the printf additions:
 // `%s|align=center` and the `%a` aggregate verb with its modifiers.
 func TestAlignCenterAndAggregate(t *testing.T) {
 	in := interpreter.New()

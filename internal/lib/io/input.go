@@ -98,7 +98,7 @@ func readLine(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter
 // readBytes reads exactly `n` bytes from stdin and returns them as a
 // `bytes` value. If EOF is hit before `n` bytes are available, the
 // partial result is returned and `eof()` becomes true on the next call.
-// `n` must be a non-negative int. M12.
+// `n` must be a non-negative int.
 func readBytes(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if ctx.InREPL {
 		return interpreter.Null(), fmt.Errorf("readBytes: stdin is owned by the REPL editor")
@@ -134,7 +134,7 @@ func readBytes(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interprete
 
 // readChars reads exactly `n` Unicode code points from stdin's UTF-8
 // stream and returns them as a string. Partial-rune EOF errors are
-// surfaced; `eof()` becomes true once the stream is exhausted. M12.
+// surfaced; `eof()` becomes true once the stream is exhausted.
 func readChars(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if ctx.InREPL {
 		return interpreter.Null(), fmt.Errorf("readChars: stdin is owned by the REPL editor")

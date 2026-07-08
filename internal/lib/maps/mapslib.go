@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package mapslib implements Jennifer's `maps` library (M9): the
+// Package mapslib implements Jennifer's `maps` library: the
 // non-mutating manipulation helpers for `map of K to V` values.
 // Every function returns a *new* map or list; the input is never
 // modified. Callers commit results with `$m = maps.delete($m, k);`.
 //
-// All names are namespaced under the `maps.` prefix per M8's hybrid
+// All names are namespaced under the `maps.` prefix per the hybrid
 // model. `maps.delete` would collide with future `set.delete`,
 // `dict.delete`, etc., and namespacing keeps the call-site clear.
 //
@@ -24,7 +24,7 @@ import (
 // functions, and doubles as the namespace prefix.
 const LibraryName = "maps"
 
-// Install registers every M9 maps builtin with the interpreter.
+// Install registers every maps builtin with the interpreter.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "keys", keysFn)
 	in.RegisterNamespaced(LibraryName, "values", valuesFn)
@@ -34,9 +34,9 @@ func Install(in *interpreter.Interpreter) {
 }
 
 // hasFn reports whether the map contains the given key. The companion
-// to the M6 decision that reads of missing keys are runtime errors:
+// to the decision that reads of missing keys are runtime errors:
 // callers who need a non-erroring "does it exist?" check use
-// `maps.has($m, key)`. Pre-M9 this lived in core as bare `has(...)`;
+// `maps.has($m, key)`. This lived in core as bare `has(...)`;
 // it moved here because map-only membership is domain-specific and
 // didn't fit core's "universally needed structural primitives"
 // charter.

@@ -43,7 +43,7 @@ arguments return that type; any `float` involved produces a `float`.
 | `math.E`  | float | 2.718281828459045... |
 
 Constants are referenced through the `math.` namespace prefix like
-every other library name (M10+); the bare identifiers `PI` and `E`
+every other library name; the bare identifiers `PI` and `E`
 are not in scope. With `use math as m;` the alias takes over
 (`m.PI`, `m.E`).
 

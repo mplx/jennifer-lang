@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package fslib implements Jennifer's `fs` library (M16.1): blocking
+// Package fslib implements Jennifer's `fs` library: blocking
 // whole-file reads and writes, filesystem metadata, directory
 // operations, and buffered file handles for line-oriented reads.
 //
 // The library is blocking on purpose - non-blocking use composes with
-// M16.0 `spawn` rather than duplicating each call as a `*Async`
-// variant. See docs/milestones.md M16.1 and docs/libraries/fs.md.
+// `spawn` rather than duplicating each call as a `*Async`
+// variant. See docs/milestones.md and docs/libraries/fs.md.
 //
 // Two-verbs pattern for recursion: `mkdir` / `mkdirAll` and `remove` /
 // `removeAll` each ship as two names. The safe default keeps the same
@@ -15,7 +15,7 @@
 // grep for it. This is Jennifer's "no footguns" stance applied at the
 // API level.
 //
-// File handles (fs.open / fs.readLine / fs.close) use the M15.6
+// File handles (fs.open / fs.readLine / fs.close) use the
 // integer-handle pattern: `fs.File{id as int}` on the Jennifer side
 // indexes into a package-scope registry of Go `*os.File` state. See
 // handles.go for the registry implementation.
@@ -35,7 +35,7 @@ import (
 // LibraryName is the namespace prefix and `use` name.
 const LibraryName = "fs"
 
-// Install registers the M16.1 fs surface with the interpreter.
+// Install registers the fs surface with the interpreter.
 func Install(in *interpreter.Interpreter) {
 	// fs.Stat mirrors the fields most callers want without dragging in
 	// `time.Time` (fs stays decoupled from time at the Go-package

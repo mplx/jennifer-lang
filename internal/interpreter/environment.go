@@ -75,8 +75,8 @@ func releaseBlockEnv(e *Environment) {
 }
 
 // Binding is one entry in an Environment frame: the current value plus the
-// declared static type and whether it's a constant. M16.5.2 adds Slot
-// so name-based writes (Assign, execAppend / execIndexAssign /
+// declared static type and whether it's a constant. Slot lets
+// name-based writes (Assign, execAppend / execIndexAssign /
 // execFieldAssign via GetBinding + Assign) can mirror into the
 // slot-indexed storage after finding the binding by name. -1 means
 // "no slot mirror" (resolver-less path, REPL, tests).
@@ -92,7 +92,7 @@ type Binding struct {
 // Lookups walk outward. The spec forbids shadowing, so Define returns an error
 // if any visible parent already binds the name.
 //
-// M16.5.2: after Resolve() runs on the AST, every variable reference
+// After Resolve() runs on the AST, every variable reference
 // carries a (Depth, Slot) coordinate the runtime can use to skip the
 // name-map walk. The slot-indexed storage lives in `slots` alongside
 // the name map; DefineAt / GetAt / AssignAt operate on it. The name
@@ -103,7 +103,7 @@ type Environment struct {
 	parent *Environment
 	vars   map[string]Binding
 	slots  []Binding
-	// M16.5.4: cached pointer to the outermost ancestor of this
+	// cached pointer to the outermost ancestor of this
 	// environment (the "root" - either the interpreter's global env
 	// or a spawn snapshot's globals frame). Set once at construction
 	// and inherited from the parent, so effectiveGlobal() becomes an
@@ -257,7 +257,7 @@ func (e *Environment) Define(name string, val Value, declType parser.Type, isCon
 
 // Assign updates an existing binding, walking up the parent chain to find it.
 // Errors if the name is undefined, refers to a constant, or the new value's
-// kind doesn't match the declared type. M16.5.2: when the binding was
+// kind doesn't match the declared type. When the binding was
 // installed via DefineAt (Slot >= 0), mirror the write into
 // cur.slots[Slot] so a subsequent GetAt sees the update.
 func (e *Environment) Assign(name string, val Value) error {

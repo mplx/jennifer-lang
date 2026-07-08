@@ -23,7 +23,7 @@ import (
 const LibraryName = "math"
 
 // Install registers math library functions and constants on an interpreter.
-// Every name lives behind the `math.` prefix (M10+).
+// Every name lives behind the `math.` prefix.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "abs", absFn)
 	in.RegisterNamespaced(LibraryName, "min", minFn)
@@ -265,7 +265,7 @@ func randSeedFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter
 // shared random source. n must be positive. Exposed so sibling
 // libraries (e.g. lists.shuffle) can draw from the same `math.randSeed`
 // stream as `math.rand` / `math.randInt`. Goroutine-safe via the same
-// mutex as the M10 random functions.
+// mutex as the random functions.
 //
 // Library-implementation detail: a user program does NOT need
 // `use math;` for the function to work - the dependency is at the Go

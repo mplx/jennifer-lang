@@ -13,7 +13,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
 
-// M16.0 end-to-end tests for `spawn { ... }` + `task of T`.
+// End-to-end tests for `spawn { ... }` + `task of T`.
 //
 // Phase 2 ships:
 //   - goroutine-backed spawn (the body runs asynchronously)
@@ -117,7 +117,7 @@ func TestSpawnNullReturn(t *testing.T) {
 // TestSpawnRuntimeErrorSurfacesAtDrain: a runtime error inside the
 // spawn body is captured on the task. The main flow doesn't see it
 // (Run completes cleanly), but UnwaitedTaskErrors finds it at exit
-// time - that's the M16.0 loud-fail contract.
+// time - that's the loud-fail contract.
 func TestSpawnRuntimeErrorSurfacesAtDrain(t *testing.T) {
 	_, runErr, unwaited := runSpawn(t, `
 		def t as task of int init spawn {
@@ -137,7 +137,7 @@ func TestSpawnRuntimeErrorSurfacesAtDrain(t *testing.T) {
 }
 
 // TestSpawnExitInsideBodySurfacesAtDrain: `exit EXPR;` inside a spawn
-// body terminates the whole program - per the M16.0 spec - and the
+// body terminates the whole program - per the spec - and the
 // exit code travels through the registry scan. The CLI then uses
 // that code as the program's exit code (verified separately in the
 // cmd/jennifer smoke; here we just check the ExitSignal is the
@@ -264,7 +264,7 @@ func TestMarkObservedSuppressesLoudFail(t *testing.T) {
 }
 
 // TestSpawnBodyCanCallUserFunctionWithCapturedArg is the regression
-// guard for the M16.0-Phase-4.5 bug: a spawn body that called a user
+// guard for the Phase-4.5 bug: a spawn body that called a user
 // `func` with a captured-arg segfaulted under TinyGo because the
 // callee's frame parented to the live i.global the main goroutine
 // was still mutating. The fix routes user-method call frames through

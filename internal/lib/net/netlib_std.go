@@ -3,7 +3,7 @@
 
 //go:build !tinygo
 
-// Standard-Go implementation of the M16.2 `net` library. Used by
+// Standard-Go implementation of the `net` library. Used by
 // the default `jennifer` binary (standard-Go build). Under TinyGo
 // (`jennifer-tiny`), the netlib_tinygo.go file is selected instead
 // and returns friendly runtime errors from every entry point.
@@ -24,7 +24,7 @@ import (
 // -------- Registries --------
 
 // connState holds one live TCP connection. The buffered reader
-// backs partial-length reads and the sticky-EOF idiom the M16.1
+// backs partial-length reads and the sticky-EOF idiom the
 // fs handles established.
 type connState struct {
 	c      stdnet.Conn
@@ -185,7 +185,7 @@ func acceptFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 }
 
 // readBytesFn reads *up to* n bytes from a TCP connection. Unlike
-// M16.1 fs.readBytes (which uses io.ReadFull because files have
+// fs.readBytes (which uses io.ReadFull because files have
 // known sizes), TCP is a stream where "up to N" is the natural
 // unit: block for at least one byte to arrive, then return
 // whatever the buffered reader has, capped at n. Callers who need

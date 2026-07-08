@@ -28,9 +28,9 @@ immediately. A few constraints shape the implementation:
   reflect-based marshaler is fragile under TinyGo, so the AST
   JSON emitter is hand-rolled (see
   [CLI > Inspection](cli.md#inspection-tokens-and-ast)).
-- **Goroutines are allowed** (used since M16.0 for `spawn`),
+- **Goroutines are allowed** (used for `spawn`),
   but need `-stack-size=1mb` under TinyGo - see
-  [the goroutine-stack note below](#m160--tinygo-goroutine-stack).
+  [the goroutine-stack note below](#tinygo-goroutine-stack).
 - **No `-ldflags "-X package.var=value"`.** TinyGo 0.41 silently
   ignores the `-X` directive. Use the codegen path
   (`scripts/gen-version.sh` -> `internal/version/version_gen.go`)
@@ -72,7 +72,7 @@ on both binaries. Every other shipped library (`io`, `convert`,
 `crc`, `encoding`, `task`, `fs`, `regex`, `testing`) has full
 TinyGo support.
 
-**M16.0 / TinyGo goroutine stack**. Jennifer's tree-walking
+**TinyGo goroutine stack**. Jennifer's tree-walking
 evaluator wraps each Jennifer-level call in many Go-stack frames
 (`execBlock` + `evalCall` + `evalExpr` + ...), so even a
 modest-depth recursion (fib 23) easily exceeds TinyGo's default
@@ -82,7 +82,7 @@ can run recursive `spawn` bodies (and the parallel section of
 `examples/benchmark.j`). The default `jennifer` binary doesn't
 need this - Go's goroutine stacks grow automatically.
 
-**M16.0 / TinyGo scheduler**. TinyGo's runtime scheduler is
+**TinyGo scheduler**. TinyGo's runtime scheduler is
 cooperative and (as of 0.41) does not exploit multi-core
 hardware: every goroutine runs on the same OS thread.
 `spawn` works correctly under TinyGo - the semantics, the
@@ -102,9 +102,9 @@ friendly-message pattern.
 Reference numbers from `examples/benchmark.j` run as a single
 process on an **AMD Ryzen 5 7600X3D** (6 cores, 12 threads;
 Linux + KDE Plasma desktop active during the run, total CPU load
-low). Interpreter build is the current M16.5.1 shared-marker
+low). Interpreter build is the current shared-marker
 COW variant - the append-in-a-loop pattern that dominated the
-pre-M16.5 numbers (see the historical row further below) is now
+earlier numbers (see the historical row further below) is now
 amortised O(1). The serial section is single-threaded by
 design; the parallel section fans out to `PARALLEL_WORKERS = 4`
 spawn tasks per workload and prints serial-vs-parallel
@@ -215,12 +215,12 @@ Ratios are `tiny_ms / go_ms`; > 1.0 means `jennifer-tiny` is slower.
 | `newton sqrt batch`       |       779 |     337 | **2.3x** | Float arithmetic + dispatch; same shape as primes.                             |
 | `monte carlo pi`          |      2509 |    1054 | **2.4x** | Float arithmetic + RNG calls; identical pattern.                               |
 | `list sort/reverse/slice` |      1003 |    1406 | *0.7x*   | Allocation-heavy; TinyGo's simpler GC beats Go's concurrent GC at this scale.  |
-| `struct list build+read`  |        60 |      36 | 1.7x     | Post-M16.5.1: append hot loop is O(1). Both binaries are effectively free.     |
-| `string join`             |        19 |      11 | 1.7x     | Post-M16.5.1: build-up-a-string pattern is O(1). Both binaries are free.       |
+| `struct list build+read`  |        60 |      36 | 1.7x     | Append hot loop is O(1). Both binaries are effectively free.                   |
+| `string join`             |        19 |      11 | 1.7x     | Build-up-a-string pattern is O(1). Both binaries are free.                     |
 | `map insert+read`         |      1690 |    1197 | **1.4x** | Go's runtime map implementation outperforms TinyGo's at this churn rate.       |
 | **total**                 |     48896 |   25197 | **1.9x** | Compute-bound average wins for Go; alloc-heavy workloads are cheap on both.    |
 
-**Pre-M16.5.1 comparison, same workloads:** the `struct list build+read`
+**Comparison before shared-marker COW, same workloads:** the `struct list build+read`
 row measured 10752 ms (tiny) / 12126 ms (go); `string join` was
 4189 / 3916; `map insert+read` was 9768 / 7010. Every one of
 those workloads was dominated by the compound-write O(N^2)
@@ -257,8 +257,8 @@ The pattern that matters when picking a binary:
   `jennifer` wins by 2-5x on the serial section. The TinyGo
   runtime's slower per-call overhead shows here because the
   work is "the same handful of `Value` operations, repeated."
-- **Allocation-heavy workloads (lists, structs)**: post-M16.5.1
-  both binaries are essentially free on these. The historical
+- **Allocation-heavy workloads (lists, structs)**: both
+  binaries are essentially free on these. The historical
   10-second bars are gone.
 - **Stdlib-dominated workloads (strings, maps)**: `jennifer`
   edges ahead on map churn where Go's runtime map is more
@@ -274,8 +274,7 @@ The pattern that matters when picking a binary:
   goroutine coordination.
 
 The benchmark's serial section is single-threaded by design (the
-milestone-stated goal is to stress the evaluator dispatch loop,
-not parallelism). **M16.0 shipped the multi-core parallel
+stated goal is to stress the evaluator dispatch loop,
+not parallelism). **The multi-core parallel
 counterparts** and their numbers appear in the parallel table
-above - see
-[milestones.md > M16.0](../milestones.md#m160---lightweight-concurrency).
+above - part of the lightweight-concurrency work.

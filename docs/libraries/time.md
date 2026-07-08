@@ -5,10 +5,10 @@ wall-clock timeline (`time.Time`) and one for signed spans
 (`time.Duration`), with constructors from Unix integers, calendar
 accessors, and arithmetic / comparison helpers.
 
-This page covers the M15.5.1 + M15.5.2 surface. The benchmark
-example that uses `time.now()` to measure elapsed time lands in
-M15.5.3. IANA zone names and daylight-saving transitions are
-deliberately *not* part of the core library - see the M18.4
+This page covers the `time` library surface. A benchmark
+example uses `time.now()` to measure elapsed time.
+IANA zone names and daylight-saving transitions are
+deliberately *not* part of the core library - see the
 `timezones.j` module for that.
 
 ```jennifer
@@ -192,9 +192,8 @@ time.sleep($remaining);   # no-op if work already took longer than 5s
 ```
 
 `time.sleep` returns `null`; the caller who wants the wake-up
-instant calls `time.now()` after it returns. When M16.0
-concurrency ships, sleep blocks one task instead of the whole
-interpreter; until then it pauses the only thread.
+instant calls `time.now()` after it returns. With concurrency,
+sleep blocks one task instead of the whole interpreter.
 
 ## Zones
 
@@ -221,8 +220,8 @@ def tv as time.Time init time.inZone($t, $vienna);
 | `time.UTC` (constant)      | `time.Zone`   | `Zone{offset: 0, name: "UTC"}`. Canonical UTC.                           |
 
 DST-aware and IANA-named zones come from the
-[`timezones.j`](https://github.com/mplx/jennifer-lang) library
-(M18.4), which builds a name-to-`time.Zone` map at build time from
+[`timezones.j`](https://github.com/mplx/jennifer-lang) library,
+which builds a name-to-`time.Zone` map at build time from
 the host's tzdata. The core library deliberately stays small.
 
 ## Formatting and parsing
@@ -299,8 +298,8 @@ All errors are positioned at the call site.
 
 ## See also
 
-- [milestones.md](../milestones.md) - M15.5.2 (formatting, parsing,
-  fixed-offset zones), M15.5.3 (`examples/benchmark.j`), M18.4
-  (`timezones.j` Jennifer-coded library).
+- [milestones.md](../milestones.md) - formatting, parsing,
+  fixed-offset zones, `examples/benchmark.j`, and the
+  `timezones.j` Jennifer-coded library.
 - [imports.md](../user-guide/imports.md) - the library catalog.
 - [io.md](io.md) - `io.printf` for displaying results.

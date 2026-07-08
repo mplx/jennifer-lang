@@ -24,8 +24,8 @@ const (
 	TOKEN_AS
 	TOKEN_INIT
 	TOKEN_CONST
-	TOKEN_INCLUDE // textual file splice: `include "name.j";` (M10+)
-	TOKEN_IMPORT  // reserved word, no live syntax (M10+ moved file splice to `include`; reserved for the M17 module system)
+	TOKEN_INCLUDE // textual file splice: `include "name.j";`
+	TOKEN_IMPORT  // reserved word, no live syntax (file splice moved to `include`; reserved for the module system)
 	TOKEN_USE     // library import: `use io;`
 	TOKEN_RETURN
 	TOKEN_IF
@@ -33,14 +33,14 @@ const (
 	TOKEN_ELSE
 	TOKEN_WHILE
 	TOKEN_FOR
-	TOKEN_REPEAT   // M11: `repeat { ... } until (cond);` post-test loop
-	TOKEN_UNTIL    // M11: companion to `repeat`
-	TOKEN_BREAK    // M11: exit innermost loop
-	TOKEN_CONTINUE // M11: skip to next iteration of innermost loop
-	TOKEN_EXIT     // M11: terminate the program; optional int expression sets exit code
-	TOKEN_TRY      // M13.2: `try { ... } catch (NAME) { ... }` catchable error block
-	TOKEN_CATCH    // M13.2: companion to `try`; binds the thrown value
-	TOKEN_THROW    // M13.2: `throw EXPR;` raises a catchable error
+	TOKEN_REPEAT   // `repeat { ... } until (cond);` post-test loop
+	TOKEN_UNTIL    // companion to `repeat`
+	TOKEN_BREAK    // exit innermost loop
+	TOKEN_CONTINUE // skip to next iteration of innermost loop
+	TOKEN_EXIT     // terminate the program; optional int expression sets exit code
+	TOKEN_TRY      // `try { ... } catch (NAME) { ... }` catchable error block
+	TOKEN_CATCH    // companion to `try`; binds the thrown value
+	TOKEN_THROW    // `throw EXPR;` raises a catchable error
 	TOKEN_TRUE
 	TOKEN_FALSE
 	TOKEN_NULL
@@ -52,29 +52,29 @@ const (
 	TOKEN_FLOAT_TYPE  // the word "float" used as a type
 	TOKEN_STRING_TYPE // the word "string" used as a type
 	TOKEN_BOOL_TYPE   // the word "bool" used as a type
-	TOKEN_BYTES_TYPE  // M12: the word "bytes" used as a type
+	TOKEN_BYTES_TYPE  // the word "bytes" used as a type
 
-	// Compound-type keywords (M6)
+	// Compound-type keywords
 	TOKEN_LIST   // the word "list" used as a type
 	TOKEN_MAP    // the word "map" used as a type
 	TOKEN_OF     // "of" - element-type separator: `list of int`, `map of K to V`
 	TOKEN_TO     // "to" - K/V separator inside `map of K to V`
 	TOKEN_IN     // "in" - for-each iterator: `for (def x in $coll)`
-	TOKEN_STRUCT // M13.1: `def struct Name { field as type, ... };`
-	TOKEN_LEN    // M15.4: `len(EXPR)` polymorphic structural-length built-in
-	TOKEN_TASK   // M16.0: the word "task" used as a type: `task of T`
-	TOKEN_SPAWN  // M16.0: `spawn { ... }` block primary expression producing a `task of T`
+	TOKEN_STRUCT // `def struct Name { field as type, ... };`
+	TOKEN_LEN    // `len(EXPR)` polymorphic structural-length built-in
+	TOKEN_TASK   // the word "task" used as a type: `task of T`
+	TOKEN_SPAWN  // `spawn { ... }` block primary expression producing a `task of T`
 
 	// Punctuation
 	TOKEN_LBRACE   // {
 	TOKEN_RBRACE   // }
 	TOKEN_LPAREN   // (
 	TOKEN_RPAREN   // )
-	TOKEN_LBRACKET // [ (M6: list literals + index expressions)
-	TOKEN_RBRACKET // ] (M6)
+	TOKEN_LBRACKET // [ (list literals + index expressions)
+	TOKEN_RBRACKET // ]
 	TOKEN_SEMI     // ;
 	TOKEN_COMMA    // ,
-	TOKEN_COLON    // : (M6: map literal key-value separator)
+	TOKEN_COLON    // : (map literal key-value separator)
 	TOKEN_ASSIGN   // =
 	TOKEN_DOT      // . (reserved; future namespacing / field access)
 
@@ -92,7 +92,7 @@ const (
 	TOKEN_GE // >=
 	TOKEN_EQ // ==
 
-	// Bitwise operators (M12)
+	// Bitwise operators
 	TOKEN_BIT_AND // & - bitwise AND on int
 	TOKEN_BIT_OR  // | - bitwise OR on int
 	TOKEN_BIT_XOR // ^ - bitwise XOR on int
@@ -100,7 +100,7 @@ const (
 	TOKEN_SHL     // <<
 	TOKEN_SHR     // >>
 
-	// Trivia tokens (M14): comments and blank lines are emitted as
+	// Trivia tokens: comments and blank lines are emitted as
 	// tokens so the formatter can round-trip them. The parser skips
 	// them at statement boundaries via a wrapper around peek/advance
 	// (see parser.skipTrivia); attachment to AST nodes is done at

@@ -1,4 +1,4 @@
-# `lists` - list manipulation (M9)
+# `lists` - list manipulation
 
 Enable with `use lists;`. Namespaced under `lists.`; every function is
 called as `lists.NAME(...)`. Each function **returns a new list** -

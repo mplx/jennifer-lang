@@ -278,9 +278,8 @@ func app() {}`)
 }
 
 func TestLenIsKeyword(t *testing.T) {
-	// M15.4 promoted `len` from a `core` global to a language built-in
-	// primary, so `func len()` is a parse-time rejection rather than
-	// the M5-era "shadows builtin" runtime check.
+	// `len` is a language built-in primary, so `func len()` is a
+	// parse-time rejection rather than a "shadows builtin" runtime check.
 	_, err := run(t, `
 func len() {}
 len();
@@ -371,7 +370,7 @@ io.printf(find());
 	}
 }
 
-// ---- M3 parameters ----
+// ---- parameters ----
 
 func TestParamsAddTwoInts(t *testing.T) {
 	out, err := run(t, `
@@ -525,11 +524,11 @@ func bad($x as int) { return $x; }
 
 func TestUserMethodCanReuseBuiltinNameWithoutImportingLib(t *testing.T) {
 	// Without `use os;`, the name `platform` (which `os` would expose as a
-	// namespaced builtin) is free for ordinary use. (M10+ note: domain
-	// libraries no longer expose bare-name globals, so the more common
-	// pre-M10 case "`func printf()` allowed when io isn't imported" is
-	// trivially true; this test now exercises the namespace-prefix path
-	// instead.)
+	// namespaced builtin) is free for ordinary use. Domain
+	// libraries do not expose bare-name globals, so the case
+	// "`func printf()` allowed when io isn't imported" is
+	// trivially true; this test exercises the namespace-prefix path
+	// instead.
 	out, err := run(t, `
 func platform() {}
 platform();
@@ -542,7 +541,7 @@ platform();
 	}
 }
 
-// ---- M2 tests ----
+// ---- tests ----
 
 func TestM2FloatArithmetic(t *testing.T) {
 	out, err := run(t, `
@@ -650,7 +649,7 @@ func app() {
 	}
 }
 
-// ---- M4 logical operators + unary minus ----
+// ---- logical operators + unary minus ----
 
 func TestLogicalNotAndOr(t *testing.T) {
 	cases := []struct {
@@ -802,7 +801,7 @@ def r as int init -$s;
 	}
 }
 
-// ---- M4 division semantics ----
+// ---- division semantics ----
 
 func TestSlashAlwaysReturnsFloat(t *testing.T) {
 	cases := []struct {
@@ -882,7 +881,7 @@ io.printf("%f", $r);
 	}
 }
 
-// ---- M4 float display ----
+// ---- float display ----
 
 func TestFloatDisplayAlwaysHasDot(t *testing.T) {
 	// 5.0 should print as "5.0", not "5".
@@ -899,7 +898,7 @@ io.printf("%f", $x);
 	}
 }
 
-// ---- M4 convert library ----
+// ---- convert library ----
 
 func TestConvertInt(t *testing.T) {
 	cases := []struct {
@@ -1104,7 +1103,7 @@ def r as int init convert.toInt("42");
 }
 
 func TestTypeNameAsBareReferenceErrors(t *testing.T) {
-	// Type keywords have no expression-position meaning after M10 - bare
+	// Type keywords have no expression-position meaning - bare
 	// or call form. The parser points the user at the namespaced
 	// convert call.
 	_, err := run(t, `
@@ -1117,7 +1116,7 @@ def r as int init int;
 	}
 }
 
-// ---- M4 math library ----
+// ---- math library ----
 
 func TestMathAbs(t *testing.T) {
 	cases := []struct{ expr, want string }{
@@ -1276,7 +1275,7 @@ io.printf("%f %f", $pi, $e);
 }
 
 func TestMathConstantRequiresUse(t *testing.T) {
-	// Math is namespaced (M10+); without `use math;` the `math` prefix
+	// Math is namespaced; without `use math;` the `math` prefix
 	// is unknown.
 	_, err := run(t, `
 use io;
@@ -1306,7 +1305,7 @@ def r as int init `+c.expr+`;
 	}
 }
 
-// ---- M4 strings library ----
+// ---- strings library ----
 
 func TestStringsLen(t *testing.T) {
 	cases := []struct{ expr, want string }{
@@ -1537,7 +1536,7 @@ func TestStringsTypeErrors(t *testing.T) {
 	// `len` lives in the auto-loaded `core` library now (moved from
 	// `strings`), so it's available without `use strings;`. A non-string
 	// argument still errors - just with a different message that names
-	// the polymorphic intent. M6 will extend `len` to accept lists/maps.
+	// the polymorphic intent. `len` also accepts lists/maps.
 	_, err := run(t, `
 def r as int init len(42);
 `)
@@ -1597,7 +1596,7 @@ func app() {
 }
 
 func TestM2IfElseifElse(t *testing.T) {
-	// Note: M2 doesn't include unary minus, so we test buckets using only
+	// Note: this test avoids unary minus, so we test buckets using only
 	// non-negative literals.
 	src := func(n int) string {
 		return `

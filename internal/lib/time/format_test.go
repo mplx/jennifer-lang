@@ -238,7 +238,7 @@ func TestUTCConstant(t *testing.T) {
 }
 
 // TestUtcFunctionStillWorks: case-sensitivity means time.utc() (the
-// M15.5.1 function) and time.UTC (the M15.5.2 constant) coexist.
+// function) and time.UTC (the constant) coexist.
 func TestUtcFunctionStillWorks(t *testing.T) {
 	frozenAt(t, stdtime.Unix(0, 0).UTC())
 	got := runProg(t, `

@@ -68,10 +68,10 @@ type Interpreter struct {
 	LibConstants    map[string]libConstantEntry // library-provided constants (math.PI, ...)
 	NSBuiltins      map[nsKey]Builtin           // namespaced builtins: os.getEnv, bio.translate, ...
 	NSConstants     map[nsKey]Value             // namespaced constants: os.PLATFORM, ...
-	NSStructs       map[nsKey]*parser.StructDef // M15.2: namespaced struct definitions (os.Result, time.Time)
+	NSStructs       map[nsKey]*parser.StructDef // namespaced struct definitions (os.Result, time.Time)
 	knownLibs       map[string]bool             // libraries with at least one registered builtin OR constant
 	knownNamespaces map[string]bool             // libraries that registered through the namespaced API
-	libsWithGlobals map[string]bool             // libraries that registered any RegisterGlobal name (M10+)
+	libsWithGlobals map[string]bool             // libraries that registered any RegisterGlobal name
 
 	// Per-library registries for globals. RegisterGlobal* writes here at
 	// Install time; processImports copies an activated library's entries
@@ -85,10 +85,10 @@ type Interpreter struct {
 	nsPrefixes        map[string]string // active call-site prefix -> canonical namespace (after aliasing)
 	nsAliasedAway     map[string]string // canonical namespace -> alias chosen by `use NAME as ALIAS;`
 	methods           map[string]*parser.MethodDef
-	structs           map[string]*parser.StructDef // M13.1: top-level struct definitions hoisted at Run() time
+	structs           map[string]*parser.StructDef // top-level struct definitions hoisted at Run() time
 	global            *Environment                 // global scope where top-level statements live
 
-	// M16.0: spawned task registry. Every `spawn { ... }` appends its
+	// spawned task registry. Every `spawn { ... }` appends its
 	// TaskState here; the CLI scans the slice on shutdown to surface
 	// unobserved error tasks (the "loud-fail" stance). The mutex
 	// protects the slice itself, not the individual TaskStates (those
@@ -120,13 +120,13 @@ func New() *Interpreter {
 	return in
 }
 
-// removedCoreLibraryName is the name of the M15.4-removed library.
+// removedCoreLibraryName is the name of the removed library.
 // Kept as a constant so `use core;` produces a friendly migration
 // error rather than the generic "unknown library" message.
 const removedCoreLibraryName = "core"
 
 // RegisterGlobal attaches a builtin function under the given Jennifer
-// library name AND exposes it as a bare-name global. After M10 this is
+// library name AND exposes it as a bare-name global. This is
 // the high-bar API: it's reserved for `core`'s polymorphic structural
 // primitives (`len`, `JENNIFER_VERSION`).
 //
@@ -156,7 +156,7 @@ func (i *Interpreter) RegisterGlobal(lib, name string, fn Builtin) {
 
 // RegisterGlobalConst attaches a library-provided constant under the given
 // Jennifer library name AND exposes it globally as a bare uppercase
-// identifier (e.g. `JENNIFER_VERSION`). Same M10 high bar as
+// identifier (e.g. `JENNIFER_VERSION`). Same high bar as
 // RegisterGlobal; same per-library storage and collision-at-use semantics.
 func (i *Interpreter) RegisterGlobalConst(lib, name string, value Value) {
 	if i.globalConstsByLib[lib] == nil {
@@ -173,7 +173,7 @@ func (i *Interpreter) RegisterGlobalConst(lib, name string, value Value) {
 // RegisterNamespaced attaches a namespaced builtin. The library
 // name doubles as the namespace prefix: `in.RegisterNamespaced("os",
 // "platform", fn)` makes the function callable as `os.platform()` once
-// the program writes `use os;`. This is the M10 default; almost every
+// the program writes `use os;`. This is the default; almost every
 // library uses this and only `core` adds dual RegisterGlobal exposure
 // on top.
 func (i *Interpreter) RegisterNamespaced(lib, name string, fn Builtin) {
@@ -192,11 +192,11 @@ func (i *Interpreter) RegisterNamespacedConst(lib, name string, value Value) {
 }
 
 // RegisterNamespacedStruct attaches a library-provided struct
-// definition behind `<lib>.` (M15.2). User code then writes
+// definition behind `<lib>.`. User code then writes
 // `def x as <lib>.<name>;` to declare a variable of that type and
 // `<lib>.<name>{ field: expr, ... }` to construct one. Field access,
 // chained lvalues, value semantics, and deep-const all reuse the
-// M13.1 user-struct machinery; the difference is only the lookup
+// user-struct machinery; the difference is only the lookup
 // path. Same gating model as the other Register* methods: active
 // only after `use <lib>;`. Field shape is fixed at registration
 // time; the library can't add fields later.
@@ -236,7 +236,7 @@ type runtimeError struct {
 	Line int
 	Col  int
 	// Kind is the symbolic tag surfaced when the error is caught by an
-	// M13.2 `try { ... } catch (err) { ... }` block: it becomes
+	// `try { ... } catch (err) { ... }` block: it becomes
 	// `$err.kind`. Empty means "no specific kind"; the wrapper defaults
 	// to `"runtime"`. New runtime-error sites should set this to a
 	// short snake_case tag (`"out_of_bounds"`, `"type_mismatch"`,
@@ -283,7 +283,7 @@ func unhandledLoopFlowError(r blockResult) error {
 // EvalInteractive; the CLI catches it and translates Code into the
 // process exit status. Distinct from runtimeError so the CLI can tell
 // "user asked to terminate cleanly" apart from "interpreter found a
-// bug." M11.
+// bug."
 type ExitSignal struct {
 	Code int
 }
@@ -292,7 +292,7 @@ func (e *ExitSignal) Error() string {
 	return fmt.Sprintf("program requested exit with code %d", e.Code)
 }
 
-// ErrorSignal is the sentinel error returned by an M13.2 `throw EXPR;`
+// ErrorSignal is the sentinel error returned by a `throw EXPR;`
 // statement, and also produced when a runtime error reaches a `try`
 // block (so user code can catch both kinds uniformly). It carries the
 // thrown Value - any kind, but the convention is an `Error` struct
@@ -300,7 +300,7 @@ func (e *ExitSignal) Error() string {
 // where the `throw` (or originating runtime error) fired. Distinct
 // from ExitSignal (uncatchable, program-level escape) and from
 // runtimeError (which wraps INTO an ErrorSignal when it enters a try
-// block, not the other way around). M13.2.
+// block, not the other way around).
 type ErrorSignal struct {
 	Value Value
 	File  string
@@ -324,13 +324,13 @@ func (e *ErrorSignal) Position() (file string, line, col int) {
 }
 
 // canonicalErrorStructName is the conventional struct used by the
-// runtime to wrap runtime errors for M13.2 catch blocks, and is the
+// runtime to wrap runtime errors for catch blocks, and is the
 // recommended shape for user-thrown errors. Auto-hoisted by Run and
 // EvalInteractive so user code can rely on it without a `def struct`.
 const canonicalErrorStructName = "Error"
 
 // canonicalErrorStructDef returns the StructDef the runtime hoists at
-// startup. Field order matches the M13.2 spec:
+// startup. Field order matches the spec:
 // kind, message, file, line, col.
 func canonicalErrorStructDef() *parser.StructDef {
 	str := parser.PrimitiveType(parser.TypeString)
@@ -349,12 +349,12 @@ func canonicalErrorStructDef() *parser.StructDef {
 
 // ClassifyError extracts the (kind, message, file, line, col) tuple
 // from any interpreter error. Exported so libraries that intercept
-// errors at the Go level (M16.4 `testing`) can populate their
+// errors at the Go level (`testing`) can populate their
 // Jennifer-visible result structs without duplicating the
 // classification logic.
 //
 // The `kind` values are the same strings surfaced to Jennifer via
-// M13.2 `try`/`catch`:
+// `try`/`catch`:
 //
 //   - `"runtime"` (or the runtimeError's own Kind if set) - the
 //     built-in class of positioned interpreter errors
@@ -457,7 +457,7 @@ func posFor(n parser.Node) (file string, line, col int) {
 // statements in source order in a global environment. Methods see this
 // global env as their outer scope (so top-level vars are visible inside
 // methods, subject to the no-shadowing rule).
-// UnwaitedTaskErrors implements the M16.0 exit-time loud-fail.
+// UnwaitedTaskErrors implements the exit-time loud-fail.
 // Walks the per-run task registry, waits for each unobserved task to
 // finish, and returns the errors held by tasks that ended in failure
 // without ever being task.wait'd or task.discard'd. Tasks marked
@@ -516,7 +516,7 @@ func (i *Interpreter) RegisterTaskForTest(t *TaskState) { i.registerTask(t) }
 
 // CallByName invokes a top-level user method by name, with no
 // arguments. Exported so libraries that need to dispatch by string
-// name can do so - the M16.4 `testing` library uses this to run
+// name can do so - the `testing` library uses this to run
 // user-defined test methods.
 //
 // The method must exist and take zero parameters; anything else
@@ -571,7 +571,7 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	if i.In == nil {
 		i.In = os.Stdin
 	}
-	// M16.5.2: the scope-analysis pass runs here so callers that
+	// the scope-analysis pass runs here so callers that
 	// obtained a *Program via parser.Parse (which itself no longer
 	// resolves) still get slot annotations before execution.
 	// Idempotent - re-resolving an already-resolved program produces
@@ -582,7 +582,7 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	if err := i.processImports(prog, false); err != nil {
 		return err
 	}
-	// M16.5.4: pre-resolve every QualifiedCallExpr / QualifiedConstRefExpr
+	// pre-resolve every QualifiedCallExpr / QualifiedConstRefExpr
 	// against the now-populated namespace / builtin / const tables so the
 	// runtime skips the resolveNamespacePrefix + map lookup on the hot
 	// path. Runs after processImports because the namespace tables are
@@ -591,7 +591,7 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	// Structs: hoist before methods so a method body can reference a
 	// struct type declared later in source order.
 	//
-	// The canonical `Error` struct (M13.2) is hoisted first - the
+	// The canonical `Error` struct is hoisted first - the
 	// runtime wraps every catchable runtime error into a value of this
 	// type, so it must be in scope from the program's very first
 	// statement. User code may not redefine it; the existing
@@ -643,13 +643,13 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 //     `os.foo()` is rejected with a "did you mean `o`?" hint.
 //   - The prefix has to be unique among active namespaces; two libs
 //     fighting for the same prefix is a positioned error.
-//   - `use core;` is rejected with a migration hint (M15.4 removed
-//     the library; `len` is now a built-in, version constants moved
+//   - `use core;` is rejected with a migration hint (the library was
+//     removed; `len` is now a built-in, version constants moved
 //     to `meta`).
 func (i *Interpreter) processImports(prog *parser.Program, repl bool) error {
 	// alreadyImported snapshots `imported` at entry. In batch mode it's empty;
 	// in REPL it's whatever earlier inputs already activated. The
-	// alias-with-globals rule (M10) uses this to silently no-op a repeated
+	// alias-with-globals rule uses this to silently no-op a repeated
 	// `use lib;` in the REPL while still erroring on the in-source
 	// duplicate (`use io; use io;` in one batch program).
 	alreadyImported := make(map[string]bool, len(i.imported))
@@ -672,7 +672,7 @@ func (i *Interpreter) processImports(prog *parser.Program, repl bool) error {
 				File: file, Line: line, Col: col,
 			}
 		}
-		// M10 alias-with-globals rule: if the library exposes any
+		// alias-with-globals rule: if the library exposes any
 		// RegisterGlobal name, a second `use NAME [as ALIAS];` (in the same
 		// batch program) collides on the globals. The first wins; the second
 		// is rejected with a positioned error. In the REPL we silently
@@ -692,7 +692,7 @@ func (i *Interpreter) processImports(prog *parser.Program, repl bool) error {
 		if repl && alreadyImported[imp.Name] {
 			continue
 		}
-		// M10 globals-publishing rules. Two checks before activation:
+		// Globals-publishing rules. Two checks before activation:
 		//   1. "Alias on a globals-only library is meaningless." If the
 		//      library has globals but no namespaced names, `as ALIAS`
 		//      has nothing to rename - reject upfront rather than letting
@@ -733,7 +733,7 @@ func (i *Interpreter) processImports(prog *parser.Program, repl bool) error {
 		for name, val := range i.globalConstsByLib[imp.Name] {
 			i.LibConstants[name] = libConstantEntry{Lib: imp.Name, Value: val}
 		}
-		// Namespace bookkeeping. After M10 every library is namespaced, so
+		// Namespace bookkeeping. Every library is namespaced, so
 		// every `use` activates a prefix; the flat-only escape hatch is gone.
 		// (Exception: a globals-only library activates no namespace prefix -
 		// caught above when AsName is set; the bare-`use` case just skips
@@ -887,10 +887,10 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 // blockResult carries control flow info out of a block.
 //   - hasReturn: a `return` was executed; `value` holds the return value
 //     (callers in non-method contexts bubble this up further).
-//   - hasBreak: a `break;` was executed (M11). Loop statements catch
+//   - hasBreak: a `break;` was executed. Loop statements catch
 //     this and exit; non-loop statements pass it through. A `break`
 //     reaching the top level is a positioned runtime error.
-//   - hasContinue: a `continue;` was executed (M11). Loop statements
+//   - hasContinue: a `continue;` was executed. Loop statements
 //     catch this and start the next iteration; non-loop statements
 //     pass it through. Same misuse rule as break.
 //
@@ -917,9 +917,9 @@ func (r blockResult) flowsOut() bool {
 
 // execBlock runs every statement of a block in a *new* child env so that
 // vars declared inside the block don't leak out. The caller passes the
-// enclosing env; nested blocks inherit through the parent chain. M16.5.2:
-// the resolver's NumSlots hint pre-sizes the slot slice so DefineAt
-// avoids a grow on every write. M16.5.3: the fresh env is borrowed
+// enclosing env; nested blocks inherit through the parent chain.
+// The resolver's NumSlots hint pre-sizes the slot slice so DefineAt
+// avoids a grow on every write. The fresh env is borrowed
 // from envPool and returned on the way out; Jennifer has no closures
 // so no code retains a reference to the frame after the block ends.
 func (i *Interpreter) execBlock(b *parser.Block, parent *Environment) (blockResult, error) {
@@ -996,7 +996,7 @@ func (i *Interpreter) execStmt(s parser.Stmt, env *Environment) (blockResult, er
 }
 
 func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error {
-	// M13.1 / M15.2: if the declared type names a struct, verify the
+	// if the declared type names a struct, verify the
 	// struct exists before any other check so an unknown name surfaces
 	// as "unknown struct type" rather than a misleading type-mismatch.
 	// Bare names look up in i.structs (user-defined); namespaced names
@@ -1046,14 +1046,14 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 		// enforce the declared inner type.
 		val = stampDeclaredType(v.Copy(), st.VarType)
 	} else {
-		// Spec / M2 decision: uninitialized variables get the zero value of
+		// Spec decision: uninitialized variables get the zero value of
 		// their declared type. Constants must always be initialized (the
 		// parser enforces this; the assertion below is defensive).
 		if st.IsConst {
 			file, line, col := posFor(st)
 			return &runtimeError{Msg: "internal: constant without init reached interpreter", File: file, Line: line, Col: col}
 		}
-		// M13.1: structs need access to the interpreter's struct table to
+		// structs need access to the interpreter's struct table to
 		// populate every field's zero value. Route through a dedicated
 		// helper that materialises the full field list (and validates
 		// that the named struct actually exists).
@@ -1067,7 +1067,7 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 			val = stampDeclaredType(ZeroFor(st.VarType), st.VarType)
 		}
 	}
-	// M16.5.2: prefer the slot-based DefineAt when the resolver
+	// prefer the slot-based DefineAt when the resolver
 	// already assigned this def a slot. Falls back to name-based
 	// Define for REPL / ad-hoc AST paths.
 	if st.Slot >= 0 {
@@ -1123,7 +1123,7 @@ func stampDeclaredType(v Value, declType parser.Type) Value {
 			}
 		}
 	case parser.TypeTask:
-		// M16.0: stamp the declared element type onto the task's
+		// stamp the declared element type onto the task's
 		// shared state if it doesn't already have one. The shared
 		// pointer means every Value referring to the same task sees
 		// the same element type from now on.
@@ -1138,7 +1138,7 @@ func stampDeclaredType(v Value, declType parser.Type) Value {
 	return v
 }
 
-// bindParamValue is the M16.5.4 arg-binding fast path used by
+// bindParamValue is the arg-binding fast path used by
 // evalCall. For scalar Kinds (int / float / bool / null / string)
 // both Value.Copy and stampDeclaredType are no-ops, so we skip both
 // function calls and return v directly. Compound Kinds (list / map /
@@ -1164,7 +1164,7 @@ func (i *Interpreter) execAssign(st *parser.AssignStmt, env *Environment) error 
 	// because the right-hand-side may be a literal that's not yet
 	// stamped. Primitives skip the stamp branch entirely.
 	//
-	// M16.5.2: prefer the slot path when the resolver populated it.
+	// prefer the slot path when the resolver populated it.
 	var b Binding
 	if st.Slot >= 0 {
 		b, err = env.GetBindingAt(st.Depth, st.Slot, st.VarName)
@@ -1218,8 +1218,8 @@ func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environme
 	}
 
 	// Route through the unified lvalue walker so mixed chains like
-	// `$p.field[0] = ...` work alongside the original `$xs[i][j]` form
-	// (M13.1). The walker handles both IndexExpr and FieldAccessExpr
+	// `$p.field[0] = ...` work alongside the original `$xs[i][j]` form.
+	// The walker handles both IndexExpr and FieldAccessExpr
 	// nodes; index-only chains still resolve through the same
 	// indexInto / writeIndexedSlot helpers as before.
 	steps, err := i.collectLvalueSteps(st.Target, env, st)
@@ -1237,7 +1237,7 @@ func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environme
 	return nil
 }
 
-// execAppend handles `$xs[] = expr;` (M9) and `$b[] = byte;` (M12).
+// execAppend handles `$xs[] = expr;` and `$b[] = byte;`.
 // Copies the target binding, appends, commits it back. Const-target
 // rejection, type check, and per-kind validation all live here.
 func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error {
@@ -1289,7 +1289,7 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 }
 
 // execFieldAssign handles `$p.field = expr;` and chained lvalues that
-// end at a field (M13.1). The lvalue chain is rooted on a VarExpr,
+// end at a field. The lvalue chain is rooted on a VarExpr,
 // just like an IndexAssign, so the same "copy the binding, walk down,
 // write at the leaf, reassign" pattern works. We also enforce the
 // struct definition's declared type at the leaf write.
@@ -1472,7 +1472,7 @@ func (p posNode) astNode()         {}
 // nested struct fields so a `def p as Point;` for
 // `def struct Point { name as string, inner as Other };` produces a
 // fully-populated value (no nil fields slot through to runtime
-// surprises later). M13.1 / M15.2: `ns` is empty for user-defined
+// surprises later). `ns` is empty for user-defined
 // structs and set for library-provided namespaced ones.
 func (i *Interpreter) zeroStructFor(ns, name string, st parser.Node) (Value, error) {
 	def, ok := i.lookupStructDef(ns, name)
@@ -1516,7 +1516,7 @@ func (i *Interpreter) zeroStructFor(ns, name string, st parser.Node) (Value, err
 
 // lookupStructDef finds a struct definition by (namespace, name). Bare
 // names hit the user-defined table; namespaced names hit the
-// M15.2 library-registered table.
+// library-registered table.
 func (i *Interpreter) lookupStructDef(ns, name string) (*parser.StructDef, bool) {
 	if ns != "" {
 		def, ok := i.NSStructs[nsKey{NS: ns, Name: name}]
@@ -1532,7 +1532,7 @@ func (i *Interpreter) lookupStructDef(ns, name string) (*parser.StructDef, bool)
 // invariant blindly: nil indicates "no usable root" and the caller
 // surfaces an internal error.
 //
-// M13.1: the chain may also include FieldAccessExpr nodes (mixed
+// the chain may also include FieldAccessExpr nodes (mixed
 // `$p.list[0].field` lvalues), so the walker handles both.
 func findIndexRoot(ix *parser.IndexExpr) *parser.VarExpr {
 	var cur parser.Expr = ix
@@ -1575,7 +1575,7 @@ func findFieldRoot(fa *parser.FieldAccessExpr) *parser.VarExpr {
 // and missing map keys both error positionally.
 // positioned is the minimal interface indexInto / writeIndexedSlot
 // need from their statement parameter: just enough to produce
-// positioned error messages. parser.Node satisfies it; the M13.1
+// positioned error messages. parser.Node satisfies it; the
 // synthetic posNode does too without having to implement the rest of
 // the unexported-method `Node` interface.
 type positioned interface {
@@ -1657,7 +1657,7 @@ func writeIndexedSlot(parent *Value, idx Value, newVal Value, st positioned) err
 		parent.Map = append(parent.Map, MapEntry{Key: idx.Copy(), Value: newVal.Copy()})
 		return nil
 	case KindBytes:
-		// M12: byte slot writes accept an int in [0, 255]. Out-of-range
+		// byte slot writes accept an int in [0, 255]. Out-of-range
 		// writes are positioned runtime errors (same shape as list
 		// out-of-bounds), and a non-int RHS is rejected as a type error.
 		if idx.Kind != KindInt {
@@ -1888,7 +1888,6 @@ func (i *Interpreter) execExit(st *parser.ExitStmt, env *Environment) (blockResu
 // *ErrorSignal carrying its value. Position is the `throw` keyword's
 // own source location so a top-level uncaught throw points at the
 // statement, not deep inside whatever expression built the value.
-// M13.2.
 func (i *Interpreter) execThrow(st *parser.ThrowStmt, env *Environment) error {
 	v, err := i.evalExpr(st.Value, env)
 	if err != nil {
@@ -1904,7 +1903,7 @@ func (i *Interpreter) execThrow(st *parser.ThrowStmt, env *Environment) error {
 // bound to the thrown value. *ExitSignal propagates uncaught (the
 // program-level escape is uncatchable per spec). blockResult flags
 // (return/break/continue) flow through unchanged so the surrounding
-// method / loop sees them. M13.2.
+// method / loop sees them.
 func (i *Interpreter) execTry(st *parser.TryStmt, env *Environment) (blockResult, error) {
 	res, err := i.execStmts(st.Body.Stmts, env)
 	if err == nil {
@@ -1970,7 +1969,7 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 	case *parser.NullLit:
 		return Null(), nil
 	case *parser.VarExpr:
-		// M16.5.2: prefer the O(1) slot path when the resolver
+		// prefer the O(1) slot path when the resolver
 		// annotated this reference. Falls back to the O(depth) name
 		// walk otherwise (REPL, hand-built AST fragments).
 		var v Value
@@ -1984,7 +1983,7 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 			file, line, col := posFor(ex)
 			return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 		}
-		// M16.5.1: mark the value as potentially aliased. Any storage
+		// mark the value as potentially aliased. Any storage
 		// downstream (Define, Assign, param binding, list/map/struct
 		// literal element) now shares the same backing; a future
 		// mutation calls Ensure() and detaches only when the flag is
@@ -2087,7 +2086,7 @@ func (i *Interpreter) evalMapLit(ex *parser.MapLit, env *Environment) (Value, er
 	return Value{Kind: KindMap, Map: entries}, nil
 }
 
-// evalStructLit constructs a struct value from a literal (M13.1). The
+// evalStructLit constructs a struct value from a literal. The
 // literal's name must match a hoisted top-level `def struct`; every
 // declared field of the struct must appear exactly once in the literal
 // (no defaults at the literal level - users who want a zero-initialised
@@ -2096,7 +2095,7 @@ func (i *Interpreter) evalMapLit(ex *parser.MapLit, env *Environment) (Value, er
 // in *declaration* order regardless of the literal's source order so
 // the resulting Value is canonical.
 func (i *Interpreter) evalStructLit(ex *parser.StructLit, env *Environment) (Value, error) {
-	// M15.2: namespaced literals (`os.Result{ ... }`) resolve via the
+	// namespaced literals (`os.Result{ ... }`) resolve via the
 	// alias prefix then the NSStructs table; bare literals use the
 	// user-defined struct table as before.
 	var def *parser.StructDef
@@ -2185,8 +2184,8 @@ func (i *Interpreter) evalFieldAccess(ex *parser.FieldAccessExpr, env *Environme
 
 // evalIndex implements read access for `$xs[i]`, `$m["k"]`, or arbitrary
 // nesting. Reads of out-of-bounds list indices and missing map keys are
-// positioned runtime errors (no null fallback - that's the M6 decision
-// from milestones.md). Bytes (M12) read as int in [0, 255].
+// positioned runtime errors (no null fallback - that's the decision
+// from milestones.md). Bytes read as int in [0, 255].
 func (i *Interpreter) evalIndex(ex *parser.IndexExpr, env *Environment) (Value, error) {
 	parent, err := i.evalExpr(ex.Target, env)
 	if err != nil {
@@ -2222,7 +2221,7 @@ func readByteAt(parent Value, idx Value, node parser.Node) (Value, error) {
 }
 
 func (i *Interpreter) evalBinary(b *parser.BinaryExpr, env *Environment) (Value, error) {
-	// M16.5.5: constant-fold shortcut. Set by the resolver when both
+	// constant-fold shortcut. Set by the resolver when both
 	// operands were compile-time literals (or nested folded chains).
 	// The folded value is itself a literal so evalExpr returns
 	// immediately.
@@ -2252,7 +2251,7 @@ func (i *Interpreter) evalBinary(b *parser.BinaryExpr, env *Environment) (Value,
 	return i.evalArithmetic(b.Op, lv, rv, file, line, col)
 }
 
-// isBitOp returns true for the M12 bitwise operators. Kept separate
+// isBitOp returns true for the bitwise operators. Kept separate
 // from BinaryOp.IsLogical / IsComparison so each category retains its
 // own quick-check.
 func isBitOp(op parser.BinaryOp) bool {
@@ -2351,7 +2350,7 @@ func (i *Interpreter) evalLogical(b *parser.BinaryExpr, env *Environment) (Value
 }
 
 func (i *Interpreter) evalUnary(u *parser.UnaryExpr, env *Environment) (Value, error) {
-	// M16.5.5: constant-fold shortcut. Set by the resolver when the
+	// constant-fold shortcut. Set by the resolver when the
 	// operand was a compile-time literal; the folded value is itself
 	// a literal so evalExpr returns immediately.
 	if u.Folded != nil {
@@ -2400,7 +2399,7 @@ func (i *Interpreter) evalComparison(op parser.BinaryOp, lv, rv Value, file stri
 	if op == parser.OpEq {
 		return BoolVal(lv.Equal(rv)), nil
 	}
-	// M16.5.4: pure-int fast path. Every numeric `for` loop
+	// pure-int fast path. Every numeric `for` loop
 	// (`$i < N`, `$i <= max`) hits this per iteration and would
 	// otherwise pay two `AsFloat` conversions per compare.
 	if lv.Kind == KindInt && rv.Kind == KindInt {
@@ -2416,7 +2415,7 @@ func (i *Interpreter) evalComparison(op parser.BinaryOp, lv, rv Value, file stri
 			return BoolVal(a >= b), nil
 		}
 	}
-	// M16.5.4: pure-float fast path. Symmetrical to the int case.
+	// pure-float fast path. Symmetrical to the int case.
 	if lv.Kind == KindFloat && rv.Kind == KindFloat {
 		a, b := lv.Float, rv.Float
 		switch op {
@@ -2524,7 +2523,7 @@ func floorDiv(a, b float64) float64 {
 	return float64(int64(q))
 }
 
-// evalLen is the runtime side of the M15.4 `len(EXPR)` language
+// evalLen is the runtime side of the `len(EXPR)` language
 // built-in. Polymorphic across the four kinds where "structural
 // length" is well-defined; any other kind is a positioned runtime
 // error. The shape mirrors what the old core.lenFn did, but the
@@ -2550,7 +2549,7 @@ func (i *Interpreter) evalLen(ex *parser.LenExpr, env *Environment) (Value, erro
 	return Value{}, &runtimeError{Msg: fmt.Sprintf("len() expects a string, list, map or bytes, got %s", v.Kind), File: file, Line: line, Col: col}
 }
 
-// evalSpawn implements `spawn { ... }` (M16.0). Phase 2 launches a
+// evalSpawn implements `spawn { ... }`. Phase 2 launches a
 // goroutine that runs the body and signals completion via the
 // TaskState's done channel; evalSpawn itself returns immediately with
 // a wrapping Value whose Task field points at the same shared state.
@@ -2628,7 +2627,7 @@ func (i *Interpreter) registerTask(state *TaskState) {
 // the snapshot itself. Routing method-call frames through that
 // snapshot - instead of the live i.global the parent goroutine is
 // still mutating - is what makes spawn bodies that call user
-// functions data-race-free. M16.5.4: cached as env.root at
+// functions data-race-free. Cached as env.root at
 // construction time, so this is an O(1) field read.
 func effectiveGlobal(env *Environment) *Environment {
 	if env == nil {
@@ -2704,7 +2703,7 @@ func wrapTask(state *TaskState) Value {
 }
 
 func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, error) {
-	// User method? Prefer the pre-resolved pointer the M16.5.3
+	// User method? Prefer the pre-resolved pointer the
 	// resolver pass stamped onto the CallExpr; fall back to the
 	// method-name map for resolver-less paths (REPL turns, tests
 	// that hand-build ASTs).
@@ -2724,7 +2723,7 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 		}
 		// Evaluate args in the caller's env, then bind them in a fresh
 		// call frame that inherits from globals. Each arg is type-checked
-		// against the parameter's declared type. M16.5.3: the call
+		// against the parameter's declared type. The call
 		// frame is borrowed from the pool and pre-sized to hold the
 		// N parameter slots the resolver assigned (slots 0..N-1).
 		numParams := len(m.Params)
@@ -2748,10 +2747,10 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 			// Value semantics: arguments copy into the call frame, so
 			// callee mutations don't leak back to the caller. Stamp the
 			// declared parameter type so compound parameters know their
-			// element / key+value type for index-write checks. M16.5.3:
+			// element / key+value type for index-write checks.
 			// DefineAt writes straight to the pre-sized slot slice,
-			// avoiding the name-map hash per parameter. M16.5.4:
-			// scalar arg kinds skip Copy + stampDeclaredType (both are
+			// avoiding the name-map hash per parameter.
+			// Scalar arg kinds skip Copy + stampDeclaredType (both are
 			// no-ops for immutable kinds) via bindParamValue.
 			bound := bindParamValue(args[idx], p.Type)
 			if err := callFrame.DefineAt(idx, p.Name, bound, p.Type, false); err != nil {
@@ -2830,7 +2829,7 @@ func (i *Interpreter) resolveNamespacePrefix(prefix string) (string, error) {
 // resolved to a namespace (alias-aware), then the (namespace, callee)
 // pair is looked up in the namespaced-builtin registry.
 func (i *Interpreter) evalQualifiedCall(c *parser.QualifiedCallExpr, env *Environment) (Value, error) {
-	// M16.5.4: prefer the pre-resolved Builtin pointer stamped by
+	// prefer the pre-resolved Builtin pointer stamped by
 	// resolveQualifiedRefs. Falls back to the resolveNamespacePrefix
 	// + NSBuiltins path for resolver-less callers (REPL, hand-built
 	// ASTs, prefixes that weren't valid at resolve time).
@@ -2873,7 +2872,7 @@ func (i *Interpreter) evalQualifiedCall(c *parser.QualifiedCallExpr, env *Enviro
 // evalQualifiedConst handles `prefix.NAME`. Resolution mirrors
 // evalQualifiedCall; the result is the constant's value.
 func (i *Interpreter) evalQualifiedConst(c *parser.QualifiedConstRefExpr) (Value, error) {
-	// M16.5.4: prefer the pre-resolved Value stamped by
+	// prefer the pre-resolved Value stamped by
 	// resolveQualifiedRefs. Same fallback structure as
 	// evalQualifiedCall.
 	if c.Const != nil {
@@ -2894,7 +2893,7 @@ func (i *Interpreter) evalQualifiedConst(c *parser.QualifiedConstRefExpr) (Value
 	return v, nil
 }
 
-// resolveQualifiedRefs is the M16.5.4 second resolver pass. Runs from
+// resolveQualifiedRefs is the second resolver pass. Runs from
 // Interpreter.Run after processImports has populated the namespace /
 // alias / import tables, walks the AST once, and pre-fills
 // QualifiedCallExpr.Fn / QualifiedConstRefExpr.Const with the exact

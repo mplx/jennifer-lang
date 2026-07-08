@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package tasklib implements Jennifer's `task` library (M16.0):
+// Package tasklib implements Jennifer's `task` library:
 // wait, poll, discard, waitAll, waitAny - the five user-facing
 // operations on `task of T` values produced by `spawn { ... }` blocks.
 //
@@ -27,7 +27,7 @@ import (
 // LibraryName is the namespace prefix and `use` name.
 const LibraryName = "task"
 
-// Install registers the five M16.0 task builtins.
+// Install registers the five task builtins.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "wait", makeWait(in))
 	in.RegisterNamespaced(LibraryName, "poll", pollFn)

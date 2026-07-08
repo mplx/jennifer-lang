@@ -2,7 +2,7 @@
 # Copyright (C) 2026 <developer@mplx.eu>
 #
 # factorial.j - recursion + parameters + multi-arg printf.
-# Demonstrates M3 features: method parameters, return values, recursion,
+# Demonstrates method parameters, return values, recursion,
 # and format-string printf.
 
 use io;

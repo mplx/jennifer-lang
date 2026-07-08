@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package regexlib implements Jennifer's `regex` library (M16.3):
+// Package regexlib implements Jennifer's `regex` library:
 // regular expressions over `string` using Go's `regexp` package
 // (RE2 syntax). No backreferences, no lookahead/lookbehind - RE2
 // is a documented subset of PCRE.

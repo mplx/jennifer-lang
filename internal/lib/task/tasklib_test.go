@@ -14,7 +14,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
 
-// runProg drives one M16.0 Phase 3 end-to-end scenario: parse, run,
+// runProg drives one Phase 3 end-to-end scenario: parse, run,
 // drain task registry. Returns captured stdout, runErr from the
 // interpreter, and any unwaited task errors surfaced at exit.
 func runProg(t *testing.T, src string) (string, error, []error) {

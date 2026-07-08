@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Zone handling for the M15.5.2 layer: a `time.Zone` struct with an
+// Zone handling: a `time.Zone` struct with an
 // integer offset (seconds east of UTC) and a display name, plus the
 // `time.UTC` constant, `time.local()` reader, and `time.inZone($t, $z)`
 // shifter. IANA zone names and daylight-saving transitions are
-// deliberately not part of the core library; the M18.4 `timezones.j`
+// deliberately not part of the core library; the `timezones.j`
 // module supplies that data as ordinary Jennifer source.
 
 package timelib

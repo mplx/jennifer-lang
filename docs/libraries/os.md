@@ -143,7 +143,7 @@ returns a friendly runtime error pointing at the default `jennifer`
 binary. The default `jennifer` (`make build` produces both, or
 `make build-go` for just it) supports the full exec surface. This
 was the first user-visible gap in Jennifer's two-binary story;
-`net` (M16.2) hit the same boundary and adopted the same
+`net` hit the same boundary and adopted the same
 friendly-error pattern.
 
 ## Constants

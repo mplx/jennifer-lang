@@ -1,7 +1,7 @@
 # `net` - TCP + UDP sockets and DNS lookups
 
 Enable with `use net;`. Blocking TCP and UDP sockets plus two
-DNS lookup helpers. Non-blocking use composes with M16.0
+DNS lookup helpers. Non-blocking use composes with
 [`spawn`](../user-guide/concurrency.md) rather than a
 duplicated `*Async` surface.
 
@@ -41,7 +41,7 @@ def struct net.Conn { id as int };
 ```
 
 Handles share underlying state between copies via the integer
-id (same discipline as M16.0's `task of T` and M16.1's
+id (same discipline as `task of T` and
 `fs.File`). `net.close($c)` closes the connection for every
 copy of the handle.
 
@@ -202,7 +202,7 @@ binds all interfaces.
 ":0"                     # bind to any free ephemeral port
 ```
 
-## Concurrency composition (M16.0)
+## Concurrency composition
 
 Blocking calls compose with `spawn` for non-blocking use:
 
@@ -232,7 +232,7 @@ address or handle id in the message.
 - **DNS misconfig**: `net.lookup: whatever: lookup whatever: no such host`.
 - **Peer address parse**: `net.sendTo: bogus: address bogus: missing port in address`.
 
-Every error is catchable with M13.2 `try` / `catch`:
+Every error is catchable with `try` / `catch`:
 
 ```jennifer
 try {
@@ -258,7 +258,7 @@ net.connect: `jennifer-tiny` (TinyGo build) does not include a
 network stack; use the default `jennifer` binary for network I/O
 ```
 
-Same pattern as M15.3 `os.run` / `os.spawn` on TinyGo. If
+Same pattern as `os.run` / `os.spawn` on TinyGo. If
 you're writing network code, use the default `jennifer`. See
 [../technical/tinygo.md](../technical/tinygo.md).
 
@@ -275,7 +275,7 @@ concrete workload forces it.
   `net.setDeadline($conn, ms)` verb ships later.
 - **Socket options** (SO_REUSEADDR, KEEPALIVE, NODELAY).
 - **DNS record-type helpers** (`net.lookupMX`,
-  `net.lookupTXT`, `net.lookupSRV`). The M16.2 pair covers
+  `net.lookupTXT`, `net.lookupSRV`). The current pair covers
   90% of use.
 - **Explicit IPv6 control.** Auto-selected by the resolver;
   users force by writing `"[::1]:port"` or `"127.0.0.1:port"`.
@@ -291,4 +291,4 @@ concrete workload forces it.
   bridge network payloads and Jennifer strings.
 - [../technical/tinygo.md](../technical/tinygo.md) - the
   netdev-driver row in the restrictions table.
-- [../milestones.md](../milestones.md) - M16.2 design spec.
+- [../milestones.md](../milestones.md) - design spec.

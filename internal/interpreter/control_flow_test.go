@@ -10,7 +10,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 )
 
-// ---- break (M11) ----
+// ---- break ----
 
 func TestBreakExitsForLoop(t *testing.T) {
 	out, err := run(t, `
@@ -111,7 +111,7 @@ for (def i as int init 0; $i < 3; $i = $i + 1) {
 	}
 }
 
-// ---- continue (M11) ----
+// ---- continue ----
 
 func TestContinueSkipsForBody(t *testing.T) {
 	out, err := run(t, `
@@ -171,7 +171,7 @@ func TestContinueOutsideLoopErrors(t *testing.T) {
 	}
 }
 
-// ---- repeat..until (M11) ----
+// ---- repeat..until ----
 
 func TestRepeatRunsBodyAtLeastOnce(t *testing.T) {
 	out, err := run(t, `
@@ -250,7 +250,7 @@ func TestRepeatUntilNonBoolErrors(t *testing.T) {
 	}
 }
 
-// ---- exit (M11) ----
+// ---- exit ----
 
 func TestExitReturnsSignal(t *testing.T) {
 	_, err := run(t, `exit 7;`)

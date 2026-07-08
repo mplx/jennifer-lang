@@ -429,7 +429,7 @@ func TestHandleUseAfterClose(t *testing.T) {
 	}
 }
 
-// TestSpawnFsCompose confirms the M16.0 composition story: a `spawn`
+// TestSpawnFsCompose confirms the composition story: a `spawn`
 // body can read a file and return its content via task.wait.
 func TestSpawnFsCompose(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "concurrent.txt")

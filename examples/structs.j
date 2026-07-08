@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 #
-# structs.j - introduce M13.1 structs.
+# structs.j - introduce structs.
 #
 # A struct ("record" in some traditions) gives a name to a fixed set of
 # typed fields. Use it whenever a multi-value bundle would otherwise

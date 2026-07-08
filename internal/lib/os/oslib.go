@@ -67,7 +67,7 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespacedConst(LibraryName, "PATHSEP", interpreter.StringVal(string(stdos.PathListSeparator)))
 	in.RegisterNamespacedConst(LibraryName, "ARGS", argsConstant())
 
-	// M15.3: external-program execution result/handle types.
+	// External-program execution result/handle types.
 	str := parser.PrimitiveType(parser.TypeString)
 	in.RegisterNamespacedStruct(LibraryName, "Result", []parser.StructField{
 		{Name: "exitCode", Type: parser.PrimitiveType(parser.TypeInt)},

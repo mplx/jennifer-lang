@@ -9,7 +9,7 @@ links to the reference doc for each.
 > [cheatsheet](cheatsheet.md) - alphabetical list of every builtin
 > with its library and a one-line description.
 
-> **`len`** is a language built-in primary (M15.4+), not a library
+> **`len`** is a language built-in primary, not a library
 > function. Use it from any program with no `use` statement; it's
 > polymorphic over string / list / map / bytes.
 
@@ -22,22 +22,22 @@ always supports the full surface.
 | Library                   | Enable with     | TinyGo                                                  | Contents                                                                                                                                                                       |
 | ------------------------- | --------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`convert`](convert.md)   | `use convert;`  | full                                                    | `convert.toInt`, `convert.toFloat`, `convert.toString`, `convert.toBool`, `convert.typeOf` - explicit casts; canonical-only `toBool` conversion                                |
-| [`crc`](crc.md)           | `use crc;`      | full                                                    | M15.6: `crc.compute(b, algo)` + streaming (`crc.stream`/`update`/`finalize`) for `"crc32"`, `"crc64"`; output is big-endian bytes; struct `crc.Stream`                          |
-| [`encoding`](encoding.md) | `use encoding;` | full                                                    | M15.7: introspection (`isAscii`, `lenBytes`, `lenRunes`); binary-to-text `toText`/`fromText` for `"hex"`, `"base64"`, `"base64-url"`; character codecs `encode`/`decode` for `"ascii"`, `"latin-1"`, `"windows-1252"`, `"ebcdic"` |
-| [`fs`](fs.md)             | `use fs;`       | full                                                    | M16.1: filesystem I/O. Whole-file `readString`/`readBytes`/`writeString`/`writeBytes`/`appendString`/`appendBytes`; metadata `exists`/`isFile`/`isDir`/`stat`; dir ops `mkdir`/`mkdirAll`/`remove`/`removeAll`/`rename`/`list`/`walk`; handles `open`/`readLine`/`readChars`/`readBytes`/`writeString`/`writeBytes`/`eof`/`close`; structs `fs.Stat`, `fs.File` |
-| [`hash`](hash.md)         | `use hash;`     | full                                                    | M15.6: `hash.compute(b, algo)` + streaming (`hash.stream`/`update`/`finalize`) for `"md5"`, `"sha1"`, `"sha256"`; struct `hash.Stream`                                          |
+| [`crc`](crc.md)           | `use crc;`      | full                                                    | `crc.compute(b, algo)` + streaming (`crc.stream`/`update`/`finalize`) for `"crc32"`, `"crc64"`; output is big-endian bytes; struct `crc.Stream`                          |
+| [`encoding`](encoding.md) | `use encoding;` | full                                                    | introspection (`isAscii`, `lenBytes`, `lenRunes`); binary-to-text `toText`/`fromText` for `"hex"`, `"base64"`, `"base64-url"`; character codecs `encode`/`decode` for `"ascii"`, `"latin-1"`, `"windows-1252"`, `"ebcdic"` |
+| [`fs`](fs.md)             | `use fs;`       | full                                                    | filesystem I/O. Whole-file `readString`/`readBytes`/`writeString`/`writeBytes`/`appendString`/`appendBytes`; metadata `exists`/`isFile`/`isDir`/`stat`; dir ops `mkdir`/`mkdirAll`/`remove`/`removeAll`/`rename`/`list`/`walk`; handles `open`/`readLine`/`readChars`/`readBytes`/`writeString`/`writeBytes`/`eof`/`close`; structs `fs.Stat`, `fs.File` |
+| [`hash`](hash.md)         | `use hash;`     | full                                                    | `hash.compute(b, algo)` + streaming (`hash.stream`/`update`/`finalize`) for `"md5"`, `"sha1"`, `"sha256"`; struct `hash.Stream`                                          |
 | [`io`](io.md)             | `use io;`       | full                                                    | `io.printf`, `io.sprintf`, `io.readLine`, `io.eof`, plus the format-verb mini-language                                                                                         |
 | [`lists`](lists.md)       | `use lists;`    | full                                                    | `lists.push`, `pop`, `first`, `last`, `head`, `tail`, `reverse`, `sort`, `contains`, `concat`, `slice`, `shuffle`, `range` - all return a new list                             |
 | [`maps`](maps.md)         | `use maps;`     | full                                                    | `maps.keys`, `values`, `has`, `delete`, `merge` - all return a new map / list / bool                                                                                           |
 | [`math`](math.md)         | `use math;`     | full                                                    | `math.abs`, `min`, `max`, `sqrt`, `pow`, `floor`, `ceil`, `round`, `rand`, `randInt`, `randSeed`; constants `math.PI`, `math.E`                                                |
 | [`meta`](meta.md)         | `use meta;`     | full                                                    | `meta.VERSION`, `meta.BUILD` - interpreter-self-identity constants                                                                                                             |
-| [`net`](net.md)           | `use net;`      | [stubs only](../technical/tinygo.md#tinygo-restrictions) | M16.2: TCP `connect`/`listen`/`accept`/`readBytes`/`writeBytes`/`eof`/`address`, UDP `listenUDP`/`sendTo`/`recvFrom`, DNS `lookup`/`reverseLookup`, polymorphic `close`/`address`; structs `net.Conn`, `net.Listener`, `net.UDPSocket`, `net.Datagram`. `jennifer-tiny` returns friendly errors; use the default `jennifer` binary for real net I/O. |
+| [`net`](net.md)           | `use net;`      | [stubs only](../technical/tinygo.md#tinygo-restrictions) | TCP `connect`/`listen`/`accept`/`readBytes`/`writeBytes`/`eof`/`address`, UDP `listenUDP`/`sendTo`/`recvFrom`, DNS `lookup`/`reverseLookup`, polymorphic `close`/`address`; structs `net.Conn`, `net.Listener`, `net.UDPSocket`, `net.Datagram`. `jennifer-tiny` returns friendly errors; use the default `jennifer` binary for real net I/O. |
 | [`os`](os.md)             | `use os;`       | [partial](../technical/tinygo.md#tinygo-restrictions)   | `os.getEnv`, `os.hasFlag`, `os.flag`, `os.run`, `os.spawn`, `os.wait`, `os.poll`, `os.kill`; constants `os.PLATFORM`, `os.ARCH`, `os.EOL`, `os.DIRSEP`, `os.PATHSEP`, `os.ARGS` |
-| [`regex`](regex.md)       | `use regex;`    | full                                                    | M16.3: regular expressions over `string` (RE2 syntax). `regex.matches`/`find`/`findAll`/`replace`/`split`/`escape` + `regex.Match` struct with positional and named captures. Implicit LRU cache for compiled patterns. |
+| [`regex`](regex.md)       | `use regex;`    | full                                                    | regular expressions over `string` (RE2 syntax). `regex.matches`/`find`/`findAll`/`replace`/`split`/`escape` + `regex.Match` struct with positional and named captures. Implicit LRU cache for compiled patterns. |
 | [`strings`](strings.md)   | `use strings;`  | full                                                    | `strings.upper`, `lower`, `contains`, `startsWith`, `endsWith`, `indexOf`, `trim`, `trimLeft`, `trimRight`, `replace`, `repeat`, `substring`, `split`, `chars`, `join`         |
-| [`task`](task.md)         | `use task;`     | full                                                    | M16.0: observe and join `task of T` handles produced by `spawn { ... }`. `task.wait`, `task.poll`, `task.discard`, `task.waitAll`, `task.waitAny`; pairs with the [user-guide concurrency tour](../user-guide/concurrency.md) |
-| [`testing`](testing.md)   | `use testing;`  | full                                                    | M16.4: test-runner primitives. `testing.run`/`results`/`reset`/`report` + `testing.Result` struct. Catches runtime errors, throws, and (uniquely) `exit` inside test bodies. Three report formats: `"text"`, `"tap"`, `"junit"`. Foundation for the M18.x .j-side test framework. |
-| [`time`](time.md)         | `use time;`     | full                                                    | M15.5.1+.2: instant/duration arithmetic, calendar + Unix accessors, fixed-offset zones (`time.zone`, `time.inZone`, `time.UTC`, `time.local`), strftime format/parse, ISO round-trip; structs `time.Time`, `time.Duration`, `time.Zone` |
+| [`task`](task.md)         | `use task;`     | full                                                    | observe and join `task of T` handles produced by `spawn { ... }`. `task.wait`, `task.poll`, `task.discard`, `task.waitAll`, `task.waitAny`; pairs with the [user-guide concurrency tour](../user-guide/concurrency.md) |
+| [`testing`](testing.md)   | `use testing;`  | full                                                    | test-runner primitives. `testing.run`/`results`/`reset`/`report` + `testing.Result` struct. Catches runtime errors, throws, and (uniquely) `exit` inside test bodies. Three report formats: `"text"`, `"tap"`, `"junit"`. Foundation for the .j-side test framework. |
+| [`time`](time.md)         | `use time;`     | full                                                    | instant/duration arithmetic, calendar + Unix accessors, fixed-offset zones (`time.zone`, `time.inZone`, `time.UTC`, `time.local`), strftime format/parse, ISO round-trip; structs `time.Time`, `time.Duration`, `time.Zone` |
 
 A quick taste:
 
@@ -66,11 +66,11 @@ after the alias the canonical name no longer resolves at call sites
 is also freed for use as an ordinary identifier, just like Python's
 `import foo as bar`.
 
-(Pre-M15.4 `core` was auto-loaded and exposed `len` /
+(`core` used to be auto-loaded and exposed `len` /
 `JENNIFER_VERSION` as bare globals via `RegisterGlobal` /
-`RegisterGlobalConst`. M15.4 promoted `len` to a language built-in
-keyword, moved version constants to `meta` (M15.1 already had),
-and deleted `core`. The `RegisterGlobal*` API surface remains on
+`RegisterGlobalConst`. `len` was promoted to a language built-in
+keyword, version constants moved to `meta`,
+and `core` was deleted. The `RegisterGlobal*` API surface remains on
 `Interpreter` but is unused by any shipping library; it gets removed
 in a later cleanup pass.)
 
@@ -89,35 +89,35 @@ large ones. The organizing principle, captured for future extensions:
 - Operating-system glue (env, args, host info) -> `os`.
 - Interpreter-self-identity constants (version, build, future
   build-time / git-sha / GC stats) -> `meta`.
-- Time / instants / durations -> `time` (M15.5+; formatting,
-  parsing, and fixed-offset zones land in M15.5.2).
-- Cryptographic-style digests (MD5, SHA-1, SHA-256) -> `hash`
-  (M15.6). Non-cryptographic checksums (CRC-32, CRC-64) -> `crc`
-  (M15.6). The split keeps "transport integrity" and "content
+- Time / instants / durations -> `time` (formatting,
+  parsing, and fixed-offset zones).
+- Cryptographic-style digests (MD5, SHA-1, SHA-256) -> `hash`.
+  Non-cryptographic checksums (CRC-32, CRC-64) -> `crc`.
+  The split keeps "transport integrity" and "content
   addressing" visible at the import line.
 - Byte / string introspection and character-set codecs (ASCII,
   Latin-1, Windows-1252, EBCDIC IBM-1047) plus hex / base64
-  binary-to-text -> `encoding` (M15.7; long-tail codecs parked in M24+).
+  binary-to-text -> `encoding` (long-tail codecs parked for later).
 - Observing / joining background computations launched with `spawn`
-  -> `task` (M16.0). Concurrency itself is a language feature
+  -> `task`. Concurrency itself is a language feature
   (the `spawn` keyword + `task of T` type); the library is just the
   observation surface.
 - Filesystem I/O (whole-file reads/writes, metadata, directory
-  operations, buffered file handles) -> `fs` (M16.1). Blocking on
-  purpose; non-blocking use composes with `spawn` from M16.0.
-- Network I/O (TCP + UDP sockets, DNS lookups) -> `net` (M16.2).
+  operations, buffered file handles) -> `fs`. Blocking on
+  purpose; non-blocking use composes with `spawn`.
+- Network I/O (TCP + UDP sockets, DNS lookups) -> `net`.
   Blocking calls, same spawn-composition story as `fs`. The
   constrained `jennifer-tiny` binary returns friendly "use the
   default `jennifer`" errors; the network stack lives only in
   the standard-Go binary.
-- Regular expressions over `string` -> `regex` (M16.3). RE2
+- Regular expressions over `string` -> `regex`. RE2
   syntax (Go's `regexp` engine); implicit LRU cache. Pure
   string processing, no other library dependencies.
 - Test-runner primitives (name-based method dispatch,
   per-process result accumulator, format dispatcher for
-  text/TAP/JUnit) -> `testing` (M16.4). Lives here because
+  text/TAP/JUnit) -> `testing`. Lives here because
   Jennifer has no function references yet; the `.j`-side
-  assertion vocabulary and CLI harness ship in M18.x on top
+  assertion vocabulary and CLI harness ship on top
   of these primitives.
 - A genuinely new topic with **five or more** functions / constants
   -> a new library. Fewer than five names fold into the most-related

@@ -76,7 +76,7 @@ func TestFileIncludeSplices(t *testing.T) {
 		t.Fatalf("preproc: %v", err)
 	}
 	// We expect: func app ( ) { def bonus as int init 7 ; io.printf ( $bonus ) ; } EOF
-	// (`io.printf` is `IDENT DOT IDENT` after M10's namespace migration.)
+	// (`io.printf` is `IDENT DOT IDENT` after the namespace migration.)
 	wantTypes := []lexer.TokenType{
 		lexer.TOKEN_FUNC, lexer.TOKEN_IDENT, lexer.TOKEN_LPAREN, lexer.TOKEN_RPAREN, lexer.TOKEN_LBRACE,
 		lexer.TOKEN_DEFINE, lexer.TOKEN_IDENT, lexer.TOKEN_AS, lexer.TOKEN_INT_TYPE, lexer.TOKEN_INIT, lexer.TOKEN_INT, lexer.TOKEN_SEMI,

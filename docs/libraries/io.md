@@ -97,7 +97,7 @@ its verb: `%s|mode=quote|null=literal("X")` on a null prints `X`, not
 | ------- | -------------------------------- | ------- | ---------------------------------------------------------------------------------------- |
 | `pad`   | non-negative integer             | -       | minimum rune width                                                                       |
 | `max`   | non-negative integer             | -       | truncate to N runes                                                                      |
-| `align` | `left`, `right`, `center` (M11+) | `left`  | which side gets the pad spaces; `center` splits the pad evenly (odd leftover goes right) |
+| `align` | `left`, `right`, `center` | `left`  | which side gets the pad spaces; `center` splits the pad evenly (odd leftover goes right) |
 | `mode`  | `raw`, `quote`, `escape`         | `raw`   | wrap in `"..."` (`quote`) / show escapes (`escape`)                                      |
 | `null`  | see above                        | -       | substitute when value is `null`                                                          |
 
@@ -162,7 +162,7 @@ io.printf("%f|sci=true|prec=2\n", 0.00123);     # 1.23e-03
 print it" verb. Use a typed verb plus modifiers when you want to shape
 the output.
 
-### `%a` modifiers (M11+)
+### `%a` modifiers
 
 `%a` is the aggregate verb: it renders a list or map in literal-like
 shape, recursing into nested aggregates. Non-collection input is a
@@ -240,7 +240,7 @@ peeking one byte through a buffered reader; the byte stays in the
 buffer for the next read. Once true, `io.eof()` stays true for the
 rest of the run.
 
-### `io.readBytes(n) -> bytes` (M12+)
+### `io.readBytes(n) -> bytes`
 
 Reads exactly `n` bytes from stdin and returns them as a `bytes`
 value. If EOF is hit before `n` bytes are available, returns the
@@ -253,7 +253,7 @@ def first as bytes init io.readBytes(8);   # exactly 8 bytes or less at EOF
 io.printf("got %d bytes\n", len($first));
 ```
 
-### `io.readChars(n) -> string` (M12+)
+### `io.readChars(n) -> string`
 
 Reads exactly `n` Unicode code points from stdin, decoded from UTF-8,
 and returns them as a string. Same EOF behavior as `readBytes`

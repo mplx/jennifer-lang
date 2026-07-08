@@ -32,11 +32,11 @@ const (
 	KindFloat
 	KindString
 	KindBool
-	KindBytes  // M12: mutable byte sequence; elements are int in [0, 255]
-	KindList   // M6: ordered, mutable sequence (Go slice underneath)
-	KindMap    // M6: ordered key-value map; iteration is insertion order
-	KindStruct // M13.1: user-defined record; fields are an ordered list of (name, value)
-	KindTask   // M16.0: a pending or completed `spawn { ... }` computation
+	KindBytes  // mutable byte sequence; elements are int in [0, 255]
+	KindList   // ordered, mutable sequence (Go slice underneath)
+	KindMap    // ordered key-value map; iteration is insertion order
+	KindStruct // user-defined record; fields are an ordered list of (name, value)
+	KindTask   // a pending or completed `spawn { ... }` computation
 )
 
 func (k ValueKind) String() string {
@@ -72,7 +72,7 @@ type MapEntry struct {
 	Key, Value Value
 }
 
-// StructField is one field in a Value of kind KindStruct (M13.1).
+// StructField is one field in a Value of kind KindStruct.
 // Fields are kept in declaration order (matching the StructDef's field
 // ordering) so display output and assertions are deterministic.
 type StructField struct {
@@ -80,7 +80,7 @@ type StructField struct {
 	Value Value
 }
 
-// TaskState is the payload of a Value of kind KindTask (M16.0). It holds
+// TaskState is the payload of a Value of kind KindTask. It holds
 // the eventual result of a `spawn { ... }` block plus bookkeeping for the
 // exit-time unwaited-error scan. The pointer is shared by every Value
 // that points at the same logical task - copying a `task of T` Value
@@ -89,7 +89,7 @@ type StructField struct {
 // represents a single underlying operation, and `task.wait` /
 // `task.discard` need to see the same handle the spawn produced.
 //
-// Concurrency contract (M16.0 Phase 2):
+// Concurrency contract (Phase 2):
 //   - The spawning goroutine writes Result, Err, and Done exactly once,
 //     in that order, before closing the Done channel. No further writes
 //     to those fields occur after Done is closed.
@@ -136,7 +136,7 @@ func (s *TaskState) IsDone() bool {
 // slices, but they aren't assignment-compatible.
 //
 // Sub-values are stored by value (List elements, Map keys/values are
-// Value, not *Value). That matches the value-semantics decision from M6:
+// Value, not *Value). That matches the value-semantics decision:
 // `$ys = $xs;` and parameter binding both copy the whole structure;
 // aliasing is impossible.
 type Value struct {
@@ -147,16 +147,16 @@ type Value struct {
 	Bool       bool
 	List       []Value       // KindList: element data
 	Map        []MapEntry    // KindMap:  insertion-ordered entries
-	Bytes      []byte        // KindBytes (M12): byte data
-	Fields     []StructField // KindStruct (M13.1): declaration-ordered field values
+	Bytes      []byte        // KindBytes: byte data
+	Fields     []StructField // KindStruct: declaration-ordered field values
 	StructName string        // KindStruct: name of the struct definition this value belongs to
-	StructNS   string        // KindStruct (M15.2): library namespace prefix; empty for user-defined structs
+	StructNS   string        // KindStruct: library namespace prefix; empty for user-defined structs
 	ElemTyp    *parser.Type  // KindList: element type
 	KeyTyp     *parser.Type  // KindMap:  key type
 	ValTyp     *parser.Type  // KindMap:  value type
-	Task       *TaskState    // KindTask (M16.0): shared handle - copying a task copies the pointer
+	Task       *TaskState    // KindTask: shared handle - copying a task copies the pointer
 
-	// shared (M16.5.1) is the aliasing marker for compound backings.
+	// shared is the aliasing marker for compound backings.
 	// nil for freshly-constructed compounds and for scalars; set by
 	// Share() to a *bool = true when the Value gets read via
 	// evalExpr(VarExpr) (any variable reference is a potential alias
@@ -180,16 +180,16 @@ func BoolVal(b bool) Value     { return Value{Kind: KindBool, Bool: b} }
 
 // BytesVal constructs a bytes value with the given data. The slice is
 // taken by reference; callers needing value-semantics guarantees
-// (assignment, parameter binding) must call Value.Copy. M12.
+// (assignment, parameter binding) must call Value.Copy.
 func BytesVal(data []byte) Value { return Value{Kind: KindBytes, Bytes: data} }
 
-// StructVal constructs a user-defined struct value (M13.1).
+// StructVal constructs a user-defined struct value.
 func StructVal(name string, fields []StructField) Value {
 	return Value{Kind: KindStruct, StructName: name, Fields: fields}
 }
 
 // NamespacedStructVal constructs a library-provided struct value
-// behind the `<ns>.` prefix (M15.2). The runtime distinguishes
+// behind the `<ns>.` prefix. The runtime distinguishes
 // `os.Result` from a user-defined `Result` via the namespace tag, so
 // type matching at variable bindings keeps the two apart.
 func NamespacedStructVal(ns, name string, fields []StructField) Value {
@@ -206,7 +206,7 @@ func ListVal(elemT parser.Type, data []Value) Value {
 
 // TaskVal wraps an existing TaskState in a Value of kind KindTask. The
 // state pointer is shared - subsequent copies of this Value reference
-// the same underlying task (M16.0; see TaskState).
+// the same underlying task (see TaskState).
 func TaskVal(elemT parser.Type, state *TaskState) Value {
 	t := elemT
 	state.ElemTyp = &t
@@ -220,7 +220,7 @@ func MapVal(keyT, valT parser.Type, entries []MapEntry) Value {
 	return Value{Kind: KindMap, Map: entries, KeyTyp: &kt, ValTyp: &vt}
 }
 
-// Share (M16.5.1) marks v as an aliased view of its compound backing
+// Share marks v as an aliased view of its compound backing
 // and returns v unchanged (same slice headers, no allocation). Called
 // from evalExpr for VarExpr so any variable reference records that
 // the underlying data might now have multiple readers. A future
@@ -228,7 +228,7 @@ func MapVal(keyT, valT parser.Type, entries []MapEntry) Value {
 // the shared flag is set.
 //
 // For scalars and KindTask (which shares state by design), Share is
-// a no-op. M16.5.5: the scalar fast path is a single range compare
+// a no-op. The scalar fast path is a single range compare
 // (`KindBytes <= Kind <= KindStruct`) so the Go inliner can fold the
 // call at every VarExpr eval site, eliminating the function-call
 // overhead for the common scalar-variable read.
@@ -245,7 +245,7 @@ func (v Value) Share() Value {
 	return v
 }
 
-// Ensure (M16.5.1) is the mutation-site detach. If v was Shared
+// Ensure is the mutation-site detach. If v was Shared
 // (sharedTag non-nil and *shared true), return a DeepCopy with a
 // private backing that the caller can safely mutate. Otherwise
 // return v as-is - the common append/rebind loop where nothing else
@@ -261,7 +261,7 @@ func (v Value) Ensure() Value {
 	return v
 }
 
-// Copy returns a deep clone of v (M16.5.1: kept as the public
+// Copy returns a deep clone of v (kept as the public
 // deep-copy alias). Libraries and other callers whose pattern is
 // "Copy then mutate freely" (e.g. lists.shuffle, lists.reverse)
 // keep working unchanged. Interpreter sites that can safely alias
@@ -291,21 +291,21 @@ func (v Value) DeepCopy() Value {
 		}
 		return Value{Kind: KindMap, Map: out, KeyTyp: v.KeyTyp, ValTyp: v.ValTyp}
 	case KindBytes:
-		// M12: same value-semantics as lists / maps - deep copy so the
+		// same value-semantics as lists / maps - deep copy so the
 		// callee can't surprise the caller by mutating a shared
 		// underlying slice.
 		out := make([]byte, len(v.Bytes))
 		copy(out, v.Bytes)
 		return Value{Kind: KindBytes, Bytes: out}
 	case KindTask:
-		// M16.0: tasks are the one exception to value-semantics. A task
+		// tasks are the one exception to value-semantics. A task
 		// represents a single underlying operation; copies of a `task
 		// of T` Value share the same TaskState pointer so multiple
 		// waiters see the same result and the observed bit is global to
 		// the handle.
 		return Value{Kind: KindTask, Task: v.Task}
 	case KindStruct:
-		// M13.1: deep copy fields so a struct passed into a method or
+		// deep copy fields so a struct passed into a method or
 		// returned from it can't surprise its caller.
 		out := make([]StructField, len(v.Fields))
 		for i, f := range v.Fields {
@@ -336,7 +336,7 @@ func ZeroFor(t parser.Type) Value {
 	case parser.TypeBytes:
 		return BytesVal([]byte{})
 	case parser.TypeStruct:
-		// M13.1: a zero struct is constructed by the interpreter when it
+		// a zero struct is constructed by the interpreter when it
 		// has access to the StructDef registry. ZeroFor only sees the
 		// type name (Type.StructName), not the field list, so it returns
 		// a struct with empty Fields here; execDefine routes uninitialised
@@ -403,7 +403,7 @@ func (v Value) Display() string {
 		b.WriteByte('}')
 		return b.String()
 	case KindBytes:
-		// M12: bytes display as hex pairs separated by spaces, wrapped
+		// bytes display as hex pairs separated by spaces, wrapped
 		// in `bytes[...]`. Picked over a string-decoded form because
 		// bytes are explicitly not assumed to be valid UTF-8 - the
 		// hex form is unambiguous and round-trippable in `%v` output.
@@ -420,7 +420,7 @@ func (v Value) Display() string {
 		b.WriteByte(']')
 		return b.String()
 	case KindStruct:
-		// M13.1: struct display reuses the literal-shaped form so a
+		// struct display reuses the literal-shaped form so a
 		// printed value reads as the source code the user would write
 		// to reproduce it. `Name{field: value, ...}` for non-empty
 		// fields; `Name{}` for empty.
@@ -442,7 +442,7 @@ func (v Value) Display() string {
 		b.WriteByte('}')
 		return b.String()
 	case KindTask:
-		// M16.0: tasks are opaque handles - the display form just
+		// tasks are opaque handles - the display form just
 		// labels the task as pending or done, without exposing the
 		// captured frame or the result (which printf already covers
 		// via task.wait + a primitive print).
@@ -490,7 +490,7 @@ func (v Value) MatchesDeclared(t parser.Type) bool {
 	case parser.TypeBytes:
 		return v.Kind == KindBytes
 	case parser.TypeStruct:
-		// M13.1 / M15.2: struct types match by (namespace, name). A
+		// struct types match by (namespace, name). A
 		// struct value with empty fields and matching name+ns matches
 		// the declared type; that's how ZeroFor's placeholder gets
 		// accepted before the interpreter materialises the real field
@@ -515,7 +515,7 @@ func (v Value) MatchesDeclared(t parser.Type) bool {
 		}
 		return t.KeyType.Equal(*v.KeyTyp) && t.ValType.Equal(*v.ValTyp)
 	case parser.TypeTask:
-		// M16.0: `task of T` matches a Value of KindTask whose recorded
+		// `task of T` matches a Value of KindTask whose recorded
 		// element type equals T. A task value without a recorded element
 		// type (shouldn't happen post-construction, but defensive) is
 		// considered compatible with any task type.
@@ -569,7 +569,7 @@ func (v Value) Equal(o Value) bool {
 			}
 			return true
 		case KindStruct:
-			// M13.1 / M15.2: structs compare equal if they have the
+			// structs compare equal if they have the
 			// same (namespace, name) and every field's value matches in
 			// declaration order. The namespace tag keeps a library
 			// `os.Result` distinct from a user-defined `Result`.

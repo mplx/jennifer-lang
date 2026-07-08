@@ -193,7 +193,7 @@ func runFile(path string) int {
 	testinglib.Install(in)
 	runErr := in.Run(prog)
 
-	// M16.0: the exit-time loud-fail. Even when Run returned cleanly,
+	// The exit-time loud-fail. Even when Run returned cleanly,
 	// any spawned task that ended with an error and was never
 	// task.wait'd / task.discard'd has its error printed to stderr
 	// and bumps the exit code. Tasks that are still in flight at exit
@@ -217,7 +217,7 @@ func runFile(path string) int {
 	}
 
 	if runErr != nil {
-		// `exit;` / `exit EXPR;` (M11) - user-requested clean
+		// `exit;` / `exit EXPR;` - user-requested clean
 		// termination from the main flow. Propagate the requested exit
 		// code without printing a runtime error trace.
 		if ex, ok := runErr.(*interpreter.ExitSignal); ok {

@@ -48,7 +48,7 @@ Lists and maps are **value-typed** in Jennifer: `$ys = $xs;` behaves
 as a copy, function parameters bind by copy, and `const` is deep.
 No aliasing is observable from user code.
 
-**M16.5.1 - shared-marker COW.** The implementation uses a lazy
+**Shared-marker COW.** The implementation uses a lazy
 copy-on-write protocol so the common "grow a list one element at a
 time" pattern doesn't pay an O(N) deep-copy per write. `Value` gains
 a `shared *bool` marker:
@@ -101,7 +101,7 @@ deep type tracking is preserved for nested `$xs[i][j] = ...` writes.
   keys are positioned runtime errors. Reads return the slot value by
   copy via Go's struct semantics, but the inner slice headers still
   alias - which is fine because reads can't mutate anything.
-- **Writes** (`execIndexAssign` / `execFieldAssign`, M13.1): both
+- **Writes** (`execIndexAssign` / `execFieldAssign`): both
   route through the unified `collectLvalueSteps` +
   `applyLvalueWrite` walker. The walker descends through the
   chain (any mix of `[index]` and `.field` nodes) on a fresh copy
@@ -114,7 +114,7 @@ deep type tracking is preserved for nested `$xs[i][j] = ...` writes.
   type-checked against the declared field type stored in the
   `StructDef`.
 
-### Structs (M13.1)
+### Structs
 
 User-defined struct types live in `Interpreter.structs`
 (`map[string]*parser.StructDef`), populated at `Run` time by hoisting
@@ -137,7 +137,7 @@ and at `execDefine` time before the init expression is evaluated, so
 the user sees `"unknown struct type"` rather than a misleading
 type-mismatch error.
 
-### Library-provided namespaced structs (M15.2)
+### Library-provided namespaced structs
 
 Libraries register their own struct types via
 `Interpreter.RegisterNamespacedStruct(libName, structName, fields)`.
@@ -154,12 +154,12 @@ At runtime the value carries both `StructName` and an optional
 user-defined `Result`; `Display` prefixes the namespace
 (`os.Result{exitCode: 0, ...}`). Field access, chained lvalues
 (`$r.exitCode`, `$line.from.x = 5;`), value semantics, and deep
-`const` all reuse the M13.1 user-struct machinery - only the
+`const` all reuse the user-struct machinery - only the
 type-resolution path differs.
 
 User code may not register namespaced structs; the API is Go-side
 only. Programs that want to declare their own structs keep using
-the M13.1 `def struct Name { ... };` bare form.
+the `def struct Name { ... };` bare form.
 
 ### Iteration
 
@@ -179,11 +179,11 @@ storage backends for the same set of bindings:
   every frame; the only view the REPL exercises because each REPL
   turn is a fresh parse with no resolver context linking it to
   prior-turn globals.
-- **`slots []Binding`** (M16.5.2) - the slot-indexed view. Sized
+- **`slots []Binding`** - the slot-indexed view. Sized
   from `Block.NumSlots` at frame construction (`NewEnvironmentSized`)
   or grown on demand from `DefineAt`. Empty when the resolver
   didn't run.
-- **`root *Environment`** (M16.5.4) - cached pointer to the
+- **`root *Environment`** - cached pointer to the
   outermost ancestor. Set at construction via `rootFor(parent,
   self)`; both `NewEnvironment*` and `borrowBlockEnv` populate it.
   `effectiveGlobal(env)` reads this field in O(1) with a
@@ -211,7 +211,7 @@ cannot assign a string to a variable declared as int).
   the two views stay in sync.
 - **`Get(name)`** and **`GetBinding(name)`** - walks up the chain.
 
-**Slot-based API** (M16.5.2 fast path):
+**Slot-based API** (fast path):
 
 - **`DefineAt(slot, name, val, declType, isConst)`** - installs the
   binding at `slots[slot]` (growing the slice if needed) and mirrors
@@ -226,7 +226,7 @@ cannot assign a string to a variable declared as int).
   checks match the name path; on success writes to both `slots[slot]`
   and `vars[name]`.
 
-`NewEnvironmentSized(parent, numSlots)` is the M16.5.2 constructor
+`NewEnvironmentSized(parent, numSlots)` is the constructor
 that pre-sizes `slots` from the resolver's hint, avoiding a grow on
 every `DefineAt` in hot loops. `NewEnvironment(parent)` (no size)
 is still used by REPL paths and by ad-hoc paths where the slot
@@ -237,7 +237,7 @@ variables declared inside don't leak out. `for` opens its own scope wrapping
 init/cond/step/body so the init variable is visible throughout the loop
 without escaping it.
 
-### Resolver / runtime scope alignment (M16.5.2)
+### Resolver / runtime scope alignment
 
 The resolver's static scope stack has to match the runtime's env
 chain exactly, or `(Depth, Slot)` addresses land in the wrong place.
@@ -262,7 +262,7 @@ one runtime frame":
   lookup at runtime. Spawn is coarse-grained concurrency dispatch,
   not hot-loop territory, so the perf regression is bounded.
 
-### Method call frames (M16.5.3)
+### Method call frames
 
 Three compounded moves cut the recursive-call cost:
 
@@ -294,9 +294,9 @@ Three compounded moves cut the recursive-call cost:
   parameter; the resolver's slot numbers align with the
   interpreter's storage layout automatically.
 
-### Namespaced-call fast paths (M16.5.4)
+### Namespaced-call fast paths
 
-Four more moves compound on top of M16.5.3:
+Four more moves compound on top of the method-call frame work:
 
 - **Pre-resolved namespaced calls / constants.** `QualifiedCallExpr`
   carries an opaque `Fn any` field; `QualifiedConstRefExpr` carries
@@ -332,9 +332,9 @@ Four more moves compound on top of M16.5.3:
   `releaseBlockEnv` clears `root = nil` on release so the pool
   doesn't retain a reference across borrow cycles.
 
-### Expression micro-optimizations (M16.5.5)
+### Expression micro-optimizations
 
-Two moves close out the M16.5 pass:
+Two moves close out the optimization pass:
 
 - **Constant folding at parse time.** `BinaryExpr` and
   `UnaryExpr` gained a `Folded Expr` field
@@ -350,7 +350,7 @@ Two moves close out the M16.5 pass:
   unfolded so the runtime hits the same error at the same
   source position - the fold pass never surfaces a parse-time
   error the runtime wouldn't have raised.
-- **`Value.Share()` scalar fast path.** The M16.5.1 mark-as-
+- **`Value.Share()` scalar fast path.** The mark-as-
   shared helper is called from every `VarExpr` eval. Its inner
   Kind switch became a range compare (`KindBytes <= Kind <=
   KindStruct`) small enough for the Go inliner to fold the
@@ -359,13 +359,13 @@ Two moves close out the M16.5 pass:
 
 ## Execution model
 
-1. `Interpreter.Run(prog)` calls `parser.Resolve(prog)` first (M16.5.2)
+1. `Interpreter.Run(prog)` calls `parser.Resolve(prog)` first
    so the AST carries `(Depth, Slot)` annotations before any structural
    check runs. Resolve is idempotent: re-running on an already-resolved
    program produces the same annotations. Any undefined-variable or
    shadowing error surfaces here as a positioned parse-time
    diagnostic, not a runtime error.
-2. Records `Imports` into `i.imported`. Right after that, M16.5.4's
+2. Records `Imports` into `i.imported`. Right after that,
    `resolveQualifiedRefs(prog)` walks the AST once and pre-fills
    every `QualifiedCallExpr.Fn` / `QualifiedConstRefExpr.Const`
    against the now-populated namespace tables. This pass has to run
@@ -380,13 +380,13 @@ Two moves close out the M16.5 pass:
 4. Creates the global `Environment` (`i.global`) and executes `prog.TopLevel`
    statements in source order in that global scope.
 5. Method calls execute the body in a fresh call frame whose parent is
-   `effectiveGlobal(env)` (M16.5.4: an O(1) `env.root` field read; in
+   `effectiveGlobal(env)` (an O(1) `env.root` field read; in
    serial code that's `i.global`, inside a `spawn` body it's the
-   spawn-globals snapshot). M16.5.3: the call frame is borrowed from
+   spawn-globals snapshot). The call frame is borrowed from
    the environment pool pre-sized to the parameter count; parameters
    bind through `DefineAt` into slots `0..N-1`; the callee is looked up
    via the pre-resolved `CallExpr.Method` pointer when set, falling
-   back to `i.methods` when it isn't (REPL turns). M16.5.4: scalar-Kind
+   back to `i.methods` when it isn't (REPL turns). Scalar-Kind
    arguments skip the Copy + declared-type-stamp step via
    `bindParamValue`. Top-level variables are visible inside methods
    (subject to the no-shadowing rule). The body's return value (bare
@@ -417,7 +417,7 @@ reference docs are split per library:
 - [libraries/os.md](../libraries/os.md) - `os.PLATFORM`, `os.ARCH`, `os.EOL`, `os.DIRSEP`, `os.PATHSEP`, `os.ARGS`, `os.getEnv`, `os.hasFlag`, `os.flag`, `os.run`, `os.spawn`, `os.wait`, `os.poll`, `os.kill`
 - [libraries/meta.md](../libraries/meta.md) - `meta.VERSION` (build version), `meta.BUILD` (toolchain)
 - [libraries/index.md](../libraries/index.md) - catalog and organizing principles
-- `len(EXPR)` is a language built-in primary (M15.4+), not a library function. See [grammar.md](grammar.md).
+- `len(EXPR)` is a language built-in primary, not a library function. See [grammar.md](grammar.md).
 
 What follows is the implementation contract, not the user-facing API.
 
@@ -440,8 +440,8 @@ func Install(in *interpreter.Interpreter) {
 }
 ```
 
-`BuiltinCtx` replaces an earlier `(out io.Writer, args)` signature at
-M7 to give input-consuming builtins symmetric access to stdin and the
+`BuiltinCtx` replaces an earlier `(out io.Writer, args)` signature
+to give input-consuming builtins symmetric access to stdin and the
 REPL flag. `Interpreter.In` defaults to `os.Stdin`; the REPL sets
 `Interpreter.InREPL = true` so `readLine` / `eof` refuse rather than
 racing the line editor for input.
@@ -465,7 +465,7 @@ Library-provided constants (`math.PI`, `math.E`, `time.UTC`,
 `time.PROGRAM_START`, `os.PLATFORM`, ...) are namespaced and
 registered through `RegisterNamespacedConst`. They resolve
 through `QualifiedConstRefExpr` - see the "Namespaced libraries"
-subsection below. The pre-M10 `RegisterConst` flat-namespace
+subsection below. The `RegisterConst` flat-namespace
 constant API and the bare-IDENT `ConstRefExpr` fallback for
 library constants are no longer used by any shipping library; the
 fallback path remains in the interpreter as exported API surface
@@ -540,7 +540,7 @@ the writer.
 float and return `int`. `round` uses Go's `math.Round` (half away from
 zero). `math.PI` and `math.E` are registered via
 `RegisterNamespacedConst` and resolved through `QualifiedConstRefExpr`
-like every other namespaced constant (M10+); the namespace prefix is
+like every other namespaced constant; the namespace prefix is
 reserved for the rest of the program once `use math;` runs.
 
 **`internal/lib/convert`**: parser side - the `typeCall` production lets
@@ -563,16 +563,16 @@ with the standard `strings` package, which it depends on heavily.
 ## Runtime errors
 
 `*runtimeError` carries optional `File`/`Line`/`Col` and a `Kind` tag
-(M13.2; defaults to `"runtime"` when the originating site doesn't
+(defaults to `"runtime"` when the originating site doesn't
 specialise it). Errors render as `runtime error at FILE:L:C: <msg>`
 (or `runtime error at L:C: <msg>` when the file is unknown). All
 five Jennifer error types - `*lexer.LexError`, `*preproc.PreprocessError`,
-`*parser.ParseError`, `*runtimeError`, and `*ErrorSignal` (M13.2) -
+`*parser.ParseError`, `*runtimeError`, and `*ErrorSignal` -
 implement a small `Position() (file string, line, col int)` interface.
 The CLI uses that interface (no string parsing) to look up the right
 file and print a caret under the offending source line.
 
-### Catchable errors (M13.2)
+### Catchable errors
 
 `try { body } catch (NAME) { handler }` runs the body and, on an
 error, binds the thrown value to `$NAME` in a fresh per-handler
@@ -626,10 +626,10 @@ the offending node via a small `posFor(node)` helper. The CLI's
 reported file differs from the program's main file it loads that file from
 disk before slicing out the snippet to display.
 
-## Concurrency (M16.0)
+## Concurrency
 
-M16.0 ships the `spawn` keyword, the `task of T` type kind, and
-the `task` library. Together they form Jennifer's first
+The `spawn` keyword, the `task of T` type kind, and
+the `task` library together form Jennifer's first
 concurrency surface. The user-facing model is
 [docs/user-guide/concurrency.md](../user-guide/concurrency.md);
 this section describes the runtime side.
@@ -830,7 +830,7 @@ surface. The deferred pieces:
 
 - **Channels.** No `chan T` type, no `send`/`recv` builtins. The
   spawn/task pair handles the common cases; a channel primitive
-  would add real bookkeeping and is a later M16.x candidate.
+  would add real bookkeeping and is a later candidate.
 - **Cancellation.** No way for an outsider to stop a running
   spawn body. Open design question (cooperative vs hard abort vs
   structured-concurrency tree).

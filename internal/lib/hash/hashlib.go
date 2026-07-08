@@ -4,7 +4,7 @@
 // Package hashlib implements Jennifer's `hash` library: MD5, SHA-1,
 // and SHA-256 digests over `bytes`, plus a streaming API for inputs
 // that don't fit in memory. Output is raw `bytes` - hex / base64
-// encoding lives in the future `encoding` library (M15.7) so the
+// encoding lives in the future `encoding` library so the
 // verb names don't multiply across libraries (stance #1).
 //
 // The library follows the codec-table shape already used by
@@ -14,7 +14,7 @@
 // identifier rule (which would reject `hash.md5` because `5` is a
 // digit) and keeps the public verb count small.
 //
-// Streaming uses the integer-handle pattern from `oslib` (M15.3):
+// Streaming uses the integer-handle pattern from `oslib`:
 // the Jennifer side sees an opaque `hash.Stream {id as int}` struct
 // while the real Go `hash.Hash` state lives in a package-scope map
 // keyed by `id`. `hash.finalize($stream)` removes the entry so
@@ -57,7 +57,7 @@ var (
 	nextID  int64
 )
 
-// Install registers the M15.6 hash surface.
+// Install registers the hash surface.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespacedStruct(LibraryName, "Stream", []parser.StructField{
 		{Name: "id", Type: parser.PrimitiveType(parser.TypeInt)},

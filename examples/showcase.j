@@ -2,7 +2,7 @@
 # Copyright (C) 2026 <developer@mplx.eu>
 #
 # showcase.j - exercises every Jennifer language feature and every
-# standard-library surface that ships through M16.5.1. Used as a
+# standard-library surface. Used as a
 # golden integration test by cmd/jennifer/examples_test.go.
 #
 # meta.VERSION is intentionally NOT printed - its value depends on
@@ -192,7 +192,7 @@ for (def who in $scores) {
     io.printf("  %s=%d\n", $who, $scores[$who]);
 }
 
-# --- M9: lists library + $xs[] append sugar ---
+# --- lists library + $xs[] append sugar ---
 io.printf("=== lists ===\n");
 def ns as list of int init [3, 1, 4, 1, 5];
 $ns[] = 9;
@@ -243,7 +243,7 @@ io.printf("whole          = %a\n", $whole);
 math.randSeed(1);
 io.printf("shuffle = %a\n", lists.shuffle([1, 2, 3, 4, 5]));
 
-# --- M9: maps library ---
+# --- maps library ---
 io.printf("=== maps lib ===\n");
 def points as map of string to int init {"alice": 90, "bob": 80, "carol": 70};
 def names as list of string init maps.keys($points);
@@ -283,7 +283,7 @@ io.printf("convert.typeOf(os.flag(\"x\"))       = %s\n", convert.typeOf(os.flag(
 io.printf("=== constants ===\n");
 io.printf("MAX=%d MAX_RETRIES=%d HTTP_OK=%d PI_APPROX=%f\n", MAX, MAX_RETRIES, HTTP_OK, PI_APPROX);
 
-# --- printf modifiers (M7) ---
+# --- printf modifiers ---
 /* Per-verb pipe modifiers shape the rendered representation:
    presentation only, never data transformation. Each example below
    exercises one or two modifiers so the golden output stays compact.
@@ -306,7 +306,7 @@ io.printf("null=literal: [%s|null=literal(\"N/A\")|pad=6|align=right]\n", $maybe
 # `||` is the literal-pipe escape after a verb, parallel to `%%`.
 io.printf("|| escape:    %s||then\n", "X");
 
-# --- empty container literals (M6) ---
+# --- empty container literals ---
 #
 # `[]` / `{}` are valid literals; their element/key/value type comes
 # from the declared variable type at the def site.
@@ -315,8 +315,8 @@ def emptyMap as map of string to int init {};
 io.printf("=== empty containers ===\n");
 io.printf("len(emptyList) = %d, len(emptyMap) = %d\n", len($emptyList), len($emptyMap));
 
-# --- M11: break / continue / repeat...until ---
-io.printf("=== M11 control flow ===\n");
+# --- break / continue / repeat...until ---
+io.printf("=== control flow ===\n");
 
 # break leaves the innermost loop early
 for (def k as int init 0; $k < 10; $k = $k + 1) {
@@ -340,13 +340,13 @@ repeat {
 } until ($count >= 3);
 io.printf("\n");
 
-# --- M11: printf %s|align=center ---
-io.printf("=== M11 align=center ===\n");
+# --- printf %s|align=center ---
+io.printf("=== align=center ===\n");
 io.printf("[%s|pad=8|align=center]\n", "hi");
 io.printf("[%s|pad=9|align=center]\n", "hi");
 
-# --- M11: printf %a aggregate verb ---
-io.printf("=== M11 aggregate %%a ===\n");
+# --- printf %a aggregate verb ---
+io.printf("=== aggregate %%a ===\n");
 def nums as list of int init [1, 2, 3];
 io.printf("default        %a\n", $nums);
 io.printf("custom sep     %a|sep=\" | \"\n", $nums);
@@ -358,16 +358,16 @@ def scoreMap as map of string to int init {"a": 1, "b": 2};
 io.printf("map            %a\n", $scoreMap);
 io.printf("map kv style   %a|kv=\"=\"|sep=\" \"\n", $scoreMap);
 
-# --- M12: non-decimal literals + digit separators ---
-io.printf("=== M12 literals ===\n");
+# --- non-decimal literals + digit separators ---
+io.printf("=== literals ===\n");
 io.printf("0xff           = %d\n", 0xff);
 io.printf("0xDEAD_BEEF    = %d\n", 0xDEAD_BEEF);
 io.printf("0o755          = %d\n", 0o755);
 io.printf("0b1010_0110    = %d\n", 0b1010_0110);
 io.printf("1_000_000      = %d\n", 1_000_000);
 
-# --- M12: bit operators ---
-io.printf("=== M12 bit ops ===\n");
+# --- bit operators ---
+io.printf("=== bit ops ===\n");
 io.printf("0xff & 0x0f    = %d|base=16\n", 0xff & 0x0f);
 io.printf("0x0f | 0xf0    = %d|base=16\n", 0x0f | 0xf0);
 io.printf("0xff ^ 0xaa    = %d|base=16\n", 0xff ^ 0xaa);
@@ -375,8 +375,8 @@ io.printf("~0             = %d\n", ~0);
 io.printf("1 << 8         = %d\n", 1 << 8);
 io.printf("256 >> 1       = %d\n", 256 >> 1);
 
-# --- M12: bytes type ---
-io.printf("=== M12 bytes ===\n");
+# --- bytes type ---
+io.printf("=== bytes ===\n");
 def msg as bytes init convert.bytesFromString("Hi!", "utf-8");
 io.printf("len            = %d\n", len($msg));
 io.printf("msg[0]         = %d (H)\n", $msg[0]);
@@ -387,7 +387,7 @@ io.printf("after mutation = %v\n", $msg);
 def roundTripped as string init convert.stringFromBytes($msg, "utf-8");
 io.printf("round-trip     = %s", $roundTripped);
 
-# --- M13.1: structs (records) ---
+# --- structs (records) ---
 #
 # A struct names a fixed set of typed fields. Literals construct
 # (every field required), `.field` reads, `.field = ...;` writes.
@@ -397,7 +397,7 @@ io.printf("round-trip     = %s", $roundTripped);
 def struct Point { x as int, y as int };
 def struct Line { from as Point, to as Point };
 
-io.printf("=== M13.1 structs ===\n");
+io.printf("=== structs ===\n");
 def p as Point init Point{ x: 3, y: 4 };
 io.printf("p              = %v\n", $p);
 io.printf("p.x p.y        = %d %d\n", $p.x, $p.y);
@@ -410,14 +410,14 @@ def L as Line init Line{ from: Point{ x: 0, y: 0 }, to: Point{ x: 10, y: 20 } };
 $L.from.x = 5;
 io.printf("nested write   = %v\n", $L);
 
-# --- M13.2: try / catch / throw ---
+# --- try / catch / throw ---
 #
 # `try { ... } catch (err) { ... }` runs the body; any `throw EXPR;`
 # inside it, or any runtime error (out-of-bounds, missing key, etc.),
 # binds the thrown value to `$err` in the handler. Convention is to
 # throw an `Error` struct - the runtime auto-defines that struct shape.
 # A dedicated walkthrough lives in examples/trycatch.j.
-io.printf("=== M13.2 try/catch ===\n");
+io.printf("=== try/catch ===\n");
 
 # User throw, caught.
 try {
@@ -434,14 +434,14 @@ try {
     io.printf("runtime err  = kind=%s\n", $err.kind);
 }
 
-# --- M15.5: time (instants, durations, zones, strftime) ---
+# --- time (instants, durations, zones, strftime) ---
 #
 # time.now() is wall-clock and would drift the golden; we exercise
 # the deterministic surface (fromUnix + accessors + arithmetic +
 # format + iso) and type-check the moving parts.
 use time;
 
-io.printf("=== M15.5 time ===\n");
+io.printf("=== time ===\n");
 def epoch as time.Time init time.fromUnix(0);
 io.printf("epoch UTC       = %s\n", time.format($epoch, "%Y-%m-%d %H:%M:%S"));
 io.printf("epoch year      = %d\n", time.year($epoch));
@@ -455,7 +455,7 @@ io.printf("epoch<after     = %t\n", time.before($epoch, $afterEpoch));
 io.printf("typeOf now()    = %s\n", convert.typeOf(time.now()));
 io.printf("typeOf UTC      = %s\n", convert.typeOf(time.UTC));
 
-# --- M15.6: hash + crc, rendered through M15.7 encoding ---
+# --- hash + crc, rendered through encoding ---
 #
 # hash.compute + crc.compute return raw bytes; encoding.toText(_,"hex")
 # turns them into printable digests. This chains three libraries in
@@ -464,7 +464,7 @@ use hash;
 use crc;
 use encoding;
 
-io.printf("=== M15.6 hash / crc ===\n");
+io.printf("=== hash / crc ===\n");
 def digestIn as bytes init convert.bytesFromString("abc", "utf-8");
 io.printf("md5(abc)     = %s\n", encoding.toText(hash.compute($digestIn, "md5"), "hex"));
 io.printf("sha1(abc)    = %s\n", encoding.toText(hash.compute($digestIn, "sha1"), "hex"));
@@ -478,8 +478,8 @@ hash.update($sha, convert.bytesFromString("a", "utf-8"));
 hash.update($sha, convert.bytesFromString("bc", "utf-8"));
 io.printf("sha256 stream = %s\n", encoding.toText(hash.finalize($sha), "hex"));
 
-# --- M15.7: encoding introspection + binary-to-text + codecs ---
-io.printf("=== M15.7 encoding ===\n");
+# --- encoding introspection + binary-to-text + codecs ---
+io.printf("=== encoding ===\n");
 io.printf("base64(abc)  = %s\n", encoding.toText($digestIn, "base64"));
 io.printf("hex round    = %s\n", convert.stringFromBytes(encoding.fromText("616263", "hex"), "utf-8"));
 io.printf("isAscii(abc) = %t\n", encoding.isAscii($digestIn));
@@ -488,7 +488,7 @@ def latin as bytes init encoding.encode("café", "latin-1");
 io.printf("latin-1 hex  = %s\n", encoding.toText($latin, "hex"));
 io.printf("latin-1 back = %s\n", encoding.decode($latin, "latin-1"));
 
-# --- M16.0: task (spawn a computation, wait for the value) ---
+# --- task (spawn a computation, wait for the value) ---
 #
 # spawn { ... } evaluates immediately to a `task of T` handle; the
 # body runs concurrently. task.wait re-raises the body's error as
@@ -496,7 +496,7 @@ io.printf("latin-1 back = %s\n", encoding.decode($latin, "latin-1"));
 # a list of results in list order.
 use task;
 
-io.printf("=== M16.0 task ===\n");
+io.printf("=== task ===\n");
 def one as task of int init spawn { return 21 + 21; };
 io.printf("wait single  = %d\n", task.wait($one));
 def many as list of task of int init [
@@ -506,7 +506,7 @@ def many as list of task of int init [
 ];
 io.printf("waitAll      = %a\n", task.waitAll($many));
 
-# --- M16.1: fs (whole-file round-trip in a scratch subdir) ---
+# --- fs (whole-file round-trip in a scratch subdir) ---
 #
 # Uses a fresh subdirectory in the current working directory so
 # the demo cleans up after itself and produces the same output
@@ -519,7 +519,7 @@ if (fs.exists(SHOWCASE_DIR)) {
 }
 fs.mkdirAll(SHOWCASE_DIR);
 fs.writeString(SHOWCASE_DIR + "/hi.txt", "hello, fs\n");
-io.printf("=== M16.1 fs ===\n");
+io.printf("=== fs ===\n");
 io.printf("read back    = %s", fs.readString(SHOWCASE_DIR + "/hi.txt"));
 io.printf("isFile       = %t\n", fs.isFile(SHOWCASE_DIR + "/hi.txt"));
 io.printf("isDir        = %t\n", fs.isDir(SHOWCASE_DIR));
@@ -528,7 +528,7 @@ io.printf("stat size    = %d\n", $stat.size);
 fs.removeAll(SHOWCASE_DIR);
 io.printf("cleanup      = %t\n", not fs.exists(SHOWCASE_DIR));
 
-# --- M16.2: net (in-process TCP echo) ---
+# --- net (in-process TCP echo) ---
 #
 # The default `jennifer` binary has full networking; `jennifer-tiny`
 # has no netdev driver and every net.* call surfaces a friendly
@@ -536,7 +536,7 @@ io.printf("cleanup      = %t\n", not fs.exists(SHOWCASE_DIR));
 # the standard-Go success path (which is what `go test` uses).
 use net;
 
-io.printf("=== M16.2 net ===\n");
+io.printf("=== net ===\n");
 try {
     def listener as net.Listener init net.listen("127.0.0.1:0");
     def addr as string init net.address($listener);
@@ -558,10 +558,10 @@ try {
     io.printf("net unavailable (%s)\n", $err.kind);
 }
 
-# --- M16.3: regex (matches, find + groups, replace, split) ---
+# --- regex (matches, find + groups, replace, split) ---
 use regex;
 
-io.printf("=== M16.3 regex ===\n");
+io.printf("=== regex ===\n");
 io.printf("matches      = %t\n", regex.matches("^\\d+$", "42"));
 def hit as regex.Match init regex.find("(\\w+):(\\d+)", "port:8080");
 io.printf("find         = %s (%s / %s)\n", $hit.text, $hit.groups[0], $hit.groups[1]);
@@ -572,7 +572,7 @@ io.printf("replace      = %s\n", regex.replace("\\d+", "port 8080 host 22", "###
 io.printf("split        = %a\n", regex.split("\\s+", "a  b  c"));
 io.printf("escape       = %s\n", regex.escape("1+2=(3)"));
 
-# --- M16.4: testing (name-based dispatch, per-process accumulator) ---
+# --- testing (name-based dispatch, per-process accumulator) ---
 #
 # testing.run invokes a zero-arg method by name, catches user throws
 # and runtime errors (including exit), and appends a testing.Result
@@ -602,7 +602,7 @@ for (def r in $outcomes) {
         $fail = $fail + 1;
     }
 }
-io.printf("=== M16.4 testing ===\n");
+io.printf("=== testing ===\n");
 io.printf("ran=%d passed=%d failed=%d\n", len($outcomes), $pass, $fail);
 
 io.printf("=== done ===\n");

@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package encodinglib implements Jennifer's `encoding` library
-// (M15.7): byte/string introspection helpers, hex/base64 round-trip,
+// Package encodinglib implements Jennifer's `encoding` library:
+// byte/string introspection helpers, hex/base64 round-trip,
 // and a codec table for converting Jennifer strings into single-byte
 // encodings (and back).
 //
 // The cross-kind UTF-8 codec ships with `convert`
-// (`convert.bytesFromString` / `convert.stringFromBytes`, M12); this
+// (`convert.bytesFromString` / `convert.stringFromBytes`); this
 // library is where the codec proliferation happens because that's
 // where the table-based implementations belong.
 //
-// M15.7 ships four codecs: `"ascii"`, `"latin-1"`, `"windows-1252"`,
+// The library ships four codecs: `"ascii"`, `"latin-1"`, `"windows-1252"`,
 // `"ebcdic"` (IBM-1047). The long-tail single-byte codecs
-// (ISO-8859-{2..16}, Windows-{1250,1251,1253..1258}) are parked in
-// M24+ to be picked up when a real program asks for one; the
+// (ISO-8859-{2..16}, Windows-{1250,1251,1253..1258}) are parked
+// to be picked up when a real program asks for one; the
 // codec-table infrastructure is already in place for them when they
 // land.
 //
@@ -36,7 +36,7 @@ import (
 // LibraryName is the namespace prefix and `use` name.
 const LibraryName = "encoding"
 
-// Install registers the M15.7 encoding surface.
+// Install registers the encoding surface.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "isAscii", isAsciiFn)
 	in.RegisterNamespaced(LibraryName, "lenBytes", lenBytesFn)

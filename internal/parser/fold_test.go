@@ -5,7 +5,7 @@ package parser
 
 import "testing"
 
-// M16.5.5: constant-fold tests. Resolve() runs the fold pass on
+// Constant-fold tests. Resolve() runs the fold pass on
 // BinaryExpr / UnaryExpr; when both operands collapse to literals,
 // the .Folded field on the AST node carries a pre-computed literal
 // the interpreter returns instead of walking the operand tree.

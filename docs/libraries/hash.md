@@ -3,7 +3,7 @@
 Enable with `use hash;`. Computes fixed-size digests over `bytes`
 using common cryptographic-style algorithms (MD5, SHA-1, SHA-256).
 Output is raw `bytes`; users hex- or base64-encode through the
-`encoding` library (M15.7) when they need a string representation.
+`encoding` library when they need a string representation.
 
 For non-cryptographic checksums (transport integrity rather than
 content addressing), use [`crc`](crc.md) instead. The split makes
@@ -70,7 +70,7 @@ field; pass the struct around as an opaque token.
 No convenience wrappers like `hash.md5String(s)` ship. Stance #1
 "one way per thing": strings become bytes through
 `convert.bytesFromString`, the digest stays as bytes, and the user
-hex-encodes through `encoding.hex` when M15.7 lands. The example
+hex-encodes through `encoding.hex`. The example
 [`examples/hash.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/hash.j) carries a tiny inline
 `bytesToHex` helper for printing until `encoding` ships.
 
@@ -89,6 +89,5 @@ All errors are positioned at the call site.
 ## See also
 
 - [crc.md](crc.md) - non-cryptographic checksums (CRC-32, CRC-64).
-- [milestones.md](../milestones.md) - M15.6 ships hash/crc; M15.7
-  brings `encoding` for hex/base64 round-trips; M19 brings key-
-  based crypto.
+- [milestones.md](../milestones.md) - hash/crc, `encoding` for
+  hex/base64 round-trips, and key-based crypto.

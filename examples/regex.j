@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 #
-# regex.j - exercises the M16.3 `regex` library: boolean matches,
+# regex.j - exercises the `regex` library: boolean matches,
 # first + all matches with positional and named capture groups,
 # replace with group substitution, split, and escape for
 # literal-string patterns. RE2 syntax throughout.

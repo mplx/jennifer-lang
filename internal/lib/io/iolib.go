@@ -29,8 +29,8 @@ func Install(in *interpreter.Interpreter) {
 }
 
 // printf writes formatted output to stdout. Two forms:
-//   - printf(value)                 -> writes value's display form (M2 behavior)
-//   - printf(format, args...)       -> format must be string; substitutes verbs (M3)
+//   - printf(value)                 -> writes value's display form
+//   - printf(format, args...)       -> format must be string; substitutes verbs
 //
 // Verbs: %d (int), %f (float), %s (string), %t (bool), %v (any/display), %%.
 func printf(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
@@ -55,7 +55,7 @@ func sprintf(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 
 // formatArgs implements the shared single-arg / format-string semantics:
 //   - 0 args: error.
-//   - 1 non-string arg: print its display form (preserves M2 ergonomics for
+//   - 1 non-string arg: print its display form (preserves ergonomics for
 //     printing a single int/float/bool/null without a format string).
 //   - First arg is a string: treat as format string and consume the rest.
 //     Single-arg string form is a format string with 0 substitutions, so

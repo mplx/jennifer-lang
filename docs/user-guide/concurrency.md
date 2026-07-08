@@ -18,7 +18,7 @@ io.printf("answer: %d\n", $n);
 That's the whole story. No channels, no shared memory, no locks,
 no cancellation tokens, no goroutine-leak gotchas. The four pieces
 - the `spawn` keyword, the `task of T` type, the `task` library,
-and the exit-time loud-fail contract - are what M16.0 ships.
+and the exit-time loud-fail contract - are what concurrency ships.
 
 ## The model
 
@@ -44,7 +44,7 @@ full surface and worked examples per builtin.
 
 ## Why value-semantics capture matters
 
-The biggest single design choice in M16.0 is that **a `spawn`
+The biggest single design choice is that **a `spawn`
 block captures its surrounding scope by deep copy, not by
 reference**. Variables visible at the `spawn` site are copied into
 the spawn frame at the moment of launch; mutations on either side
@@ -158,7 +158,7 @@ This is deliberate. The default of every other concurrency model
 is some flavour of "errors in spawned work get silently dropped
 unless you go out of your way to handle them." That's a footgun
 - bugs hide inside unobserved tasks until something else breaks
-much later. M16.0's contract is the inverse: an unobserved spawn
+much later. Jennifer's contract is the inverse: an unobserved spawn
 error is **always** loud. The only way to silence it is to say so
 explicitly with `task.discard`.
 
@@ -198,7 +198,7 @@ Doing nothing is not a fourth option.
 
 ## What's deliberately not in v1
 
-The M16.0 surface stops short of several features common to other
+The current surface stops short of several features common to other
 languages' concurrency stories. Each was considered and deferred,
 not rejected:
 
@@ -206,7 +206,7 @@ not rejected:
   return value" is not in v1. The chosen surface (`task of T` +
   `wait/waitAll/waitAny`) handles the most common cases without
   the bookkeeping channels require. A channel primitive would
-  arrive in a later M16.x milestone.
+  arrive in a later milestone.
 - **Cancellation tokens.** No way to signal a running task to
   stop. The spawn body runs to completion or to an unhandled
   error. Cancellation is an open design question (cooperative
@@ -241,6 +241,6 @@ contract already addresses the main pain point).
 - [Methods](methods.md) - calling methods from inside a spawn body
   works normally; the body inherits the global env the same way
   any other call frame does.
-- [`docs/milestones.md`](../milestones.md) - the M16.0 entry has
+- [`docs/milestones.md`](../milestones.md) - the concurrency entry has
   the design rationale (data-race-freedom by construction, the
-  loud-fail decision, what's deferred to later M16.x).
+  loud-fail decision, what's deferred to later).

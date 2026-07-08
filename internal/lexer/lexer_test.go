@@ -19,7 +19,7 @@ func app() {
 		TOKEN_USE, TOKEN_IDENT, TOKEN_SEMI,
 		TOKEN_FUNC, TOKEN_IDENT, TOKEN_LPAREN, TOKEN_RPAREN, TOKEN_LBRACE,
 		TOKEN_DEFINE, TOKEN_IDENT, TOKEN_AS, TOKEN_INT_TYPE, TOKEN_INIT, TOKEN_INT, TOKEN_SEMI,
-		// `io.printf` lexes as IDENT DOT IDENT after M10's namespace-first migration.
+		// `io.printf` lexes as IDENT DOT IDENT under the namespace-first design.
 		TOKEN_IDENT, TOKEN_DOT, TOKEN_IDENT,
 		TOKEN_LPAREN, TOKEN_VARREF, TOKEN_PLUS, TOKEN_VARREF, TOKEN_RPAREN, TOKEN_SEMI,
 		TOKEN_RBRACE, TOKEN_EOF,
@@ -84,7 +84,7 @@ func TestTokenizeNumbersAndOperators(t *testing.T) {
 }
 
 func TestTokenizeComments(t *testing.T) {
-	// M14: comments and blank lines are emitted as trivia tokens; the
+	// Comments and blank lines are emitted as trivia tokens; the
 	// parser skips them at statement boundaries but the formatter
 	// round-trips them.
 	src := `# line comment
@@ -165,7 +165,7 @@ func TestTokenizeBlankLineCollapses(t *testing.T) {
 }
 
 func TestTokenizeNestedBlockComment(t *testing.T) {
-	// M14: block comments nest. A `/*` inside a block comment
+	// Block comments nest. A `/*` inside a block comment
 	// increments the depth counter; only matching `*/`s close.
 	src := "def /* outer /* inner */ still in outer */ def"
 	toks, err := Tokenize(src)
@@ -196,7 +196,7 @@ func TestTokenizeRejectsUnterminatedString(t *testing.T) {
 	}
 }
 
-// TestTokenizeM6Tokens covers the new punctuation and keywords M6 needs
+// TestTokenizeM6Tokens covers the punctuation and keywords needed
 // for list/map syntax: `[`, `]`, `:` and the keywords `list`, `map`,
 // `of`, `to`, `in`.
 func TestTokenizeM6Tokens(t *testing.T) {
