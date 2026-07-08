@@ -1450,16 +1450,23 @@ the reason `astjson.go` is already hand-rolled).
 Generate and parse UUIDs. Small, self-contained, TinyGo-clean (16
 bytes + version / variant bits + `8-4-4-4-12` hex).
 
-- **Surface.** `uuid.v4() -> string` (random), `uuid.v7() -> string`
-  (time-ordered: 48-bit big-endian millisecond timestamp + random),
-  `uuid.parse(s) -> bytes` (16, validates), `uuid.isValid(s) -> bool`,
-  `uuid.version(s) -> int`, constant `uuid.NIL`.
-- **Random source.** Uses `math`'s RNG for now (v4 predictability is
-  documented); swaps to crypto-grade random when **M19 `crypto`** lands
-  - a one-line source change. `v7`'s timestamp comes from `time.now()`.
-- **Acceptance.** v4 / v7 are well-formed with correct version and
-  variant bits; `parse` round-trips; v7 sorts by creation time; both
-  toolchains build.
+- **Surface.** `uuid.generate(v) -> string`, where `v` is `"v4"`
+  (random) or `"v7"` (time-ordered: 48-bit big-endian millisecond
+  timestamp + random). The version tag is a **string argument**, not a
+  `v4()` / `v7()` method - Jennifer identifiers are letters-only (no
+  digits), so the variant lives in an argument, mirroring
+  `hash.compute(b, "sha-256")`. Plus `uuid.parse(s) -> bytes` (16,
+  validates format), `uuid.isValid(s) -> bool`, `uuid.version(s) -> int`
+  (0 for NIL), constant `uuid.NIL`.
+- **Random source.** Draws from `math`'s shared seedable RNG for now (v4
+  predictability is documented); swaps to crypto-grade random when
+  **M19 `crypto`** lands - a one-line change to `uuidlib.randByte`.
+  `v7`'s timestamp is the wall clock (a package-local `nowFunc`, test-
+  swappable).
+- **Acceptance.** `generate("v4")` / `generate("v7")` are well-formed
+  with correct version and variant bits; `parse` round-trips
+  (case-insensitive); `generate("v7")` sorts by creation time; an
+  unknown version tag errors; both toolchains build.
 
 ## M16.11 - `compress`
 
@@ -1950,6 +1957,13 @@ Symmetric and asymmetric primitives, key derivation,
 crypto-grade random. System library; TinyGo-safe primitives
 only. Hashes already shipped in M15.6.
 
+- **Swap `uuid`'s random source.** `uuid` (M16.10) draws its v4 /
+  v7 randomness from `math`'s shared non-crypto RNG (seedable,
+  predictable - documented). When crypto-grade random lands here,
+  repoint `uuidlib.randByte` at it so `uuid.v4` is unguessable; the
+  change is one function, no surface change. Until then `uuid` must
+  not be used for security tokens.
+
 ## M20 - `httpd`
 
 Pure-Jennifer HTTP server atop `net`. Ships as a module under
@@ -2201,6 +2215,27 @@ willing to keep it green; they're not blocking anything.
   serialization are enough work to merit dedicated treatment. The
   text JSON form via `jennifer ast` is the placeholder until then.
   Deferred from M5.
+- **Profiler: max-call-depth metric.** Have `jennifer profile` track
+  Jennifer call depth (bump in `evalCall`, drop on return) and report
+  the max reached, per source position and overall. Names stack-limit
+  problems directly - the recursion-depth-vs-`-stack-size` headroom
+  that the recursive `fib` in `examples/benchmark.j` exercises on
+  `jennifer-tiny`. Small and additive to the existing hit-count /
+  wall-clock / `--allocs` collector; deferred because stack limits are
+  diagnosable by hand today. Heap-per-position stays out of scope
+  (`--allocs` already proxies copy churn; true RSS needs
+  `runtime.ReadMemStats` sampling, coarse under TinyGo).
+- **`tinygo_devtools` build tag.** The dev subcommands (`tokens` /
+  `ast` / `fmt` / `lint` / `profile` / `test`) are `!tinygo` for binary
+  *size*, not compatibility - they are TinyGo-clean Go. A
+  `//go:build !tinygo || tinygo_devtools` constraint (stub as
+  `tinygo && !tinygo_devtools`) plus a `make build-tinygo-dev` target
+  would let them run under the actual TinyGo runtime - e.g. to
+  `profile` a TinyGo-specific perf or stack issue in situ. Pairs with
+  the depth metric above: together they are "TinyGo runtime
+  introspection." Deferred - build-tag complexity across ~6 files and a
+  larger dev-tiny binary, for a diagnostic reached for only
+  occasionally.
 - **`io.lines() -> list of string`.** Slurp the whole stdin into a
   list. Additive on top of the streaming `readLine()` + `eof()`
   idiom; nice-to-have for tiny scripts, not blocking. Deferred from

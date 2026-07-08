@@ -39,6 +39,7 @@ always supports the full surface.
 | [`task`](task.md)         | `use task;`     | full                                                    | observe and join `task of T` handles produced by `spawn { ... }`. `task.wait`, `task.poll`, `task.discard`, `task.waitAll`, `task.waitAny`; pairs with the [user-guide concurrency tour](../user-guide/concurrency.md) |
 | [`testing`](testing.md)   | `use testing;`  | full                                                    | test-runner primitives. `testing.run`/`results`/`reset`/`report` + `testing.Result` struct. Catches runtime errors, throws, and (uniquely) `exit` inside test bodies. Three report formats: `"text"`, `"tap"`, `"junit"`. Foundation for the .j-side test framework. |
 | [`time`](time.md)         | `use time;`     | full                                                    | instant/duration arithmetic, calendar + Unix accessors, fixed-offset zones (`time.zone`, `time.inZone`, `time.UTC`, `time.local`), strftime format/parse, ISO round-trip; structs `time.Time`, `time.Duration`, `time.Zone` |
+| [`uuid`](uuid.md)         | `use uuid;`     | full                                                    | RFC 9562 UUIDs. `uuid.generate("v4")` (random) / `generate("v7")` (time-ordered) + `parse`/`isValid`/`version` + constant `NIL`. Version tag is a string arg; draws from `math`'s seedable RNG (not crypto-grade). |
 
 A quick taste:
 

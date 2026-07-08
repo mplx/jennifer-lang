@@ -30,6 +30,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/task"
 	"github.com/mplx/jennifer-lang/internal/lib/testing"
 	"github.com/mplx/jennifer-lang/internal/lib/time"
+	"github.com/mplx/jennifer-lang/internal/lib/uuid"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 )
@@ -99,6 +100,7 @@ func TestExamples(t *testing.T) {
 			netlib.Install(in)
 			regexlib.Install(in)
 			testinglib.Install(in)
+			uuidlib.Install(in)
 			if err := in.Run(prog); err != nil {
 				t.Fatalf("run %s: %v", name, err)
 			}

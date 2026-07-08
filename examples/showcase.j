@@ -572,6 +572,24 @@ io.printf("replace      = %s\n", regex.replace("\\d+", "port 8080 host 22", "###
 io.printf("split        = %a\n", regex.split("\\s+", "a  b  c"));
 io.printf("escape       = %s\n", regex.escape("1+2=(3)"));
 
+# --- json (encode / decode; decode yields generic values) ---
+use json;
+
+io.printf("=== json ===\n");
+io.printf("encode       = %s\n", json.encode({"name": "jen", "nums": [1, 2, 3], "ok": true}));
+def parsed as map of string to int init json.decode("{\"x\": 7, \"y\": 8}");
+io.printf("decode x+y   = %d\n", $parsed["x"] + $parsed["y"]);
+
+# --- uuid (RFC 9562; values are random / time-based, so assert facts) ---
+use uuid;
+
+io.printf("=== uuid ===\n");
+io.printf("v4 version   = %d\n", uuid.version(uuid.generate("v4")));
+io.printf("v7 version   = %d\n", uuid.version(uuid.generate("v7")));
+io.printf("valid        = %t\n", uuid.isValid(uuid.generate("v4")));
+io.printf("parse bytes  = %d\n", len(uuid.parse(uuid.generate("v4"))));
+io.printf("NIL          = %s\n", uuid.NIL);
+
 # --- testing (name-based dispatch, per-process accumulator) ---
 #
 # testing.run invokes a zero-arg method by name, catches user throws

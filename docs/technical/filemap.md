@@ -99,6 +99,8 @@ internal/lib/testing/testinglib.go         `testing` library: run/runWith/result
 internal/lib/testing/testinglib_test.go    testing library unit tests (pass/fail/runtime/exit paths, accumulator, each of the three report formats, boundary errors)
 internal/lib/testing/assertions.go         `testing` assertions: assertEqual/assertNotEqual/assertTrue/assertFalse/assertContains/assertThrows (throw Error{kind:"assertion"} at the call site)
 internal/lib/testing/assertions_test.go    assertion + runWith unit tests
+internal/lib/uuid/uuidlib.go               `uuid` library: generate("v4"/"v7") + parse/isValid/version + NIL; RFC 9562, hand-formatted hex, math shared RNG
+internal/lib/uuid/uuidlib_test.go          uuid library unit tests (v4/v7 version+variant bits, v7 time-ordering via nowFunc, parse round-trip + invalids, dispatch)
 
 internal/lint/lint.go                      `lint` checks: Diagnostic + grouped-ID registry (L0nn source / L1nn correctness / L2nn style / L3nn lifecycle) + KnownIDs/selectable/Catalog
 internal/lint/run.go                       Check driver + threshold Config + source-error diagnostic builder

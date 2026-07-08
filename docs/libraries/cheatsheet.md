@@ -189,6 +189,10 @@ flat lookup view, not authoritative.
 | [`time`](time.md)`.weekday($t)`                       | ISO 8601 weekday: Monday = 1 ... Sunday = 7.                                                                                        |
 | [`time`](time.md)`.year($t)`                          | Calendar year (int).                                                                                                                |
 | [`time`](time.md)`.zone(offset, name)`                | Build a `time.Zone` from an integer offset (seconds east of UTC) and a display name.                                                |
+| [`uuid`](uuid.md)`.generate(v)`                       | New UUID string; `v` is `"v4"` (random) or `"v7"` (time-ordered).                                                                   |
+| [`uuid`](uuid.md)`.isValid(s)`                        | Whether `s` is a well-formed UUID string.                                                                                           |
+| [`uuid`](uuid.md)`.parse(s)`                          | The 16 `bytes` of a UUID string; errors on malformed input.                                                                         |
+| [`uuid`](uuid.md)`.version(s)`                        | Version digit (4, 7, ...; 0 for NIL); errors on malformed input.                                                                     |
 
 ## Constants
 
@@ -206,6 +210,7 @@ flat lookup view, not authoritative.
 | [`os`](os.md)`.PLATFORM`                   | `string`       | OS tag: `"linux"`, `"darwin"`, `"windows"`, ...                                                  |
 | [`time`](time.md)`.PROGRAM_START`          | `time.Time`    | Captured the moment the time library installed; "since program launched" anchor.                 |
 | [`time`](time.md)`.UTC`                    | `time.Zone`    | Canonical UTC: `Zone{offset: 0, name: "UTC"}`.                                                   |
+| [`uuid`](uuid.md)`.NIL`                    | `string`       | The all-zero UUID `00000000-0000-0000-0000-000000000000`.                                        |
 
 ## Type-conversion calls
 

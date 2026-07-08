@@ -30,6 +30,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/task"
 	"github.com/mplx/jennifer-lang/internal/lib/testing"
 	"github.com/mplx/jennifer-lang/internal/lib/time"
+	"github.com/mplx/jennifer-lang/internal/lib/uuid"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 	"github.com/mplx/jennifer-lang/internal/version"
@@ -250,6 +251,7 @@ func installLibraries(in *interpreter.Interpreter) {
 	netlib.Install(in)
 	regexlib.Install(in)
 	testinglib.Install(in)
+	uuidlib.Install(in)
 }
 
 // positioned is the interface every Jennifer error type implements. It lets

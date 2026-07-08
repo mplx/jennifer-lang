@@ -235,6 +235,15 @@ named group  = key=n val=7
 replace      = port ### host ###
 split        = [a, b, c]
 escape       = 1\+2=\(3\)
+=== json ===
+encode       = {"name":"jen","nums":[1,2,3],"ok":true}
+decode x+y   = 15
+=== uuid ===
+v4 version   = 4
+v7 version   = 7
+valid        = true
+parse bytes  = 16
+NIL          = 00000000-0000-0000-0000-000000000000
 === testing ===
 ran=2 passed=1 failed=1
 === done ===

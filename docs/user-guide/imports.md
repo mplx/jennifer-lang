@@ -42,6 +42,7 @@ over string / list / map / bytes; no import needed.
 | `net`     | `use net;`     | TCP + UDP sockets and DNS. TCP `connect`/`listen`/`accept`/`readBytes`/`writeBytes`/`eof`, UDP `listenUDP`/`sendTo`/`recvFrom`, DNS `lookup`/`reverseLookup`, polymorphic `close`/`address`; structs `net.Conn`, `net.Listener`, `net.UDPSocket`, `net.Datagram`. Supported on the default `jennifer` binary; the constrained `jennifer-tiny` returns friendly errors from every entry point | [libraries/net.md](../libraries/net.md) |
 | `regex`   | `use regex;`   | regular expressions over `string` (RE2 syntax). `matches`/`find`/`findAll`/`replace`/`split`/`escape` + `regex.Match` with positional and named captures. Implicit LRU cache for compiled patterns; rune-index offsets in matches | [libraries/regex.md](../libraries/regex.md) |
 | `testing` | `use testing;` | test-runner primitives. `run`/`results`/`reset`/`report` + `testing.Result`. Catches runtime errors, throws, and `exit` inside test bodies. Three report formats: `"text"`, `"tap"`, `"junit"`. Foundation for the `.j`-side testing framework | [libraries/testing.md](../libraries/testing.md) |
+| `uuid`    | `use uuid;`    | RFC 9562 UUIDs. `uuid.generate("v4")` / `generate("v7")` + `parse`/`isValid`/`version` + constant `NIL`. Version tag is a string arg; RNG is `math`'s seedable source (not crypto-grade)                          | [libraries/uuid.md](../libraries/uuid.md)       |
 
 See [libraries/index.md](../libraries/index.md) for a fuller catalog
 and the library-organization principles, or
