@@ -1643,6 +1643,50 @@ uniformity axis is what decides the form.
   decision above, extra keys) error with a position; nested structs
   round-trip; both toolchains build.
 
+## M16.16 - `net` TLS
+
+Encrypted transport for `net`, so TLS-only protocols work (mail on
+465 / 993 / 995, HTTPS). TLS is cryptographic and cannot be pure
+Jennifer, so it lives in the system library - as a transport variant of
+the existing socket, not a separate library.
+
+- **Surface.** `net.connectTLS(host, port)` (implicit TLS, handshake on
+  connect) and `net.startTLS(conn, host)` (upgrade a plaintext
+  connection in place, for STARTTLS on 587 / 143 / 110). Both yield the
+  same connection handle as `net.connect`, so `net.readBytes` /
+  `writeBytes` / `close` / `address` work unchanged and callers stay
+  transport-agnostic. `host` drives certificate / SNI verification.
+- **Implementation.** Standard-Go `crypto/tls` over the existing TCP
+  dial; part of `net`'s `!tinygo` build (`netlib_std.go`), stubbed on
+  `jennifer-tiny` with the same friendly-error pattern as the rest of
+  `net` (TinyGo 0.41 has no usable `crypto/tls` + netdev). Certificate
+  verification is on by default; any skip-verify is a deliberate,
+  explicitly-named argument, never the default.
+- **Prerequisite for.** M18.2 `http` (HTTPS) and M18.6 `mail`.
+- **Acceptance.** A handshake against a known-good endpoint round-trips
+  bytes; `startTLS` upgrades an open connection; a bad certificate errors
+  (positioned); the default binary builds and `jennifer-tiny` returns the
+  friendly stub error.
+
+## M16.17 - `encoding` quoted-printable
+
+Add quoted-printable (RFC 2045) to `encoding`'s binary-to-text codecs,
+the topical sibling of the base64 / hex already there. Needed by M18.6
+`mail` (a MIME transfer encoding) and generally useful.
+
+- **Surface.** A new format string for the existing verbs -
+  `encoding.toText(b, "quoted-printable")` /
+  `encoding.fromText(s, "quoted-printable")` - not a new function; it
+  slots into the same dispatch as `"hex"` / `"base64"` / `"base64-url"`,
+  under the existing codec-name normalisation (case, `-` / `_`).
+- **Semantics.** Encode: printable ASCII stays literal; `=`, control,
+  and 8-bit bytes become `=XX`; soft line breaks (`=` + CRLF) keep lines
+  within the 76-column limit. Decode reverses it, tolerant of CRLF and
+  LF soft breaks. Round-trips `bytes`.
+- **Acceptance.** Canonical RFC 2045 vectors round-trip; the 76-column
+  soft-wrap is applied on encode and unwound on decode; both toolchains
+  build.
+
 ## M17 - Module system for Jennifer-coded libraries
 
 Real modules so Jennifer-coded libraries get namespaces, scope, and
@@ -1927,7 +1971,8 @@ Sub-milestones in priority order:
   regenerates the map from the host's tzdata before shipping,
   so the data is auditable as source. Keeps zone policy out
   of the interpreter binary.
-- **M18.2 - `http`** (client) - atop `net`.
+- **M18.2 - `http`** (client) - atop `net`. HTTPS needs net TLS
+  ([M16.16](#m1616---net-tls)).
 - **M18.3 -** (`json` promoted to a Go system library, **M16.9** -
   foundational and performance-sensitive enough to earn native speed.)
 - **M18.4 - `csv`** - simple, useful early.
@@ -1936,6 +1981,39 @@ Sub-milestones in priority order:
   `map`, arrays to `list`, and datetimes to `time.Time`; `.ini` is
   deferred as an optional tiny module only if demand surfaces (no real
   standard, ambiguous quoting / typing).
+- **M18.6 - `mail`** - SMTP / IMAP / POP3 clients plus MIME (RFC 5322
+  headers, multipart, 7bit / 8bit / quoted-printable / base64 transfer
+  encodings). **Pure Jennifer**: the protocols are line-oriented
+  command/response state machines and MIME is header + boundary
+  structure - exactly the text orchestration a `.j` module does well -
+  with the heavy lifting delegated to system libraries. Two system
+  prerequisites, because neither can be pure Jennifer:
+  - **net TLS ([M16.16](#m1616---net-tls), system).** Mail is almost
+    always encrypted (implicit TLS on 465 / 993 / 995, STARTTLS on
+    587 / 143 / 110), and TLS is cryptographic - it must be the host's
+    (`net.connectTLS` / `net.startTLS`), never interpreted `.j`.
+  - **quoted-printable in `encoding`
+    ([M16.17](#m1617---encoding-quoted-printable), system).** The MIME
+    transfer codec, alongside the base64 the module also leans on.
+  With those in place the `mail` module stays pure Jennifer: connection
+  dialogue, header parse/build, MIME-tree assembly and walk, and
+  address / date formatting.
+- **M18.7 - `redis`** - a Redis client over `net`. RESP2 framing
+  (`+OK`, `$len`, `*count`, `:int`, `-ERR`) parses cleanly in `.j`;
+  commands go out as RESP arrays. Plaintext first (trusted network /
+  localhost); `rediss://` TLS is a later add via net TLS
+  ([M16.16](#m1616---net-tls)). `AUTH [user] password` is a plain
+  command, so no `crypto` dependency. Typed per-command helpers
+  (`get -> string`, `incr -> int`, `lrange -> list`) keep the common
+  path off `any`; a generic `command(...)` returning the raw reply is
+  where `any` ([M16.14](#m1614---any-type)) helps. No hard prerequisites
+  (just `net`), so it can land ahead of `mail`.
+- **M18.8 - `memcache`** - a client for the `memcached` server's text
+  protocol (`set` / `get` / `delete` / `incr` / `decr`; replies
+  `STORED` / `VALUE ... END`) over `net`. Pure Jennifer, plaintext
+  (memcached rarely uses TLS); values are `bytes` / `string`. Named
+  `memcache` for the client / protocol; it talks to a `memcached`
+  daemon.
 
 (A Jennifer-coded `testing` module used to sit here as M18.5
 - assertion vocabulary, `setUp` / `tearDown` orchestration,
@@ -2259,6 +2337,21 @@ willing to keep it green; they're not blocking anything.
   substitute for, the M17 module system: `.j`-level extensibility
   (community / uncommon libraries writable in Jennifer) is M17's job with
   zero binary cost; build-time selection is only for the curated
+- **Relational databases (`sql`).** Postponed to M20+, pending a design
+  discussion. A system library - a storage engine and SQL planner can't
+  be interpreted, and wire-protocol auth needs crypto - driver-agnostic
+  over Go's `database/sql`, SQLite first, then MySQL / PostgreSQL;
+  standard-Go only, stubbed on `jennifer-tiny`. The questions that gate
+  it: the SQLite driver (cgo `mattn/go-sqlite3`, which breaks static /
+  cross-compile / TinyGo, vs pure-Go `modernc.org/sqlite`, multi-MB);
+  whether to accept the first heavyweight dependency in the library
+  layer (a break from "libraries stay dependency-free") and, if so, gate
+  it as a build-tag opt-in (per the note above); and the result-row
+  shape - `map of string to any` (a concrete motivator for `any`,
+  M16.14) vs a typed struct via map-to-struct (M16.15). Values bind only
+  through `?` placeholders (injection safety). Contrast the
+  text-protocol stores redis / memcache (M18.7 / M18.8), which are pure
+  Jennifer over `net` and need none of this.
   Go-level core.
 - **`io.lines() -> list of string`.** Slurp the whole stdin into a
   list. Additive on top of the streaming `readLine()` + `eof()`
