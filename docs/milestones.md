@@ -1494,6 +1494,108 @@ suites lose the convenient `jennifer test` orchestration
 but keep the assertion + runner primitives - they invoke
 `testing.run` explicitly from a hand-written driver.
 
+## M16.9 - `json`
+
+Native JSON encode / decode mapping onto the tagged-union `Value`.
+Promoted from the old Jennifer-coded plan (M18.3) to a Go system
+library because JSON is foundational and performance-sensitive - a
+char-by-char parser in `.j` pays interpreter overhead per byte.
+Hand-rolled to stay TinyGo-clean (`encoding/json` is reflect-heavy,
+the reason `astjson.go` is already hand-rolled).
+
+- **Surface.** `json.encode(v) -> string`, `json.encodePretty(v) ->
+  string` (2-space indent), `json.decode(s) -> Value`.
+- **Value mapping.** `null` maps to null; `int` to an integer number
+  and `float` to a number; `string`, `bool` map directly; `list` to
+  array; `map of string to V` to object; struct to object (by field
+  name); `bytes` to a base64 string. Non-string map keys and `task`
+  values are encode errors.
+- **Decode.** Produces generic Values (a number decodes to `int` when
+  integral, else `float`; objects to `map of string to ...`). A typed
+  target - `def p as Point init json.decode(s);` - fills the declared
+  struct's named fields through the existing `MatchesDeclared`
+  boundary, erroring on missing / unknown / wrong-type fields.
+- **Implementation.** Recursive-descent parser + emitter in
+  `internal/lib/json`, no `reflect`, no `encoding/json`; RFC 8259,
+  UTF-8, positioned errors (byte offset resolved to line / col).
+- **Acceptance.** Round-trips every Value kind with a JSON image;
+  typed struct decode enforces the schema; malformed input yields a
+  positioned error; both toolchains build.
+
+## M16.10 - `uuid`
+
+Generate and parse UUIDs. Small, self-contained, TinyGo-clean (16
+bytes + version / variant bits + `8-4-4-4-12` hex).
+
+- **Surface.** `uuid.v4() -> string` (random), `uuid.v7() -> string`
+  (time-ordered: 48-bit big-endian millisecond timestamp + random),
+  `uuid.parse(s) -> bytes` (16, validates), `uuid.isValid(s) -> bool`,
+  `uuid.version(s) -> int`, constant `uuid.NIL`.
+- **Random source.** Uses `math`'s RNG for now (v4 predictability is
+  documented); swaps to crypto-grade random when **M19 `crypto`** lands
+  - a one-line source change. `v7`'s timestamp comes from `time.now()`.
+- **Acceptance.** v4 / v7 are well-formed with correct version and
+  variant bits; `parse` round-trips; v7 sorts by creation time; both
+  toolchains build.
+
+## M16.11 - `compress`
+
+Byte-stream compression, `bytes` in / `bytes` out, plus streaming
+handles for large data.
+
+- **Not `encoding`.** `encoding` is the *representation* library:
+  charset mapping and binary-to-text (hex / base64 / base32 /
+  ascii85 / z85), reversible representations that don't reduce
+  information (base64 even grows the data). Compression is
+  entropy-based *size reduction* - a different operation with a
+  streaming shape of its own. Go's stdlib draws the same line
+  (`encoding/*` vs `compress/*`), which the routing mirrors.
+- **Surface.** One-shot `compress.gzip(b)` / `gunzip(b)`, `deflate(b)`
+  / `inflate(b)`, `zlib(b)` / `unzlib(b)`, with an optional level
+  argument (fast / default / best). Streaming via the integer-handle
+  pattern `hash` uses (`compress.stream(algo)` / `update` / `finalize`).
+- **Implementation.** Go `compress/flate` + `compress/gzip` +
+  `compress/zlib` (pure Go; verify TinyGo-clean before relying on it).
+- **Acceptance.** Round-trips each algorithm; `gzip` output is readable
+  by `gzip(1)`; streaming matches one-shot; both toolchains build.
+
+## M16.12 - `archive`
+
+tar and zip container read / write over `bytes`, value-semantic so it
+needs no `fs`.
+
+- **Surface.** `archive.tar(entries) -> bytes` / `archive.untar(b) ->
+  list of Entry`; `archive.zip` / `archive.unzip`. `Entry` is a struct
+  `{ name, data as bytes, mode, mtime }`. Convenience combos
+  `archive.targz(entries)` / `untargz(b)` (and `.tgz`) call into
+  **M16.11** `compress`, so the everyday `.tar.gz` case is a single
+  `use archive;`, not two imports. An `fs`-integrated helper ("tar a
+  directory") can layer on top later.
+- **Implementation.** Go `archive/tar` (pure Go) + `archive/zip` (uses
+  `compress/flate`, so depends on **M16.11**). No `fs` dependency in the
+  core; the bytes-in/out shape keeps it TinyGo-safe.
+- **Acceptance.** tar / untar and zip / unzip round-trip; `tar(1)` /
+  `unzip(1)` read the output; both toolchains build.
+
+## M16.13 - `ansi`
+
+Terminal styling as explicit string wrappers. Deliberately a library,
+not `printf` verb modifiers: colour is presentational rather than value
+formatting, and escapes must not leak into redirected output. Rejecting
+a `%s|color=` printf modifier in favour of this explicit library earns a
+[technical/rejected.md](technical/rejected.md) entry when the milestone
+lands.
+
+- **Surface.** `ansi.color(s, name)` / `ansi.bgColor(s, name)`,
+  `ansi.style(s, name)` (bold / dim / italic / underline / reverse),
+  `ansi.rgb(s, r, g, b)` for truecolor, `ansi.strip(s)` to remove all
+  escapes, plus convenience `ansi.red(s)` / `bold(s)` / ... shortcuts.
+- **TTY.** Not auto-detected - the caller gates styling on a new
+  `os.isatty()` helper (shipped with this milestone) so a program that
+  redirects `printf` to a file keeps it clean by its own choice.
+- **Acceptance.** Wrapping composes and nests; `strip` reverses it;
+  `os.isatty()` reports correctly; both toolchains build.
+
 ---
 
 **Phase D: higher-level and Jennifer-coded libraries (M17-M20).**
@@ -1783,10 +1885,14 @@ Sub-milestones in priority order:
   so the data is auditable as source. Keeps zone policy out
   of the interpreter binary.
 - **M18.2 - `http`** (client) - atop `net`.
-- **M18.3 - `json`** - data interchange ubiquity.
+- **M18.3 -** (`json` promoted to a Go system library, **M16.9** -
+  foundational and performance-sensitive enough to earn native speed.)
 - **M18.4 - `csv`** - simple, useful early.
-- **M18.5 - `yaml`, `xml`, `markdown`, `pretty`** - one or more
-  sub-milestones depending on scope when planned.
+- **M18.5 - `yaml`, `toml`, `xml`, `markdown`, `pretty`** - one or more
+  sub-milestones depending on scope when planned. `toml` maps tables to
+  `map`, arrays to `list`, and datetimes to `time.Time`; `.ini` is
+  deferred as an optional tiny module only if demand surfaces (no real
+  standard, ambiguous quoting / typing).
 
 (A Jennifer-coded `testing` module used to sit here as M18.5
 - assertion vocabulary, `setUp` / `tearDown` orchestration,
@@ -1959,7 +2065,20 @@ library a sub-milestone.
 
 Each domain its own milestone with sub-milestones as needed:
 
-- **ML.** Vector, matrix, stats, ML primitives.
+- **ML.**
+  - **M24.1 - `stats`** - descriptive statistics over
+    `list of int|float`: mean, median, mode, variance, stddev,
+    percentile, min / max / sum, correlation. Pure-value,
+    TinyGo-clean; the highest-value, simplest piece, so first.
+  - **M24.2 - `linalg`** - vectors as `list of float` (dot, norm,
+    cross, scale, add / sub) and matrices as `list of list of float`
+    (matmul, transpose, determinant, inverse, solve, identity).
+    Algorithms implemented directly - no `gonum`, too large a
+    dependency. Matrices stay `list of list of float` for v1
+    (idiomatic and value-semantic); a Go-backed matrix handle is the
+    noted future escape hatch when big-matrix performance demands it.
+  - **M24.3 - ML primitives** - atop `stats` / `linalg`, when demand
+    surfaces.
 - **Bioinformatics.** Sequence alignment (Smith-Waterman,
   Needleman-Wunsch), FASTA/FASTQ parsers, molecule structures.
 - **Sandbox.** Restricted-capability execution.
@@ -1969,12 +2088,21 @@ some of this space first.
 
 ## M25+ - encoding long-tail codecs
 
-The remaining single-byte codecs the original M15.7 spec
-listed, parked here so they're picked up only when a real
-Jennifer program asks for them. The codec-table infrastructure
-shipped with M15.7 - each new entry is just a 256-entry table
-plus its alias list.
+The remaining `encoding` codecs, parked here so they're picked
+up only when a real Jennifer program asks for them: the
+single-byte character sets the original M15.7 spec listed, plus
+a few binary-to-text additions. The character codec-table
+infrastructure shipped with M15.7 - each new character-set entry
+is just a 256-entry table plus its alias list.
 
+- **Binary-to-text** (`toText` / `fromText`, joining today's
+  `hex` / `base64` / `base64-url`): `base32` and `base32-hex`
+  (RFC 4648), `ascii85` (Adobe / btoa, the `!`-`u` alphabet with
+  `z` for an all-zero group), and `z85` (ZeroMQ Base85, the
+  source-safe alphabet). `base32` and `ascii85` map onto Go's
+  `encoding/base32` / `encoding/ascii85`; `z85` is a small
+  hand-rolled table (no stdlib codec). Names normalise case and
+  `-` / `_` like the existing entries.
 - **ISO-8859-{2..16}** (15 codecs): Central / Eastern European,
   Cyrillic, Arabic, Greek, Hebrew, Turkish, Nordic, Celtic,
   South-Eastern European. Canonical alias form `"iso-8859-N"`.
