@@ -18,6 +18,7 @@ import (
 	fslib "github.com/mplx/jennifer-lang/internal/lib/fs"
 	hashlib "github.com/mplx/jennifer-lang/internal/lib/hash"
 	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
+	jsonlib "github.com/mplx/jennifer-lang/internal/lib/json"
 	listslib "github.com/mplx/jennifer-lang/internal/lib/lists"
 	mapslib "github.com/mplx/jennifer-lang/internal/lib/maps"
 	mathlib "github.com/mplx/jennifer-lang/internal/lib/math"
@@ -164,6 +165,7 @@ func runProgramOutput(path, src string) (string, error) {
 	hashlib.Install(in)
 	crclib.Install(in)
 	encodinglib.Install(in)
+	jsonlib.Install(in)
 	tasklib.Install(in)
 	fslib.Install(in)
 	netlib.Install(in)

@@ -49,6 +49,7 @@ internal/interpreter/compound_test.go      Nested list-of-list / map-of-list / c
 internal/interpreter/bytes_test.go         Bytes type + non-decimal literals + bit-op tests
 internal/interpreter/callbyname_test.go    CallByName / CallByNameWith dispatch + RaiseError classification tests
 internal/interpreter/value_alias_test.go   shared-marker COW alias-stress tests
+internal/interpreter/collection_typing_test.gogeneric-collection (literal / decode) validated entry-by-entry against declared element type at def-init + assign
 
 internal/lib/io/iolib.go                   `io` library entrypoint
 internal/lib/io/format.go                  printf / sprintf + verb-modifier mini-language
@@ -80,6 +81,9 @@ internal/lib/crc/crclib_test.go            crc library unit tests
 internal/lib/encoding/encodinglib.go       `encoding` library: introspection + toText/fromText + encode/decode dispatch
 internal/lib/encoding/codecs.go            character codec tables for ascii / latin-1 / windows-1252 / ebcdic (IBM-1047)
 internal/lib/encoding/encodinglib_test.go  encoding library unit tests
+internal/lib/json/jsonlib.go               `json` library: RFC 8259 encode/encodePretty + Value->JSON emitter (structs/maps->object, bytes->base64)
+internal/lib/json/jsondecode.go            `json` library: recursive-descent decoder -> generic Values (int/float split, positioned line/col errors)
+internal/lib/json/jsonlib_test.go          json library unit tests (encode/decode, int/float split, escapes/surrogates, positioned errors, round-trips)
 internal/lib/task/tasklib.go               `task` library: wait/poll/discard/waitAll/waitAny over `task of T` handles
 internal/lib/task/tasklib_test.go          task library unit tests (wait/discard/loud-fail/waitAll/waitAny + boundary checks)
 internal/lib/fs/fslib.go                   `fs` library: one-shot ops (read/write/append), metadata (exists/isFile/isDir/stat), dir ops (mkdir/mkdirAll/remove/removeAll/rename/list/walk), fs.Stat struct

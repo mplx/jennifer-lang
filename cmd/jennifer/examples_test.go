@@ -18,6 +18,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/fs"
 	"github.com/mplx/jennifer-lang/internal/lib/hash"
 	"github.com/mplx/jennifer-lang/internal/lib/io"
+	"github.com/mplx/jennifer-lang/internal/lib/json"
 	"github.com/mplx/jennifer-lang/internal/lib/lists"
 	"github.com/mplx/jennifer-lang/internal/lib/maps"
 	"github.com/mplx/jennifer-lang/internal/lib/math"
@@ -92,6 +93,7 @@ func TestExamples(t *testing.T) {
 			hashlib.Install(in)
 			crclib.Install(in)
 			encodinglib.Install(in)
+			jsonlib.Install(in)
 			tasklib.Install(in)
 			fslib.Install(in)
 			netlib.Install(in)

@@ -64,6 +64,9 @@ flat lookup view, not authoritative.
 | [`io`](io.md)`.sprintf(format, args...)`              | Format-string version of `sprintf`. Same verbs and `\|key=value` modifiers as `printf`.                                             |
 | [`io`](io.md)`.sprintf(value)`                        | Display-form of a value, returned as a string (doesn't write).                                                                      |
 | `len(v)` *(language built-in)*                        | Structural length: rune count (string), element count (list), entry count (map), byte count (bytes).                                |
+| [`json`](json.md)`.decode(s)`                         | Parse JSON text into a generic value (objects -> `map of string to V`, integral numbers -> `int` else `float`).                     |
+| [`json`](json.md)`.encode(v)`                         | Compact JSON string for an encodable value (struct/map -> object, `bytes` -> base64; task / non-string keys error).                 |
+| [`json`](json.md)`.encodePretty(v)`                   | Like `encode`, 2-space indented.                                                                                                    |
 | [`lists`](lists.md)`.concat(a, b)`                    | New list with `a`'s elements followed by `b`'s.                                                                                     |
 | [`lists`](lists.md)`.contains(xs, item)`              | True if `item` appears in `xs` (haystack, needle).                                                                                  |
 | [`lists`](lists.md)`.first(xs)`                       | Element at index 0. Empty input errors.                                                                                             |

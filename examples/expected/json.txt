@@ -1,0 +1,11 @@
+{"name":"jen","nums":[1,2,3],"ok":true}
+{
+  "a": 1,
+  "b": [
+    true,
+    null
+  ]
+}
+x+y = 15
+int float
+point = {"x":1,"y":2}

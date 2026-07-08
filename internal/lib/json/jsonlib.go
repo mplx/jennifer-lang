@@ -1,0 +1,184 @@
+// SPDX-License-Identifier: LGPL-3.0-only
+// Copyright (C) 2026 <developer@mplx.eu>
+
+// Package jsonlib is the `json` library: RFC 8259 encode / decode mapping onto
+// the interpreter's tagged-union Value. Hand-rolled (no `encoding/json`, no
+// `reflect`) to stay TinyGo-clean, the same reason the AST-JSON emitter is
+// hand-rolled. Decode produces generic Values (objects become `map of string
+// to V`, numbers become int when integral else float); there is no map-to-
+// struct coercion - Jennifer does no coercion at binding boundaries, so a
+// typed target is rebuilt explicitly from the decoded map (see the library
+// doc, and docs/technical/rejected.md).
+package jsonlib
+
+import (
+	"encoding/base64"
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+
+	"github.com/mplx/jennifer-lang/internal/interpreter"
+)
+
+// LibraryName is the namespace prefix (`json.`) and the `use` name.
+const LibraryName = "json"
+
+// Install registers json.encode / json.encodePretty / json.decode.
+func Install(in *interpreter.Interpreter) {
+	in.RegisterNamespaced(LibraryName, "encode", func(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+		return encodeFn(args, false)
+	})
+	in.RegisterNamespaced(LibraryName, "encodePretty", func(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+		return encodeFn(args, true)
+	})
+	in.RegisterNamespaced(LibraryName, "decode", func(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+		return decodeFn(args)
+	})
+}
+
+func encodeFn(args []interpreter.Value, pretty bool) (interpreter.Value, error) {
+	verb := "json.encode"
+	if pretty {
+		verb = "json.encodePretty"
+	}
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("%s expects 1 argument (value), got %d", verb, len(args))
+	}
+	var sb strings.Builder
+	if err := encodeValue(&sb, args[0], pretty, 0); err != nil {
+		return interpreter.Null(), fmt.Errorf("%s: %v", verb, err)
+	}
+	return interpreter.StringVal(sb.String()), nil
+}
+
+// encodeValue writes v's JSON image to sb. depth drives the pretty indent.
+func encodeValue(sb *strings.Builder, v interpreter.Value, pretty bool, depth int) error {
+	switch v.Kind {
+	case interpreter.KindNull:
+		sb.WriteString("null")
+	case interpreter.KindBool:
+		if v.Bool {
+			sb.WriteString("true")
+		} else {
+			sb.WriteString("false")
+		}
+	case interpreter.KindInt:
+		sb.WriteString(strconv.FormatInt(v.Int, 10))
+	case interpreter.KindFloat:
+		if math.IsNaN(v.Float) || math.IsInf(v.Float, 0) {
+			return fmt.Errorf("cannot encode non-finite float")
+		}
+		s := strconv.FormatFloat(v.Float, 'g', -1, 64)
+		// Keep the float kind round-trippable: a bare "1" would decode back as
+		// int, so give a float without a fractional/exponent part one.
+		if !strings.ContainsAny(s, ".eE") {
+			s += ".0"
+		}
+		sb.WriteString(s)
+	case interpreter.KindString:
+		encodeString(sb, v.Str)
+	case interpreter.KindBytes:
+		encodeString(sb, base64.StdEncoding.EncodeToString(v.Bytes))
+	case interpreter.KindList:
+		return encodeSeq(sb, len(v.List), pretty, depth, '[', ']', func(i int) error {
+			return encodeValue(sb, v.List[i], pretty, depth+1)
+		})
+	case interpreter.KindMap:
+		for _, e := range v.Map {
+			if e.Key.Kind != interpreter.KindString {
+				return fmt.Errorf("map key must be string, got %s", e.Key.Kind)
+			}
+		}
+		return encodeSeq(sb, len(v.Map), pretty, depth, '{', '}', func(i int) error {
+			encodeString(sb, v.Map[i].Key.Str)
+			sb.WriteString(colon(pretty))
+			return encodeValue(sb, v.Map[i].Value, pretty, depth+1)
+		})
+	case interpreter.KindStruct:
+		return encodeSeq(sb, len(v.Fields), pretty, depth, '{', '}', func(i int) error {
+			encodeString(sb, v.Fields[i].Name)
+			sb.WriteString(colon(pretty))
+			return encodeValue(sb, v.Fields[i].Value, pretty, depth+1)
+		})
+	case interpreter.KindTask:
+		return fmt.Errorf("cannot encode a task value")
+	default:
+		return fmt.Errorf("cannot encode value of kind %s", v.Kind)
+	}
+	return nil
+}
+
+// encodeSeq writes an array or object body, calling item(i) for each element.
+// item is responsible for writing the element (and, for objects, its key and
+// colon). Empty sequences collapse to `[]` / `{}` even when pretty.
+func encodeSeq(sb *strings.Builder, n int, pretty bool, depth int, open, close byte, item func(int) error) error {
+	sb.WriteByte(open)
+	if n == 0 {
+		sb.WriteByte(close)
+		return nil
+	}
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		newlineIndent(sb, pretty, depth+1)
+		if err := item(i); err != nil {
+			return err
+		}
+	}
+	newlineIndent(sb, pretty, depth)
+	sb.WriteByte(close)
+	return nil
+}
+
+func colon(pretty bool) string {
+	if pretty {
+		return ": "
+	}
+	return ":"
+}
+
+// newlineIndent writes a newline plus 2*depth spaces when pretty; nothing
+// otherwise.
+func newlineIndent(sb *strings.Builder, pretty bool, depth int) {
+	if !pretty {
+		return
+	}
+	sb.WriteByte('\n')
+	for i := 0; i < depth*2; i++ {
+		sb.WriteByte(' ')
+	}
+}
+
+// encodeString writes s as a quoted, escaped JSON string. Input is valid
+// UTF-8 (a Go string) and emitted as-is except for the mandatory escapes and
+// control characters below U+0020.
+func encodeString(sb *strings.Builder, s string) {
+	sb.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			sb.WriteString(`\"`)
+		case '\\':
+			sb.WriteString(`\\`)
+		case '\n':
+			sb.WriteString(`\n`)
+		case '\r':
+			sb.WriteString(`\r`)
+		case '\t':
+			sb.WriteString(`\t`)
+		case '\b':
+			sb.WriteString(`\b`)
+		case '\f':
+			sb.WriteString(`\f`)
+		default:
+			if r < 0x20 {
+				fmt.Fprintf(sb, `\u%04x`, r)
+			} else {
+				sb.WriteRune(r)
+			}
+		}
+	}
+	sb.WriteByte('"')
+}

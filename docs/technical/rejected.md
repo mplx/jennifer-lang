@@ -514,3 +514,37 @@ Rejected because:
   token. (This is also why the parallel `public` synonym for
   `export` and a standalone `private` marker are rejected - see
   M17.4.)
+
+## Implicit map-to-struct coercion at binding boundaries (M16.9 `json` typed decode)
+
+Considered: letting a `map of string to V` value materialize a struct at
+a typed binding *implicitly* - `def p as Point init json.decode(s);`
+silently filling `Point`'s fields from the decoded object, erroring on
+missing / unknown / wrong-type fields. It was the original M16.9 shape for
+typed JSON decode. **Only the implicit form is rejected here** - an
+*explicit* map-to-struct conversion (a spelled-out call or a struct-literal
+spread, where the reader sees the conversion at the call site) is the
+sanctioned path, specced as M16.15.
+
+Rejected because:
+
+- **Jennifer does no coercion at binding boundaries, anywhere.** The
+  boundary (`MatchesDeclared`, at def-init, assignment, params, field
+  writes) is strict: even `def x as float init 5;` errors - you write
+  `5.0`. A map-to-struct coercion would be the first exception, and a
+  cross-cutting one (it fires wherever a struct type meets a map value),
+  softening a stance the rest of the language holds uniformly.
+- **`json.decode` can't see the caller's declared type** (builtins don't
+  receive it), so the coercion could only live in the interpreter's
+  binding path - it is a language feature, not a library detail, and
+  would apply to every map, not just decoded ones.
+- **The explicit rebuild is short and self-documenting.**
+  `def p as Point init Point{ x: $m["x"], y: $m["y"] };` names the schema
+  at the call site, matching Jennifer's write-it-out style; the encode
+  direction (`json.encode($p)`) is unaffected.
+
+So `json.decode` returns generic Values (objects to `map of string to
+V`); typed targets are rebuilt by hand, or - once specced - through the
+*explicit* map-to-struct conversion (M16.15). See M16.9 in
+[milestones.md](../milestones.md) and
+[libraries/json.md](../libraries/json.md).

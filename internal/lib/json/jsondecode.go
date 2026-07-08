@@ -1,0 +1,353 @@
+// SPDX-License-Identifier: LGPL-3.0-only
+// Copyright (C) 2026 <developer@mplx.eu>
+
+package jsonlib
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
+
+	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"github.com/mplx/jennifer-lang/internal/parser"
+)
+
+func decodeFn(args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("json.decode expects 1 argument (string), got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("json.decode: argument must be string, got %s", args[0].Kind)
+	}
+	d := &decoder{s: args[0].Str}
+	d.skipWS()
+	v, err := d.parseValue()
+	if err != nil {
+		return interpreter.Null(), fmt.Errorf("json.decode: %v", err)
+	}
+	d.skipWS()
+	if d.pos < len(d.s) {
+		return interpreter.Null(), fmt.Errorf("json.decode: %v", d.errf("unexpected trailing content"))
+	}
+	return v, nil
+}
+
+// decoder is a recursive-descent JSON reader over a byte-indexed string.
+type decoder struct {
+	s   string
+	pos int
+}
+
+// errf builds an error tagged with the line/column of the current position.
+func (d *decoder) errf(format string, a ...any) error {
+	line, col := 1, 1
+	for i := 0; i < d.pos && i < len(d.s); i++ {
+		if d.s[i] == '\n' {
+			line++
+			col = 1
+		} else {
+			col++
+		}
+	}
+	return fmt.Errorf("%s at line %d, column %d", fmt.Sprintf(format, a...), line, col)
+}
+
+func (d *decoder) skipWS() {
+	for d.pos < len(d.s) {
+		switch d.s[d.pos] {
+		case ' ', '\t', '\n', '\r':
+			d.pos++
+		default:
+			return
+		}
+	}
+}
+
+func (d *decoder) parseValue() (interpreter.Value, error) {
+	if d.pos >= len(d.s) {
+		return interpreter.Null(), d.errf("unexpected end of input")
+	}
+	switch c := d.s[d.pos]; {
+	case c == '{':
+		return d.parseObject()
+	case c == '[':
+		return d.parseArray()
+	case c == '"':
+		s, err := d.parseString()
+		if err != nil {
+			return interpreter.Null(), err
+		}
+		return interpreter.StringVal(s), nil
+	case c == 't' || c == 'f':
+		return d.parseKeyword()
+	case c == 'n':
+		return d.parseKeyword()
+	case c == '-' || (c >= '0' && c <= '9'):
+		return d.parseNumber()
+	default:
+		return interpreter.Null(), d.errf("unexpected character %q", string(c))
+	}
+}
+
+// parseObject decodes a JSON object into a generic `map of string to V`.
+// Duplicate keys are last-wins so the map stays well-formed.
+func (d *decoder) parseObject() (interpreter.Value, error) {
+	d.pos++ // '{'
+	var entries []interpreter.MapEntry
+	d.skipWS()
+	if d.pos < len(d.s) && d.s[d.pos] == '}' {
+		d.pos++
+		return mapVal(entries), nil
+	}
+	for {
+		d.skipWS()
+		if d.pos >= len(d.s) || d.s[d.pos] != '"' {
+			return interpreter.Null(), d.errf("expected string key in object")
+		}
+		key, err := d.parseString()
+		if err != nil {
+			return interpreter.Null(), err
+		}
+		d.skipWS()
+		if d.pos >= len(d.s) || d.s[d.pos] != ':' {
+			return interpreter.Null(), d.errf("expected ':' after object key")
+		}
+		d.pos++
+		d.skipWS()
+		val, err := d.parseValue()
+		if err != nil {
+			return interpreter.Null(), err
+		}
+		entries = putEntry(entries, key, val)
+		d.skipWS()
+		if d.pos >= len(d.s) {
+			return interpreter.Null(), d.errf("unterminated object")
+		}
+		if d.s[d.pos] == ',' {
+			d.pos++
+			continue
+		}
+		if d.s[d.pos] == '}' {
+			d.pos++
+			return mapVal(entries), nil
+		}
+		return interpreter.Null(), d.errf("expected ',' or '}' in object")
+	}
+}
+
+func (d *decoder) parseArray() (interpreter.Value, error) {
+	d.pos++ // '['
+	elems := []interpreter.Value{}
+	d.skipWS()
+	if d.pos < len(d.s) && d.s[d.pos] == ']' {
+		d.pos++
+		return listVal(elems), nil
+	}
+	for {
+		d.skipWS()
+		v, err := d.parseValue()
+		if err != nil {
+			return interpreter.Null(), err
+		}
+		elems = append(elems, v)
+		d.skipWS()
+		if d.pos >= len(d.s) {
+			return interpreter.Null(), d.errf("unterminated array")
+		}
+		if d.s[d.pos] == ',' {
+			d.pos++
+			continue
+		}
+		if d.s[d.pos] == ']' {
+			d.pos++
+			return listVal(elems), nil
+		}
+		return interpreter.Null(), d.errf("expected ',' or ']' in array")
+	}
+}
+
+func (d *decoder) parseString() (string, error) {
+	d.pos++ // opening quote
+	var sb strings.Builder
+	for d.pos < len(d.s) {
+		c := d.s[d.pos]
+		if c == '"' {
+			d.pos++
+			return sb.String(), nil
+		}
+		if c == '\\' {
+			d.pos++
+			if d.pos >= len(d.s) {
+				return "", d.errf("unterminated escape")
+			}
+			switch d.s[d.pos] {
+			case '"':
+				sb.WriteByte('"')
+				d.pos++
+			case '\\':
+				sb.WriteByte('\\')
+				d.pos++
+			case '/':
+				sb.WriteByte('/')
+				d.pos++
+			case 'n':
+				sb.WriteByte('\n')
+				d.pos++
+			case 't':
+				sb.WriteByte('\t')
+				d.pos++
+			case 'r':
+				sb.WriteByte('\r')
+				d.pos++
+			case 'b':
+				sb.WriteByte('\b')
+				d.pos++
+			case 'f':
+				sb.WriteByte('\f')
+				d.pos++
+			case 'u':
+				r, err := d.parseUnicodeEscape()
+				if err != nil {
+					return "", err
+				}
+				sb.WriteRune(r)
+			default:
+				return "", d.errf("invalid escape \\%c", d.s[d.pos])
+			}
+			continue
+		}
+		if c < 0x20 {
+			return "", d.errf("control character U+%04X in string", c)
+		}
+		sb.WriteByte(c)
+		d.pos++
+	}
+	return "", d.errf("unterminated string")
+}
+
+// parseUnicodeEscape decodes a `\uXXXX` (or a high+low surrogate pair) with
+// d.pos at the `u`, and leaves d.pos just past the consumed hex.
+func (d *decoder) parseUnicodeEscape() (rune, error) {
+	hi, err := d.readHex4()
+	if err != nil {
+		return 0, err
+	}
+	if utf16.IsSurrogate(rune(hi)) {
+		if d.pos+1 < len(d.s) && d.s[d.pos] == '\\' && d.s[d.pos+1] == 'u' {
+			d.pos++ // consume '\'
+			lo, err := d.readHex4()
+			if err != nil {
+				return 0, err
+			}
+			r := utf16.DecodeRune(rune(hi), rune(lo))
+			if r == utf8.RuneError {
+				return 0, d.errf("invalid surrogate pair")
+			}
+			return r, nil
+		}
+		return 0, d.errf("unpaired surrogate")
+	}
+	return rune(hi), nil
+}
+
+// readHex4 expects d.pos at `u`, consumes it plus four hex digits, and returns
+// the 16-bit value.
+func (d *decoder) readHex4() (uint32, error) {
+	d.pos++ // 'u'
+	if d.pos+4 > len(d.s) {
+		return 0, d.errf("incomplete \\u escape")
+	}
+	v, err := strconv.ParseUint(d.s[d.pos:d.pos+4], 16, 32)
+	if err != nil {
+		return 0, d.errf("invalid \\u escape")
+	}
+	d.pos += 4
+	return uint32(v), nil
+}
+
+// parseKeyword handles the three bare literals true / false / null.
+func (d *decoder) parseKeyword() (interpreter.Value, error) {
+	switch {
+	case strings.HasPrefix(d.s[d.pos:], "true"):
+		d.pos += 4
+		return interpreter.BoolVal(true), nil
+	case strings.HasPrefix(d.s[d.pos:], "false"):
+		d.pos += 5
+		return interpreter.BoolVal(false), nil
+	case strings.HasPrefix(d.s[d.pos:], "null"):
+		d.pos += 4
+		return interpreter.Null(), nil
+	}
+	return interpreter.Null(), d.errf("invalid literal")
+}
+
+// parseNumber scans a JSON number and returns int when it has no fractional
+// or exponent part (and fits int64), else float.
+func (d *decoder) parseNumber() (interpreter.Value, error) {
+	start := d.pos
+	if d.pos < len(d.s) && d.s[d.pos] == '-' {
+		d.pos++
+	}
+	for d.pos < len(d.s) && isDigit(d.s[d.pos]) {
+		d.pos++
+	}
+	isFloat := false
+	if d.pos < len(d.s) && d.s[d.pos] == '.' {
+		isFloat = true
+		d.pos++
+		for d.pos < len(d.s) && isDigit(d.s[d.pos]) {
+			d.pos++
+		}
+	}
+	if d.pos < len(d.s) && (d.s[d.pos] == 'e' || d.s[d.pos] == 'E') {
+		isFloat = true
+		d.pos++
+		if d.pos < len(d.s) && (d.s[d.pos] == '+' || d.s[d.pos] == '-') {
+			d.pos++
+		}
+		for d.pos < len(d.s) && isDigit(d.s[d.pos]) {
+			d.pos++
+		}
+	}
+	tok := d.s[start:d.pos]
+	if !isFloat {
+		if n, err := strconv.ParseInt(tok, 10, 64); err == nil {
+			return interpreter.IntVal(n), nil
+		}
+		// too big for int64: fall through to float
+	}
+	f, err := strconv.ParseFloat(tok, 64)
+	if err != nil {
+		return interpreter.Null(), d.errf("invalid number %q", tok)
+	}
+	return interpreter.FloatVal(f), nil
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+// putEntry appends key->val to entries, replacing an existing entry with the
+// same key (JSON last-wins), so the resulting map has unique keys.
+func putEntry(entries []interpreter.MapEntry, key string, val interpreter.Value) []interpreter.MapEntry {
+	for i := range entries {
+		if entries[i].Key.Str == key {
+			entries[i].Value = val
+			return entries
+		}
+	}
+	return append(entries, interpreter.MapEntry{Key: interpreter.StringVal(key), Value: val})
+}
+
+// listVal / mapVal build generic decoded collections. Element / value types
+// are left unset so the value is assignable to any declared list / map type
+// through Value.MatchesDeclared's lenient path (the same leniency an empty
+// literal gets); keys are always strings.
+func listVal(elems []interpreter.Value) interpreter.Value {
+	return interpreter.Value{Kind: interpreter.KindList, List: elems}
+}
+
+func mapVal(entries []interpreter.MapEntry) interpreter.Value {
+	st := parser.PrimitiveType(parser.TypeString)
+	return interpreter.Value{Kind: interpreter.KindMap, Map: entries, KeyTyp: &st}
+}

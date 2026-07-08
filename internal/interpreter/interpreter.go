@@ -1287,6 +1287,17 @@ func (i *Interpreter) execAssign(st *parser.AssignStmt, env *Environment) error 
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 	}
+	// Validate against the declared type before stamping: stampDeclaredType
+	// writes the declared inner-type pointers onto the value, which would
+	// relabel a generic (literal / json.decode) collection as matching even
+	// when its entries don't. Check the raw value first, mirroring execDefine.
+	if !val.MatchesDeclared(b.DeclType) {
+		file, line, col := posFor(st)
+		return &runtimeError{
+			Msg:  fmt.Sprintf("cannot assign %s to %s variable %q", val.Kind, b.DeclType, st.VarName),
+			File: file, Line: line, Col: col,
+		}
+	}
 	val = stampDeclaredType(i.eagerCopy(val, st), b.DeclType)
 	if st.Slot >= 0 {
 		if err := env.AssignAt(st.Depth, st.Slot, st.VarName, val); err != nil {

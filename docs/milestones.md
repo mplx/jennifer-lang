@@ -1425,16 +1425,25 @@ the reason `astjson.go` is already hand-rolled).
   name); `bytes` to a base64 string. Non-string map keys and `task`
   values are encode errors.
 - **Decode.** Produces generic Values (a number decodes to `int` when
-  integral, else `float`; objects to `map of string to ...`). A typed
-  target - `def p as Point init json.decode(s);` - fills the declared
-  struct's named fields through the existing `MatchesDeclared`
-  boundary, erroring on missing / unknown / wrong-type fields.
+  integral, else `float`; objects to `map of string to V`; arrays to
+  `list of V`). **No map-to-struct coercion:** Jennifer does no coercion
+  at binding boundaries (you write `5.0`, not `5`, for a float), so
+  `json.decode` returns a map and a typed target is rebuilt explicitly -
+  `def p as Point init Point{ x: $m["x"], y: $m["y"] };`. The encode
+  direction is unaffected (`json.encode($p)` serializes a struct to an
+  object directly). Rationale in
+  [technical/rejected.md](technical/rejected.md).
 - **Implementation.** Recursive-descent parser + emitter in
   `internal/lib/json`, no `reflect`, no `encoding/json`; RFC 8259,
-  UTF-8, positioned errors (byte offset resolved to line / col).
+  UTF-8, positioned errors (byte offset resolved to line / col within
+  the JSON text). Decoded collections carry no recorded element type, so
+  they are validated entry by entry against the declared `list` / `map`
+  element type at the binding boundary (the same check a fresh literal
+  gets): a homogeneous JSON collection binds to the matching typed
+  target, a heterogeneous one matches no homogeneous type and is rejected
+  - storing heterogeneous JSON awaits the planned `any` type.
 - **Acceptance.** Round-trips every Value kind with a JSON image;
-  typed struct decode enforces the schema; malformed input yields a
-  positioned error; both toolchains build.
+  malformed input yields a positioned error; both toolchains build.
 
 ## M16.10 - `uuid`
 
@@ -1513,6 +1522,119 @@ lands.
 ---
 
 **Phase D: higher-level and Jennifer-coded libraries (M17-M20).**
+
+## M16.14 - `any` type
+
+The honest home for heterogeneous data. Jennifer's collections are
+homogeneous (`list of T`, `map of K to V`) and every binding boundary is
+strict (M16.9 closed the last hole - a generic literal / `json.decode`
+result is now validated entry by entry, so a heterogeneous collection
+matches no homogeneous type and can't be stored). That leaves genuine
+"mixed shape" data - a JSON object with string, number, and array values;
+a list of unrelated things - with nowhere to live. `any` is that place:
+a type that every value matches.
+
+- **Surface.** `any` is a type keyword, usable anywhere a type is:
+  `def x as any;`, `def xs as list of any;`, `def m as map of string to
+  any;`, a struct field (`def struct Row { cells as list of any };`),
+  a parameter (`func f(v as any) {...}`). The zero value of `any` is
+  `null`. Map *keys* stay concrete (they must be comparable and
+  printable); `any` is a value-position type.
+- **Semantics.** `any` matches every kind in `MatchesDeclared`, so any
+  value binds to an `any` target and any value is a legal element of a
+  `list of any` / `map of ... to any`. **The dynamism is explicit and
+  one-directional:** a concrete value flows *into* `any` freely, but an
+  `any` value flowing *out* into a concrete slot is a normal type
+  mismatch and errors (strict at boundaries holds). You narrow an `any`
+  with `convert.typeOf` and use it once its kind is known. No truthiness,
+  no auto-coercion - reading an `any` gives a value of its real runtime
+  kind, nothing more.
+- **Type-system impact.** A `TypeAny` kind in `parser.Type`; the lexer /
+  parser accept the `any` keyword in type position; `MatchesDeclared`
+  gains a `TypeAny` arm returning true for every value; `ZeroFor(any)` is
+  `null`; `stampDeclaredType` treats an `any` inner type as "leave the
+  element's own type untouched" (an `any` collection records `any` as its
+  element type and never rewrites element tags); `convert.typeOf` reports
+  the value's actual kind, not `"any"`. Display and the AST-JSON emitter
+  get the new kind.
+- **`json` payoff.** `def m as map of string to any init json.decode(s);`
+  becomes the honest way to hold an arbitrary decoded object;
+  `$m["k"]` returns the real kind, narrowed with `typeOf`. The M16.9
+  rebuild-into-a-struct idiom stays the way to get *static* types back.
+- **Stance: explicit over implicit (#2).** `any` *appears* to violate the
+  stance, but it serves it. The status quo it replaces is the *implicit*
+  version - a `map of string to string` silently holding an `int`, type
+  hidden. `any` makes the dynamism a written, greppable decision: you
+  type `any` to say "the kind is decided at runtime," and you must narrow
+  with `typeOf` before use - nothing important hides, and no value is
+  silently coerced. It is the explicit escape hatch, not an implicit
+  loosening, and it stays strict at boundaries (#4): `any`-into-concrete
+  errors. A `design-decisions.md` reasoning record lands when it ships.
+- **Rejected alternatives.** Implicit dynamic typing (a value with no
+  declared type) - no; `any` must be written. Truthiness / auto-coercion
+  of `any` at use sites - no; narrow explicitly. (Both already precluded
+  by stances #2 and #4.)
+- **Acceptance.** `def m as map of string to any init json.decode(s);`
+  holds a heterogeneous object; each `$m[k]` reports its real kind via
+  `typeOf`; an `any` value bound to a concrete-typed target errors;
+  `def x as any;` zero-values to `null`; both toolchains build.
+
+## M16.15 - explicit map-to-struct conversion
+
+An explicit, validating way to turn a map - typically a `json.decode`
+result held as `map of string to any` (M16.14) - into a typed struct. The
+*implicit* form (`def p as Point init json.decode(s);` coercing at the
+binding) is rejected; see
+[technical/rejected.md](technical/rejected.md). This is the spelled-out
+counterpart, so the conversion is visible at the call site. Depends on
+M16.14 `any`, which is what lets an arbitrary decoded object be held
+before conversion.
+
+**Two candidate forms - not decided here; the choice hinges on the
+consistency axis below.**
+
+- **Library call - `convert.toStruct($map, "Point")`.** Routes into the
+  existing `convert` type-conversion family; general (any map, not only
+  decoded ones); the builtin looks the struct up in the registry and
+  recurses into nested structs / lists.
+- **Struct-literal spread - `Point{ ..$map }`.** Construction syntax that
+  fills a `Point`'s fields from a map; the struct name is checked
+  statically in literal position.
+
+**The consistency question (decisive, not brevity).** The `convert.toX`
+family is uniform: `convert.toInt(v)` / `toFloat(v)` / `toString(v)` /
+`toBool(v)` each take a single value, name their target *in the function
+name*, and return a self-contained, assignable value. `convert.toStruct`
+cannot join that family cleanly:
+
+- to stay self-contained (freely assignable, like the rest of `convert`)
+  it needs the target as a **second, stringly-typed argument** (`"Point"`)
+  - a two-arg outlier in a one-arg family, with the struct name unchecked
+  until runtime; or
+- to drop that argument it would have to read the **binding's declared
+  type**, so `convert.toStruct($map)` would not be a self-contained
+  expression (it wouldn't work outside a typed `def` / assignment) -
+  unlike every other `convert.toX`, which *is* assignable anywhere.
+
+The struct-literal spread sidesteps both problems (it isn't a `convert`
+function and names its type statically), at the cost of new literal
+syntax. We do **not** want a set of look-alike calls with divergent shapes
+and arg orders - the trap PHP's array functions fell into - so this
+uniformity axis is what decides the form.
+
+- **Semantics (either form).** Strict, like every boundary: each declared
+  field must be present in the map with a matching type; a missing field
+  or a type mismatch is a positioned error. Recurses into nested structs,
+  lists, and maps. Value semantics - the result is an independent struct;
+  no partial fills, no defaults.
+- **Open sub-questions (settle at implementation).** Whether an unexpected
+  map key is an error or ignored; whether a partial spread
+  (`Point{ x: 1, ..$map }`) is allowed; how an `any`-typed field is
+  handled.
+- **Acceptance.** A map / decoded object materializes a typed struct with
+  full field validation; missing / mismatched fields (and, per the
+  decision above, extra keys) error with a position; nested structs
+  round-trip; both toolchains build.
 
 ## M17 - Module system for Jennifer-coded libraries
 

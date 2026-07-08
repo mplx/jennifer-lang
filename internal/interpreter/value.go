@@ -500,20 +500,41 @@ func (v Value) MatchesDeclared(t parser.Type) bool {
 		if v.Kind != KindList {
 			return false
 		}
-		// Empty list with no recorded element type is assignable to any
-		// list type. Otherwise element types must match recursively.
-		if t.Element == nil || v.ElemTyp == nil {
-			return true
+		// A value with a recorded element type compares by that type. A generic
+		// value - one with no recorded element type, i.e. a fresh literal or a
+		// json.decode result - is validated element by element against the
+		// declared type, so a heterogeneous or mismatched collection can't slip
+		// past a typed binding. An empty list matches any list type either way.
+		if v.ElemTyp != nil {
+			return t.Element == nil || t.Element.Equal(*v.ElemTyp)
 		}
-		return t.Element.Equal(*v.ElemTyp)
+		for _, e := range v.List {
+			if t.Element != nil && !e.MatchesDeclared(*t.Element) {
+				return false
+			}
+		}
+		return true
 	case parser.TypeMap:
 		if v.Kind != KindMap {
 			return false
 		}
-		if t.KeyType == nil || t.ValType == nil || v.KeyTyp == nil || v.ValTyp == nil {
-			return true
+		// Recorded key+value types compare directly; a generic map - no recorded
+		// value type, i.e. a literal or a json.decode result - is validated entry
+		// by entry against the declared key/value types. An empty map matches any
+		// map type either way.
+		if v.KeyTyp != nil && v.ValTyp != nil {
+			return (t.KeyType == nil || t.KeyType.Equal(*v.KeyTyp)) &&
+				(t.ValType == nil || t.ValType.Equal(*v.ValTyp))
 		}
-		return t.KeyType.Equal(*v.KeyTyp) && t.ValType.Equal(*v.ValTyp)
+		for _, e := range v.Map {
+			if t.KeyType != nil && !e.Key.MatchesDeclared(*t.KeyType) {
+				return false
+			}
+			if t.ValType != nil && !e.Value.MatchesDeclared(*t.ValType) {
+				return false
+			}
+		}
+		return true
 	case parser.TypeTask:
 		// `task of T` matches a Value of KindTask whose recorded
 		// element type equals T. A task value without a recorded element
