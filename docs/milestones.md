@@ -909,7 +909,7 @@ races impossible by construction.
   `[]reflect.SelectCase` built from the task list - the only
   reflect call in the runtime; verified under both compilers.
 - **TinyGo trade-offs.**
-  - `tinygo build -stack-size=1mb` is now in the Makefile.
+  - `tinygo build -stack-size=2mb` is now in the Makefile.
     Jennifer's tree-walking evaluator wraps each Jennifer-level
     call in many Go-stack frames; the TinyGo default (~8KB) is
     far too small for any recursive spawn body.
@@ -941,7 +941,7 @@ See:
   goroutine mapping, two-frame snapshot, `effectiveGlobal`,
   task registry, CLI integration.
 - [technical/tinygo.md > TinyGo restrictions](technical/tinygo.md#tinygo-restrictions) -
-  the `-stack-size=1mb` Makefile flag and the TinyGo scheduler
+  the `-stack-size=2mb` Makefile flag and the TinyGo scheduler
   note.
 
 ## M16.1 - `fs`

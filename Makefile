@@ -46,15 +46,16 @@ build-go: gen-version
 # goroutine stacks. Real multi-core on jennifer-tiny is a separate piece
 # of work, not a default flip.
 #
-# -stack-size=1mb: TinyGo's default goroutine stack (~8KB) overflows on
+# -stack-size=2mb: TinyGo's default goroutine stack (~8KB) overflows on
 # Jennifer's tree-walking recursive evaluator. Each Jennifer-level call
 # adds many Go-stack frames (execBlock + evalCall + evalExpr + ...), so
-# a depth-24 fib spawn already needs hundreds of KB. 1MB matches Go's
-# initial-stack ballpark and runs the full example suite (including the
-# parallel fib block in examples/benchmark.j) without segfaulting; bump
-# it if a future workload needs deeper recursion.
+# even the serial fib(23) in examples/benchmark.j needs hundreds of KB -
+# and at 1MB it sat right at the edge (fib(23) fit bare but overflowed
+# nested in one more call frame, e.g. inside benchFib / an io.printf arg).
+# 2MB clears the whole example suite (serial + parallel fib) with headroom;
+# bump it further if a future workload needs deeper recursion.
 build-tinygo: gen-version
-	tinygo build -o jennifer-tiny -scheduler=tasks -stack-size=1mb ./cmd/jennifer
+	tinygo build -o jennifer-tiny -scheduler=tasks -stack-size=2mb ./cmd/jennifer
 
 test:
 	go test ./...
