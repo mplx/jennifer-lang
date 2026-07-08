@@ -11,7 +11,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
 
-// checkUnusedLocal (L001) flags a local `def` binding that is never read.
+// checkUnusedLocal (L101) flags a local `def` binding that is never read.
 // It reuses the shared scope walk: a binding is reportable only when it is a
 // local `def` (not a param, for-each iterator, catch var, or global) and is
 // not declared inside a spawn body (the resolver's spawn carve-out means the
@@ -30,13 +30,13 @@ func checkUnusedLocal(c *checkCtx) {
 			if d, ok := b.def.(*parser.DefineStmt); ok && d.IsConst {
 				noun = "constant"
 			}
-			c.report("L001", b.def, fmt.Sprintf("%s `%s` is declared but never used", noun, b.name))
+			c.report("L101", b.def, fmt.Sprintf("%s `%s` is declared but never used", noun, b.name))
 		}
 	}
 	s.program(c.prog)
 }
 
-// checkDeadCode (L002) flags the first statement made unreachable by a
+// checkDeadCode (L102) flags the first statement made unreachable by a
 // preceding terminator (return / throw / exit / break / continue) in the same
 // statement list. Reported once per list; nested lists are visited on their
 // own.
@@ -44,7 +44,7 @@ func checkDeadCode(c *checkCtx) {
 	w := walker{list: func(ss []parser.Stmt) {
 		for i := 0; i+1 < len(ss); i++ {
 			if name, ok := terminatorName(ss[i]); ok {
-				c.report("L002", ss[i+1], fmt.Sprintf("unreachable code after `%s`", name))
+				c.report("L102", ss[i+1], fmt.Sprintf("unreachable code after `%s`", name))
 				return
 			}
 		}
@@ -70,7 +70,7 @@ func terminatorName(s parser.Stmt) (string, bool) {
 	return "", false
 }
 
-// checkEmptyCatch (L003) flags a catch block with no body: the handler
+// checkEmptyCatch (L103) flags a catch block with no body: the handler
 // receives the error and discards it silently. Anchored at the catch
 // introducer.
 func checkEmptyCatch(c *checkCtx) {
@@ -80,14 +80,14 @@ func checkEmptyCatch(c *checkCtx) {
 			return
 		}
 		if t.CatchBody == nil || len(t.CatchBody.Stmts) == 0 {
-			c.reportAt("L003", t.CatchFile, t.CatchLine, t.CatchCol,
+			c.reportAt("L103", t.CatchFile, t.CatchLine, t.CatchCol,
 				fmt.Sprintf("empty catch block silently discards the error `%s`", t.CatchName))
 		}
 	}}
 	w.program(c.prog)
 }
 
-// checkThrowNonError (L004) flags a throw whose value is not statically an
+// checkThrowNonError (L104) flags a throw whose value is not statically an
 // Error struct. The convention is that user code throws `Error` so catch
 // handlers can rely on its fields; bare-value throws break that contract.
 // Only shapes the linter can decide without type inference are judged: an
@@ -103,7 +103,7 @@ func checkThrowNonError(c *checkCtx) {
 		if t.Value != nil {
 			anchor = t.Value
 		}
-		c.report("L004", anchor,
+		c.report("L104", anchor,
 			"throw of a non-Error value; throw an `Error` struct so catch handlers can rely on its fields")
 	}
 	s.program(c.prog)
@@ -126,13 +126,13 @@ func isErrorType(t parser.Type) bool {
 	return t.Kind == parser.TypeStruct && t.StructName == "Error" && t.StructNS == ""
 }
 
-// checkMethodTooLong (L005) flags a method whose body exceeds the statement
+// checkMethodTooLong (L201) flags a method whose body exceeds the statement
 // threshold - the "one concern per method" heuristic from the style guide.
 func checkMethodTooLong(c *checkCtx) {
 	for _, m := range c.prog.Methods {
 		n := countStmts(m.Body)
 		if n > c.cfg.MethodMaxStmts {
-			c.report("L005", m, fmt.Sprintf(
+			c.report("L201", m, fmt.Sprintf(
 				"method `%s` has %d statements, over the limit of %d; consider splitting it",
 				m.Name, n, c.cfg.MethodMaxStmts))
 		}
@@ -147,7 +147,7 @@ func countStmts(b *parser.Block) int {
 	return count
 }
 
-// checkNestingTooDeep (L006) flags a block whose nesting depth first exceeds
+// checkNestingTooDeep (L202) flags a block whose nesting depth first exceeds
 // the limit. Method bodies start at depth 1, top-level statements at depth 0;
 // each control-flow block adds one. Reported once at the shallowest violating
 // block so a deeply nested method yields a single finding per entry point.
@@ -212,7 +212,7 @@ func (c *checkCtx) nestStmt(st parser.Stmt, depth int) {
 // so nesting deeper still yields just the one finding.
 func (c *checkCtx) maybeReportNest(anchor parser.Node, depth int) {
 	if depth == c.cfg.MaxNesting+1 {
-		c.report("L006", anchor, fmt.Sprintf(
+		c.report("L202", anchor, fmt.Sprintf(
 			"block nesting reaches depth %d, over the limit of %d; flatten with early returns or helper methods",
 			depth, c.cfg.MaxNesting))
 	}
@@ -227,18 +227,18 @@ var removedLibraries = map[string]string{
 	"core": "the `core` library was removed",
 }
 
-// checkRemovedApi (L009) flags use of an API that has been removed, naming the
-// successor. It parallels L008 (deprecation) but for names that are already
+// checkRemovedApi (L302) flags use of an API that has been removed, naming the
+// successor. It parallels L301 (deprecation) but for names that are already
 // gone rather than merely on the way out. v1 covers removed library imports.
 func checkRemovedApi(c *checkCtx) {
 	for _, imp := range c.prog.Imports {
 		if msg, ok := removedLibraries[imp.Name]; ok {
-			c.report("L009", imp, msg)
+			c.report("L302", imp, msg)
 		}
 	}
 }
 
-// checkLineTooLong (L010) flags a source line longer than the column limit
+// checkLineTooLong (L203) flags a source line longer than the column limit
 // (the style guide's 100-column recommendation). Columns are counted in runes
 // to match the lexer, and the finding is anchored at the first column past the
 // limit. Line-oriented, so it runs on the primary file's raw text; findings in
@@ -251,13 +251,13 @@ func checkLineTooLong(c *checkCtx) {
 		line = strings.TrimSuffix(line, "\r")
 		n := utf8.RuneCountInString(line)
 		if n > c.cfg.MaxLineLength {
-			c.reportAt("L010", c.sourceFile, i+1, c.cfg.MaxLineLength+1,
+			c.reportAt("L203", c.sourceFile, i+1, c.cfg.MaxLineLength+1,
 				fmt.Sprintf("line is %d columns, over the limit of %d", n, c.cfg.MaxLineLength))
 		}
 	}
 }
 
-// checkConstantCondition (L007) flags conditions a reader can see are
+// checkConstantCondition (L105) flags conditions a reader can see are
 // statically constant: a bool literal, or a comparison of a value with
 // itself. `while (true)` is left alone when the body can break or otherwise
 // escape the loop - the deliberate spin-loop idiom.
@@ -282,7 +282,7 @@ func checkConstantCondition(c *checkCtx) {
 
 func (c *checkCtx) reportConstCond(cond parser.Expr) {
 	if msg, ok := constantCond(cond); ok {
-		c.report("L007", cond, msg)
+		c.report("L105", cond, msg)
 	}
 }
 
@@ -335,7 +335,7 @@ func sameSimpleExpr(a, b parser.Expr) bool {
 // loopCanEscape reports whether a loop body contains a statement that can end
 // the loop: a break not owned by a nested loop, or any return / throw / exit
 // (which escape regardless of nesting). Used to spare the `while (true)`
-// spin-loop idiom from L007.
+// spin-loop idiom from L105.
 func loopCanEscape(b *parser.Block) bool {
 	if b == nil {
 		return false

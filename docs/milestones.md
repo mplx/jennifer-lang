@@ -83,11 +83,11 @@ Rounds out the "ordinary" feature set:
   [technical/interpreter.md > Errors and positions](technical/interpreter.md#errors-and-positions-cross-file).
 - **REPL** - `jennifer repl`, persistent globals/methods/imports across
   inputs, multi-line input via brace balancing, expression results
-  printed. See [technical/cli.md > REPL](technical/cli.md#repl-cmdjenniferreplgo).
+  printed. See [technical/cli_repl.md > REPL](technical/cli_repl.md#repl-cmdjenniferreplgo).
 - **REPL line editor** - cursor keys, Home/End, word motions, Ctrl+W /
   Ctrl+U / Ctrl+K, in-memory history (Up/Down), Ctrl+C cancel. Non-TTY
   stdin falls back to plain line reading. See
-  [technical/cli.md > Line editor](technical/cli.md#line-editor-cmdjenniferlineeditgo-cmdjenniferhistorygo).
+  [technical/cli_repl.md > Line editor](technical/cli_repl.md#line-editor-cmdjenniferlineeditgo-cmdjenniferhistorygo).
 - **Auto-loaded `core` library** - new library kind, pre-imported at
   startup; writing `use core;` is a runtime error. Contents:
   `JENNIFER_VERSION` (a `git describe`-derived build-version constant)
@@ -99,10 +99,10 @@ Rounds out the "ordinary" feature set:
 - **Formatter** - `jennifer fmt` re-emits canonical source per
   [user-guide/style-guide.md](user-guide/style-guide.md). Token-level walker so file imports and
   user-written parentheses survive. See
-  [technical/cli.md > Formatter](technical/cli.md#formatter-cmdjenniferfmtgo).
+  [technical/cli_fmt.md > Formatter](technical/cli_fmt.md#formatter-cmdjenniferfmtgo).
 - **Inspection subcommands** - `jennifer tokens <file>` dumps the lexer
   output; `jennifer ast <file>` dumps the preprocessed AST as JSON.
-  See [technical/cli.md > Inspection](technical/cli.md#inspection-tokens-and-ast).
+  See [technical/cli_inspect.md > Inspection](technical/cli_inspect.md#inspection-tokens-and-ast).
 - **Underscore-in-constants** - constant names became `[A-Z]+(_[A-Z]+)*`,
   enabling `MAX_RETRIES` and the `JENNIFER_VERSION` rename. See
   [technical/lexer.md > Identifier rule](technical/lexer.md#identifier-rule).
@@ -633,7 +633,7 @@ See:
   exception).
 - [technical/lexer.md](technical/lexer.md#comments) - trivia
   emission, shebang detection, nesting depth counter.
-- [technical/cli.md](technical/cli.md) - `fmt`'s trivia re-emission.
+- [technical/cli_fmt.md](technical/cli_fmt.md) - `fmt`'s trivia re-emission.
 
 ---
 
@@ -1268,42 +1268,59 @@ the reference Ryzen 5 7600X3D.
 `jennifer lint <prog.j>...` reports patterns that are compile-legal but
 stylistically or semantically suspect - the slot between `jennifer fmt`
 (lexical shape) and the parser (the outright illegal). Internals:
-[technical/cli.md](technical/cli.md).
+[technical/cli_lint.md](technical/cli_lint.md).
 
-**Checks** (stable IDs so suppression and CI config stay portable):
+**Checks.** Stable IDs, grouped by concern - the leading digit is the
+group: **L0nn** source errors, **L1nn** correctness, **L2nn** complexity
+and style, **L3nn** API lifecycle.
 
-- `L001 unused-local` - a local `def` binding never read. Skips
+- `L001 lex-error` / `L002 parse-error` / `L003 preproc-error` - the file
+  couldn't be tokenized / parsed / spliced.
+- `L004 invalid-directive` - a malformed or unknown-ID `# lint-disable`.
+- `L101 unused-local` - a local `def` binding never read. Skips
   declarations inside a `spawn` body (inherits M16.5.2's resolver
   carve-out); reads inside a spawn still count.
-- `L002 dead-code-after-terminator` - a statement after
+- `L102 dead-code-after-terminator` - a statement after
   `return`/`throw`/`exit`/`break`/`continue`.
-- `L003 empty-catch` - a `catch` with no body.
-- `L004 throw-non-error` - a `throw` not statically an `Error` (an
+- `L103 empty-catch` - a `catch` with no body.
+- `L104 throw-non-error` - a `throw` not statically an `Error` (an
   `Error{...}` literal or a `$var` declared `Error` pass; any other
   shape is flagged).
-- `L005 method-too-long` - body over a statement threshold (default 60).
-- `L006 nesting-too-deep` - block nesting over a depth threshold (default 4).
-- `L007 constant-condition` - `if (true)`/`if (false)`, `while (true)`
+- `L105 constant-condition` - `if (true)`/`if (false)`, `while (true)`
   with no break/return/throw/exit escape, `if ($x == $x)`.
-- `L008 deprecation` - reserved family, empty until an API is deprecated.
-- `L009 removed-api` - use of a removed API (e.g. `use core;`).
-- `L010 line-too-long` - a source line over the column limit (default 100).
+- `L201 method-too-long` - body over a statement threshold (default 60).
+- `L202 nesting-too-deep` - block nesting over a depth threshold (default 4).
+- `L203 line-too-long` - a source line over the column limit (default 100).
+- `L301 deprecation` - reserved family, empty until an API is deprecated.
+- `L302 removed-api` - use of a removed API (e.g. `use core;`).
 
-**Suppression.** `# lint-disable: IDS` (trailing) silences on that line;
-`# lint-disable-file: IDS` silences file-wide. No blanket disable-all -
-directives name IDs. Read off the trivia token stream, since the parser
-strips comments.
+The `L0nn` source errors are always on and not user-selectable (the file
+doesn't parse, so there's nothing to configure); every `L1nn`/`L2nn`/`L3nn`
+check is selectable via `--checks`.
+
+**Suppression.** `# lint-disable: IDS` (trailing) silences on that line
+(the line the finding anchors to - the `func` line for `L201`, the
+block-introducer line for `L202`); `# lint-disable-file: IDS` silences
+file-wide. No blanket disable-all - directives name IDs. Read off the
+trivia token stream, since the parser strips comments. A malformed /
+unknown-ID directive is continue-and-report: it becomes an `L004` finding
+and suppresses nothing. A doubled marker (`## lint-disable: ...`) is an
+ordinary comment.
 
 **Config.** `--checks=IDS` (per run) or a `.jennifer-lint` file (per
 project), one direction: all includes ("only these") or all `!excludes`
-("everything except"); mixing errors. Unknown IDs are always an error,
-everywhere.
+("everything except"); mixing errors. Unknown IDs are always an error;
+naming an always-on `L0nn` in `--checks` is rejected. Messages are terse
+(`unknown check ID "L999"`) - `jennifer lint --help` lists the catalog.
 
 **Output.** `--format=human` (source-context carets, default),
 `--format=json` (a JSON array of `{id,file,line,col,message,severity}`,
-`[]` when empty), `--format=github` (Actions annotations). Exit `0`
-clean / `1` findings at or above the warning floor / `2` linter failure -
-the `gofmt -l` / `shellcheck` shape. CI lints `examples/*.j` as a gate.
+`[]` when empty, one array across all files), `--format=github` (Actions
+annotations). Lex / preprocess / parse failures render as `L0nn` findings
+in the chosen format, not stderr bail-outs, so a JSON pipeline always
+gets valid output. Exit `0` clean / `1` findings at or above the warning
+floor (a source error counts) / `2` an invocation failure with no source
+position (bad flags, IO, bad config). CI lints `examples/*.j` as a gate.
 
 **TinyGo.** Behind a build tag; the run-only `jennifer-tiny` omits it
 (along with `tokens` / `ast` / `fmt` / `profile`).
@@ -1318,7 +1335,7 @@ revisited after M17), and checks needing type inference beyond
 instrumented and attributes work back to Jennifer source positions - the
 gap `go tool pprof` leaves (it profiles the interpreter binary, not the
 .j program inside it). Program output goes to stderr so the profile owns
-stdout. Internals: [technical/cli.md](technical/cli.md).
+stdout. Internals: [technical/cli_profile.md](technical/cli_profile.md).
 
 - **Statement profile** (default). Per source position: hit count and
   self / cumulative wall-clock time. Instruments statements and method
@@ -1347,7 +1364,7 @@ stdout. Internals: [technical/cli.md](technical/cli.md).
 Adds the assertion vocabulary and CLI orchestration on top of M16.4's
 dispatch primitives (`testing.run` / `results` / `report`), so a suite
 doesn't reduce to hand-written `throw Error{...}` plus a bespoke runner.
-Internals: [technical/cli.md](technical/cli.md) and
+Internals: [technical/cli_test.md](technical/cli_test.md) and
 [libraries/testing.md](libraries/testing.md).
 
 **Assertions** (`testing` library, in both binaries). Six builtins that

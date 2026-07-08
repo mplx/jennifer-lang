@@ -27,7 +27,7 @@ immediately. A few constraints shape the implementation:
 - **No `encoding/json` for in-binary serialization.** The
   reflect-based marshaler is fragile under TinyGo, so the AST
   JSON emitter is hand-rolled (see
-  [CLI > Inspection](cli.md#inspection-tokens-and-ast)).
+  [CLI > Inspection](cli_inspect.md#inspection-tokens-and-ast)).
 - **Goroutines are allowed** (used for `spawn`),
   but need `-stack-size=1mb` under TinyGo - see
   [the goroutine-stack note below](#tinygo-goroutine-stack).

@@ -11,11 +11,10 @@ import (
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
 
-// lintSrc lints src with the given checks enabled and returns the findings.
-// It mirrors the CLI: parse from a copy (ParseTokens strips trivia in place),
-// but hand the untouched token stream to Check so suppression directives
-// survive.
-func lintSrc(t *testing.T, src string, enabled map[string]bool, cfg lint.Config) ([]lint.Diagnostic, error) {
+// lintSrc lints src with the given checks enabled and returns the findings. It
+// mirrors the CLI: parse from a copy (ParseTokens strips trivia in place), but
+// hand the untouched token stream to Check so suppression directives survive.
+func lintSrc(t *testing.T, src string, enabled map[string]bool, cfg lint.Config) []lint.Diagnostic {
 	t.Helper()
 	raw, err := lexer.TokenizeWithFile(src, "test.j")
 	if err != nil {
@@ -50,15 +49,6 @@ func countID(diags []lint.Diagnostic, id string) int {
 	return n
 }
 
-func mustLint(t *testing.T, src string, enabled map[string]bool, cfg lint.Config) []lint.Diagnostic {
-	t.Helper()
-	diags, err := lintSrc(t, src, enabled, cfg)
-	if err != nil {
-		t.Fatalf("Check returned error: %v", err)
-	}
-	return diags
-}
-
 func TestUnusedLocal(t *testing.T) {
 	cfg := lint.DefaultConfig()
 	cases := []struct {
@@ -74,33 +64,33 @@ func TestUnusedLocal(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			diags := mustLint(t, c.src, only("L001"), cfg)
-			if got := countID(diags, "L001"); got != c.want {
-				t.Fatalf("L001 count = %d, want %d (%v)", got, c.want, diags)
+			diags := lintSrc(t, c.src, only("L101"), cfg)
+			if got := countID(diags, "L101"); got != c.want {
+				t.Fatalf("L101 count = %d, want %d (%v)", got, c.want, diags)
 			}
 		})
 	}
 }
 
 func TestDeadCode(t *testing.T) {
-	diags := mustLint(t, `func f() { return 1; def x as int init 2; }`, only("L002"), lint.DefaultConfig())
-	if countID(diags, "L002") != 1 {
-		t.Fatalf("expected one L002, got %v", diags)
+	diags := lintSrc(t, `func f() { return 1; def x as int init 2; }`, only("L102"), lint.DefaultConfig())
+	if countID(diags, "L102") != 1 {
+		t.Fatalf("expected one L102, got %v", diags)
 	}
-	clean := mustLint(t, `func f() { def x as int init 2; return $x; }`, only("L002"), lint.DefaultConfig())
+	clean := lintSrc(t, `func f() { def x as int init 2; return $x; }`, only("L102"), lint.DefaultConfig())
 	if len(clean) != 0 {
-		t.Fatalf("expected no L002, got %v", clean)
+		t.Fatalf("expected no L102, got %v", clean)
 	}
 }
 
 func TestEmptyCatch(t *testing.T) {
-	diags := mustLint(t, `func f() { try { risky(); } catch (e) { } }`, only("L003"), lint.DefaultConfig())
-	if countID(diags, "L003") != 1 {
-		t.Fatalf("expected one L003, got %v", diags)
+	diags := lintSrc(t, `func f() { try { risky(); } catch (e) { } }`, only("L103"), lint.DefaultConfig())
+	if countID(diags, "L103") != 1 {
+		t.Fatalf("expected one L103, got %v", diags)
 	}
-	clean := mustLint(t, `func f() { try { risky(); } catch (e) { handle($e); } }`, only("L003"), lint.DefaultConfig())
+	clean := lintSrc(t, `func f() { try { risky(); } catch (e) { handle($e); } }`, only("L103"), lint.DefaultConfig())
 	if len(clean) != 0 {
-		t.Fatalf("expected no L003, got %v", clean)
+		t.Fatalf("expected no L103, got %v", clean)
 	}
 }
 
@@ -117,9 +107,9 @@ func TestThrowNonError(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			diags := mustLint(t, c.src, only("L004"), lint.DefaultConfig())
-			if got := countID(diags, "L004"); got != c.want {
-				t.Fatalf("L004 count = %d, want %d (%v)", got, c.want, diags)
+			diags := lintSrc(t, c.src, only("L104"), lint.DefaultConfig())
+			if got := countID(diags, "L104"); got != c.want {
+				t.Fatalf("L104 count = %d, want %d (%v)", got, c.want, diags)
 			}
 		})
 	}
@@ -129,9 +119,9 @@ func TestMethodTooLong(t *testing.T) {
 	cfg := lint.DefaultConfig()
 	cfg.MethodMaxStmts = 2
 	src := `func f() { def a as int init 1; def b as int init 2; def c as int init 3; return $a; }`
-	diags := mustLint(t, src, only("L005"), cfg)
-	if countID(diags, "L005") != 1 {
-		t.Fatalf("expected one L005, got %v", diags)
+	diags := lintSrc(t, src, only("L201"), cfg)
+	if countID(diags, "L201") != 1 {
+		t.Fatalf("expected one L201, got %v", diags)
 	}
 }
 
@@ -139,9 +129,9 @@ func TestNestingTooDeep(t *testing.T) {
 	cfg := lint.DefaultConfig()
 	cfg.MaxNesting = 1
 	src := `func f() { if (true) { if (true) { return 1; } } }`
-	diags := mustLint(t, src, only("L006"), cfg)
-	if countID(diags, "L006") != 1 {
-		t.Fatalf("expected one L006 (shallowest violating block), got %v", diags)
+	diags := lintSrc(t, src, only("L202"), cfg)
+	if countID(diags, "L202") != 1 {
+		t.Fatalf("expected one L202 (shallowest violating block), got %v", diags)
 	}
 }
 
@@ -159,22 +149,22 @@ func TestConstantCondition(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			diags := mustLint(t, c.src, only("L007"), lint.DefaultConfig())
-			if got := countID(diags, "L007"); got != c.want {
-				t.Fatalf("L007 count = %d, want %d (%v)", got, c.want, diags)
+			diags := lintSrc(t, c.src, only("L105"), lint.DefaultConfig())
+			if got := countID(diags, "L105"); got != c.want {
+				t.Fatalf("L105 count = %d, want %d (%v)", got, c.want, diags)
 			}
 		})
 	}
 }
 
 func TestRemovedApi(t *testing.T) {
-	diags := mustLint(t, `use core;`, only("L009"), lint.DefaultConfig())
-	if countID(diags, "L009") != 1 {
-		t.Fatalf("expected one L009, got %v", diags)
+	diags := lintSrc(t, `use core;`, only("L302"), lint.DefaultConfig())
+	if countID(diags, "L302") != 1 {
+		t.Fatalf("expected one L302, got %v", diags)
 	}
-	clean := mustLint(t, `use io;`, only("L009"), lint.DefaultConfig())
+	clean := lintSrc(t, `use io;`, only("L302"), lint.DefaultConfig())
 	if len(clean) != 0 {
-		t.Fatalf("expected no L009 for a live library, got %v", clean)
+		t.Fatalf("expected no L302 for a live library, got %v", clean)
 	}
 }
 
@@ -182,81 +172,98 @@ func TestLineTooLong(t *testing.T) {
 	cfg := lint.DefaultConfig()
 	cfg.MaxLineLength = 20
 	src := "def x as int init 123456789;\ndef y as int;\n"
-	diags := mustLint(t, src, only("L010"), cfg)
-	if countID(diags, "L010") != 1 {
-		t.Fatalf("expected one L010 (only the long line), got %v", diags)
+	diags := lintSrc(t, src, only("L203"), cfg)
+	if countID(diags, "L203") != 1 {
+		t.Fatalf("expected one L203 (only the long line), got %v", diags)
 	}
 	if diags[0].Line != 1 {
-		t.Fatalf("L010 line = %d, want 1", diags[0].Line)
+		t.Fatalf("L203 line = %d, want 1", diags[0].Line)
 	}
 }
 
 func TestSuppression(t *testing.T) {
 	t.Run("line directive", func(t *testing.T) {
-		src := "func f() { def dead as int init 2;   # lint-disable: L001\nreturn 0; }"
-		diags := mustLint(t, src, only("L001"), lint.DefaultConfig())
+		src := "func f() { def dead as int init 2;   # lint-disable: L101\nreturn 0; }"
+		diags := lintSrc(t, src, only("L101"), lint.DefaultConfig())
 		if len(diags) != 0 {
 			t.Fatalf("expected suppressed, got %v", diags)
 		}
 	})
 	t.Run("file directive", func(t *testing.T) {
-		src := "# lint-disable-file: L001\nfunc f() { def dead as int init 2; return 0; }"
-		diags := mustLint(t, src, only("L001"), lint.DefaultConfig())
+		src := "# lint-disable-file: L101\nfunc f() { def dead as int init 2; return 0; }"
+		diags := lintSrc(t, src, only("L101"), lint.DefaultConfig())
 		if len(diags) != 0 {
 			t.Fatalf("expected file-suppressed, got %v", diags)
 		}
 	})
 	t.Run("wrong id not suppressed", func(t *testing.T) {
-		src := "func f() { def dead as int init 2;   # lint-disable: L002\nreturn 0; }"
-		diags := mustLint(t, src, only("L001"), lint.DefaultConfig())
-		if countID(diags, "L001") != 1 {
-			t.Fatalf("expected L001 still reported, got %v", diags)
+		src := "func f() { def dead as int init 2;   # lint-disable: L102\nreturn 0; }"
+		diags := lintSrc(t, src, only("L101"), lint.DefaultConfig())
+		if countID(diags, "L101") != 1 {
+			t.Fatalf("expected L101 still reported, got %v", diags)
 		}
 	})
-	t.Run("unknown id errors", func(t *testing.T) {
+	t.Run("unknown id is an L004 finding", func(t *testing.T) {
+		// A bad directive is reported (L004) and suppresses nothing, so the
+		// finding it meant to silence still shows too: continue-and-report.
 		src := "func f() { def dead as int init 2;   # lint-disable: L999\nreturn 0; }"
-		if _, err := lintSrc(t, src, only("L001"), lint.DefaultConfig()); err == nil {
-			t.Fatal("expected an error for an unknown suppression ID")
+		diags := lintSrc(t, src, only("L101"), lint.DefaultConfig())
+		if countID(diags, "L004") != 1 {
+			t.Fatalf("expected one L004 invalid-directive, got %v", diags)
+		}
+		if countID(diags, "L101") != 1 {
+			t.Fatalf("the unsuppressed L101 should still show, got %v", diags)
 		}
 	})
-	t.Run("empty directive errors", func(t *testing.T) {
+	t.Run("empty directive is an L004 finding", func(t *testing.T) {
 		src := "func f() { def dead as int init 2;   # lint-disable:\nreturn 0; }"
-		if _, err := lintSrc(t, src, only("L001"), lint.DefaultConfig()); err == nil {
-			t.Fatal("expected an error for a directive naming no IDs")
+		diags := lintSrc(t, src, only("L101"), lint.DefaultConfig())
+		if countID(diags, "L004") != 1 {
+			t.Fatalf("expected one L004 for a directive naming no IDs, got %v", diags)
+		}
+	})
+	t.Run("double-hash is a comment, not a directive", func(t *testing.T) {
+		src := "func f() { def dead as int init 2;   # # lint-disable: L999\nreturn 0; }"
+		diags := lintSrc(t, src, only("L101"), lint.DefaultConfig())
+		if countID(diags, "L004") != 0 {
+			t.Fatalf("a doubled-hash comment must not parse as a directive, got %v", diags)
 		}
 	})
 }
 
 func TestResolveSelection(t *testing.T) {
-	t.Run("default all", func(t *testing.T) {
+	t.Run("default enables checks, not source errors", func(t *testing.T) {
 		set, err := lint.ResolveSelection("", false, "", false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(set) != len(lint.KnownIDs()) {
-			t.Fatalf("default should enable all %d checks, got %d", len(lint.KnownIDs()), len(set))
+		if !set["L101"] || !set["L302"] {
+			t.Fatalf("default should enable the checks, got %v", set)
+		}
+		if set["L001"] || set["L004"] {
+			t.Fatalf("default must not enable L0nn source errors, got %v", set)
 		}
 	})
 	t.Run("exclude", func(t *testing.T) {
-		set, err := lint.ResolveSelection("!L005,!L006", true, "", false)
+		set, err := lint.ResolveSelection("!L201,!L202", true, "", false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !set["L001"] || set["L005"] || set["L006"] {
+		if !set["L101"] || set["L201"] || set["L202"] {
 			t.Fatalf("exclude spec wrong: %v", set)
 		}
 	})
 	t.Run("include only", func(t *testing.T) {
-		set, err := lint.ResolveSelection("L001,L002", true, "", false)
+		set, err := lint.ResolveSelection("L101,L102", true, "", false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !set["L001"] || !set["L002"] || set["L003"] {
+		if !set["L101"] || !set["L102"] || set["L103"] {
 			t.Fatalf("include spec wrong: %v", set)
 		}
 	})
 	t.Run("mixed direction errors", func(t *testing.T) {
-		if _, err := lint.ResolveSelection("L001,!L002", true, "", false); err == nil {
+		if _, err := lint.ResolveSelection("L101,!L102", true, "", false); err == nil {
 			t.Fatal("expected error mixing include and exclude")
 		}
 	})
@@ -265,22 +272,27 @@ func TestResolveSelection(t *testing.T) {
 			t.Fatal("expected error for unknown ID")
 		}
 	})
+	t.Run("source-error id is not selectable", func(t *testing.T) {
+		if _, err := lint.ResolveSelection("L001", true, "", false); err == nil {
+			t.Fatal("expected error selecting an always-on source-error class")
+		}
+	})
 	t.Run("dotfile used when no flag", func(t *testing.T) {
-		set, err := lint.ResolveSelection("", false, "L001  # only this\n", true)
+		set, err := lint.ResolveSelection("", false, "L101  # only this\n", true)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !set["L001"] || set["L002"] {
+		if !set["L101"] || set["L102"] {
 			t.Fatalf("dotfile spec wrong: %v", set)
 		}
 	})
 }
 
 func TestKnownIDs(t *testing.T) {
-	if n := len(lint.KnownIDs()); n != 10 {
-		t.Fatalf("expected 10 known IDs, got %d", n)
+	if n := len(lint.KnownIDs()); n != 14 {
+		t.Fatalf("expected 14 known IDs (4 source + 10 checks), got %d", n)
 	}
-	if len(lint.Catalog()) != 10 {
-		t.Fatalf("catalog should list all 10 checks")
+	if len(lint.Catalog()) != 14 {
+		t.Fatalf("catalog should list all 14 IDs")
 	}
 }

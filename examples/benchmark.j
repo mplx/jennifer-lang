@@ -54,7 +54,7 @@ func fib(n as int) {
 # is the outer-loop iteration count (often 1 for "single sweep"
 # workloads).
 func printRow(name as string, base as int, iters as int, ms as int) {
-    io.printf("%s|pad=30|align=left %d|pad=12|align=right %d|pad=12|align=right %d|pad=12|align=right\n",   # lint-disable: L010
+    io.printf("%s|pad=30|align=left %d|pad=12|align=right %d|pad=12|align=right %d|pad=12|align=right\n",   # lint-disable: L203
         $name, $base, $iters, $ms);
 }
 
@@ -364,7 +364,7 @@ func printSpeedupRow(name as string, serialMs as int, parallelMs as int) {
     if ($parallelMs > 0) {
         $ratio = convert.toFloat($serialMs) / convert.toFloat($parallelMs);
     }
-    io.printf("%s|pad=30|align=left %d|pad=12|align=right %d|pad=12|align=right %f|prec=2|pad=12|align=right\n",   # lint-disable: L010
+    io.printf("%s|pad=30|align=left %d|pad=12|align=right %d|pad=12|align=right %f|prec=2|pad=12|align=right\n",   # lint-disable: L203
         $name, $serialMs, $parallelMs, $ratio);
 }
 
@@ -376,7 +376,7 @@ io.printf("version: %s\n", meta.VERSION);
 io.printf("\n");
 
 printDivider();
-io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %s|pad=12|align=right\n",   # lint-disable: L010
+io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %s|pad=12|align=right\n",   # lint-disable: L203
     "Workload", "base", "iters", "time_ms");
 printDivider();
 
@@ -415,7 +415,7 @@ printRow("map insert+read", MAP_CHURN_SIZE, MAP_CHURN_SIZE, $msMapChurn);
 $total = $total + $msMapChurn;
 
 printDivider();
-io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %d|pad=12|align=right\n",   # lint-disable: L010
+io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %d|pad=12|align=right\n",   # lint-disable: L203
     "total", "", "", $total);
 
 # --- Parallel comparison ------------------------------------------
@@ -426,7 +426,7 @@ io.printf("\n");
 printDivider();
 io.printf("Parallel comparison (workers = %d, scheduler = %s)\n", PARALLEL_WORKERS, meta.BUILD);
 printDivider();
-io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %s|pad=12|align=right\n",   # lint-disable: L010
+io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %s|pad=12|align=right\n",   # lint-disable: L203
     "Workload", "serial_ms", "par_ms", "speedup");
 printDivider();
 

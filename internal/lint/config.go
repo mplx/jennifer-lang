@@ -36,7 +36,7 @@ func ResolveSelection(checksFlag string, hasChecksFlag bool, dotfile string, has
 		}
 		return applyIDSpec(entries, ".jennifer-lint")
 	default:
-		return enabledSet(KnownIDs()), nil
+		return enabledSet(selectableIDs()), nil
 	}
 }
 
@@ -111,7 +111,10 @@ func parseEntry(raw string) (idEntry, bool, error) {
 		s = strings.TrimSpace(s[1:])
 	}
 	if !isKnownID(s) {
-		return idEntry{}, false, fmt.Errorf("unknown check ID %q (known: %s)", s, strings.Join(KnownIDs(), ", "))
+		return idEntry{}, false, fmt.Errorf("unknown check ID %q", s)
+	}
+	if !isSelectable(s) {
+		return idEntry{}, false, fmt.Errorf("check ID %q is an always-on source-error class and cannot be selected", s)
 	}
 	return idEntry{id: s, neg: neg}, true, nil
 }
@@ -132,7 +135,7 @@ func applyIDSpec(entries []idEntry, source string) (map[string]bool, error) {
 		return nil, fmt.Errorf("%s mixes include and exclude entries; use one direction (all IDs, or all !IDs)", source)
 	}
 	if len(excludes) > 0 {
-		set := enabledSet(KnownIDs())
+		set := enabledSet(selectableIDs())
 		for _, id := range excludes {
 			delete(set, id)
 		}
@@ -145,5 +148,5 @@ func applyIDSpec(entries []idEntry, source string) (map[string]bool, error) {
 		}
 		return set, nil
 	}
-	return enabledSet(KnownIDs()), nil
+	return enabledSet(selectableIDs()), nil
 }

@@ -14,8 +14,8 @@ import (
 // discards comments, so the AST carries no directive information. Two forms,
 // both line comments:
 //
-//	# lint-disable: L003, L004        (trailing) - suppresses those IDs on this line
-//	# lint-disable-file: L005, L006   (file head) - suppresses those IDs file-wide
+//	# lint-disable: L101, L102        (trailing) - suppresses those IDs on this line
+//	# lint-disable-file: L201, L202   (file head) - suppresses those IDs file-wide
 //
 // There is no blanket "disable all": a directive names IDs, so a review can
 // grep for what was silenced. Unknown or missing IDs are errors.
@@ -42,19 +42,30 @@ func (e *PositionError) Error() string { return e.Msg }
 func (e *PositionError) Position() (string, int, int) { return e.File, e.Line, e.Col }
 
 // applySuppressions removes findings silenced by `# lint-disable` directives
-// in the token stream. It returns a PositionError if a directive names an
-// unknown check ID or names none at all.
-func applySuppressions(diags []Diagnostic, tokens []lexer.Token) ([]Diagnostic, error) {
+// in the token stream and returns the survivors plus one L004 invalid-directive
+// finding per malformed / unknown-ID directive. A bad directive suppresses
+// nothing - the findings it meant to silence still surface - and is reported
+// alongside them: continue-and-report, not abort. So the output is always the
+// requested format, never a stderr bail-out.
+func applySuppressions(diags []Diagnostic, tokens []lexer.Token) []Diagnostic {
 	lineSup := map[string]map[int]map[string]bool{}
 	fileSup := map[string]map[string]bool{}
+	var bad []Diagnostic
 
 	for _, t := range tokens {
 		if t.Type != lexer.TOKEN_COMMENT_LINE {
 			continue
 		}
 		ids, kind, err := parseDirective(t.Lexeme)
+		if kind == dirNone {
+			continue
+		}
 		if err != nil {
-			return nil, &PositionError{File: t.File, Line: t.Line, Col: t.Col, Msg: err.Error()}
+			bad = append(bad, Diagnostic{
+				ID: "L004", File: t.File, Line: t.Line, Col: t.Col,
+				Message: err.Error(), Severity: severityOf("L004"),
+			})
+			continue
 		}
 		switch kind {
 		case dirLine:
@@ -83,7 +94,7 @@ func applySuppressions(diags []Diagnostic, tokens []lexer.Token) ([]Diagnostic, 
 		}
 	}
 
-	out := make([]Diagnostic, 0, len(diags))
+	out := make([]Diagnostic, 0, len(diags)+len(bad))
 	for _, d := range diags {
 		if fileSup[d.File][d.ID] {
 			continue
@@ -93,7 +104,7 @@ func applySuppressions(diags []Diagnostic, tokens []lexer.Token) ([]Diagnostic, 
 		}
 		out = append(out, d)
 	}
-	return out, nil
+	return append(out, bad...)
 }
 
 // parseDirective inspects a line comment's text. It returns the named IDs and
@@ -120,8 +131,7 @@ func parseDirective(lexeme string) (ids []string, kind int, err error) {
 			continue
 		}
 		if !isKnownID(id) {
-			return nil, kind, fmt.Errorf("unknown check ID %q in lint-disable directive (known: %s)",
-				id, strings.Join(KnownIDs(), ", "))
+			return nil, kind, fmt.Errorf("unknown check ID %q in lint-disable directive", id)
 		}
 		ids = append(ids, id)
 	}

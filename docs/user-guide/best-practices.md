@@ -30,42 +30,61 @@ from the list of things you and your reviewers have to think about.
 `fmt` fixes how code *looks*; `jennifer lint` flags what it *does* that
 is legal but probably wrong. It sits between the formatter and the
 parser: the code parses and runs, but something is still worth a second
-look. Each check has a stable ID:
+look. Each check has a stable ID, grouped by concern - the leading digit
+is the group: **L0nn** source errors, **L1nn** correctness, **L2nn**
+complexity and style, **L3nn** API lifecycle:
 
 | ID     | Flags                                                                  |
 | ------ | ---------------------------------------------------------------------- |
-| `L001` | a local variable declared but never used                               |
-| `L002` | code after a `return` / `throw` / `exit` / `break` / `continue`        |
-| `L003` | an empty `catch` block (an error caught and silently thrown away)      |
-| `L004` | a `throw` of something that isn't an `Error` struct                    |
-| `L005` | a method with too many statements (default over 60)                    |
-| `L006` | block nesting deeper than the limit (default over 4 - see below)       |
-| `L007` | a condition that is always true or always false (`if ($x == $x)`, ...) |
-| `L009` | use of a removed API (e.g. an old `use core;`)                          |
-| `L010` | a source line longer than the 100-column limit                          |
+| `L001` | the source could not be tokenized (lex error)                          |
+| `L002` | the source could not be parsed (parse error)                           |
+| `L003` | an `include` could not be spliced (preprocess error)                   |
+| `L004` | a malformed or unknown-ID `# lint-disable` comment                     |
+| `L101` | a local variable declared but never used                               |
+| `L102` | code after a `return` / `throw` / `exit` / `break` / `continue`        |
+| `L103` | an empty `catch` block (an error caught and silently thrown away)      |
+| `L104` | a `throw` of something that isn't an `Error` struct                    |
+| `L105` | a condition that is always true or always false (`if ($x == $x)`, ...) |
+| `L201` | a method with too many statements (default over 60)                    |
+| `L202` | block nesting deeper than the limit (default over 4 - see below)       |
+| `L203` | a source line longer than the 100-column limit                         |
+| `L301` | use of a deprecated API (reserved, empty until an API is deprecated)   |
+| `L302` | use of a removed API (e.g. an old `use core;`)                         |
+
+The **L0nn source errors are always on** - you can't disable "the file
+doesn't parse". They report in whatever `--format` you ask for, so a
+`--format=json` pipeline gets valid output even when a file is broken.
+Everything else (`L1nn`/`L2nn`/`L3nn`) is selectable:
 
 ```sh
 jennifer lint myprogram.j                 # human-readable, with source carets
 jennifer lint --format=json app.j         # JSON array of findings, for editors/CI
-jennifer lint --checks=!L005,!L006 app.j  # run everything except the two style checks
+jennifer lint --checks=!L201,!L202 app.j  # run everything except the two style checks
 ```
 
 The exit code follows `gofmt -l` / `shellcheck`: `0` clean, `1` when
-there are findings, `2` if the linter itself could not run. That makes
+there are findings (a source error counts), `2` only when the *invocation*
+itself is broken (bad flags, unreadable file, bad `--checks`). That makes
 `jennifer lint` a natural pre-commit or CI gate.
 
 When a flag is a deliberate choice, silence it in place rather than
-disabling the check everywhere - the ID keeps the intent greppable:
+disabling the check everywhere - the ID keeps the intent greppable. The
+directive sits on the line the finding anchors to: usually the offending
+statement, but the `func` line for `L201` and the block-introducer line
+for `L202`:
 
 ```jennifer
-try { risky(); } catch (e) { }   # lint-disable: L003
+try { risky(); } catch (e) { }   # lint-disable: L103
 ```
 
-A `# lint-disable-file: L005, L006` at the top of a file silences those
+A `# lint-disable-file: L201, L202` at the top of a file silences those
 IDs file-wide, and a `.jennifer-lint` file at your project root sets
 defaults for every run (same `IDS` / `!IDS` format, one direction).
 There is no blanket "disable everything" - a directive always names the
-IDs it turns off, so a reviewer can see exactly what was waved through.
+IDs it turns off, so a reviewer can see exactly what was waved through. A
+doubled marker (`## lint-disable: ...`) is just a comment, not a
+directive - handy for writing *about* a directive. `examples/linting.j`
+demonstrates every check and its suppression.
 
 ## Why 4+ levels of nesting is a code smell
 

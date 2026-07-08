@@ -8,6 +8,10 @@ cmd/jennifer/history.go                    In-memory REPL history ring buffer
 cmd/jennifer/dump.go                       `tokens` and `ast` subcommands
 cmd/jennifer/astjson.go                    Hand-rolled AST -> JSON emitter
 cmd/jennifer/fmt.go                        Token-level source formatter; comment + blank-line preservation
+cmd/jennifer/lint.go                       `lint` subcommand: pipeline + config + suppression + JSON/human/github rendering (format-honest L0nn source errors, single JSON array across files)
+cmd/jennifer/profile.go                    `profile` subcommand: table / pprof / trace output
+cmd/jennifer/test.go                       `test` subcommand: test* discovery, setUp/tearDown, --isolated subprocess mode, text/TAP/JUnit reports
+cmd/jennifer/devtools_tinygo.go            tinygo build: run-only stubs for tokens/ast/fmt/lint/profile/test
 cmd/jennifer/examples_test.go              Golden-file integration test (skips files without expected/)
 cmd/jennifer/repl_test.go                  REPL inputComplete unit tests
 cmd/jennifer/lineedit_test.go              Line-editor state-machine tests
@@ -24,7 +28,10 @@ internal/preproc/preproc_test.go           Preprocessor tests
 
 internal/parser/ast.go                     AST node types + Sprint (incl. namespaced struct types)
 internal/parser/parser.go                  Recursive-descent parser; namespaced struct literals
+internal/parser/resolver.go                parse-time scope/slot resolution; undefined-variable + shadowing errors
+internal/parser/fold.go                    parse-time constant folding of literal-only subtrees
 internal/parser/parser_test.go             Parser tests
+internal/parser/fold_test.go               constant-folding tests (incl. runtime-error-stays-runtime)
 
 internal/interpreter/value.go              Runtime Value tagged union (incl. struct + namespaced-struct tag)
 internal/interpreter/environment.go        Scoped symbol table
@@ -40,6 +47,8 @@ internal/interpreter/control_flow_test.go  break/continue/repeat/exit tests
 internal/interpreter/collections_test.go   Lists, maps, iteration tests
 internal/interpreter/compound_test.go      Nested list-of-list / map-of-list / chained-index tests
 internal/interpreter/bytes_test.go         Bytes type + non-decimal literals + bit-op tests
+internal/interpreter/callbyname_test.go    CallByName / CallByNameWith dispatch + RaiseError classification tests
+internal/interpreter/value_alias_test.go   shared-marker COW alias-stress tests
 
 internal/lib/io/iolib.go                   `io` library entrypoint
 internal/lib/io/format.go                  printf / sprintf + verb-modifier mini-language
@@ -82,8 +91,23 @@ internal/lib/net/netlib_tinygo.go          `net` library: tinygo build - friendl
 internal/lib/net/netlib_test.go            net library unit tests (!tinygo; loopback with :0 ephemeral ports; TCP round-trip, UDP round-trip, DNS, polymorphic close, use-after-close)
 internal/lib/regex/regexlib.go             `regex` library: matches/find/findAll/replace/split/escape + regex.Match struct + 128-entry LRU pattern cache
 internal/lib/regex/regexlib_test.go        regex library unit tests (predicate, positional + named groups, rune-index offsets, LRU behaviour under load, invalid pattern boundary)
-internal/lib/testing/testinglib.go         `testing` library: run/results/reset/report + testing.Result struct + three renderers (text / TAP / JUnit XML) + exit interception
+internal/lib/testing/testinglib.go         `testing` library: run/runWith/results/reset/report + testing.Result struct + three renderers (text / TAP / JUnit XML) + exit interception
 internal/lib/testing/testinglib_test.go    testing library unit tests (pass/fail/runtime/exit paths, accumulator, each of the three report formats, boundary errors)
+internal/lib/testing/assertions.go         `testing` assertions: assertEqual/assertNotEqual/assertTrue/assertFalse/assertContains/assertThrows (throw Error{kind:"assertion"} at the call site)
+internal/lib/testing/assertions_test.go    assertion + runWith unit tests
+
+internal/lint/lint.go                      `lint` checks: Diagnostic + grouped-ID registry (L0nn source / L1nn correctness / L2nn style / L3nn lifecycle) + KnownIDs/selectable/Catalog
+internal/lint/run.go                       Check driver + threshold Config + source-error diagnostic builder
+internal/lint/checks.go                    the individual check implementations
+internal/lint/scope.go                     scope-aware traversal for binding-visibility checks (L101 unused-local, L104 throw-non-error)
+internal/lint/walk.go                      flat AST walker for node-shape checks (L102/L103/L105/L201/L202)
+internal/lint/config.go                    --checks / .jennifer-lint selection parsing (selectable IDs only)
+internal/lint/suppress.go                  # lint-disable directive parsing + application; malformed/unknown-ID directive -> L004 finding
+internal/lint/lint_test.go                 lint unit tests
+internal/profile/profile.go                `profile` collector: per-position hit counts + wall-clock (+ optional alloc counting)
+internal/profile/render.go                 table + Chrome-trace renderers
+internal/profile/pprof.go                  pprof.gz output
+internal/profile/profile_test.go           profile unit tests
 
 internal/version/version.go                Default Version = "dev"
 internal/version/version_gen.go            GENERATED by scripts/gen-version.sh (gitignored)

@@ -14,9 +14,9 @@ import (
 // values are fixed defaults in v1 (no CLI flag beyond --checks); the struct
 // keeps them in one place and makes the checks testable.
 type Config struct {
-	MethodMaxStmts int // L005 threshold
-	MaxNesting     int // L006 threshold
-	MaxLineLength  int // L009 threshold
+	MethodMaxStmts int // L201 threshold
+	MaxNesting     int // L202 threshold
+	MaxLineLength  int // L203 threshold
 }
 
 // DefaultConfig returns the v1 thresholds documented for the checks.
@@ -28,7 +28,7 @@ func DefaultConfig() Config {
 // appends its findings via report / reportAt.
 type checkCtx struct {
 	prog       *parser.Program
-	source     string // primary file's raw text, for line-oriented checks (L009)
+	source     string // primary file's raw text, for line-oriented checks (L203)
 	sourceFile string // primary file's tag, matching node Filename()
 	cfg        Config
 	diags      []Diagnostic
@@ -66,11 +66,11 @@ func severityOf(id string) Severity {
 // Check runs every enabled check over a parsed program and returns the
 // findings, sorted and with suppressed diagnostics removed. tokens is the raw
 // lexer stream (including trivia) for the same source, used to read
-// `# lint-disable` directives - the parser strips comments, so suppression
-// must be read off the token stream. A non-nil error means the linter itself
-// failed (e.g. an unknown check ID in a suppression comment), distinct from a
-// clean run that produced findings.
-func Check(prog *parser.Program, tokens []lexer.Token, source, sourceFile string, enabled map[string]bool, cfg Config) ([]Diagnostic, error) {
+// `# lint-disable` directives - the parser strips comments, so suppression must
+// be read off the token stream. A malformed / unknown-ID directive becomes an
+// L004 finding (continue-and-report), so there is no error return: whatever is
+// wrong shows up as a finding in the requested format.
+func Check(prog *parser.Program, tokens []lexer.Token, source, sourceFile string, enabled map[string]bool, cfg Config) []Diagnostic {
 	c := &checkCtx{prog: prog, source: source, sourceFile: sourceFile, cfg: cfg}
 	for _, chk := range registry {
 		if chk.run == nil || !enabled[chk.id] {
@@ -78,12 +78,18 @@ func Check(prog *parser.Program, tokens []lexer.Token, source, sourceFile string
 		}
 		chk.run(c)
 	}
-	diags, err := applySuppressions(c.diags, tokens)
-	if err != nil {
-		return nil, err
-	}
+	diags := applySuppressions(c.diags, tokens)
 	sortDiagnostics(diags)
-	return diags, nil
+	return diags
+}
+
+// SourceErrorDiagnostic builds a diagnostic for a positioned pipeline error
+// (lex / preprocess / parse) so the CLI can render it in the requested format
+// instead of bailing to stderr. id is the L0nn source-error class ("L001"
+// lex, "L002" parse, "L003" preproc); pos supplies file/line/col; msg is the
+// human message (already stripped of its position prefix by the caller).
+func SourceErrorDiagnostic(id, file string, line, col int, msg string) Diagnostic {
+	return Diagnostic{ID: id, File: file, Line: line, Col: col, Message: msg, Severity: severityOf(id)}
 }
 
 // sortDiagnostics orders findings by position then ID so output is stable.

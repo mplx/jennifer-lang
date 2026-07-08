@@ -25,8 +25,11 @@ table.
 - [Interpreter](interpreter.md) - runtime values, scoped environment,
   execution model, library/builtins, error model.
 - [CLI](cli.md) - subcommands (`run`, `repl`, `tokens`, `ast`, `fmt`,
-  `version`, `help`), the REPL, the inspection dumps, the formatter,
-  and version injection.
+  `lint`, `profile`, `test`, `version`, `help`), each with its own page
+  ([REPL](cli_repl.md), [Inspection](cli_inspect.md),
+  [Formatter](cli_fmt.md), [Linter](cli_lint.md),
+  [Profiler](cli_profile.md), [Test runner](cli_test.md)) linked from the
+  index, plus version injection.
 - [Testing](testing.md) - which packages test what.
 - [File map](filemap.md) - one-line description of every file in the
   repository.

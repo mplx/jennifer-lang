@@ -6,7 +6,7 @@ per-process result accumulator, and a format dispatcher for
 human / TAP / JUnit output. The `jennifer test` subcommand
 (discovery, `setUp` / `tearDown`, `--format`, `--isolated`)
 orchestrates on top; see
-[technical/cli.md](../technical/cli.md).
+[technical/cli_test.md](../technical/cli_test.md).
 
 ```jennifer
 use io;
@@ -232,7 +232,7 @@ the orchestration layer on top. It discovers `test*` methods (or
 fresh interpreter subprocess so one test's crash, `exit`, or leaked
 global state can't affect the others. Its flags and exit codes are
 documented in
-[technical/cli.md > Test runner](../technical/cli.md#test-runner-cmdjennifertestgo-internallibtesting).
+[technical/cli_test.md > Test runner](../technical/cli_test.md#test-runner-cmdjennifertestgo-internallibtesting).
 `testing.runWith` (and `Interpreter.CallByNameWith` beneath it) supplies
 the arg-taking dispatch that parameterised drivers use.
 
@@ -248,7 +248,7 @@ Still deferred:
 
 ## See also
 
-- [technical/cli.md > Test runner](../technical/cli.md#test-runner-cmdjennifertestgo-internallibtesting)
+- [technical/cli_test.md > Test runner](../technical/cli_test.md#test-runner-cmdjennifertestgo-internallibtesting)
   - the `jennifer test` subcommand: discovery, `--filter`,
   `--format`, `--isolated`, and the enabling interpreter change.
 - [milestones.md](../milestones.md) - design spec and the

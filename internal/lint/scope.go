@@ -8,11 +8,11 @@ import "github.com/mplx/jennifer-lang/internal/parser"
 // scope.go carries a scope-aware traversal mirroring the resolver's frame
 // model (internal/parser/resolver.go): a frame per method-params, block,
 // for-header, for-each, catch, and spawn body; the try body runs in the
-// enclosing frame. L001 (unused-local) and L004 (throw-non-error) both need
+// enclosing frame. L101 (unused-local) and L104 (throw-non-error) both need
 // binding visibility, so they share this walk with different hooks.
 
-// binding is one name in scope. typ is its declared type (for L004);
-// reportable marks a binding whose disuse L001 should flag (a local `def`,
+// binding is one name in scope. typ is its declared type (for L104);
+// reportable marks a binding whose disuse L101 should flag (a local `def`,
 // not a param / for-each iterator / catch var / spawn-local / global).
 type binding struct {
 	name       string
@@ -36,13 +36,13 @@ type scoped struct {
 	stack      []*sframe
 	spawnDepth int
 
-	// onRef marks a read of a binding (used by L001). Fires only when the
+	// onRef marks a read of a binding (used by L101). Fires only when the
 	// name resolves to a binding in scope.
 	onRef func(b *binding)
-	// onThrow inspects a throw with a resolver for the current scope (L004).
+	// onThrow inspects a throw with a resolver for the current scope (L104).
 	onThrow func(t *parser.ThrowStmt, resolve func(string) *binding)
 	// onPop fires as a frame leaves scope, after its subtree is walked, so a
-	// check can inspect never-used bindings (L001).
+	// check can inspect never-used bindings (L101).
 	onPop func(f *sframe)
 }
 
@@ -103,7 +103,7 @@ func (s *scoped) program(p *parser.Program) {
 }
 
 // method walks one method: a params frame, then the body block (its own
-// frame). Params are declared non-reportable (L001 targets `def`, not params).
+// frame). Params are declared non-reportable (L101 targets `def`, not params).
 func (s *scoped) method(m *parser.MethodDef) {
 	s.push(false)
 	for i := range m.Params {
