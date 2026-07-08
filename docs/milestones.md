@@ -1534,11 +1534,51 @@ family (`isAscii`, `isFile`, `isDir`).
 - **Acceptance.** `true` on an interactive TTY, `false` under a pipe /
   redirect; both toolchains build.
 
----
+## M16.14 - `net` TLS
 
-**Phase D: higher-level and Jennifer-coded libraries (M17-M20).**
+Encrypted transport for `net`, so TLS-only protocols work (mail on
+465 / 993 / 995, HTTPS). TLS is cryptographic and cannot be pure
+Jennifer, so it lives in the system library - as a transport variant of
+the existing socket, not a separate library.
 
-## M16.14 - `any` type
+- **Surface.** `net.connectTLS(host, port)` (implicit TLS, handshake on
+  connect) and `net.startTLS(conn, host)` (upgrade a plaintext
+  connection in place, for STARTTLS on 587 / 143 / 110). Both yield the
+  same connection handle as `net.connect`, so `net.readBytes` /
+  `writeBytes` / `close` / `address` work unchanged and callers stay
+  transport-agnostic. `host` drives certificate / SNI verification.
+- **Implementation.** Standard-Go `crypto/tls` over the existing TCP
+  dial; part of `net`'s `!tinygo` build (`netlib_std.go`), stubbed on
+  `jennifer-tiny` with the same friendly-error pattern as the rest of
+  `net` (TinyGo 0.41 has no usable `crypto/tls` + netdev). Certificate
+  verification is on by default; any skip-verify is a deliberate,
+  explicitly-named argument, never the default.
+- **Prerequisite for.** M18.2 `http` (HTTPS) and M18.6 `mail`.
+- **Acceptance.** A handshake against a known-good endpoint round-trips
+  bytes; `startTLS` upgrades an open connection; a bad certificate errors
+  (positioned); the default binary builds and `jennifer-tiny` returns the
+  friendly stub error.
+
+## M16.15 - `encoding` quoted-printable
+
+Add quoted-printable (RFC 2045) to `encoding`'s binary-to-text codecs,
+the topical sibling of the base64 / hex already there. Needed by M18.6
+`mail` (a MIME transfer encoding) and generally useful.
+
+- **Surface.** A new format string for the existing verbs -
+  `encoding.toText(b, "quoted-printable")` /
+  `encoding.fromText(s, "quoted-printable")` - not a new function; it
+  slots into the same dispatch as `"hex"` / `"base64"` / `"base64-url"`,
+  under the existing codec-name normalisation (case, `-` / `_`).
+- **Semantics.** Encode: printable ASCII stays literal; `=`, control,
+  and 8-bit bytes become `=XX`; soft line breaks (`=` + CRLF) keep lines
+  within the 76-column limit. Decode reverses it, tolerant of CRLF and
+  LF soft breaks. Round-trips `bytes`.
+- **Acceptance.** Canonical RFC 2045 vectors round-trip; the 76-column
+  soft-wrap is applied on encode and unwound on decode; both toolchains
+  build.
+
+## M16.16 - `any` type
 
 The honest home for heterogeneous data. Jennifer's collections are
 homogeneous (`list of T`, `map of K to V`) and every binding boundary is
@@ -1557,16 +1597,26 @@ a type that every value matches.
   printable); `any` is a value-position type.
 - **Semantics.** `any` matches every kind in `MatchesDeclared`, so any
   value binds to an `any` target and any value is a legal element of a
-  `list of any` / `map of ... to any`. **The dynamism is explicit and
-  one-directional:** a concrete value flows *into* `any` freely, but an
-  `any` value flowing *out* into a concrete slot is a normal type
-  mismatch and errors (strict at boundaries holds). You narrow an `any`
-  with `convert.typeOf` and use it once its kind is known. No truthiness,
-  no auto-coercion - reading an `any` gives a value of its real runtime
-  kind, nothing more.
+  `list of any` / `map of ... to any`. Flowing back *out* into a concrete
+  slot is a **runtime-checked extraction**: an `any` slot stores the value
+  at its real kind, so binding it to a concrete-typed target runs the
+  normal `MatchesDeclared` check - it succeeds when the runtime kind
+  matches (`def y as int init $x;` when `$x` holds an int is an identity
+  extraction, no conversion) and raises a positioned, catchable error when
+  it does not (the same `$x` bound to a `string` target). A `list of any`
+  extracts into a `list of int` only if every element is an int (the
+  entry-by-entry check from M16.9). Guard with `convert.typeOf` to make an
+  extraction safe. This is Go's `interface{}` / type-assertion model:
+  dynamic on the way in, checked on the way out. No truthiness, no
+  auto-coercion - reading an `any` gives a value of its real runtime kind;
+  `convert.*` stays a separate, deliberate *conversion* (parse /
+  reinterpret), distinct from this identity extraction.
 - **Type-system impact.** A `TypeAny` kind in `parser.Type`; the lexer /
   parser accept the `any` keyword in type position; `MatchesDeclared`
-  gains a `TypeAny` arm returning true for every value; `ZeroFor(any)` is
+  gains a `TypeAny` arm returning true for every value (the flow *into*
+  `any`; the flow *out* - an `any` value into a concrete target - reuses
+  the existing per-kind / per-element checks unchanged, since an `any`
+  slot already stores concrete-kind values); `ZeroFor(any)` is
   `null`; `stampDeclaredType` treats an `any` inner type as "leave the
   element's own type untouched" (an `any` collection records `any` as its
   element type and never rewrites element tags); `convert.typeOf` reports
@@ -1584,25 +1634,27 @@ a type that every value matches.
   with `typeOf` before use - nothing important hides, and no value is
   silently coerced. It is the explicit escape hatch, not an implicit
   loosening, and it stays strict at boundaries (#4): `any`-into-concrete
-  errors. A `design-decisions.md` reasoning record lands when it ships.
+  is a runtime-checked extraction that errors on a kind mismatch, never a
+  silent coercion. A `design-decisions.md` reasoning record lands when it ships.
 - **Rejected alternatives.** Implicit dynamic typing (a value with no
   declared type) - no; `any` must be written. Truthiness / auto-coercion
   of `any` at use sites - no; narrow explicitly. (Both already precluded
   by stances #2 and #4.)
 - **Acceptance.** `def m as map of string to any init json.decode(s);`
   holds a heterogeneous object; each `$m[k]` reports its real kind via
-  `typeOf`; an `any` value bound to a concrete-typed target errors;
+  `typeOf`; an `any` value bound to a concrete-typed target succeeds when
+  its runtime kind matches and raises a catchable error when it does not;
   `def x as any;` zero-values to `null`; both toolchains build.
 
-## M16.15 - explicit map-to-struct conversion
+## M16.17 - explicit map-to-struct conversion
 
 An explicit, validating way to turn a map - typically a `json.decode`
-result held as `map of string to any` (M16.14) - into a typed struct. The
+result held as `map of string to any` (M16.16) - into a typed struct. The
 *implicit* form (`def p as Point init json.decode(s);` coercing at the
 binding) is rejected; see
 [technical/rejected.md](technical/rejected.md). This is the spelled-out
 counterpart, so the conversion is visible at the call site. Depends on
-M16.14 `any`, which is what lets an arbitrary decoded object be held
+M16.16 `any`, which is what lets an arbitrary decoded object be held
 before conversion.
 
 **Two candidate forms - not decided here; the choice hinges on the
@@ -1651,49 +1703,9 @@ uniformity axis is what decides the form.
   decision above, extra keys) error with a position; nested structs
   round-trip; both toolchains build.
 
-## M16.16 - `net` TLS
+---
 
-Encrypted transport for `net`, so TLS-only protocols work (mail on
-465 / 993 / 995, HTTPS). TLS is cryptographic and cannot be pure
-Jennifer, so it lives in the system library - as a transport variant of
-the existing socket, not a separate library.
-
-- **Surface.** `net.connectTLS(host, port)` (implicit TLS, handshake on
-  connect) and `net.startTLS(conn, host)` (upgrade a plaintext
-  connection in place, for STARTTLS on 587 / 143 / 110). Both yield the
-  same connection handle as `net.connect`, so `net.readBytes` /
-  `writeBytes` / `close` / `address` work unchanged and callers stay
-  transport-agnostic. `host` drives certificate / SNI verification.
-- **Implementation.** Standard-Go `crypto/tls` over the existing TCP
-  dial; part of `net`'s `!tinygo` build (`netlib_std.go`), stubbed on
-  `jennifer-tiny` with the same friendly-error pattern as the rest of
-  `net` (TinyGo 0.41 has no usable `crypto/tls` + netdev). Certificate
-  verification is on by default; any skip-verify is a deliberate,
-  explicitly-named argument, never the default.
-- **Prerequisite for.** M18.2 `http` (HTTPS) and M18.6 `mail`.
-- **Acceptance.** A handshake against a known-good endpoint round-trips
-  bytes; `startTLS` upgrades an open connection; a bad certificate errors
-  (positioned); the default binary builds and `jennifer-tiny` returns the
-  friendly stub error.
-
-## M16.17 - `encoding` quoted-printable
-
-Add quoted-printable (RFC 2045) to `encoding`'s binary-to-text codecs,
-the topical sibling of the base64 / hex already there. Needed by M18.6
-`mail` (a MIME transfer encoding) and generally useful.
-
-- **Surface.** A new format string for the existing verbs -
-  `encoding.toText(b, "quoted-printable")` /
-  `encoding.fromText(s, "quoted-printable")` - not a new function; it
-  slots into the same dispatch as `"hex"` / `"base64"` / `"base64-url"`,
-  under the existing codec-name normalisation (case, `-` / `_`).
-- **Semantics.** Encode: printable ASCII stays literal; `=`, control,
-  and 8-bit bytes become `=XX`; soft line breaks (`=` + CRLF) keep lines
-  within the 76-column limit. Decode reverses it, tolerant of CRLF and
-  LF soft breaks. Round-trips `bytes`.
-- **Acceptance.** Canonical RFC 2045 vectors round-trip; the 76-column
-  soft-wrap is applied on encode and unwound on decode; both toolchains
-  build.
+**Phase D: higher-level and Jennifer-coded libraries (M17-M20).**
 
 ## M17 - Module system for Jennifer-coded libraries
 
@@ -2008,7 +2020,7 @@ Sub-milestones in priority order:
   so the data is auditable as source. Keeps zone policy out
   of the interpreter binary.
 - **M18.2 - `http`** (client) - atop `net`. HTTPS needs net TLS
-  ([M16.16](#m1616---net-tls)).
+  ([M16.14](#m1614---net-tls)).
 - **M18.3 -** (`json` promoted to a Go system library, **M16.9** -
   foundational and performance-sensitive enough to earn native speed.)
 - **M18.4 - `csv`** - simple, useful early.
@@ -2024,12 +2036,12 @@ Sub-milestones in priority order:
   structure - exactly the text orchestration a `.j` module does well -
   with the heavy lifting delegated to system libraries. Two system
   prerequisites, because neither can be pure Jennifer:
-  - **net TLS ([M16.16](#m1616---net-tls), system).** Mail is almost
+  - **net TLS ([M16.14](#m1614---net-tls), system).** Mail is almost
     always encrypted (implicit TLS on 465 / 993 / 995, STARTTLS on
     587 / 143 / 110), and TLS is cryptographic - it must be the host's
     (`net.connectTLS` / `net.startTLS`), never interpreted `.j`.
   - **quoted-printable in `encoding`
-    ([M16.17](#m1617---encoding-quoted-printable), system).** The MIME
+    ([M16.15](#m1615---encoding-quoted-printable), system).** The MIME
     transfer codec, alongside the base64 the module also leans on.
   With those in place the `mail` module stays pure Jennifer: connection
   dialogue, header parse/build, MIME-tree assembly and walk, and
@@ -2038,11 +2050,11 @@ Sub-milestones in priority order:
   (`+OK`, `$len`, `*count`, `:int`, `-ERR`) parses cleanly in `.j`;
   commands go out as RESP arrays. Plaintext first (trusted network /
   localhost); `rediss://` TLS is a later add via net TLS
-  ([M16.16](#m1616---net-tls)). `AUTH [user] password` is a plain
+  ([M16.14](#m1614---net-tls)). `AUTH [user] password` is a plain
   command, so no `crypto` dependency. Typed per-command helpers
   (`get -> string`, `incr -> int`, `lrange -> list`) keep the common
   path off `any`; a generic `command(...)` returning the raw reply is
-  where `any` ([M16.14](#m1614---any-type)) helps. No hard prerequisites
+  where `any` ([M16.16](#m1616---any-type)) helps. No hard prerequisites
   (just `net`), so it can land ahead of `mail`.
 - **M18.8 - `memcache`** - a client for the `memcached` server's text
   protocol (`set` / `get` / `delete` / `incr` / `decr`; replies
@@ -2384,7 +2396,7 @@ willing to keep it green; they're not blocking anything.
   layer (a break from "libraries stay dependency-free") and, if so, gate
   it as a build-tag opt-in (per the note above); and the result-row
   shape - `map of string to any` (a concrete motivator for `any`,
-  M16.14) vs a typed struct via map-to-struct (M16.15). Values bind only
+  M16.16) vs a typed struct via map-to-struct (M16.17). Values bind only
   through `?` placeholders (injection safety). Contrast the
   text-protocol stores redis / memcache (M18.7 / M18.8), which are pure
   Jennifer over `net` and need none of this.

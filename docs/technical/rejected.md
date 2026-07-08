@@ -524,7 +524,7 @@ missing / unknown / wrong-type fields. It was the original M16.9 shape for
 typed JSON decode. **Only the implicit form is rejected here** - an
 *explicit* map-to-struct conversion (a spelled-out call or a struct-literal
 spread, where the reader sees the conversion at the call site) is the
-sanctioned path, specced as M16.15.
+sanctioned path, specced as M16.17.
 
 Rejected because:
 
@@ -545,6 +545,6 @@ Rejected because:
 
 So `json.decode` returns generic Values (objects to `map of string to
 V`); typed targets are rebuilt by hand, or - once specced - through the
-*explicit* map-to-struct conversion (M16.15). See M16.9 in
+*explicit* map-to-struct conversion (M16.17). See M16.9 in
 [milestones.md](../milestones.md) and
 [libraries/json.md](../libraries/json.md).
