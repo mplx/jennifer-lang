@@ -37,6 +37,15 @@ build-go: gen-version
 
 # TinyGo constrained binary. Embeddable; smaller; missing os/exec + net.
 #
+# -scheduler=tasks: pin the cooperative single-thread scheduler. `spawn`
+# gives concurrency without multi-core parallelism under jennifer-tiny;
+# this is deliberate. An unpinned build picks up a threads-capable
+# default that segfaults on recursive spawn bodies (the parallel fib
+# block in examples/benchmark.j), because -stack-size below does not
+# govern OS-thread stacks the way it governs the cooperative scheduler's
+# goroutine stacks. Real multi-core on jennifer-tiny is a separate piece
+# of work, not a default flip.
+#
 # -stack-size=1mb: TinyGo's default goroutine stack (~8KB) overflows on
 # Jennifer's tree-walking recursive evaluator. Each Jennifer-level call
 # adds many Go-stack frames (execBlock + evalCall + evalExpr + ...), so
@@ -45,7 +54,7 @@ build-go: gen-version
 # parallel fib block in examples/benchmark.j) without segfaulting; bump
 # it if a future workload needs deeper recursion.
 build-tinygo: gen-version
-	tinygo build -o jennifer-tiny -stack-size=1mb ./cmd/jennifer
+	tinygo build -o jennifer-tiny -scheduler=tasks -stack-size=1mb ./cmd/jennifer
 
 test:
 	go test ./...

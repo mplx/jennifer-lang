@@ -7,7 +7,7 @@ language; only the compiler differs. Pick by use case:
 
 | Binary          | Build                  | Pick when                                                                                                                                          |
 | --------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `jennifer`      | standard Go (default)  | **What most users want.** Full host-feature surface; fastest on compute-heavy work (2-5x over TinyGo on tight numeric / recursive loops; see [technical/tinygo.md > Single-binary benchmark results](../technical/tinygo.md#single-binary-benchmark-results)). Required for `os.run` / `os.spawn` / `os.wait` / `os.poll` / `os.kill` and the whole `net` library. |
+| `jennifer`      | standard Go (default)  | **What most users want.** Full host-feature surface; competitive on compute-heavy work (the two builds are now within ~1.4x either way on the serial benchmark; see [technical/tinygo.md > Single-binary benchmark results](../technical/tinygo.md#single-binary-benchmark-results)) and the reliable choice for multi-core parallel `spawn`. Required for `os.run` / `os.spawn` / `os.wait` / `os.poll` / `os.kill` and the whole `net` library. |
 | `jennifer-tiny` | TinyGo                 | Constrained variant. Smaller binary, embeddable in minimal-footprint deployments (embedded systems, minimal containers, small-footprint scripting hosts). Missing `os/exec` (TinyGo runtime gap) and the network stack (no netdev driver). Calls into those surfaces return a friendly error pointing back at `jennifer`. |
 
 Both binaries install side by side and never overlap. The packaged
