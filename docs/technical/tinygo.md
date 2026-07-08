@@ -74,7 +74,7 @@ TinyGo support.
 
 **Development subcommands are default-binary only.** `jennifer-tiny`
 is a run-only interpreter: `run` and `repl` execute Jennifer source,
-but the development subcommands `tokens`, `ast`, `fmt`, `lint`, and `profile` are
+but the development subcommands `tokens`, `ast`, `fmt`, `lint`, `profile`, and `test` are
 build-tag-excluded (`cmd/jennifer/devtools_tinygo.go`) and return a
 friendly error pointing at the default `jennifer` binary. They pull in
 lexer-dump, AST-JSON, formatter, and lint machinery that a
@@ -124,7 +124,7 @@ ratio is the stable part.
 `jennifer-tiny` comes in at ~64% of the default binary (about a
 third smaller). Most of that gap is TinyGo's smaller runtime versus
 the standard Go runtime; the run-only trim (excluding the
-`tokens` / `ast` / `fmt` / `lint` / `profile` development subcommands) shaves an
+`tokens` / `ast` / `fmt` / `lint` / `profile` / `test` development subcommands) shaves an
 incremental slice on top.
 
 These are unstripped `make build` (dev) sizes. Release builds strip:

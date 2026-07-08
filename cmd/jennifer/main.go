@@ -80,6 +80,8 @@ func main() {
 		os.Exit(runLint(os.Args[2:]))
 	case "profile":
 		os.Exit(runProfile(os.Args[2:]))
+	case "test":
+		os.Exit(runTest(os.Args[2:]))
 	case "version", "--version", "-v":
 		fmt.Println(version.Version)
 		os.Exit(0)

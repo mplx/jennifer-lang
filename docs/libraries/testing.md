@@ -1,27 +1,28 @@
-# `testing` - test-runner primitives
+# `testing` - assertions and test-runner primitives
 
-Enable with `use testing;`. Five verbs, one struct. Ships the
-irreducible system-side surface a Jennifer-coded test framework
-needs: name-based method invocation, a per-process result
-accumulator, and a format dispatcher for human / TAP / JUnit
-output. The `.j` half (assertion vocabulary, suite organisation,
-CLI harness) lives in the `testing` module and layers on
-top of these primitives.
+Enable with `use testing;`. An assertion vocabulary plus the
+system-side runner surface: name-based method invocation, a
+per-process result accumulator, and a format dispatcher for
+human / TAP / JUnit output. The `jennifer test` subcommand
+(discovery, `setUp` / `tearDown`, `--format`, `--isolated`)
+orchestrates on top; see
+[technical/cli.md](../technical/cli.md).
 
 ```jennifer
 use io;
 use testing;
 
 func addPasses() {
-    if (1 + 1 != 2) {
-        throw Error{kind: "assertion", message: "1 + 1 != 2",
-            file: "", line: 0, col: 0};
-    }
+    testing.assertEqual(1 + 1, 2);
 }
 
 testing.run("addPasses");
 io.printf("%s", testing.report(testing.results(), "text"));
 ```
+
+Under `jennifer test`, the `testing.run` / `report` boilerplate is
+handled for you; a test file just defines `test*` methods with
+assertions in the body.
 
 ## Why this is a system library
 
@@ -47,9 +48,38 @@ carve-out is why the primitive can't live in `.j`.
 | Call                                        | Returns                  | Notes                                                                             |
 | ------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------- |
 | `testing.run(name)`                         | `testing.Result`         | Look up a zero-arg method by name, call it, catch every failure mode, append.     |
+| `testing.runWith(name, args)`               | `testing.Result`         | Like `run`, but binds the `args` list to the method's parameters (arity + declared-type checked). For framework dispatchers, not the zero-arg tests the runner discovers. |
 | `testing.results()`                         | `list of testing.Result` | Snapshot of the accumulator. Value semantics - safe to modify.                    |
 | `testing.reset()`                           | `null`                   | Clear the accumulator between independent runs.                                   |
 | `testing.report(results, format)`           | `string`                 | Render `results` to `"text"`, `"tap"`, or `"junit"`.                              |
+
+## Assertions
+
+Six builtins for test bodies. Each reduces to a `Value.Equal` / Kind
+comparison in Go - native speed, no per-call interpreter overhead - and,
+on failure, throws `Error{kind: "assertion"}` positioned at the
+assertion call, which `testing.run` catches and records.
+
+| Call                                       | Fails (throws) when                                                                     |
+| ------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `testing.assertEqual(actual, expected)`    | `actual != expected` (deep structural equality: lists / maps / structs compare by value). |
+| `testing.assertNotEqual(actual, expected)` | `actual == expected`.                                                                   |
+| `testing.assertTrue(cond)`                 | `cond` is `false` (`cond` must be `bool`).                                               |
+| `testing.assertFalse(cond)`                | `cond` is `true` (`cond` must be `bool`).                                                |
+| `testing.assertContains(haystack, needle)` | `needle` is absent: substring for a string, element for a list, key for a map (by haystack kind). |
+| `testing.assertThrows(name, kind)`         | the named zero-arg method doesn't throw, or throws an `Error` whose `kind` differs.      |
+
+```jennifer
+use testing;
+
+func add(a as int, b as int) { return $a + $b; }
+
+func testAdd() {
+    testing.assertEqual(add(2, 3), 5);
+    testing.assertContains([1, 2, 3], 2);
+    testing.assertThrows("mustFail", "boom");
+}
+```
 
 ## The `testing.Result` struct
 
@@ -193,27 +223,34 @@ from multiple tasks doesn't race. Ordering is by completion time,
 not spawn time. A test runner that wants stable ordering should
 run tests sequentially or sort the results before rendering.
 
-## What's not in v1
+## Running with `jennifer test`
 
-Recorded so the design decisions stay visible.
+These builtins are the substrate; the `jennifer test` subcommand is
+the orchestration layer on top. It discovers `test*` methods (or
+`--filter=REGEX`), runs `setUp` / `tearDown` around each, renders
+`--format=text|tap|junit`, and with `--isolated` runs each test in a
+fresh interpreter subprocess so one test's crash, `exit`, or leaked
+global state can't affect the others. Its flags and exit codes are
+documented in
+[technical/cli.md > Test runner](../technical/cli.md#test-runner-cmdjennifertestgo-internallibtesting).
+`testing.runWith` (and `Interpreter.CallByNameWith` beneath it) supplies
+the arg-taking dispatch that parameterised drivers use.
 
-- **Subprocess isolation.** A runaway infinite loop in one test
-  still holds up the runner (only `exit` is intercepted, not
-  divergence). A future `--isolated` flag on the CLI harness
-  would re-invoke `jennifer run testfile.j --testing-single name`
-  per test via `os.spawn` for complete isolation.
-- **Setup / teardown / fixtures.** Belong in the .j-side
-  framework; primitives stay narrow.
-- **Test discovery by prefix.** `Interpreter.MethodNames()` is
-  exported for the harness; discovery lives up there, not
-  here.
-- **Skip / xfail.** Same rationale - runner-level policy.
-- **Parameterised tests.** Zero-argument methods only in v1; a
-  parameterised variant would need first-class function values
-  or an explicit `testing.runWith(name, args)` shape.
+Still deferred:
+
+- **Per-test timeouts.** A non-terminating test still hangs its
+  subprocess; `--isolated` isolates state, not runtime.
+- **Skip / xfail.** Runner-level policy, not a primitive.
+- **First-class subtests.** A body loop
+  (`for (def c in $cases) { testing.assertEqual(...); }`) covers the
+  observed table-driven cases; a `testing.subtest(name)` primitive would
+  need new language surface.
 
 ## See also
 
+- [technical/cli.md > Test runner](../technical/cli.md#test-runner-cmdjennifertestgo-internallibtesting)
+  - the `jennifer test` subcommand: discovery, `--filter`,
+  `--format`, `--isolated`, and the enabling interpreter change.
 - [milestones.md](../milestones.md) - design spec and the
   follow-on.
 - [control-flow.md](../user-guide/control-flow.md#try-catch-throw)

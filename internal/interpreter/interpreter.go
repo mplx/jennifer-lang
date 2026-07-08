@@ -26,6 +26,12 @@ type BuiltinCtx struct {
 	Out    io.Writer
 	In     io.Reader
 	InREPL bool
+	// Call-site position, so a builtin that raises a Jennifer error (via
+	// RaiseError) can anchor it at the call - e.g. testing assertions point
+	// at the failing `testing.assertEqual(...)` line. Zero when unknown.
+	File string
+	Line int
+	Col  int
 }
 
 // Builtin is a Go-implemented library function callable from Jennifer source.
@@ -435,6 +441,34 @@ func ClassifyError(err error) (kind, message, file string, line, col int) {
 	return "unknown", err.Error(), "", 0, 0
 }
 
+// NewErrorValue builds the canonical `Error` struct Value
+// (kind, message, file, line, col). Exported so Go-level libraries can
+// construct the exact error shape Jennifer's `try`/`catch` and the testing
+// runner understand, without duplicating the field layout.
+func NewErrorValue(kind, message, file string, line, col int) Value {
+	return StructVal(canonicalErrorStructName, []StructField{
+		{Name: "kind", Value: StringVal(kind)},
+		{Name: "message", Value: StringVal(message)},
+		{Name: "file", Value: StringVal(file)},
+		{Name: "line", Value: IntVal(int64(line))},
+		{Name: "col", Value: IntVal(int64(col))},
+	})
+}
+
+// RaiseError returns a catchable *ErrorSignal wrapping a canonical `Error`
+// struct. A library builtin returns this to throw a Jennifer error that
+// `try`/`catch` catches and `testing.run` classifies by `kind` - the path
+// testing assertions use. Pass the call-site position from BuiltinCtx so the
+// error anchors at the call.
+func RaiseError(kind, message, file string, line, col int) error {
+	return &ErrorSignal{
+		Value: NewErrorValue(kind, message, file, line, col),
+		File:  file,
+		Line:  line,
+		Col:   col,
+	}
+}
+
 // runtimeErrorToValue converts a *runtimeError into the conventional
 // `Error` struct Value so it can be bound to a catch variable. Kind
 // falls back to `"runtime"` when the originating site didn't set one.
@@ -550,6 +584,48 @@ func (i *Interpreter) CallByName(name string) (Value, error) {
 		i.global = NewEnvironment(nil)
 	}
 	callFrame := borrowBlockEnv(effectiveGlobal(i.global), 0)
+	res, err := i.execBlock(m.Body, callFrame)
+	releaseBlockEnv(callFrame)
+	if err != nil {
+		return Value{}, err
+	}
+	if res.hasBreak || res.hasContinue {
+		return Value{}, unhandledLoopFlowError(res)
+	}
+	if res.hasReturn {
+		return res.value, nil
+	}
+	return Null(), nil
+}
+
+// CallByNameWith invokes a top-level user method by name, binding args to its
+// parameters in order with the same arity and declared-type checks as a normal
+// call. The variadic sibling to CallByName (which stays the zero-arg compat
+// entrypoint); used by testing.runWith and framework dispatchers that reach
+// methods by string name with runtime-computed argument lists.
+func (i *Interpreter) CallByNameWith(name string, args ...Value) (Value, error) {
+	m, ok := i.methods[name]
+	if !ok {
+		return Value{}, fmt.Errorf("method %q is not defined", name)
+	}
+	if len(args) != len(m.Params) {
+		return Value{}, fmt.Errorf("method %q takes %d parameter(s), got %d", name, len(m.Params), len(args))
+	}
+	if i.global == nil {
+		i.global = NewEnvironment(nil)
+	}
+	callFrame := borrowBlockEnv(effectiveGlobal(i.global), len(m.Params))
+	for idx, p := range m.Params {
+		if !args[idx].MatchesDeclared(p.Type) {
+			releaseBlockEnv(callFrame)
+			return Value{}, fmt.Errorf("argument %d to %q must be %s, got %s", idx+1, name, p.Type, args[idx].Kind)
+		}
+		bound := bindParamValue(args[idx], p.Type)
+		if err := callFrame.DefineAt(idx, p.Name, bound, p.Type, false); err != nil {
+			releaseBlockEnv(callFrame)
+			return Value{}, err
+		}
+	}
 	res, err := i.execBlock(m.Body, callFrame)
 	releaseBlockEnv(callFrame)
 	if err != nil {
@@ -2847,11 +2923,11 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 			}
 			args = append(args, v)
 		}
-		ctx := BuiltinCtx{Out: i.Out, In: i.In, InREPL: i.InREPL}
+		pf, pl, pc := posFor(c)
+		ctx := BuiltinCtx{Out: i.Out, In: i.In, InREPL: i.InREPL, File: pf, Line: pl, Col: pc}
 		v, err := b.Fn(ctx, args)
 		if err != nil {
-			file, line, col := posFor(c)
-			return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+			return Value{}, builtinError(err, pf, pl, pc)
 		}
 		return v, nil
 	}
@@ -2919,13 +2995,26 @@ func (i *Interpreter) evalQualifiedCall(c *parser.QualifiedCallExpr, env *Enviro
 		}
 		args = append(args, v)
 	}
-	ctx := BuiltinCtx{Out: i.Out, In: i.In, InREPL: i.InREPL}
+	pf, pl, pc := posFor(c)
+	ctx := BuiltinCtx{Out: i.Out, In: i.In, InREPL: i.InREPL, File: pf, Line: pl, Col: pc}
 	v, err := fn(ctx, args)
 	if err != nil {
-		file, line, col := posFor(c)
-		return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+		return Value{}, builtinError(err, pf, pl, pc)
 	}
 	return v, nil
+}
+
+// builtinError normalizes an error returned by a builtin. Control-flow
+// signals - a thrown Jennifer error (*ErrorSignal) or an exit (*ExitSignal) -
+// propagate unwrapped, so a Go builtin can raise a catchable Jennifer error
+// (testing assertions, RaiseError). Any other Go error is wrapped into a
+// positioned runtimeError at the call site, the long-standing behavior.
+func builtinError(err error, file string, line, col int) error {
+	switch err.(type) {
+	case *ErrorSignal, *ExitSignal:
+		return err
+	}
+	return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 }
 
 // evalQualifiedConst handles `prefix.NAME`. Resolution mirrors

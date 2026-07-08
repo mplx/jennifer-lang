@@ -1,6 +1,6 @@
 # Jennifer Programming Language
 
-**Milestone 16.7**
+**Milestone 16.8**
 
 Jennifer is a small, experimental, interpreted programming language.
 

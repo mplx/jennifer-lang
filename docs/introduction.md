@@ -1,8 +1,7 @@
 # Jennifer
 
 Jennifer is a small, experimental, interpreted programming language
-built as a learning exercise. The interpreter is written in (Tiny)Go
-and ships as two binaries:
+written in (Tiny)Go and ships as two binaries:
 
 - **`jennifer`** - standard Go build, full host-feature surface.
   This is the default binary you install and reach for.
@@ -51,4 +50,6 @@ semver applies and breaking changes need a major bump.
 ## Source
 
 Source, issues, and pull requests live at
-<https://github.com/mplx/jennifer-lang>. License: LGPL-3.0-only.
+<https://github.com/mplx/jennifer-lang>.
+
+License: LGPL-3.0-only.

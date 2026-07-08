@@ -1344,155 +1344,52 @@ stdout. Internals: [technical/cli.md](technical/cli.md).
 
 ## M16.8 - Testing framework consolidation
 
-Consolidates what was originally planned as a Jennifer-coded
-testing module (the old M18.5 slot) into the system library
-and the CLI,
-following the same "primitives in Go, orchestration as
-subcommand" pattern already used by `jennifer fmt`,
-`jennifer lint` (M16.6), and `jennifer profile` (M16.7).
-M16.4 shipped just the dispatch primitives (`CallByName`,
-`testing.run`, `testing.results`, `testing.report`); M16.8
-lands the assertion vocabulary and CLI orchestration around
-them so a Jennifer-coded module doesn't need to duplicate
-either.
+Adds the assertion vocabulary and CLI orchestration on top of M16.4's
+dispatch primitives (`testing.run` / `results` / `report`), so a suite
+doesn't reduce to hand-written `throw Error{...}` plus a bespoke runner.
+Internals: [technical/cli.md](technical/cli.md) and
+[libraries/testing.md](libraries/testing.md).
 
-**Four additions:**
+**Assertions** (`testing` library, in both binaries). Six builtins that
+reduce to `Value.Equal` / Kind dispatch in Go and, on failure, throw a
+canonical `Error{kind: "assertion"}` positioned at the assertion call,
+which `testing.run` catches and classifies: `assertEqual` /
+`assertNotEqual` (deep structural equality), `assertTrue` /
+`assertFalse` (require bool), `assertContains` (substring / list element
+/ map key, by haystack kind), and `assertThrows(name, kind)` (calls the
+named method and asserts it throws an `Error` of that kind). Native
+speed - no per-call interpreter overhead.
 
-- **Assertion vocabulary in the `testing` library.** Six
-  namespaced builtins that reduce to `Value.Equal` +
-  Kind-dispatch at the Go level; all throw a canonical
-  `Error` struct on failure with the assertion site's
-  position, which the runner catches through the same
-  path M16.4 already handles:
-  - `testing.assertEqual(actual, expected)` and
-    `testing.assertNotEqual(actual, expected)` - deep
-    equality via `Value.Equal`, so lists / maps / structs
-    compare structurally.
-  - `testing.assertTrue(cond)` / `testing.assertFalse(cond)` -
-    require bool; throw on the wrong polarity.
-  - `testing.assertContains(haystack, needle)` -
-    dispatches on haystack Kind: substring for string,
-    element for list, key for map. Anything else errors as
-    a runtime type mismatch.
-  - `testing.assertThrows(name, kind)` - calls the named
-    zero-arg method via `CallByName` and asserts it throws
-    an `Error` whose `kind` field matches. Wraps
-    `testing.run`'s existing try/catch shape rather than
-    duplicating it.
-  Native performance - assertions in a hot test loop no
-  longer pay per-call interpreter overhead for what
-  reduces to `Value.Equal` in Go.
+**Arg-taking dispatch.** `Interpreter.CallByNameWith(name, args...)`
+binds arguments to a method's parameters with the normal arity and
+declared-type checks; zero-arg `CallByName` stays the compat entrypoint.
+`testing.runWith(name, argsList)` mirrors `testing.run` for methods that
+take arguments - for framework dispatchers, not the zero-arg test
+methods the runner discovers.
 
-- **`CallByName` extension for arg-taking methods.**
-  M16.4's `Interpreter.CallByName(name string) (Value,
-  error)` invoked zero-arg methods only; M16.8 grows a
-  variadic sibling `CallByNameWith(name string, args
-  ...Value) (Value, error)` that binds the passed values
-  to the method's parameters in order (arity + declared-
-  type checks match the normal call path). Zero-arg
-  `CallByName` stays as the compat entrypoint. On the
-  Jennifer side, `testing.runWith(name, argsList)` mirrors
-  `testing.run` for methods that take arguments. Unblocks
-  parameterised-test dispatchers (`testing.runWith(row.testName,
-  [row.input])` inside a table-driven driver method) and any
-  future framework layer that wants to invoke user methods
-  with runtime-computed argument lists. Test-method entry
-  points themselves stay zero-arg by convention (see
-  "Testing conventions" below) - the arg-taking path is
-  for framework code and helper dispatchers, not for the
-  test methods `jennifer test` discovers directly.
+**`jennifer test FILE.j`** (dev subcommand, `!tinygo`). Discovers
+zero-arg methods by the `test*` convention (or `--filter=REGEX`), runs
+each through the runner with optional `setUp` / `tearDown` hooks, and
+reports in `--format=text|tap|junit`. `--isolated` runs each test in a
+fresh interpreter subprocess (via `--testing-single METHOD`, the per-test
+entry the parent fires), trading richer detail for clean state. Exit
+`0` pass / `1` failures / `2` runner error, the `jennifer lint` shape.
 
-- **`--testing-single METHOD` CLI flag.** New on the
-  interpreter binary. Parses + resolves the source file the
-  usual way, then invokes exactly one method by name (via
-  `CallByName`), records its result, prints one line in the
-  chosen `--format`, exits with 0 on pass or 1 on fail.
-  Sole purpose: serve as the per-test subprocess that
-  `jennifer test --isolated` fires via `os.spawn` (M15.3).
-  Rejects unknown method names at argv parse with a
-  positioned error; refuses inside the REPL the same way
-  `readLine` does.
+**Enabling interpreter change.** Builtins can now raise a catchable
+Jennifer error: a builtin returning `interpreter.RaiseError(kind, msg,
+...)` - an `*ErrorSignal` wrapping the canonical `Error` - propagates
+unwrapped instead of being flattened into a `runtimeError`, and
+`BuiltinCtx` carries the call-site position so the error anchors there.
 
-- **`jennifer test FILE.j` subcommand.** The orchestration
-  layer:
-  - Discovery via `Interpreter.MethodNames()`, filtered to
-    the naming convention (default: `test*` prefix,
-    overridable with `--filter=REGEX` using M16.3
-    patterns).
-  - Per-test flow: call `setUp` if present, run the test
-    through `testing.run`, call `tearDown` if present.
-    Both hooks are looked up by name at the module scope
-    and are absent by default.
-  - `--format=text|tap|junit` routes through
-    `testing.report`; default `text`.
-  - `--isolated` opts into per-test subprocess mode: for
-    each test, `os.spawn` the current interpreter binary
-    with `--testing-single METHOD`, record the child's
-    exit code and one-line output. Slower (each subprocess
-    pays interpreter startup + full module init; the
-    M17.2 first-import cost is paid N times under
-    `--isolated`), but each test gets a clean interpreter
-    state.
-  - Exit code: 0 = all pass, 1 = one or more failed, 2 =
-    the runner itself failed (parse / IO). Same shape as
-    `jennifer lint`.
+**Conventions.** Test entry points are zero-arg; the subject under test
+takes any signature (called with concrete values in the body).
+Table-driven tests are a body loop (`for (def c in $cases) {
+testing.assertEqual(...); }`) - fail-fast, the first failing row throws
+with its position. `examples/testsuite.j` is a runnable sample.
 
-**Testing conventions.**
-
-- **Test-method entry points are zero-arg.** `jennifer test`
-  discovers zero-arg methods matching the `test*` naming
-  convention; each runs uniformly through `testing.run` (the
-  zero-arg `CallByName` path). The *subject* function under
-  test can take any signature - the test body invokes it
-  with concrete values via the normal call syntax
-  (`testing.assertEqual(add(1, 2), 3)`). The arg-taking
-  `CallByNameWith` + `testing.runWith` are for framework and
-  dispatcher code that reaches methods by string name at
-  runtime, not for the tests the runner discovers.
-- **Table-driven tests via body loops.** The simplest shape
-  is `for (def c in $cases) { testing.assertEqual(...); }`
-  inside a single test method. First failing row throws,
-  aborting the method - so the test reports "row 3 failed"
-  via the assertion's source position rather than "rows 3
-  and 5 both failed" independently. Fail-fast is the
-  trade-off for zero framework support. Users who want
-  independent per-row pass / fail wire it via
-  `CallByNameWith`: a driver method walks the case list,
-  calls a parameterised sub-method with each row's args,
-  and records each result through `testing.results()`.
-  First-class subtest primitives (e.g. `testing.subtest(name)`)
-  are deferred - the pattern above covers the observed
-  use cases without new language surface.
-- **Testing Jennifer-coded modules.** Once M17.2 ships
-  `import "foo.j" as foo;`, `jennifer test FILE.j` works
-  unchanged on a test file that imports modules - module
-  resolution happens at parse time via M17.3, independent
-  of the runner. **White-box access to a module's private
-  names lives in M17.4** as the "Testing overlays"
-  amendment: a `MODULE_test.j` file next to `MODULE.j` in
-  the same directory gets private-name visibility into the
-  module by convention. `jennifer test MODULE.j` discovers
-  and runs the overlay; `jennifer test MODULE_test.j`
-  works too. Black-box (public-API-only) tests live in
-  a differently-named file (`MODULE_public_test.j`,
-  `test_MODULE_api.j`, or wherever the user puts them) and
-  see only exports. See
-  [M17.4 > Testing overlays](#m174---module-level-exports)
-  for the visibility rule and the parse-time splicing that
-  implements it.
-
-**TinyGo-friendliness.** The assertion vocabulary is
-lightweight (six functions reducing to existing
-`Value.Equal` / Kind dispatch) and lands in the
-always-built `testing` library, so TinyGo suites can call
-`testing.assertEqual` and friends directly. The
-`jennifer test` subcommand and `--testing-single` flag
-live in `cmd/jennifer/` next to the other dev-tool
-subcommands, behind the same build tag that keeps `fmt` /
-`lint` / `profile` out of `jennifer-tiny`. TinyGo test
-suites lose the convenient `jennifer test` orchestration
-but keep the assertion + runner primitives - they invoke
-`testing.run` explicitly from a hand-written driver.
+**Deferred to M17.** White-box testing overlays (a `MODULE_test.j` with
+private-name visibility into a module) depend on the module system; they
+land with [M17.4](#m174---exports-and-visibility), not here.
 
 ## M16.9 - `json`
 

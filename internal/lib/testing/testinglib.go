@@ -42,10 +42,10 @@ type Value = interpreter.Value
 
 // -------- Registry --------
 
-// resultRec mirrors testing.Result. Kept in Go form so serializing
+// Record mirrors testing.Result. Kept in Go form so serializing
 // to text/tap/junit doesn't have to walk struct-field slices for
 // every access.
-type resultRec struct {
+type Record struct {
 	Name         string
 	Ms           int64
 	Passed       bool
@@ -58,7 +58,7 @@ type resultRec struct {
 
 var (
 	resultsMu sync.Mutex
-	results   []resultRec
+	results   []Record
 )
 
 // ResetForTest wipes the accumulator; exported for the _test package.
@@ -86,9 +86,20 @@ func Install(in *interpreter.Interpreter) {
 	})
 
 	in.RegisterNamespaced(LibraryName, "run", makeRunFn(in))
+	in.RegisterNamespaced(LibraryName, "runWith", makeRunWithFn(in))
 	in.RegisterNamespaced(LibraryName, "results", resultsFn)
 	in.RegisterNamespaced(LibraryName, "reset", resetFn)
 	in.RegisterNamespaced(LibraryName, "report", reportFn)
+
+	// Assertion vocabulary. All throw a canonical Error{kind: "assertion"} on
+	// failure, positioned at the assertion call site, which testing.run
+	// catches and classifies. See assertions.go.
+	in.RegisterNamespaced(LibraryName, "assertEqual", assertEqualFn)
+	in.RegisterNamespaced(LibraryName, "assertNotEqual", assertNotEqualFn)
+	in.RegisterNamespaced(LibraryName, "assertTrue", assertTrueFn)
+	in.RegisterNamespaced(LibraryName, "assertFalse", assertFalseFn)
+	in.RegisterNamespaced(LibraryName, "assertContains", assertContainsFn)
+	in.RegisterNamespaced(LibraryName, "assertThrows", makeAssertThrowsFn(in))
 }
 
 // -------- Helpers --------
@@ -100,7 +111,7 @@ func takeStringArg(fnName string, args []Value, idx int, role string) (string, e
 	return args[idx].Str, nil
 }
 
-func recToValue(r resultRec) Value {
+func recToValue(r Record) Value {
 	return interpreter.NamespacedStructVal(LibraryName, "Result", []interpreter.StructField{
 		{Name: "name", Value: interpreter.StringVal(r.Name)},
 		{Name: "ms", Value: interpreter.IntVal(r.Ms)},
@@ -113,11 +124,11 @@ func recToValue(r resultRec) Value {
 	})
 }
 
-func valueToRec(fnName string, v Value) (resultRec, error) {
+func valueToRec(fnName string, v Value) (Record, error) {
 	if v.Kind != interpreter.KindStruct || v.StructNS != LibraryName || v.StructName != "Result" {
-		return resultRec{}, fmt.Errorf("%s: expected a testing.Result, got %s", fnName, v.Kind)
+		return Record{}, fmt.Errorf("%s: expected a testing.Result, got %s", fnName, v.Kind)
 	}
-	var r resultRec
+	var r Record
 	for _, f := range v.Fields {
 		switch f.Name {
 		case "name":
@@ -143,8 +154,26 @@ func valueToRec(fnName string, v Value) (resultRec, error) {
 
 // -------- Verbs --------
 
-// makeRunFn captures the interpreter reference so the returned
-// builtin can invoke user methods via CallByName.
+// timeAndRecord runs call, times it, classifies any error into a Record,
+// appends it to the accumulator, and returns the Record as a testing.Result.
+// Shared by testing.run (zero-arg) and testing.runWith (arg-taking).
+func timeAndRecord(name string, call func() (Value, error)) Value {
+	start := stdtime.Now()
+	_, callErr := call()
+	rec := Record{Name: name, Ms: stdtime.Since(start).Milliseconds()}
+	if callErr == nil {
+		rec.Passed = true
+	} else {
+		rec.ErrorKind, rec.ErrorMessage, rec.File, rec.Line, rec.Col = interpreter.ClassifyError(callErr)
+	}
+	resultsMu.Lock()
+	results = append(results, rec)
+	resultsMu.Unlock()
+	return recToValue(rec)
+}
+
+// makeRunFn captures the interpreter reference so the returned builtin can
+// invoke a zero-arg user method via CallByName.
 func makeRunFn(in *interpreter.Interpreter) interpreter.Builtin {
 	return func(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 		if len(args) != 1 {
@@ -154,32 +183,42 @@ func makeRunFn(in *interpreter.Interpreter) interpreter.Builtin {
 		if err != nil {
 			return interpreter.Null(), err
 		}
+		return timeAndRecord(name, func() (Value, error) { return in.CallByName(name) }), nil
+	}
+}
 
-		start := stdtime.Now()
-		_, callErr := in.CallByName(name)
-		elapsed := stdtime.Since(start).Milliseconds()
-
-		rec := resultRec{
-			Name: name,
-			Ms:   elapsed,
+// makeRunWithFn mirrors testing.run for methods that take arguments: it binds
+// the list's elements to the method's parameters via CallByNameWith.
+func makeRunWithFn(in *interpreter.Interpreter) interpreter.Builtin {
+	return func(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
+		if len(args) != 2 {
+			return interpreter.Null(), fmt.Errorf("testing.runWith expects 2 arguments (name, args), got %d", len(args))
 		}
-		if callErr == nil {
-			rec.Passed = true
-		} else {
-			rec.Passed = false
-			kind, msg, file, line, col := interpreter.ClassifyError(callErr)
-			rec.ErrorKind = kind
-			rec.ErrorMessage = msg
-			rec.File = file
-			rec.Line = line
-			rec.Col = col
+		name, err := takeStringArg("testing.runWith", args, 0, "name")
+		if err != nil {
+			return interpreter.Null(), err
 		}
+		if args[1].Kind != interpreter.KindList {
+			return interpreter.Null(), fmt.Errorf("testing.runWith: args must be a list, got %s", args[1].Kind)
+		}
+		callArgs := args[1].List
+		return timeAndRecord(name, func() (Value, error) { return in.CallByNameWith(name, callArgs...) }), nil
+	}
+}
 
-		resultsMu.Lock()
-		results = append(results, rec)
-		resultsMu.Unlock()
-
-		return recToValue(rec), nil
+// RenderReport formats records as "text" | "tap" | "junit". Exported so the
+// `jennifer test` CLI can render results it collected at the Go level without
+// round-tripping through the Jennifer-level testing.report.
+func RenderReport(recs []Record, format string) (string, error) {
+	switch format {
+	case "text":
+		return renderText(recs), nil
+	case "tap":
+		return renderTAP(recs), nil
+	case "junit":
+		return renderJUnit(recs), nil
+	default:
+		return "", fmt.Errorf("unknown format %q; known: text, tap, junit", format)
 	}
 }
 
@@ -188,7 +227,7 @@ func resultsFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 		return interpreter.Null(), fmt.Errorf("testing.results expects 0 arguments, got %d", len(args))
 	}
 	resultsMu.Lock()
-	snapshot := make([]resultRec, len(results))
+	snapshot := make([]Record, len(results))
 	copy(snapshot, results)
 	resultsMu.Unlock()
 
@@ -223,7 +262,7 @@ func reportFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 		return interpreter.Null(), err
 	}
 
-	recs := make([]resultRec, len(args[0].List))
+	recs := make([]Record, len(args[0].List))
 	for i, v := range args[0].List {
 		r, err := valueToRec("testing.report", v)
 		if err != nil {
@@ -249,7 +288,7 @@ func reportFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 // renderText: human-readable terminal output. One line per test
 // with pass/fail status, timing, and failure context on the next
 // line. Totals at the bottom.
-func renderText(recs []resultRec) string {
+func renderText(recs []Record) string {
 	var sb strings.Builder
 	var passed, failed int
 	for _, r := range recs {
@@ -277,7 +316,7 @@ func renderText(recs []resultRec) string {
 
 // renderTAP: Test Anything Protocol v14. Machine-readable, works
 // with `prove` and CI harnesses.
-func renderTAP(recs []resultRec) string {
+func renderTAP(recs []Record) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "TAP version 14\n1..%d\n", len(recs))
 	for i, r := range recs {
@@ -325,7 +364,7 @@ type junitFailure struct {
 	Body    string `xml:",chardata"`
 }
 
-func renderJUnit(recs []resultRec) string {
+func renderJUnit(recs []Record) string {
 	suite := junitTestSuite{
 		Name:  "jennifer",
 		Tests: len(recs),

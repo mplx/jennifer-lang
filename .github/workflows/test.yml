@@ -79,6 +79,13 @@ jobs:
         # so this uses ./jennifer (built by `make build` above).
         run: ./jennifer lint --format=github examples/*.j
 
+      - name: Run the Jennifer test suite
+        # Exercises the `testing` assertion vocabulary and the `jennifer
+        # test` runner end to end on a .j suite. Non-zero exit (a failing
+        # assertion, or a runner error) fails the build. TAP output is
+        # readable in the CI log and consumable by TAP-aware reporters.
+        run: ./jennifer test --format=tap examples/testsuite.j
+
       - name: em-dash scan (project rule)
         run: |
           # No usage of U+2014 (em-dash) and U+2013 (en-dash)
