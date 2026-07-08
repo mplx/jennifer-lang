@@ -54,7 +54,7 @@ func fib(n as int) {
 # is the outer-loop iteration count (often 1 for "single sweep"
 # workloads).
 func printRow(name as string, base as int, iters as int, ms as int) {
-    io.printf("%s|pad=30|align=left %d|pad=12|align=right %d|pad=12|align=right %d|pad=12|align=right\n",
+    io.printf("%s|pad=30|align=left %d|pad=12|align=right %d|pad=12|align=right %d|pad=12|align=right\n",   # lint-disable: L010
         $name, $base, $iters, $ms);
 }
 
@@ -150,7 +150,7 @@ func benchListCopy() {
     while ($i < LIST_COPY_REPS) {
         def ys as list of int init lists.sort($xs);
         def zs as list of int init lists.reverse($ys);
-        def ws as list of int init lists.slice($zs, 0, LIST_SIZE // 2);
+        lists.slice($zs, 0, LIST_SIZE // 2);
         $i = $i + 1;
     }
     def gap as time.Duration init time.sub(time.now(), $start);
@@ -187,7 +187,7 @@ func benchStringJoin() {
     for (def n in $ns) {
         $parts[] = convert.toString($n);
     }
-    def joined as string init strings.join($parts, ",");
+    strings.join($parts, ",");
     def gap as time.Duration init time.sub(time.now(), $start);
     return time.milliseconds($gap);
 }
@@ -297,7 +297,7 @@ func benchNewtonParallel() {
         $workers[] = spawn { return newtonRange($lo, $hi); };
         $w = $w + 1;
     }
-    def junk as list of int init task.waitAll($workers);
+    task.waitAll($workers);
     def gap as time.Duration init time.sub(time.now(), $start);
     return time.milliseconds($gap);
 }
@@ -334,7 +334,7 @@ func benchMonteCarloParallel() {
         $workers[] = spawn { return monteCarloWorker($seed, $throws); };
         $w = $w + 1;
     }
-    def junk as list of int init task.waitAll($workers);
+    task.waitAll($workers);
     def gap as time.Duration init time.sub(time.now(), $start);
     return time.milliseconds($gap);
 }
@@ -351,7 +351,7 @@ func benchFibParallel() {
         $workers[] = spawn { return fib(FIB_N); };
         $w = $w + 1;
     }
-    def results as list of int init task.waitAll($workers);
+    task.waitAll($workers);
     def gap as time.Duration init time.sub(time.now(), $start);
     return time.milliseconds($gap);
 }
@@ -364,7 +364,7 @@ func printSpeedupRow(name as string, serialMs as int, parallelMs as int) {
     if ($parallelMs > 0) {
         $ratio = convert.toFloat($serialMs) / convert.toFloat($parallelMs);
     }
-    io.printf("%s|pad=30|align=left %d|pad=12|align=right %d|pad=12|align=right %f|prec=2|pad=12|align=right\n",
+    io.printf("%s|pad=30|align=left %d|pad=12|align=right %d|pad=12|align=right %f|prec=2|pad=12|align=right\n",   # lint-disable: L010
         $name, $serialMs, $parallelMs, $ratio);
 }
 
@@ -376,7 +376,7 @@ io.printf("version: %s\n", meta.VERSION);
 io.printf("\n");
 
 printDivider();
-io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %s|pad=12|align=right\n",
+io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %s|pad=12|align=right\n",   # lint-disable: L010
     "Workload", "base", "iters", "time_ms");
 printDivider();
 
@@ -415,7 +415,7 @@ printRow("map insert+read", MAP_CHURN_SIZE, MAP_CHURN_SIZE, $msMapChurn);
 $total = $total + $msMapChurn;
 
 printDivider();
-io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %d|pad=12|align=right\n",
+io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %d|pad=12|align=right\n",   # lint-disable: L010
     "total", "", "", $total);
 
 # --- Parallel comparison ------------------------------------------
@@ -426,7 +426,7 @@ io.printf("\n");
 printDivider();
 io.printf("Parallel comparison (workers = %d, scheduler = %s)\n", PARALLEL_WORKERS, meta.BUILD);
 printDivider();
-io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %s|pad=12|align=right\n",
+io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %s|pad=12|align=right\n",   # lint-disable: L010
     "Workload", "serial_ms", "par_ms", "speedup");
 printDivider();
 

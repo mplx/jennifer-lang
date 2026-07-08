@@ -72,6 +72,13 @@ jobs:
       - name: Smoke-test the TinyGo binary (constrained)
         run: ./jennifer-tiny run examples/hello.j
 
+      - name: Lint the examples
+        # Gate on the linter: any finding at or above the severity floor
+        # (warning) fails the build. --format=github surfaces findings as
+        # inline PR annotations. Lint is a default-binary-only dev feature,
+        # so this uses ./jennifer (built by `make build` above).
+        run: ./jennifer lint --format=github examples/*.j
+
       - name: em-dash scan (project rule)
         run: |
           # No usage of U+2014 (em-dash) and U+2013 (en-dash)

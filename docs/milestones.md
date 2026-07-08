@@ -1208,7 +1208,7 @@ under "Pre-M16.5.1 comparison, same workloads."
   `Value.shared *bool` marker + `Share()` at read sites +
   `Ensure()` at mutation sites; deep-copy only when the flag is
   set. Killed the O(N^2) tax on `$xs[] = item` in a loop -
-  append-in-a-loop dropped from ~35 s on 10K items to ~40 ms on
+  append-in-a-loop dropped from ~35s on 10K items to ~40ms on
   `jennifer-tiny`. Alias correctness pinned by
   `internal/interpreter/value_alias_test.go` (15 tests). See
   [technical/interpreter.md > Value semantics](technical/interpreter.md#value-semantics).
@@ -1229,9 +1229,9 @@ under "Pre-M16.5.1 comparison, same workloads."
   `CallExpr.Method *MethodDef` is pre-filled by the resolver so
   the runtime skips a hash lookup per user-method call.
   Parameters bind through `DefineAt` into pre-sized slots.
-  Target: `fib(23)` on `jennifer-tiny` 415 ms -> ~80-150 ms
+  Target: `fib(23)` on `jennifer-tiny` 415ms -> ~80-150ms
   (3-5x), in striking distance of the default `jennifer`
-  binary's 89 ms.
+  binary's 89ms.
 - **M16.5.4 - Namespaced-call + micro fast paths.**
   `QualifiedCallExpr.Fn` / `QualifiedConstRefExpr.Const`
   pre-filled by `Interpreter.resolveQualifiedRefs` (a second
@@ -1252,7 +1252,7 @@ under "Pre-M16.5.1 comparison, same workloads."
 
 **Combined target.** Re-running `examples/benchmark.j` against the
 M16.5-final `jennifer-tiny` binary should yield a serial total in the
-15-25 s range (down from 48.9 s post-M16.5.1, and 74.5 s pre-M16.5)
+15-25s range (down from 48.9s post-M16.5.1, and 74.5s pre-M16.5)
 and put TinyGo within ~1.5x of the default `jennifer` binary on every
 workload shape - the floor set by the TinyGo-vs-stdlib runtime gap.
 The parallel section is a separate story and belongs to a possible
@@ -1372,9 +1372,10 @@ targets - the same pattern M16.7's profiler reuses for its
   source-context carets, matching the existing
   parse-error and runtime-error rendering in
   `cmd/jennifer/main.go`).
-- `--format=json` machine-readable stream for editor
-  integration (LSPs, CI annotations). One JSON object
-  per finding: `{id, file, line, col, message, severity}`.
+- `--format=json` machine-readable JSON array of findings
+  for editor integration (LSPs, CI annotations), each
+  `{id, file, line, col, message, severity}` (valid JSON,
+  `[]` when empty).
 - `--format=github` GitHub Actions annotations
   (`::error file=…,line=…,col=…::message`). Cheap to
   add; matches `go test`'s convention.

@@ -36,7 +36,7 @@ def nothing as null;
 def empty as int;
 
 io.printf("=== variables ===\n");
-io.printf("x=%d y=%f name=%s flag=%t nothing=%v empty=%d\n", $x, $y, $name, $flag, $nothing, $empty);
+io.printf("x=%d y=%f name=%s flag=%t nothing=%v empty=%d\n", $x, $y, $name, $flag, $nothing, $empty);   # lint-disable: L010
 
 # --- Arithmetic, including the Python-3 / vs // distinction ---
 io.printf("=== arithmetic ===\n");
@@ -276,8 +276,8 @@ io.printf("convert.typeOf(meta.BUILD)   = %s\n", convert.typeOf(meta.BUILD));
 # actual values (vary by host / how the program was launched).
 io.printf("=== os ARGS + flags ===\n");
 io.printf("convert.typeOf(os.ARGS)            = %s\n", convert.typeOf(os.ARGS));
-io.printf("convert.typeOf(os.hasFlag(\"x\"))    = %s\n", convert.typeOf(os.hasFlag("--definitely-not-a-real-flag")));
-io.printf("convert.typeOf(os.flag(\"x\"))       = %s\n", convert.typeOf(os.flag("--definitely-not-a-real-flag")));
+io.printf("convert.typeOf(os.hasFlag(\"x\"))    = %s\n", convert.typeOf(os.hasFlag("--definitely-not-a-real-flag")));   # lint-disable: L010
+io.printf("convert.typeOf(os.flag(\"x\"))       = %s\n", convert.typeOf(os.flag("--definitely-not-a-real-flag")));   # lint-disable: L010
 
 # --- Constants in expressions ---
 io.printf("=== constants ===\n");
@@ -481,7 +481,7 @@ io.printf("sha256 stream = %s\n", encoding.toText(hash.finalize($sha), "hex"));
 # --- encoding introspection + binary-to-text + codecs ---
 io.printf("=== encoding ===\n");
 io.printf("base64(abc)  = %s\n", encoding.toText($digestIn, "base64"));
-io.printf("hex round    = %s\n", convert.stringFromBytes(encoding.fromText("616263", "hex"), "utf-8"));
+io.printf("hex round    = %s\n", convert.stringFromBytes(encoding.fromText("616263", "hex"), "utf-8"));   # lint-disable: L010
 io.printf("isAscii(abc) = %t\n", encoding.isAscii($digestIn));
 io.printf("lenRunes     = %d\n", encoding.lenRunes(convert.bytesFromString("café", "utf-8")));
 def latin as bytes init encoding.encode("café", "latin-1");

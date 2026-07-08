@@ -154,6 +154,71 @@ comments land on their own line at the current indent; trailing
 same-line comments stay on the same line; runs of blank lines
 collapse to one. Block comments may nest.
 
+## Linter (`cmd/jennifer/lint.go`, `internal/lint`)
+
+`jennifer lint <file.j>` reports patterns that are compile-legal but
+stylistically or semantically suspect - the slot between `fmt` (which
+normalises lexical shape) and the parser (which rejects the outright
+illegal). The checks live in `internal/lint`; the subcommand in
+`cmd/jennifer/lint.go` wraps them with file I/O, config resolution, and
+output rendering.
+
+The check set, each with a stable ID so suppression and configuration
+stay portable and greppable:
+
+| ID     | Check                       | Severity | Flags                                                              |
+| ------ | --------------------------- | -------- | ------------------------------------------------------------------ |
+| `L001` | unused-local                | warning  | a local `def` binding never read (skips spawn-body declarations)   |
+| `L002` | dead-code-after-terminator  | warning  | a statement after `return`/`throw`/`exit`/`break`/`continue`       |
+| `L003` | empty-catch                 | warning  | a `catch` block with no body                                       |
+| `L004` | throw-non-error             | warning  | a `throw` whose value isn't statically an `Error`                  |
+| `L005` | method-too-long             | info     | method body over the statement threshold (default 60)              |
+| `L006` | nesting-too-deep            | info     | block nesting over the depth threshold (default 4)                 |
+| `L007` | constant-condition          | warning  | `if (true)`, `while (true)` with no escape, `if ($x == $x)`, ...   |
+| `L008` | deprecation                 | warning  | reserved family, empty until an API is deprecated                  |
+| `L009` | removed-api                 | warning  | use of a removed API (e.g. `use core;`)                            |
+| `L010` | line-too-long               | info     | a source line over the column limit (default 100)                  |
+
+**Traversal.** The parser exposes no generic visitor, so `internal/lint`
+carries two: a flat `walker` (`walk.go`) with list/stmt/expr hooks for
+checks that match node shapes (L002/L003/L005/L006/L007), and a
+scope-aware traversal (`scope.go`) mirroring the resolver's frame model
+for the checks that need binding visibility (L001/L004). Both descend
+into `SpawnExpr.Body`, which the resolver deliberately skips: a read
+inside a spawn still marks an outer local used, but a *declaration*
+inside a spawn is left unreported (the resolver's spawn carve-out, which
+the linter inherits). The linter runs on the parsed AST alone - it does
+not call `parser.Resolve`, so it can lint code that would fail
+resolution, and it tracks its own bindings and declared types.
+
+**Severity and exit code.** A finding at or above `SeverityFloor`
+(warning) makes the run exit 1; an info-only run exits 0; a linter
+failure (bad flags, IO, parse error, bad config, unknown ID in a
+directive) exits 2. Same triaging shape as `gofmt -l` / `shellcheck`.
+
+**Suppression.** `# lint-disable: L003` (trailing) silences an ID on
+that line; `# lint-disable-file: L005, L006` silences file-wide. There
+is no blanket disable-all - a directive names IDs. Because the parser
+strips comments, `applySuppressions` reads directives off the raw
+`lexer.TokenizeWithFile` stream and correlates them to findings by
+`file`/`line`; unknown IDs raise a positioned error.
+
+**Configuration.** `--checks=IDS` (per run) or a `.jennifer-lint` file at
+the tree root (per project) select checks with one `IDS` / `!IDS`
+direction - all includes ("run only these") or all excludes ("run
+everything except"); mixing is an error. Unknown IDs are always an error,
+everywhere. `--format=human|json|github` picks the output shape:
+positioned carets (reusing `printErrorContextTo`), a JSON array of
+`{id,file,line,col,message,severity}` objects (valid JSON, `[]` when
+empty), or GitHub Actions annotations.
+
+**TinyGo.** The subcommand is build-tag split: `lint.go` (`!tinygo`)
+carries the real implementation and is the only importer of
+`internal/lint`, so the whole AST-walking machinery stays out of the
+`jennifer-tiny` binary; `lint_tinygo.go` (`tinygo`) is a friendly stub
+pointing at the default `jennifer` binary, mirroring the `os.run` / `net`
+pattern.
+
 ## Version injection
 
 `internal/version.Version` holds the build version as a single `string`.

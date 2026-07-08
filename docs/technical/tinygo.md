@@ -72,6 +72,15 @@ on both binaries. Every other shipped library (`io`, `convert`,
 `crc`, `encoding`, `task`, `fs`, `regex`, `testing`) has full
 TinyGo support.
 
+**Development subcommands are default-binary only.** `jennifer-tiny`
+is a run-only interpreter: `run` and `repl` execute Jennifer source,
+but the development subcommands `tokens`, `ast`, `fmt`, and `lint` are
+build-tag-excluded (`cmd/jennifer/devtools_tinygo.go`) and return a
+friendly error pointing at the default `jennifer` binary. They pull in
+lexer-dump, AST-JSON, formatter, and lint machinery that a
+minimal-footprint embedding has no use for; build the standard-Go
+`jennifer` binary for development work.
+
 **TinyGo goroutine stack**. Jennifer's tree-walking
 evaluator wraps each Jennifer-level call in many Go-stack frames
 (`execBlock` + `evalCall` + `evalExpr` + ...), so even a
@@ -98,6 +107,27 @@ reaches multi-core speedup via Go's scheduler.
 Future library work will grow the restrictions table if further
 TinyGo runtime gaps surface. Each new gap lands with the same
 friendly-message pattern.
+
+## Binary size
+
+The constrained build is the smaller one, which is the point of
+`jennifer-tiny` targeting minimal-footprint deployments. Sizes from
+`make build` on linux/amd64 (Go 1.26.3, TinyGo 0.41.1, unstripped).
+The absolute numbers move with toolchain version and platform; the
+ratio is the stable part.
+
+| Binary          | Size                        |
+| --------------- | --------------------------- |
+| `jennifer`      | ~7.0 MB (7,250,750 bytes)   |
+| `jennifer-tiny` | ~4.5 MB (4,621,624 bytes)   |
+
+`jennifer-tiny` comes in at ~64% of the default binary (about a
+third smaller). Most of that gap is TinyGo's smaller runtime versus
+the standard Go runtime; the run-only trim (excluding the
+`tokens` / `ast` / `fmt` / `lint` development subcommands) shaves an
+incremental slice on top. Neither binary is stripped - `-ldflags
+"-s -w"` would shrink the default `jennifer` further if size ever
+matters there.
 
 ## Single-binary benchmark results
 

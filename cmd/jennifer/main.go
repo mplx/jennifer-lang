@@ -76,6 +76,8 @@ func main() {
 			os.Exit(2)
 		}
 		os.Exit(runFmt(os.Args[2]))
+	case "lint":
+		os.Exit(runLint(os.Args[2:]))
 	case "version", "--version", "-v":
 		fmt.Println(version.Version)
 		os.Exit(0)
@@ -107,9 +109,10 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  jennifer run <file.j>    run a Jennifer program")
 	fmt.Fprintln(os.Stderr, "  jennifer run -           read source from stdin")
 	fmt.Fprintln(os.Stderr, "  jennifer repl            interactive REPL")
-	fmt.Fprintln(os.Stderr, "  jennifer tokens <file>   dump the lexer's token stream")
-	fmt.Fprintln(os.Stderr, "  jennifer ast <file>      dump the parsed AST as JSON")
-	fmt.Fprintln(os.Stderr, "  jennifer fmt <file>      format the source per docs/user-guide/style-guide.md")
+	// The development subcommands are build-tag split: the default binary
+	// lists them; the constrained TinyGo build (which omits them) prints a
+	// pointer at the default binary instead.
+	printDevUsage(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  jennifer version         print the version and exit")
 	fmt.Fprintln(os.Stderr, "  jennifer help            show this message")
 }

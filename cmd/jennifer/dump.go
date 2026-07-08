@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
+//go:build !tinygo
+
 package main
 
 import (
@@ -14,6 +16,17 @@ import (
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 )
+
+// printDevUsage lists the development subcommands in the top-level usage
+// text. Build-tag split (paired with the stub in devtools_tinygo.go) so the
+// constrained TinyGo build, which omits these subcommands, doesn't advertise
+// commands it will only reject.
+func printDevUsage(w io.Writer) {
+	fmt.Fprintln(w, "  jennifer tokens <file>   dump the lexer's token stream")
+	fmt.Fprintln(w, "  jennifer ast <file>      dump the parsed AST as JSON")
+	fmt.Fprintln(w, "  jennifer fmt <file>      format the source per docs/user-guide/style-guide.md")
+	fmt.Fprintln(w, "  jennifer lint <file>...  report compile-legal but suspect patterns")
+}
 
 // loadProgramSource opens a Jennifer source from `path` (or stdin if path is
 // "-"), returning the source text, the absolute path (or "<stdin>"), and the

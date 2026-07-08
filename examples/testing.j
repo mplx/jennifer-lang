@@ -46,7 +46,7 @@ func addFails() {
 # ---- failure via runtime error ----
 func indexTooFar() {
     def xs as list of int init [];
-    def x as int init $xs[5];
+    $xs[5];
 }
 
 # ---- exit inside a test (captured by the runner) ----
