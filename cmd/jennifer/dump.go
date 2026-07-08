@@ -26,6 +26,7 @@ func printDevUsage(w io.Writer) {
 	fmt.Fprintln(w, "  jennifer ast <file>      dump the parsed AST as JSON")
 	fmt.Fprintln(w, "  jennifer fmt <file>      format the source per docs/user-guide/style-guide.md")
 	fmt.Fprintln(w, "  jennifer lint <file>...  report compile-legal but suspect patterns")
+	fmt.Fprintln(w, "  jennifer profile <file>  run with the evaluator instrumented; write a profile")
 }
 
 // loadProgramSource opens a Jennifer source from `path` (or stdin if path is

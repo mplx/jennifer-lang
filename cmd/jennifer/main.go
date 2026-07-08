@@ -78,6 +78,8 @@ func main() {
 		os.Exit(runFmt(os.Args[2]))
 	case "lint":
 		os.Exit(runLint(os.Args[2:]))
+	case "profile":
+		os.Exit(runProfile(os.Args[2:]))
 	case "version", "--version", "-v":
 		fmt.Println(version.Version)
 		os.Exit(0)
@@ -177,23 +179,7 @@ func runFile(path string) int {
 		return 1
 	}
 	in := interpreter.New()
-	iolib.Install(in)
-	convert.Install(in)
-	mathlib.Install(in)
-	stringslib.Install(in)
-	listslib.Install(in)
-	mapslib.Install(in)
-	oslib.Install(in)
-	metalib.Install(in)
-	timelib.Install(in)
-	hashlib.Install(in)
-	crclib.Install(in)
-	encodinglib.Install(in)
-	tasklib.Install(in)
-	fslib.Install(in)
-	netlib.Install(in)
-	regexlib.Install(in)
-	testinglib.Install(in)
+	installLibraries(in)
 	runErr := in.Run(prog)
 
 	// The exit-time loud-fail. Even when Run returned cleanly,
@@ -237,6 +223,29 @@ func runFile(path string) int {
 		return 1
 	}
 	return 0
+}
+
+// installLibraries activates every standard library on a fresh interpreter.
+// Shared by `run` and `profile` so the two never drift on which libraries a
+// program can `use`.
+func installLibraries(in *interpreter.Interpreter) {
+	iolib.Install(in)
+	convert.Install(in)
+	mathlib.Install(in)
+	stringslib.Install(in)
+	listslib.Install(in)
+	mapslib.Install(in)
+	oslib.Install(in)
+	metalib.Install(in)
+	timelib.Install(in)
+	hashlib.Install(in)
+	crclib.Install(in)
+	encodinglib.Install(in)
+	tasklib.Install(in)
+	fslib.Install(in)
+	netlib.Install(in)
+	regexlib.Install(in)
+	testinglib.Install(in)
 }
 
 // positioned is the interface every Jennifer error type implements. It lets

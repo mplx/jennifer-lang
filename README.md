@@ -1,8 +1,9 @@
 # Jennifer Programming Language
 
-**Milestone 16.6**
+**Milestone 16.7**
 
 Jennifer is a small, experimental, interpreted programming language.
+
 The interpreter is written in Go and ships as two binaries:
 **`jennifer`** (built with the standard Go toolchain, full
 host-feature surface - the default you install and reach for) and
@@ -10,10 +11,6 @@ host-feature surface - the default you install and reach for) and
 and embeddable; missing `os/exec` and the network stack). `make
 build` produces both side by side. Source files use the `.j`
 extension.
-
-This project exists primarily as a learning exercise: how to design a
-language and build an interpreter end-to-end (lexer → preprocessor → parser →
-tree-walking evaluator → stdlib).
 
 Jennifer currently targets **Linux**; Windows and macOS support is planned.
 

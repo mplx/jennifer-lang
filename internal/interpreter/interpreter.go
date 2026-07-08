@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/mplx/jennifer-lang/internal/parser"
@@ -95,6 +96,18 @@ type Interpreter struct {
 	// coordinate via their own `done` channels).
 	tasksMu sync.Mutex
 	tasks   []*TaskState
+
+	// Profiling (optional dev feature; nil = off, the only cost on the hot
+	// path being a nil check). Set via SetProfiler; the concrete collector
+	// lives in internal/profile and is wired by `jennifer profile`. The
+	// three flags gate the three instrumentation streams so an unused one
+	// costs nothing. profChild accumulates nested-statement time so the
+	// statement timer can report self time as well as cumulative.
+	prof       Profiler
+	profStmts  bool
+	profCalls  bool
+	profAllocs bool
+	profChild  time.Duration
 }
 
 func New() *Interpreter {
@@ -619,6 +632,9 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 		i.methods[m.Name] = m
 	}
 	i.global = NewEnvironment(nil)
+	if i.prof != nil {
+		i.prof.Start(time.Now())
+	}
 	res, err := i.execStmts(prog.TopLevel, i.global)
 	if err != nil {
 		return err
@@ -942,7 +958,27 @@ func (i *Interpreter) execStmts(stmts []parser.Stmt, env *Environment) (blockRes
 	return blockResult{}, nil
 }
 
+// execStmt executes one statement. When statement profiling is active it
+// times the execution, splitting self time (this statement) from cumulative
+// time (this statement plus everything it called) via the profChild
+// accumulator; otherwise it delegates straight to execStmtRaw with only a nil
+// check of overhead.
 func (i *Interpreter) execStmt(s parser.Stmt, env *Environment) (blockResult, error) {
+	if i.prof == nil || !i.profStmts {
+		return i.execStmtRaw(s, env)
+	}
+	file, line, col := posFor(s)
+	start := time.Now()
+	savedChild := i.profChild
+	i.profChild = 0
+	res, err := i.execStmtRaw(s, env)
+	elapsed := time.Since(start)
+	i.prof.RecordStmt(file, line, col, elapsed-i.profChild, elapsed)
+	i.profChild = savedChild + elapsed
+	return res, err
+}
+
+func (i *Interpreter) execStmtRaw(s parser.Stmt, env *Environment) (blockResult, error) {
 	switch st := s.(type) {
 	case *parser.DefineStmt:
 		return blockResult{}, i.execDefine(st, env)
@@ -1044,7 +1080,7 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 		// the declared element / key+value type onto the (possibly empty
 		// or untyped) container so subsequent `$x[i] = ...` writes can
 		// enforce the declared inner type.
-		val = stampDeclaredType(v.Copy(), st.VarType)
+		val = stampDeclaredType(i.eagerCopy(v, st), st.VarType)
 	} else {
 		// Spec decision: uninitialized variables get the zero value of
 		// their declared type. Constants must always be initialized (the
@@ -1175,7 +1211,7 @@ func (i *Interpreter) execAssign(st *parser.AssignStmt, env *Environment) error 
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 	}
-	val = stampDeclaredType(val.Copy(), b.DeclType)
+	val = stampDeclaredType(i.eagerCopy(val, st), b.DeclType)
 	if st.Slot >= 0 {
 		if err := env.AssignAt(st.Depth, st.Slot, st.VarName, val); err != nil {
 			file, line, col := posFor(st)
@@ -1226,7 +1262,7 @@ func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environme
 	if err != nil {
 		return err
 	}
-	rootCopy := binding.Value.Ensure()
+	rootCopy := i.ensureCOW(binding.Value, st)
 	if err := i.applyLvalueWrite(&rootCopy, steps, newVal, st); err != nil {
 		return err
 	}
@@ -1267,7 +1303,7 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 			file, line, col := posFor(st)
 			return &runtimeError{Msg: fmt.Sprintf("bytes element value %d out of range [0, 255]", newVal.Int), File: file, Line: line, Col: col}
 		}
-		rootCopy := binding.Value.Ensure()
+		rootCopy := i.ensureCOW(binding.Value, st)
 		rootCopy.Bytes = append(rootCopy.Bytes, byte(newVal.Int))
 		if err := env.Assign(st.Target.Name, rootCopy); err != nil {
 			file, line, col := posFor(st)
@@ -1279,7 +1315,7 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: fmt.Sprintf("cannot append %s to list of declared element type %s", newVal.Kind, binding.Value.ElemTyp), File: file, Line: line, Col: col}
 	}
-	rootCopy := binding.Value.Ensure()
+	rootCopy := i.ensureCOW(binding.Value, st)
 	rootCopy.List = append(rootCopy.List, newVal.Copy())
 	if err := env.Assign(st.Target.Name, rootCopy); err != nil {
 		file, line, col := posFor(st)
@@ -1320,7 +1356,7 @@ func (i *Interpreter) execFieldAssign(st *parser.FieldAssignStmt, env *Environme
 	if err != nil {
 		return err
 	}
-	rootCopy := binding.Value.Ensure()
+	rootCopy := i.ensureCOW(binding.Value, st)
 	if err := i.applyLvalueWrite(&rootCopy, steps, newVal, st); err != nil {
 		return err
 	}
@@ -1983,14 +2019,16 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 			file, line, col := posFor(ex)
 			return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 		}
-		// mark the value as potentially aliased. Any storage
-		// downstream (Define, Assign, param binding, list/map/struct
-		// literal element) now shares the same backing; a future
-		// mutation calls Ensure() and detaches only when the flag is
-		// set. In contrast, execAppend / execIndexAssign /
+		// Mark the value as potentially aliased before it flows
+		// downstream. Note the current var-storage paths (execDefine,
+		// execAssign, bindParamValue) deep-copy eagerly via Value.Copy
+		// rather than lean on this marker, so the shared flag is
+		// defensive there and Ensure()'s detach branch almost never
+		// fires from Jennifer code. The live payoff of the Share/Ensure
+		// protocol is the opposite case: execAppend / execIndexAssign /
 		// execFieldAssign fetch their target via GetBinding (not
-		// evalExpr), so the append hot loop stays unshared and mutates
-		// in place - the O(N^2) fix.
+		// evalExpr), so the append/index hot loop keeps an unshared
+		// value and mutates it in place - the O(N^2) to O(N) fix.
 		return v.Share(), nil
 	case *parser.ConstRefExpr:
 		// 1. User scope first (variables and `def const`).
@@ -2579,7 +2617,15 @@ func (i *Interpreter) evalLen(ex *parser.LenExpr, env *Environment) (Value, erro
 // the body's return value when the goroutine finishes. Phase 3
 // surfaces the result via task.wait.
 func (i *Interpreter) evalSpawn(ex *parser.SpawnExpr, env *Environment) (Value, error) {
-	spawnEnv := i.snapshotForSpawn(env)
+	var spawnEnv *Environment
+	if i.prof != nil && i.profAllocs {
+		start := time.Now()
+		spawnEnv = i.snapshotForSpawn(env)
+		file, line, col := posFor(ex)
+		i.prof.RecordSpawnCopy(file, line, col, time.Since(start))
+	} else {
+		spawnEnv = i.snapshotForSpawn(env)
+	}
 	state := &TaskState{Done: make(chan struct{})}
 	i.registerTask(state)
 
@@ -2753,12 +2799,25 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 			// Scalar arg kinds skip Copy + stampDeclaredType (both are
 			// no-ops for immutable kinds) via bindParamValue.
 			bound := bindParamValue(args[idx], p.Type)
+			if i.prof != nil && i.profAllocs && isCompoundCopyKind(args[idx].Kind) {
+				pf, pl, pcol := posFor(c.Args[idx])
+				i.prof.RecordEagerCopy(pf, pl, pcol)
+			}
 			if err := callFrame.DefineAt(idx, p.Name, bound, p.Type, false); err != nil {
 				releaseBlockEnv(callFrame)
 				return Value{}, &runtimeError{Msg: err.Error(), Line: p.Line, Col: p.Col}
 			}
 		}
-		res, err := i.execBlock(m.Body, callFrame)
+		var res blockResult
+		var err error
+		if i.prof != nil && i.profCalls {
+			start := time.Now()
+			res, err = i.execBlock(m.Body, callFrame)
+			pf, pl, pc := posFor(c)
+			i.prof.RecordCall(m.Name, pf, pl, pc, start, time.Now())
+		} else {
+			res, err = i.execBlock(m.Body, callFrame)
+		}
 		releaseBlockEnv(callFrame)
 		if err != nil {
 			return Value{}, err
