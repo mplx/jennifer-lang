@@ -1,0 +1,6 @@
+gzip round-trip:    true
+zlib round-trip:    true
+deflate round-trip: true
+best <= fast size:  true
+compressible shrank:true
+stream round-trip:  true

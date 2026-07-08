@@ -1480,10 +1480,13 @@ handles for large data.
   entropy-based *size reduction* - a different operation with a
   streaming shape of its own. Go's stdlib draws the same line
   (`encoding/*` vs `compress/*`), which the routing mirrors.
-- **Surface.** One-shot `compress.gzip(b)` / `gunzip(b)`, `deflate(b)`
-  / `inflate(b)`, `zlib(b)` / `unzlib(b)`, with an optional level
-  argument (fast / default / best). Streaming via the integer-handle
-  pattern `hash` uses (`compress.stream(algo)` / `update` / `finalize`).
+- **Surface.** `compress.pack(b, algo [, level])` / `compress.unpack(b,
+  algo)`, where `algo` is `"gzip"` / `"zlib"` / `"deflate"` and the
+  optional `level` is `"fast"` / `"default"` / `"best"`. The algorithm is
+  a string argument (matching `hash.compute` / `crc.compute`), and the
+  `pack` / `unpack` verbs pair with `archive`'s. Streaming via the
+  integer-handle pattern `hash` uses (`compress.stream(algo [, level])` /
+  `update` / `finalize`).
 - **Implementation.** Go `compress/flate` + `compress/gzip` +
   `compress/zlib` (pure Go; verify TinyGo-clean before relying on it).
 - **Acceptance.** Round-trips each algorithm; `gzip` output is readable
@@ -1494,37 +1497,40 @@ handles for large data.
 tar and zip container read / write over `bytes`, value-semantic so it
 needs no `fs`.
 
-- **Surface.** `archive.tar(entries) -> bytes` / `archive.untar(b) ->
-  list of Entry`; `archive.zip` / `archive.unzip`. `Entry` is a struct
-  `{ name, data as bytes, mode, mtime }`. Convenience combos
-  `archive.targz(entries)` / `untargz(b)` (and `.tgz`) call into
-  **M16.11** `compress`, so the everyday `.tar.gz` case is a single
-  `use archive;`, not two imports. An `fs`-integrated helper ("tar a
-  directory") can layer on top later.
+- **Surface.** `archive.pack(entries, format) -> bytes` /
+  `archive.unpack(b, format) -> list of Entry`, sharing the `pack` /
+  `unpack` verbs with `compress` (byte streams there, file bundles
+  here). `format` is `"tar"`, `"zip"`, or the gzip combo `"tar.gz"`
+  (alias `"tgz"`), so the everyday `.tar.gz` case is one call rather
+  than a `tar`-then-`compress` pair - `"tar.gz"` layers `compress`'s
+  gzip ([M16.11](#m1611---compress)) over a tar internally. `Entry` is a
+  struct `{ name, data as bytes, mode, mtime }`. An `fs`-integrated
+  helper ("pack a directory") can layer on top later.
 - **Implementation.** Go `archive/tar` (pure Go) + `archive/zip` (uses
   `compress/flate`, so depends on **M16.11**). No `fs` dependency in the
   core; the bytes-in/out shape keeps it TinyGo-safe.
-- **Acceptance.** tar / untar and zip / unzip round-trip; `tar(1)` /
-  `unzip(1)` read the output; both toolchains build.
+- **Acceptance.** `pack` / `unpack` round-trip for tar, zip, and
+  tar.gz; `tar(1)` / `unzip(1)` read the output; both toolchains build.
 
-## M16.13 - `ansi`
+## M16.13 - `os.isTerminal`
 
-Terminal styling as explicit string wrappers. Deliberately a library,
-not `printf` verb modifiers: colour is presentational rather than value
-formatting, and escapes must not leak into redirected output. Rejecting
-a `%s|color=` printf modifier in favour of this explicit library earns a
-[technical/rejected.md](technical/rejected.md) entry when the milestone
-lands.
+A small `os` addition: is a given standard stream an interactive
+terminal? The one host fact terminal styling needs - escape-code
+generation is otherwise pure string work, so the styling itself lives in
+the `ansi` module ([M17.5](#m175---ansi-first-reference-module)). Named
+`isTerminal`, not the C-tradition `isatty`, to match the `is*` camelCase
+family (`isAscii`, `isFile`, `isDir`).
 
-- **Surface.** `ansi.color(s, name)` / `ansi.bgColor(s, name)`,
-  `ansi.style(s, name)` (bold / dim / italic / underline / reverse),
-  `ansi.rgb(s, r, g, b)` for truecolor, `ansi.strip(s)` to remove all
-  escapes, plus convenience `ansi.red(s)` / `bold(s)` / ... shortcuts.
-- **TTY.** Not auto-detected - the caller gates styling on a new
-  `os.isatty()` helper (shipped with this milestone) so a program that
-  redirects `printf` to a file keeps it clean by its own choice.
-- **Acceptance.** Wrapping composes and nests; `strip` reverses it;
-  `os.isatty()` reports correctly; both toolchains build.
+- **Surface.** `os.isTerminal(stream) -> bool`, where `stream` is
+  `"stdout"` / `"stderr"` / `"stdin"` (a string argument, like the rest
+  of `os`). True only when that stream is an interactive terminal, not a
+  pipe / file / CI.
+- **Implementation.** `golang.org/x/term`'s `IsTerminal` on the stream's
+  fd (already a CLI dependency for the REPL's raw mode). Default binary;
+  on `jennifer-tiny` it reports `false` conservatively (no terminal
+  introspection in the minimal runtime).
+- **Acceptance.** `true` on an interactive TTY, `false` under a pipe /
+  redirect; both toolchains build.
 
 ---
 
@@ -1954,6 +1960,34 @@ run script is a parse error; a module with no exports imports but every
 names and runs under `jennifer test`. This submilestone touches parser
 grammar (the `export` keyword), so it ships last; M17.1-M17.3 are
 tooling, loading, and resolution.
+
+## M17.5 - `ansi` (first reference module)
+
+The first module built on the M17 module system - small, useful, pure
+Jennifer, and a real dogfood of `import` / `export` / resolution.
+Terminal styling as explicit string wrappers; escape-code generation is
+pure string work, so no Go is needed.
+
+- **Surface.** `ansi.color(s, name)` / `ansi.bgColor(s, name)`,
+  `ansi.style(s, name)` (bold / dim / italic / underline / reverse),
+  `ansi.rgb(s, r, g, b)` for truecolor, `ansi.strip(s)` to remove all
+  escapes, plus convenience `ansi.red(s)` / `ansi.bold(s)` / ...
+  shortcuts. `export`ed from a `modules/ansi.j`.
+- **TTY-aware.** Gates styling on `os.isTerminal("stdout")`
+  ([M16.13](#m1613---osisterminal)) so redirected output stays clean; a
+  manual `ansi.enabled(flag)` override is available, and the module
+  degrades to always-on if `os.isTerminal` is absent.
+- **Why it is the reference module.** It exercises the whole module path
+  end to end - a real `import`, `export`ed names, one system dependency
+  (`use os;`) across the boundary - with code small enough to read in one
+  sitting; a better M17 proof than a toy.
+- **Not `printf` modifiers, not `io`.** Colour is a string wrapper, not
+  I/O and not value formatting, so a `%s|color=` printf modifier is
+  rejected in its favour ([technical/rejected.md](technical/rejected.md)
+  entry when it lands).
+- **Acceptance.** `import`s and resolves as a module; wrapping composes
+  and nests; `strip` reverses it; styling suppresses when
+  `os.isTerminal` is false.
 
 ## M18.x - Jennifer-coded modules
 
