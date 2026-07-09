@@ -174,9 +174,89 @@ jobs:
           path: bench-out/
           retention-days: 7
 
+  # Best-effort, UNSUPPORTED macOS + Windows builds. Standard `jennifer`
+  # only - TinyGo's macOS/Windows host support is too limited to ship, so
+  # no `jennifer-tiny` off Linux. `continue-on-error` + `fail-fast: false`
+  # mean a broken target never fails the run or blocks the Linux release;
+  # the `release` job runs as long as the supported `build` job succeeded.
+  build-unsupported:
+    name: Build (unsupported) ${{ matrix.os }}/${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
+          - os: windows
+            arch: '386'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Regenerate version stamp
+        run: ./scripts/gen-version.sh
+
+      - name: Build Go binary (jennifer only)
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: '0'
+        run: |
+          ext=""
+          [ "${{ matrix.os }}" = "windows" ] && ext=".exe"
+          go build -trimpath -ldflags="-s -w" -o "jennifer${ext}" ./cmd/jennifer
+
+      - name: Package (unsupported)
+        run: |
+          mkdir -p dist
+          TAG="${GITHUB_REF_NAME}"
+          STAGE="jennifer-${TAG}-${{ matrix.os }}-${{ matrix.arch }}-UNSUPPORTED"
+          mkdir -p "$STAGE"
+          ext=""
+          [ "${{ matrix.os }}" = "windows" ] && ext=".exe"
+          cp "jennifer${ext}" "$STAGE/"
+          cp README.md JENNIFER.md packaging/UNSUPPORTED.txt "$STAGE/"
+          cp packaging/debian/copyright "$STAGE/LICENSE.txt"
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            zip -qr "dist/${STAGE}.zip" "$STAGE"
+            (cd dist && sha256sum "${STAGE}.zip" > "${STAGE}.zip.sha256")
+          else
+            tar -czf "dist/${STAGE}.tar.gz" "$STAGE"
+            (cd dist && sha256sum "${STAGE}.tar.gz" > "${STAGE}.tar.gz.sha256")
+          fi
+
+      - name: Upload build artifacts (unsupported)
+        uses: actions/upload-artifact@v7
+        with:
+          name: jennifer-unsupported-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: ignore
+          retention-days: 7
+
   release:
     name: Publish GitHub Release (draft)
-    needs: build
+    # Wait for both build jobs, but publish as long as the SUPPORTED Linux
+    # build passed; the unsupported job's outcome (pass / fail / partial)
+    # never gates the release.
+    needs: [build, build-unsupported]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -191,7 +271,7 @@ jobs:
         run: |
           mkdir -p release
           find artifacts -type f \
-              \( -name '*.tar.gz' -o -name '*.deb' -o -name '*.sha256' \) \
+              \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.deb' -o -name '*.sha256' \) \
               -exec cp {} release/ \;
           ls -la release/
 
@@ -251,10 +331,15 @@ jobs:
             fi
             echo "### Artifacts"
             echo
-            for f in release/*.tar.gz; do
+            for f in release/*.tar.gz release/*.zip; do
               [ -e "$f" ] || continue
               echo "- \`$(basename "$f")\`"
             done
+            echo
+            echo "Artifacts named \`-UNSUPPORTED\` are best-effort macOS / Windows"
+            echo "builds (standard \`jennifer\` only, no TinyGo, unsigned, no support);"
+            echo "see \`docs/user-guide/installing.md\`. They may be missing if that"
+            echo "build failed - it does not block the Linux release."
           } > release_notes.md
           cat release_notes.md
 
@@ -266,6 +351,7 @@ jobs:
           body_path: release_notes.md
           files: |
             release/*.tar.gz
+            release/*.zip
             release/*.deb
             release/*.sha256
             release/PKGBUILD-bin

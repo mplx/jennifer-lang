@@ -60,6 +60,9 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "poll", pollFn)
 	in.RegisterNamespaced(LibraryName, "kill", killFn)
 	in.RegisterNamespaced(LibraryName, "isTerminal", isTerminalFn)
+	in.RegisterNamespaced(LibraryName, "cwd", cwdFn)
+	in.RegisterNamespaced(LibraryName, "homeDir", homeDirFn)
+	in.RegisterNamespaced(LibraryName, "tempDir", tempDirFn)
 
 	in.RegisterNamespacedConst(LibraryName, "PLATFORM", interpreter.StringVal(runtime.GOOS))
 	in.RegisterNamespacedConst(LibraryName, "ARCH", interpreter.StringVal(runtime.GOARCH))
@@ -156,6 +159,46 @@ func isTerminalFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpret
 		return interpreter.Null(), fmt.Errorf("os.isTerminal: unknown stream %q; known: \"stdout\", \"stderr\", \"stdin\"", args[0].Str)
 	}
 	return interpreter.BoolVal(isCharDevice(f)), nil
+}
+
+// cwdFn implements os.cwd() -> string: the process's current working
+// directory, as an absolute path. Errors only if the directory can't be
+// determined (e.g. it was removed out from under the process).
+func cwdFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 0 {
+		return interpreter.Null(), fmt.Errorf("os.cwd expects 0 arguments, got %d", len(args))
+	}
+	dir, err := stdos.Getwd()
+	if err != nil {
+		return interpreter.Null(), fmt.Errorf("os.cwd: %v", err)
+	}
+	return interpreter.StringVal(dir), nil
+}
+
+// homeDirFn implements os.homeDir() -> string: the current user's home
+// directory (`$HOME` on Unix, `%USERPROFILE%` on Windows). Errors if it
+// can't be resolved (the relevant variable is unset).
+func homeDirFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 0 {
+		return interpreter.Null(), fmt.Errorf("os.homeDir expects 0 arguments, got %d", len(args))
+	}
+	dir, err := stdos.UserHomeDir()
+	if err != nil {
+		return interpreter.Null(), fmt.Errorf("os.homeDir: %v", err)
+	}
+	return interpreter.StringVal(dir), nil
+}
+
+// tempDirFn implements os.tempDir() -> string: the directory for temporary
+// files (`$TMPDIR` or `/tmp` on Unix, the `%TMP%` / `%TEMP%` location on
+// Windows). Never errors - the host returns a platform default when the
+// environment variables are unset. The directory is not created or
+// checked for existence.
+func tempDirFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 0 {
+		return interpreter.Null(), fmt.Errorf("os.tempDir expects 0 arguments, got %d", len(args))
+	}
+	return interpreter.StringVal(stdos.TempDir()), nil
 }
 
 // isCharDevice reports whether f is a character device - the terminal

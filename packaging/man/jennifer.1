@@ -53,9 +53,16 @@ standard output. (No in-place rewrite.)
 .TP
 .BR lint " " \fIfile.j\fR...
 Report patterns that are compile-legal but stylistically or
-semantically suspect (checks L001 through L010: unused locals, dead
-code, empty catches, non-Error throws, over-long or over-nested
-methods, constant conditions, removed APIs, over-long lines).
+semantically suspect. Checks are grouped by concern:
+.B L0nn
+source errors,
+.B L1nn
+correctness (unused locals, dead code, empty catches, non-Error
+throws, constant conditions),
+.B L2nn
+style (over-long or over-nested methods, over-long lines), and
+.B L3nn
+API lifecycle (deprecated / removed APIs).
 .B \-\-checks=\fIIDS\fR
 selects checks (a leading
 .B !
@@ -83,6 +90,22 @@ are read by
 .B go tool pprof
 and speedscope.app.
 .TP
+.BR test " " \fIfile.j\fR
+Discover and run the file's test methods (the
+.B test*
+naming convention, or
+.B \-\-filter=\fIREGEX\fR),
+with optional
+.B setUp
+/
+.B tearDown
+hooks.
+.B \-\-format=\fItext|tap|junit\fR
+selects the report shape;
+.B \-\-isolated
+runs each test in a fresh interpreter subprocess. Exit status is 0
+when all pass, 1 on failures, 2 on a runner error.
+.TP
 .BR version
 Print the build version.
 .SH FILES
@@ -97,6 +120,18 @@ extension as
 Bash completion for the subcommands, their options, and
 .B .j
 file arguments.
+.TP
+.I /usr/share/vim/vimfiles/syntax/jennifer.vim
+Vim/Neovim syntax highlighting for
+.B .j
+files (with the matching
+.I ftdetect/jennifer.vim
+filetype rule); on Vim's default runtime path, so it is active
+without configuration.
+.TP
+.I /usr/share/doc/jennifer/JENNIFER.md
+Self-contained language reference (also usable as context for an AI
+coding assistant).
 .SH "SEE ALSO"
 .BR jennifer-tiny (1),
 .UR https://github.com/mplx/jennifer-lang

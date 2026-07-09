@@ -9,3 +9,7 @@ aliased prefix (`use os as o;`):
 aliased prefix (`use os as convert;`):
   convert.PLATFORM = linux
   convert.ARCH     = amd64
+path functions (host-specific; type only):
+  os.cwd()     -> string
+  os.homeDir() -> string
+  os.tempDir() -> string

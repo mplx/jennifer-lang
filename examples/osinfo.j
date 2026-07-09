@@ -39,3 +39,12 @@ use os as convert;
 io.printf("aliased prefix (`use os as convert;`):\n");
 io.printf("  convert.PLATFORM = %s\n", convert.PLATFORM);
 io.printf("  convert.ARCH     = %s\n", convert.ARCH);
+
+# Path functions return host-specific values (the working directory, the
+# user's home, the temp dir), which vary per machine and can't be pinned in
+# the golden - unlike the host constants above. So print only their type to
+# keep the example portable; the values themselves are real strings.
+io.printf("path functions (host-specific; type only):\n");
+io.printf("  os.cwd()     -> %s\n", realConvert.typeOf(os.cwd()));
+io.printf("  os.homeDir() -> %s\n", realConvert.typeOf(os.homeDir()));
+io.printf("  os.tempDir() -> %s\n", realConvert.typeOf(os.tempDir()));

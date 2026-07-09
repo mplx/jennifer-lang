@@ -10,7 +10,9 @@ and embeddable; missing `os/exec` and the network stack). `make
 build` produces both side by side. Source files use the `.j`
 extension.
 
-Jennifer currently targets **Linux**; Windows and macOS support is planned.
+Jennifer's supported platform is **Linux**. Best-effort, **unsupported**
+macOS and Windows binaries (64- and 32-bit) are published alongside each
+release - see [Install](#install) for the caveats.
 
 ## Which binary?
 
@@ -34,7 +36,12 @@ the same workload set live in
 
 ## Install
 
-Linux only today; macOS/Windows are post-1.0 work.
+**Linux** is the supported platform. Best-effort **unsupported** macOS
+and Windows binaries (the standard `jennifer` build only, no TinyGo) are
+attached to each [release](https://github.com/mplx/jennifer-lang/releases);
+read the caveats in
+[docs/user-guide/installing.md](docs/user-guide/installing.md#macos--windows-unsupported)
+before relying on them.
 
 ```sh
 # Debian / Ubuntu - pick the .deb for your arch from the Releases

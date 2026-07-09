@@ -857,866 +857,186 @@ Windows (waits on platform-portability work first).
 
 ---
 
-**Phase C: I/O libraries (M16.x).** System libraries that touch the
-OS or do significant compute. Phase C opens with a language
-addition (M16.0 - concurrency primitives) because every I/O library
-in the phase wants to know whether spawned work and async waits
-are available; the I/O libraries themselves (M16.1+) ship in the
-same phase atop that foundation.
-
-## M16.0 - Lightweight concurrency
-
-**Status:** done.
-
-Ships `spawn { ... }` (block primary expression), `task of T`
-(new compound type kind), and the `task` library (`wait`, `poll`,
-`discard`, `waitAll`, `waitAny`). Goroutine-backed concurrency on
-top of Jennifer's value-semantics-capture, which makes data
-races impossible by construction.
-
-- **`spawn { ... }` runs concurrently; `task of T` wraps the
-  result.** Body's `return EXPR;` becomes the task's value; bare
-  `return;` yields null. A task carries either a value or an
-  error after its body finishes.
-- **Value-semantics capture.** `snapshotForSpawn` builds a
-  two-frame snapshot at launch: a globals frame (deep copy of
-  `i.global`) and a locals frame (deep copy of every non-global
-  binding visible at the spawn site) chained on top. The body
-  runs against the locals frame; user-method calls inside the
-  spawn parent through `effectiveGlobal(env)` and land on the
-  globals frame, so the no-shadowing rule treats spawn-local
-  scoping the same as serial scoping. Tasks are the **one
-  exception** to value semantics: copying a `task of T` shares
-  the underlying `TaskState` pointer (multiple handles must
-  observe one in-flight goroutine, not clone it).
-- **Loud-fail at exit.** Per-run task registry on the
-  interpreter; `spawn` appends, `wait` (success or rethrow) /
-  `discard` / `waitAll` flip the observed bit. CLI walks the
-  slice after `Run` returns and prints each unobserved error
-  to stderr, bumping the exit code. The scan blocks on each
-  unobserved task's `Done` channel - a non-terminating
-  `spawn { while (true) { ... } }` without `task.discard` hangs
-  at exit (documented footgun, trade-off for "no silent
-  drops").
-- **Errors compose with M13.2 try/catch.** `task.wait` re-raises
-  a body error as a positioned runtime error at the wait site;
-  enclosing `try/catch` catches it normally. `exit EXPR;` inside
-  a spawn still exits the whole program (uncatchable, same as
-  outside spawn). `break`/`continue` outside an enclosing loop
-  inside the body surface as positioned runtime errors via
-  `unhandledLoopFlowError` - loop flow doesn't cross the spawn
-  boundary.
-- **`waitAny` uses `reflect.Select`** over a
-  `[]reflect.SelectCase` built from the task list - the only
-  reflect call in the runtime; verified under both compilers.
-- **TinyGo trade-offs.**
-  - `tinygo build -stack-size=2mb` is now in the Makefile.
-    Jennifer's tree-walking evaluator wraps each Jennifer-level
-    call in many Go-stack frames; the TinyGo default (~8KB) is
-    far too small for any recursive spawn body.
-  - TinyGo's runtime is cooperative single-threaded as of 0.41,
-    so parallel speedups on `jennifer-tiny` will be close to 1.0;
-    the default `jennifer` (standard Go) reaches real multi-core
-    speedup on the parallel benchmark.
-- **What was deferred** (none of these blocked M16.0 ship;
-  picked up later if a forcing function appears): channels,
-  mutexes, cancellation, timeouts, `select`,
-  `context.Context`, structured-concurrency blocks. Each is
-  documented inline in user-guide/concurrency.md so the
-  decisions stay visible.
-- **`examples/benchmark.j` parallel section.** Multi-core
-  variants for primes, newton, monte-carlo, and a
-  PARALLEL_WORKERS-fanout of `fib(N)`. Driver prints
-  `serial_ms / par_ms / speedup` per workload, plus the
-  scheduler name in the header so the numbers can be read in
-  context (TinyGo's cooperative scheduler gives sub-1.0
-  speedups; Go gives >1.0).
-
-See:
-- [user-guide/concurrency.md](user-guide/concurrency.md) -
-  user-facing tour: model, value-semantics capture, patterns,
-  loud-fail contract, what's deferred.
-- [libraries/task.md](libraries/task.md) - reference for the
-  five `task.*` builtins, error propagation, worked examples.
-- [technical/interpreter.md > Concurrency](technical/interpreter.md#concurrency-m160) -
-  goroutine mapping, two-frame snapshot, `effectiveGlobal`,
-  task registry, CLI integration.
-- [technical/tinygo.md > TinyGo restrictions](technical/tinygo.md#tinygo-restrictions) -
-  the `-stack-size=2mb` Makefile flag and the TinyGo scheduler
-  note.
-
-## M16.1 - `fs`
-
-**Status:** done.
-
-Ships blocking filesystem I/O built on M16.0's spawn-and-compose
-model: whole-file reads and writes, metadata, directory
-operations, buffered file handles for line-oriented reads. No
-`*Async` duplication - non-blocking use composes with `spawn`.
-
-- **One-shot ops.** `fs.readString(path)` / `readBytes(path)` for
-  whole-file reads; `writeString` / `writeBytes` for
-  overwrite-or-create; `appendString` / `appendBytes` for
-  append. Invalid UTF-8 in `readString` is a boundary error.
-- **Metadata.** `exists` / `isFile` / `isDir` return `bool`
-  without erroring on missing paths (permission errors still
-  surface). `fs.stat(path) -> fs.Stat` errors on missing.
-- **`fs.Stat`.** `path`, `size`, `isDir`, `mtimeNanos`, `mode`.
-  `mtimeNanos` is `int` (Unix nanoseconds), not `time.Time`, so
-  `fs` stays decoupled from `time` at the Go-package level;
-  users compose `time.fromUnixNanos($stat.mtimeNanos)`
-  explicitly. `size` is `-1` for directories.
-- **Directory ops.** `mkdir` / `mkdirAll` and `remove` /
-  `removeAll` ship as **two verbs each** (no-footguns stance:
-  the recursive form is grep-visible at the call site).
-  `rename`, `list` (sorted, non-recursive), `walk`
-  (depth-first, sorted, includes root, skips symlinks).
-- **Handles.** `fs.open(path, mode) -> fs.File{id as int}` with
-  `mode` in `"read"` / `"write"` / `"append"` (codec-table
-  shape). `readLine` / `readChars` / `readBytes($f, n)` /
-  `writeString` / `writeBytes` / `eof` / `close`. Handle
-  registry pattern from M15.6 (`map[int64]*handleState`
-  guarded by a mutex). `fs.eof` peeks one byte ahead through
-  the buffered reader so the canonical
-  `while (not fs.eof($f))` loop terminates cleanly on files
-  ending with `\n`.
-- **Polymorphic verbs.** `fs.readBytes`, `fs.writeString`,
-  `fs.writeBytes` dispatch on the first-arg kind - string
-  means path form, `fs.File` means handle form. Keeps the
-  surface compact without magic.
-- **Value-semantics carve-out.** `fs.File` handles share
-  underlying state between copies via the integer id (same
-  discipline as M16.0's `task of T`). Every other type keeps
-  whole-value semantics.
-- **Concurrency composition.** `spawn { return fs.readString(...); }`
-  gives non-blocking use in one line; `task.waitAll` fans in
-  multiple parallel reads. Under the default `jennifer` this
-  parallelises across cores; under `jennifer-tiny` (TinyGo,
-  cooperative single-threaded) it's correct-but-sequential.
-- **What's deferred** (recorded so the design stays visible):
-  streaming line iterator (`for (def line in fs.lines(path))`),
-  `fs.copy` / `fs.chmod`, symlink ops, `fs.stat($f)` on an open
-  handle, watch / notify (inotify), temp file / dir helpers,
-  symlink-following in `fs.walk`.
-
-See:
-- [libraries/fs.md](libraries/fs.md) - reference doc with
-  surface tables, worked examples, error surface, and the
-  spawn-composition callout.
-- [user-guide/imports.md](user-guide/imports.md) - `fs` row.
-- [user-guide/concurrency.md](user-guide/concurrency.md) -
-  the `spawn`-and-compose story `fs` builds on.
-
-## M16.2 - `net`
-
-**Status:** done.
-
-Ships TCP + UDP sockets and DNS lookups on top of M16.0's
-`spawn` composition model. The default `jennifer` binary
-(standard Go) carries the full surface; `jennifer-tiny`
-(TinyGo) ships friendly-error stubs at every entry point via
-build-tag split.
-
-- **TCP.** `net.connect(address) -> net.Conn`,
-  `net.listen(address) -> net.Listener`,
-  `net.accept($listener) -> net.Conn`,
-  `net.readBytes($conn, n)` (blocks for at least one byte;
-  returns up to n whatever's available; sticky EOF on close),
-  `net.writeBytes($conn, b)`, `net.eof($conn)`,
-  `net.address($conn)` peer, `net.address($listener)` local
-  bound address.
-- **UDP.** `net.listenUDP(address) -> net.UDPSocket`,
-  `net.sendTo($sock, peer, bytes)`,
-  `net.recvFrom($sock, n) -> net.Datagram{data, peer}`.
-  Unconnected only - the same socket doubles as client and
-  server via bind-to-`:0`.
-- **DNS.** `net.lookup(host) -> list of string` (forward,
-  Go's `LookupHost`), `net.reverseLookup(ip) -> list of string`
-  (reverse, `LookupAddr`).
-- **Polymorphic verbs.** `net.close($h)` and `net.address($h)`
-  dispatch on the struct tag over Conn / Listener /
-  UDPSocket. Boundary errors when passed the wrong shape.
-- **Structs.** `net.Conn{id}`, `net.Listener{id}`,
-  `net.UDPSocket{id}`, `net.Datagram{data, peer}`. Handle
-  registries use the M15.6 integer-id pattern; three separate
-  registries so wrong-type calls surface at the boundary.
-- **Naming.** `net.connect`, not `net.dial` - plain-English
-  verbs over Go idioms.
-- **Value-semantics carve-out.** `net.Conn` / `net.Listener` /
-  `net.UDPSocket` handles share underlying state between
-  copies via the integer id. Same discipline as M16.0
-  `task of T` and M16.1 `fs.File`.
-- **Concurrency composition.** Blocking calls compose with
-  `spawn` for non-blocking use; the accept-loop-with-
-  spawn-per-connection pattern in the docs is the workhorse
-  case.
-- **TinyGo build-tag split.** `netlib_std.go` (`!tinygo`)
-  implements the full surface via Go's `net` package;
-  `netlib_tinygo.go` (`tinygo`) returns a friendly runtime
-  error at every entry point. TinyGo 0.41 requires a netdev
-  driver at runtime (Jennifer doesn't register one) and
-  lacks `net.ListenPacket` for UDP; the stubs make the
-  limitation visible at the call site rather than surfacing
-  cryptic runtime errors. Same pattern as M15.3 `os.run` on
-  TinyGo.
-- **`examples/net.j`.** A tiny in-process TCP echo: spawn
-  server, main-flow client, round-trip a payload. Uses `:0`
-  + `net.address($listener)` to discover the bound port.
-- **What's deferred** (recorded so the design stays visible):
-  TLS, Unix domain sockets, socket options (SO_REUSEADDR /
-  KEEPALIVE / NODELAY), timeouts / deadlines, DNS record-type
-  helpers (`lookupMX`, `lookupTXT`, `lookupSRV`), explicit
-  IPv6 control.
-
-See:
-- [libraries/net.md](libraries/net.md) - reference doc with
-  TCP + UDP + DNS surface, address helpers, error surface,
-  and the TinyGo note.
-- [user-guide/imports.md](user-guide/imports.md) - `net` row.
-- [technical/tinygo.md](technical/tinygo.md) - the netdev row
-  in the restrictions table.
-- [user-guide/concurrency.md](user-guide/concurrency.md) - the
-  `spawn`-and-compose story `net` builds on.
-
-## M16.3 - `regex`
-
-**Status:** done.
-
-Ships six verbs over `string` using Go's `regexp` package
-(RE2 syntax). Pure string processing; no other library
-dependencies; full TinyGo support.
-
-- **Six verbs.** `regex.matches(pattern, s) -> bool`,
-  `regex.find(pattern, s) -> regex.Match`,
-  `regex.findAll(pattern, s) -> list of regex.Match`,
-  `regex.replace(pattern, s, replacement) -> string` (`$1` and
-  `${name}` in the replacement expand to captures),
-  `regex.split(pattern, s) -> list of string`,
-  `regex.escape(s) -> string` (metacharacter escape for
-  literal matching).
-- **`regex.Match`.** Fields `text`, `start`, `end`, `groups`
-  (positional captures), `groupsNamed` (map for
-  `(?P<name>...)` captures). `start`/`end` are rune indices,
-  matching `strings.substring` and the rest of the string
-  surface.
-- **No-match sentinel.** `regex.find` returns a Match with
-  `start=-1` when nothing matches (no nullable return types
-  in the language today).
-- **Implicit LRU cache** (128 entries) of compiled patterns
-  keyed by the pattern string. Hot loops get compile-once
-  behaviour without user bookkeeping. An explicit
-  `regex.compile` + `regex.Pattern` handle would ship as
-  M16.3.x if a benchmark ever demands it.
-- **RE2 syntax.** No backreferences, no lookahead/lookbehind,
-  guaranteed linear-time matching. Invalid patterns surface
-  at the call site with the pattern quoted.
-- **No build-tag split needed.** Go's `regexp` package works
-  under TinyGo. Full surface in both binaries.
-- **`examples/regex.j`.** Walks the whole surface: predicate,
-  positional groups, named groups, no-match sentinel, replace
-  with `$1` and `${name}`, split, escape round-trip.
-- **What's deferred** (recorded so the design stays visible):
-  `regex.compile` + Pattern handle, regex-over-bytes, streaming
-  iterator, global-flag args (use `(?i)` in the pattern),
-  `regex.count` (compose with `len(findAll)`), the RE2-forbidden
-  features (backreferences, lookaround).
-
-See:
-- [libraries/regex.md](libraries/regex.md) - reference doc
-  with surface tables, syntax cheat sheet, and worked
-  examples for named groups + escape.
-- [user-guide/imports.md](user-guide/imports.md) - `regex`
-  row.
-
-## M16.4 - `testing` (system-library primitives)
-
-**Status:** done.
-
-Ships the irreducible system-side surface a Jennifer-coded test
-framework needs: `testing.run(name)` invokes a user method by
-name, `testing.results()` / `reset()` manage the accumulator,
-and `testing.report(results, format)` renders to text / TAP /
-JUnit. The `.j`-side assertion vocabulary + CLI harness ship
-in M18.x on top of these primitives.
-
-- **`testing.run(name)`.** Looks up a zero-arg user method via
-  the new `Interpreter.CallByName` primitive, times the run in
-  Go, catches every failure mode into a `testing.Result`, and
-  appends to the process-wide accumulator. Runs even when the
-  named method doesn't exist (records `errorKind="unknown"`).
-- **`testing.Result`.** `name`, `ms`, `passed`, `errorKind`,
-  `errorMessage`, `file`, `line`, `col`. `errorKind` mirrors
-  the try/catch strings (`"runtime"`, thrown-Error's `kind`,
-  ...) plus a new `"exit"` value.
-- **Exit interception.** `testing.run` is the ONE place in the
-  language where `exit` is caught. Language-level `try`/`catch`
-  deliberately does NOT catch exit; the runner catches it at
-  the Go level so a runaway `exit` in a test body stays scoped
-  to the runner without weakening the language guarantee. This
-  carve-out is why the primitive can't live in `.j`.
-- **Three report formats** via `testing.report(results, format)`:
-  `"text"` (human terminal), `"tap"` (Test Anything Protocol
-  v14), `"junit"` (JUnit XML). Codec-table shape - format
-  strings are case-sensitive, matching `hash.compute` /
-  `encoding.toText` / `fs.open`.
-- **New interpreter helpers.** `Interpreter.CallByName(name)`
-  invokes a zero-arg user method by string; `MethodNames()`
-  enumerates every defined top-level method (for future
-  test-discovery-by-prefix in the .j harness);
-  `interpreter.ClassifyError(err)` extracts
-  `(kind, message, file, line, col)` from any of the three
-  interpreter sentinels (`*runtimeError`, `*ErrorSignal`,
-  `*ExitSignal`) into the uniform tuple the library serialises.
-- **Process-wide accumulator** guarded by a mutex, so
-  `spawn { testing.run(...) }` from concurrent tasks doesn't
-  race. Suites that share a process (or the fmt round-trip test
-  path) should `testing.reset()` at the top of the run.
-- **What's deferred** (recorded so the design stays visible):
-  subprocess isolation for divergent tests (the `--isolated`
-  flag on the M16.8 `jennifer test` subcommand re-invokes
-  `jennifer run testfile.j --testing-single name` per test
-  via `os.spawn`), setup / teardown / fixtures, skip / xfail,
-  parameterised tests, test discovery by prefix (primitive is
-  there via `MethodNames`; policy lives in M16.8).
-
-See:
-- [libraries/testing.md](libraries/testing.md) - reference doc
-  with worked failure-mode examples and the three-format
-  walkthrough.
-- [user-guide/imports.md](user-guide/imports.md) - `testing`
-  row.
-- M16.8 (assertion vocabulary + `jennifer test` subcommand +
-  `--testing-single` flag built on these primitives).
-
-## M16.5 - Interpreter performance pass
-
-**Status:** shipped as five sub-milestones (M16.5.1 through M16.5.5).
-
-Closed the largest gaps `examples/benchmark.j` exposed before Phase D
-(json, csv, http, testing.j, ...) lands on top, so those Jennifer-coded
-libraries ship at native-feeling speed instead of needing apology
-paragraphs in the per-library docs. User-visible behaviour is unchanged
-- value semantics, lexical scoping, and by-name method resolution all
-still hold; the implementation just avoids the whole-tree copy, the
-name-map walk, and the per-call frame allocation. Pre-M16.5 baseline
-numbers in
-[technical/tinygo.md](technical/tinygo.md#per-workload-comparison-serial-section)
-under "Pre-M16.5.1 comparison, same workloads."
-
-**What shipped:**
-
-- **M16.5.1 - Shared-marker copy-on-write on compound `Value`s.**
-  `Value.shared *bool` marker + `Share()` at read sites +
-  `Ensure()` at mutation sites; deep-copy only when the flag is
-  set. Killed the O(N^2) tax on `$xs[] = item` in a loop -
-  append-in-a-loop dropped from ~35s on 10K items to ~40ms on
-  `jennifer-tiny`. Alias correctness pinned by
-  `internal/interpreter/value_alias_test.go` (15 tests). See
-  [technical/interpreter.md > Value semantics](technical/interpreter.md#value-semantics).
-- **M16.5.2 - Lexical slot resolution at parse time.** Every
-  variable / constant reference gets a `(Depth, Slot)`
-  coordinate from `internal/parser/resolver.go` (runs from
-  `Interpreter.Run`, idempotent, REPL bypasses). `Environment`
-  gains a `slots []Binding` slice alongside the name map;
-  `DefineAt` / `GetAt` / `AssignAt` are the fast paths and
-  `Binding.Slot` keeps the two views in sync. Undefined-variable
-  and shadowing errors promote to parse-time diagnostics.
-  Deliberate carve-outs: spawn body unresolved (two-frame
-  snapshot doesn't align), try body inline (execTry uses
-  execStmts), for-header separate from body.
-- **M16.5.3 - Method call frame optimization.** Package-level
-  `sync.Pool` behind `borrowBlockEnv` / `releaseBlockEnv`
-  recycles frames across every `execBlock` and `evalCall`.
-  `CallExpr.Method *MethodDef` is pre-filled by the resolver so
-  the runtime skips a hash lookup per user-method call.
-  Parameters bind through `DefineAt` into pre-sized slots.
-  Target: `fib(23)` on `jennifer-tiny` 415ms -> ~80-150ms
-  (3-5x), in striking distance of the default `jennifer`
-  binary's 89ms.
-- **M16.5.4 - Namespaced-call + micro fast paths.**
-  `QualifiedCallExpr.Fn` / `QualifiedConstRefExpr.Const`
-  pre-filled by `Interpreter.resolveQualifiedRefs` (a second
-  pass after `processImports`); three map hits per namespaced
-  call collapse to one type assertion. `evalComparison` grew
-  int-int / float-float fast paths mirroring `evalArithmetic`.
-  `bindParamValue` skips `Copy` + stamp for scalar-Kind args.
-  `effectiveGlobal` becomes an O(1) read via `Environment.root`.
-- **M16.5.5 - Expression micro-optimizations.** `BinaryExpr` /
-  `UnaryExpr` gained a `Folded Expr` field the resolver stamps
-  when the whole subtree is a compile-time literal
-  (`internal/parser/fold.go`; chains transitively so
-  `((1+2)*3)+4` collapses to `IntLit(11)`). Runtime-erroring
-  ops (div by zero, negative shift) stay unfolded so the
-  runtime hits the same error at the same source position.
-  `Value.Share()` grew a range-compare fast path so the
-  inliner eliminates the call at scalar VarExpr reads.
-
-**Combined target.** Re-running `examples/benchmark.j` against the
-M16.5-final `jennifer-tiny` binary should yield a serial total in the
-15-25s range (down from 48.9s post-M16.5.1, and 74.5s pre-M16.5)
-and put TinyGo within ~1.5x of the default `jennifer` binary on every
-workload shape - the floor set by the TinyGo-vs-stdlib runtime gap.
-The parallel section is a separate story and belongs to a possible
-future "TinyGo parallel scheduler" sub-milestone; the current runtime
-turns 4-way fan-out into a *slowdown* (see
-[technical/tinygo.md > Parallel section](technical/tinygo.md#parallel-section)),
-which no M16.5.x work touches. Update `technical/tinygo.md`'s tables
-with the post-M16.5 numbers as the closing deliverable, measured on
-the reference Ryzen 5 7600X3D.
-
-## M16.6 - Developer tooling: linting
-
-`jennifer lint <prog.j>...` reports patterns that are compile-legal but
-stylistically or semantically suspect - the slot between `jennifer fmt`
-(lexical shape) and the parser (the outright illegal). Internals:
-[technical/cli_lint.md](technical/cli_lint.md).
-
-**Checks.** Stable IDs, grouped by concern - the leading digit is the
-group: **L0nn** source errors, **L1nn** correctness, **L2nn** complexity
-and style, **L3nn** API lifecycle.
-
-- `L001 lex-error` / `L002 parse-error` / `L003 preproc-error` - the file
-  couldn't be tokenized / parsed / spliced.
-- `L004 invalid-directive` - a malformed or unknown-ID `# lint-disable`.
-- `L101 unused-local` - a local `def` binding never read. Skips
-  declarations inside a `spawn` body (inherits M16.5.2's resolver
-  carve-out); reads inside a spawn still count.
-- `L102 dead-code-after-terminator` - a statement after
-  `return`/`throw`/`exit`/`break`/`continue`.
-- `L103 empty-catch` - a `catch` with no body.
-- `L104 throw-non-error` - a `throw` not statically an `Error` (an
-  `Error{...}` literal or a `$var` declared `Error` pass; any other
-  shape is flagged).
-- `L105 constant-condition` - `if (true)`/`if (false)`, `while (true)`
-  with no break/return/throw/exit escape, `if ($x == $x)`.
-- `L201 method-too-long` - body over a statement threshold (default 60).
-- `L202 nesting-too-deep` - block nesting over a depth threshold (default 4).
-- `L203 line-too-long` - a source line over the column limit (default 100).
-- `L301 deprecation` - reserved family, empty until an API is deprecated.
-- `L302 removed-api` - use of a removed API (e.g. `use core;`).
-
-The `L0nn` source errors are always on and not user-selectable (the file
-doesn't parse, so there's nothing to configure); every `L1nn`/`L2nn`/`L3nn`
-check is selectable via `--checks`.
-
-**Suppression.** `# lint-disable: IDS` (trailing) silences on that line
-(the line the finding anchors to - the `func` line for `L201`, the
-block-introducer line for `L202`); `# lint-disable-file: IDS` silences
-file-wide. No blanket disable-all - directives name IDs. Read off the
-trivia token stream, since the parser strips comments. A malformed /
-unknown-ID directive is continue-and-report: it becomes an `L004` finding
-and suppresses nothing. A doubled marker (`## lint-disable: ...`) is an
-ordinary comment.
-
-**Config.** `--checks=IDS` (per run) or a `.jennifer-lint` file (per
-project), one direction: all includes ("only these") or all `!excludes`
-("everything except"); mixing errors. Unknown IDs are always an error;
-naming an always-on `L0nn` in `--checks` is rejected. Messages are terse
-(`unknown check ID "L999"`) - `jennifer lint --help` lists the catalog.
-
-**Output.** `--format=human` (source-context carets, default),
-`--format=json` (a JSON array of `{id,file,line,col,message,severity}`,
-`[]` when empty, one array across all files), `--format=github` (Actions
-annotations). Lex / preprocess / parse failures render as `L0nn` findings
-in the chosen format, not stderr bail-outs, so a JSON pipeline always
-gets valid output. Exit `0` clean / `1` findings at or above the warning
-floor (a source error counts) / `2` an invocation failure with no source
-position (bad flags, IO, bad config). CI lints `examples/*.j` as a gate.
-
-**TinyGo.** Behind a build tag; the run-only `jennifer-tiny` omits it
-(along with `tokens` / `ast` / `fmt` / `profile`).
-
-**Out of scope for v1.** Auto-fixing, cross-module analysis (per-file;
-revisited after M17), and checks needing type inference beyond
-`def NAME as TYPE`.
-
-## M16.7 - Developer tooling: profiling
-
-`jennifer profile <prog.j>` runs the program with the evaluator
-instrumented and attributes work back to Jennifer source positions - the
-gap `go tool pprof` leaves (it profiles the interpreter binary, not the
-.j program inside it). Program output goes to stderr so the profile owns
-stdout. Internals: [technical/cli_profile.md](technical/cli_profile.md).
-
-- **Statement profile** (default). Per source position: hit count and
-  self / cumulative wall-clock time. Instruments statements and method
-  calls, not every expression - a `time.Now()` around each literal read
-  would swamp the profile.
-- **Allocation profile** (`--allocs`). Value-semantics copies per
-  position: eager copies (def / assignment / parameter binding of a
-  compound value - where the real cost is), COW `Ensure()` detachments
-  (kept for correctness but at or near zero for `.j` code, since every
-  store copies eagerly and the append/index hot loop stays unshared), and
-  `snapshotForSpawn` deep copies. A mode switch, not a layer on the
-  statement profile. `examples/profile.j` exercises all three.
-- **Formats.** `--format=table` (default), `--format=pprof` (gzipped
-  protobuf, hand-encoded for zero deps; `go tool pprof` and
-  speedscope.app read it), `--format=trace` (Chrome-trace of the call
-  timeline). Unknown `--format` and `--allocs --format=trace`
-  (allocation events have no timeline) are rejected at argv parse.
-- **TinyGo.** Behind the `profile` subcommand + build tag; the run-only
-  `jennifer-tiny` omits it.
-- **Out of scope for v1.** A source-step debugger (its own milestone if
-  it lands). Future evaluator-instrumenting tools can land as M16.7.x
-  sub-milestones.
-
-## M16.8 - Testing framework consolidation
-
-Adds the assertion vocabulary and CLI orchestration on top of M16.4's
-dispatch primitives (`testing.run` / `results` / `report`), so a suite
-doesn't reduce to hand-written `throw Error{...}` plus a bespoke runner.
-Internals: [technical/cli_test.md](technical/cli_test.md) and
-[libraries/testing.md](libraries/testing.md).
-
-**Assertions** (`testing` library, in both binaries). Six builtins that
-reduce to `Value.Equal` / Kind dispatch in Go and, on failure, throw a
-canonical `Error{kind: "assertion"}` positioned at the assertion call,
-which `testing.run` catches and classifies: `assertEqual` /
-`assertNotEqual` (deep structural equality), `assertTrue` /
-`assertFalse` (require bool), `assertContains` (substring / list element
-/ map key, by haystack kind), and `assertThrows(name, kind)` (calls the
-named method and asserts it throws an `Error` of that kind). Native
-speed - no per-call interpreter overhead.
-
-**Arg-taking dispatch.** `Interpreter.CallByNameWith(name, args...)`
-binds arguments to a method's parameters with the normal arity and
-declared-type checks; zero-arg `CallByName` stays the compat entrypoint.
-`testing.runWith(name, argsList)` mirrors `testing.run` for methods that
-take arguments - for framework dispatchers, not the zero-arg test
-methods the runner discovers.
-
-**`jennifer test FILE.j`** (dev subcommand, `!tinygo`). Discovers
-zero-arg methods by the `test*` convention (or `--filter=REGEX`), runs
-each through the runner with optional `setUp` / `tearDown` hooks, and
-reports in `--format=text|tap|junit`. `--isolated` runs each test in a
-fresh interpreter subprocess (via `--testing-single METHOD`, the per-test
-entry the parent fires), trading richer detail for clean state. Exit
-`0` pass / `1` failures / `2` runner error, the `jennifer lint` shape.
-
-**Enabling interpreter change.** Builtins can now raise a catchable
-Jennifer error: a builtin returning `interpreter.RaiseError(kind, msg,
-...)` - an `*ErrorSignal` wrapping the canonical `Error` - propagates
-unwrapped instead of being flattened into a `runtimeError`, and
-`BuiltinCtx` carries the call-site position so the error anchors there.
-
-**Conventions.** Test entry points are zero-arg; the subject under test
-takes any signature (called with concrete values in the body).
-Table-driven tests are a body loop (`for (def c in $cases) {
-testing.assertEqual(...); }`) - fail-fast, the first failing row throws
-with its position. `examples/testsuite.j` is a runnable sample.
-
-**Deferred to M17.** White-box testing overlays (a `MODULE_test.j` with
-private-name visibility into a module) depend on the module system; they
-land with [M17.4](#m174---exports-and-visibility), not here.
-
-## M16.9 - `json`
-
-Native JSON encode / decode mapping onto the tagged-union `Value`.
-Promoted from the old Jennifer-coded plan (M18.3) to a Go system
-library because JSON is foundational and performance-sensitive - a
-char-by-char parser in `.j` pays interpreter overhead per byte.
-Hand-rolled to stay TinyGo-clean (`encoding/json` is reflect-heavy,
-the reason `astjson.go` is already hand-rolled).
-
-- **Surface.** `json.encode(v) -> string`, `json.encodePretty(v) ->
-  string` (2-space indent), `json.decode(s) -> Value`.
-- **Value mapping.** `null` maps to null; `int` to an integer number
-  and `float` to a number; `string`, `bool` map directly; `list` to
-  array; `map of string to V` to object; struct to object (by field
-  name); `bytes` to a base64 string. Non-string map keys and `task`
-  values are encode errors.
-- **Decode.** Produces generic Values (a number decodes to `int` when
-  integral, else `float`; objects to `map of string to V`; arrays to
-  `list of V`). **No map-to-struct coercion:** Jennifer does no coercion
-  at binding boundaries (you write `5.0`, not `5`, for a float), so
-  `json.decode` returns a map and a typed target is rebuilt explicitly -
-  `def p as Point init Point{ x: $m["x"], y: $m["y"] };`. The encode
-  direction is unaffected (`json.encode($p)` serializes a struct to an
-  object directly). Rationale in
-  [technical/rejected.md](technical/rejected.md).
-- **Implementation.** Recursive-descent parser + emitter in
-  `internal/lib/json`, no `reflect`, no `encoding/json`; RFC 8259,
-  UTF-8, positioned errors (byte offset resolved to line / col within
-  the JSON text). Decoded collections carry no recorded element type, so
-  they are validated entry by entry against the declared `list` / `map`
-  element type at the binding boundary (the same check a fresh literal
-  gets): a homogeneous JSON collection binds to the matching typed
-  target, a heterogeneous one matches no homogeneous type and is rejected
-  - storing heterogeneous JSON is the job of M16.16's `json.Value` tree.
-- **Acceptance.** Round-trips every Value kind with a JSON image;
-  malformed input yields a positioned error; both toolchains build.
-
-## M16.10 - `uuid`
-
-Generate and parse UUIDs. Small, self-contained, TinyGo-clean (16
-bytes + version / variant bits + `8-4-4-4-12` hex).
-
-- **Surface.** `uuid.generate(v) -> string`, where `v` is `"v4"`
-  (random) or `"v7"` (time-ordered: 48-bit big-endian millisecond
-  timestamp + random). The version tag is a **string argument**, not a
-  `v4()` / `v7()` method - Jennifer identifiers are letters-only (no
-  digits), so the variant lives in an argument, mirroring
-  `hash.compute(b, "sha-256")`. Plus `uuid.parse(s) -> bytes` (16,
-  validates format), `uuid.isValid(s) -> bool`, `uuid.version(s) -> int`
-  (0 for NIL), constant `uuid.NIL`.
-- **Random source.** Draws from `math`'s shared seedable RNG for now (v4
-  predictability is documented); swaps to crypto-grade random when
-  **M19 `crypto`** lands - a one-line change to `uuidlib.randByte`.
-  `v7`'s timestamp is the wall clock (a package-local `nowFunc`, test-
-  swappable).
-- **Acceptance.** `generate("v4")` / `generate("v7")` are well-formed
-  with correct version and variant bits; `parse` round-trips
-  (case-insensitive); `generate("v7")` sorts by creation time; an
-  unknown version tag errors; both toolchains build.
-
-## M16.11 - `compress`
-
-Byte-stream compression, `bytes` in / `bytes` out, plus streaming
-handles for large data.
-
-- **Not `encoding`.** `encoding` is the *representation* library:
-  charset mapping and binary-to-text (hex / base64 / base32 /
-  ascii85 / z85), reversible representations that don't reduce
-  information (base64 even grows the data). Compression is
-  entropy-based *size reduction* - a different operation with a
-  streaming shape of its own. Go's stdlib draws the same line
-  (`encoding/*` vs `compress/*`), which the routing mirrors.
-- **Surface.** `compress.pack(b, algo [, level])` / `compress.unpack(b,
-  algo)`, where `algo` is `"gzip"` / `"zlib"` / `"deflate"` and the
-  optional `level` is `"fast"` / `"default"` / `"best"`. The algorithm is
-  a string argument (matching `hash.compute` / `crc.compute`), and the
-  `pack` / `unpack` verbs pair with `archive`'s. Streaming via the
-  integer-handle pattern `hash` uses (`compress.stream(algo [, level])` /
-  `update` / `finalize`).
-- **Implementation.** Go `compress/flate` + `compress/gzip` +
-  `compress/zlib` (pure Go; verify TinyGo-clean before relying on it).
-- **Acceptance.** Round-trips each algorithm; `gzip` output is readable
-  by `gzip(1)`; streaming matches one-shot; both toolchains build.
-
-## M16.12 - `archive`
-
-tar and zip container read / write over `bytes`, value-semantic so it
-needs no `fs`.
-
-- **Surface.** `archive.pack(entries, format) -> bytes` /
-  `archive.unpack(b, format) -> list of Entry`, sharing the `pack` /
-  `unpack` verbs with `compress` (byte streams there, file bundles
-  here). `format` is `"tar"`, `"zip"`, or the gzip combo `"tar.gz"`
-  (alias `"tgz"`), so the everyday `.tar.gz` case is one call rather
-  than a `tar`-then-`compress` pair - `"tar.gz"` layers `compress`'s
-  gzip ([M16.11](#m1611---compress)) over a tar internally. `Entry` is a
-  struct `{ name, data as bytes, mode, mtime }`. An `fs`-integrated
-  helper ("pack a directory") can layer on top later.
-- **Implementation.** Go `archive/tar` (pure Go) + `archive/zip` (uses
-  `compress/flate`, so depends on **M16.11**). No `fs` dependency in the
-  core; the bytes-in/out shape keeps it TinyGo-safe.
-- **Acceptance.** `pack` / `unpack` round-trip for tar, zip, and
-  tar.gz; `tar(1)` / `unzip(1)` read the output; both toolchains build.
-
-## M16.13 - `os.isTerminal`
-
-**Status:** done.
-
-`os.isTerminal(stream) -> bool` (`stream` = `"stdout"` / `"stderr"` /
-`"stdin"`): is that standard stream an interactive terminal? The one host
-fact terminal styling needs (the styling itself is pure string work, in the
-`ansi` module, [M17.5](#m175---ansi-first-reference-module)). Detected via
-the character-device mode bit (`os.File.Stat` + `os.ModeCharDevice`) - pure
-stdlib, so `golang.org/x/term` stays CLI-scoped and both binaries build; a
-pipe, redirect, or unstattable stream (TinyGo) reports the conservative
-`false`. Named `isTerminal`, not `isatty`, to match the `is*` family.
-
-## M16.14 - `net` TLS
-
-**Status:** done.
-
-Encrypted transport for `net`: `net.connectTLS(address)` (implicit TLS) and
-`net.startTLS(conn)` (upgrade a plaintext connection in place, for
-STARTTLS). Both yield the same `net.Conn` handle as `net.connect`, so
-read/write/close/address stay transport-agnostic; the certificate is
-verified against the address host (`connectTLS`) or the host the connection
-was opened with (`startTLS`, reused). Verification is on by default, with an
-explicit `net.TLSOptions { skipVerify as bool, caCert as bytes }` opt-out (a
-PEM `caCert` trusts a self-signed cert; `skipVerify` accepts any). Go
-`crypto/tls` on the `!tinygo` build (stubbed on `jennifer-tiny`); `startTLS`
-preserves buffered plaintext across the upgrade. Prerequisite for M18.2
-`http` (HTTPS) and M18.6 `mail`.
-
-## M16.15 - `encoding` completion
-
-**Status:** done.
-
-Filled out the `encoding` library across all three axes - the binary-to-text
-formats, the single-byte character-codec set, and a strict naming policy.
-
-- **Binary-to-text** (`toText` / `fromText`). Added `"quoted-printable"`
-  (RFC 2045 MIME transfer encoding, Go `mime/quotedprintable`, 76-column
-  soft-wrap), `"base32"` / `"base32-hex"` (RFC 4648, Go `encoding/base32`),
-  `"ascii85"` (Adobe / btoa, `z` for all-zero groups, Go `encoding/ascii85`),
-  and `"z85"` (ZeroMQ Base85, RFC 32 - a small hand-rolled table, no stdlib
-  codec) - joining the existing `"hex"` / `"base64"` / `"base64-url"`.
-- **Character codecs** (`encode` / `decode`). The full ISO-8859-{1..16}
-  (no 12) and Windows-{1250..1258} single-byte families, alongside the
-  existing `ascii` / `ebcdic`. Every ISO-8859 and Windows table is
-  **generated from the Unicode Consortium mapping files** (`gen_codecs.go`
-  -> `codecs_gen.go`, via `go generate`), so the 256-rune tables are exact
-  rather than hand-transcribed; only `ascii` (7-bit) and `ebcdic` (IBM-1047,
-  no standard Unicode source) stay hand-written. Undefined bytes (e.g.
-  Windows-1252's five holes) hold `utf8.RuneError` and error on decode.
-  `encoding.codecs()` lists all 26.
-- **Strict names.** Both the `toText` / `fromText` format names and the
-  charset codec names are **exact-match** - no case-folding,
-  separator-stripping, or IANA aliases (an earlier normalisation layer was
-  dropped as a strictness lift, stance #2): `"iso-8859-1"`, never
-  `"latin-1"` or `"ISO-8859-1"`.
-
-## M16.16 - `json.Value`
-
-**Status:** done. Reads are addressed by **JSON Pointer** (RFC 6901): every
-accessor takes an optional trailing pointer string relative to the node
-(`""` = the node itself), so `json.get`/`typeOf`/`asInt`/... all share one
-`(node, pointer)` shape and `json.at` is unnecessary (a pointer segment
-resolves as a key or a list index by the node's kind). Node types are
-reported in Jennifer's vocabulary (`list` / `map`, never "array" /
-"object" - see docs/glossary.md). The decoder's number grammar was
-tightened to json.org strictness (no leading zeros, a fraction / exponent
-needs a digit). A path-addressed, **non-mutating write** surface ships
-alongside the reads: `json.map()` / `json.list()` constructors and
-`set` / `insert` / `append` / `remove` / `move`, each returning a fresh
-`json.Value` (idiom `$v = json.set($v, ...)`), addressed by the same
-pointer, strict / no-vivify (the final segment only; `-` is the
-insert/append end-marker), and mirroring 1:1 to a future `xml`. A
-JSONPath-style query layer was considered and deferred (a pointer names
-one node, which is what keeps reads and writes symmetric).
-
-The strict home for heterogeneous JSON - without a language-level top
-type. Jennifer stays fully typed: there is **no `any` keyword**, and
-JSON's dynamism is confined to a single opaque library type,
-`json.Value`, that you destructure with explicit accessors. A program can
-never "opt out of types"; the most it can declare is "this is a JSON
-tree," which is an honest, concrete type. This supersedes the earlier
-`any`-type plan and reworks M16.9's decode: `json.decode` no longer
-yields a generic collection that has to match some homogeneous type
-(which left genuinely mixed JSON with nowhere to go) - it yields a
-`json.Value` you walk explicitly.
-
-- **The core kind: `KindObject`.** Rather than a bespoke `KindJSON` (and
-  later `KindSqlRow`, `KindRedisReply`, ... - a kind per library, bloating
-  every `Kind` switch), the interpreter gains **one** new opaque kind,
-  `KindObject`, discriminated by its owning library. It is the *opaque
-  sibling of `KindStruct`*: `KindStruct` is "one kind, discriminated by
-  `(namespace, name)`" but transparent (visible `.field`s); `KindObject`
-  is the same, opaque - no operators, no `[index]`, no `.field`; only the
-  owning library's accessors reach inside. Every future opaque type is
-  then a library registration plus accessors, with zero further core
-  change. **Invariant: an object is always library-backed** - there is no
-  object literal, so a `KindObject` value can only be minted and
-  interpreted by a library. `json.Value` is `KindObject`'s first provider.
-- **Two type queries, two levels.**
-  - `convert.typeOf($x) -> "object"` for any `KindObject` - the generic
-    language kind, sitting alongside `"struct"` / `"map"` / `"task"`
-    (which `convert.typeOf` already reports generically, never the
-    specific name). `"object"` reads as "special, library-backed, no
-    further top-level meaning."
-  - `convert.objectType($x) -> "json.Value"` - the new companion naming
-    the specific type when needed (strict: a positioned error on a
-    non-object). Rarely reached - a programmer knows what they decoded -
-    but there for introspection.
-- **The type.** `json.Value` is an **opaque** parsed JSON node, exactly
-  one of: null, bool, int, float, string, list, map. Value-semantic
-  at the Jennifer boundary (assignment copies; a decoded tree is
-  read-only), holding the decoded node inline - no handle into a package
-  registry, so it is GC'd normally with no leak (the deliberate difference
-  from the `hash.Stream` / `compress.Stream` handles).
-  `def r as json.Value init json.decode(s);` holds an arbitrary decoded
-  document. It **displays as its compact JSON** (the REPL echo, `%v`,
-  `convert.toString`) via a per-object-type displayer hook registered
-  through `RegisterNamespacedObject`, so the opaque handle is still
-  inspectable; `json.encodePretty` is the multi-line dump.
-- **Navigation returns `json.Value`, uniformly.** `json.get(v[, ptr])`
-  always returns a `json.Value` - never a native scalar - because a member
-  could be a string, a number, a nested map, or a list, and that
-  heterogeneous return type is exactly what would need `any`. Every
-  extracted node stays wrapped until you unwrap a leaf. The optional `ptr`
-  is a JSON Pointer relative to `v` (omitted = `v` itself), so one `get`
-  reaches any depth and both map keys and list indices are just pointer
-  segments (no separate `at`). Also `json.has(v, ptr) -> bool` (does the
-  pointer resolve), `json.keys(v[, ptr]) -> list of string` (map keys,
-  insertion order), and `json.length(v[, ptr]) -> int` (list length or map
-  entry count).
-- **`json.typeOf` - the internal-shape reader.** Because every node is a
-  `KindObject`, `convert.typeOf` says `"object"` for all of them;
-  `json.typeOf(v[, ptr])` recovers the real JSON shape (`"null"` /
-  `"bool"` / `"int"` / `"float"` / `"string"` / `"list"` / `"map"`), so it
-  is genuinely additive over `convert.typeOf`. With no pointer it reports
-  the node's own type (needed for the root, which `json.decode` hands you
-  with no key yet); with a pointer it is the everyday "peek at a member
-  before you extract" form.
-- **Leaf extraction (checked).** `json.asInt(v[, ptr])` / `asFloat` /
-  `asString` / `asBool` return the addressed scalar at its Jennifer type -
-  a **checked extraction** raising a positioned, catchable error when the
-  node is a different kind - plus `json.isNull(v[, ptr]) -> bool`.
-- **Write surface (non-mutating).** `json.map()` / `json.list()` mint
-  empty containers; `json.set(v, ptr, val)` (upsert a map key / replace an
-  in-range list index), `json.insert(v, ptr, val)` (list, before an index
-  or `-` at end), `json.append(v, ptr, val)` (sugar for insert at the
-  end), `json.remove(v, ptr)`, and `json.move(v, from, to)` each return a
-  **fresh** `json.Value` (the tree is rebuilt persistently - only the
-  edited spine is copied). Strict / no-vivify: only the final pointer
-  segment is created, a missing intermediate or a write on a scalar / bare
-  `null` root is an error, and lists grow only through insert / append.
-  The stored value may be a scalar, a Jennifer list / map / struct (a
-  struct normalizes to a map, `bytes` to base64), or another `json.Value`
-  (spliced in). Same verb vocabulary a future `xml` inherits.
-- **Encode is unchanged and round-trips.** `json.encode` / `encodePretty`
-  still take ordinary typed values (structs, maps, lists, scalars,
-  bytes), and *also* accept a `json.Value`, so `encode(decode(s))`
-  round-trips. Nothing on the encode path needs the new type.
-- **Getting static types back.** Walk the tree, dispatching on
-  `json.typeOf`, and pull leaves at their kind:
-
-      def r as json.Value init json.decode(s);
-      def name as string init json.asString($r, "/name");
-      def age as int init json.asInt($r, "/age");
-
-  For a known object shape, an explicit map-to-struct conversion
-  (deferred to Long horizon) could offer a one-call form over this.
-- **Type-system / implementation.** No `TypeAny`, no `any` keyword. One
-  new `KindObject` arm across the `Kind` switches (display, copy,
-  `MatchesDeclared`, AST-JSON), delegating specifics to the owning
-  library - *not* a namespaced struct (a fixed-field record neither models
-  a 7-way variant node nor enforces opacity). A `json.Value` wraps the
-  existing decoded `Value` tree, tagged `KindObject` so operators / index
-  / field access reject it. The declared type `json.Value` registers
-  through the library type-name machinery (so `def r as json.Value` parses
-  like `def r as hash.Stream`); `MatchesDeclared` bridges the declared
-  name to `KindObject` values. `json.decode`'s return type changes from a
-  generic collection to `json.Value` (a pre-1.0 break, called out here).
-  Still TinyGo-clean (no reflect - just a bigger tagged union).
-- **Stance: strict + teachable (the point of the whole change).** The
-  language keeps its promise that you always declare what you store.
-  There is no `any`, so a beginner cannot declare everything dynamic and
-  sail past the type system - the one dynamic thing in the language is a
-  JSON tree you must *visibly* unpack, one checked accessor at a time. The
-  teachable story stays clean ("JSON is dynamic, so you unpack it
-  explicitly"), never "types are optional now." Each future source of
-  heterogeneous data earns its own labelled, opaque type (a `sql.Row`,
-  say), not a shared escape hatch.
-- **Rejected alternative: a language `any` / top type.** A general `any`
-  would be a language-wide type-system opt-out (usable at every operator,
-  so `def x as any init 5; $x + $y;` just works) - dropped in favour of
-  this confined `json.Value`. Full reasoning in
-  [technical/rejected.md](technical/rejected.md).
-- **Acceptance.** `def r as json.Value init json.decode(s);` holds a
-  mixed object; `convert.typeOf($r)` is `"object"` and
-  `convert.objectType($r)` is `"json.Value"`; `json.typeOf($r)` is
-  `"map"` while `json.typeOf($r, "/tags")` is `"list"`;
-  `json.asInt($r, "/a")` reads a number; a wrong-kind accessor
-  (`json.asString` on a number node) raises a catchable error;
-  `json.Value` rejects `+`, `[i]`, and `.field`;
-  `json.encode(json.decode(s))` round-trips; a heterogeneous top-level
-  array walks element by element; the decoder rejects `01` / `1.`; both
-  toolchains build.
+## M16 - I/O libraries and developer tooling
+
+**Status:** done. Phase C: system libraries that touch the OS or do
+significant compute, opened by a concurrency primitive (M16.0) that the
+I/O libraries build on, then a developer-tooling trio (lint / profile /
+test) and a run of self-contained data libraries. All sub-milestones
+shipped; git history holds the full per-milestone specs.
+
+### M16.0 - Lightweight concurrency
+
+**Done.** `spawn { ... }` (block primary expression), `task of T` (new
+compound kind), and the `task` library (`wait` / `poll` / `discard` /
+`waitAll` / `waitAny`). Goroutine-backed but data-race-free by
+construction: `snapshotForSpawn` deep-copies a two-frame globals+locals
+snapshot at launch (tasks are the one carve-out from value semantics -
+copies share the `TaskState` pointer). A per-run registry loud-fails
+unobserved task errors at exit and bumps the exit code (a non-terminating
+undiscarded spawn hangs at exit - the documented trade-off). `task.wait`
+re-raises a body error at the wait site for `try`/`catch`; `waitAny` is
+the runtime's only `reflect.Select`. The Makefile passes
+`-stack-size=2mb -scheduler=tasks` to TinyGo. See
+[concurrency.md](user-guide/concurrency.md), [task.md](libraries/task.md).
+
+### M16.1 - `fs`
+
+**Done.** Blocking filesystem I/O composed with `spawn` (no `*Async`
+variants): whole-file `read`/`write`/`append` (String/Bytes), metadata
+(`exists`/`isFile`/`isDir`/`stat` -> `fs.Stat`), directory ops with the
+two-verb recursion split (`mkdir`/`mkdirAll`, `remove`/`removeAll`, plus
+`rename`/`list`/`walk`), and buffered `fs.File` handles
+(`open`/`readLine`/.../`close`; `eof` peeks one byte). Path- vs
+handle-form verbs dispatch on first-arg kind; `fs.File` shares state
+across copies (the handle carve-out from value semantics). See
+[fs.md](libraries/fs.md).
+
+### M16.2 - `net`
+
+**Done.** TCP (`connect`/`listen`/`accept`/`readBytes`/`writeBytes`),
+UDP (`listenUDP`/`sendTo`/`recvFrom`), and DNS
+(`lookup`/`reverseLookup`); polymorphic `close`/`address` over three
+handle registries. Blocking calls compose with `spawn`
+(accept-loop-per-connection). Build-tag split: `jennifer-tiny` returns
+friendly-error stubs (no netdev in TinyGo). See [net.md](libraries/net.md).
+
+### M16.3 - `regex`
+
+**Done.** RE2 (Go `regexp`, linear-time) over strings:
+`matches`/`find`/`findAll`/`replace`/`split`/`escape`;
+`regex.Match{text,start,end,groups,groupsNamed}` with rune indices and a
+`start=-1` no-match sentinel; an implicit 128-entry LRU pattern cache.
+Full surface in both binaries. See [regex.md](libraries/regex.md).
+
+### M16.4 - `testing` (system-library primitives)
+
+**Done.** The irreducible system-side surface a `.j` test framework needs:
+`testing.run(name)` invokes a zero-arg user method via the new
+`Interpreter.CallByName`, times it, and classifies every failure mode
+into a `testing.Result`; `results`/`reset` manage a mutex-guarded
+accumulator; `report` renders text / TAP / JUnit. The one place `exit` is
+caught (at the Go level, so language `try`/`catch` still cannot). See
+[testing.md](libraries/testing.md).
+
+### M16.5 - Interpreter performance pass
+
+**Done.** Five sub-milestones, user-visible behaviour unchanged: **.1**
+shared-marker copy-on-write on compound Values (append-in-a-loop O(N^2)
+-> amortised O(N)); **.2** parse-time lexical slot resolution
+((Depth,Slot) coordinates + a `slots` slice, undefined/shadowing promoted
+to parse-time errors); **.3** pooled + pre-resolved + slot-bound
+method-call frames; **.4** namespaced-call / comparison / arg-bind /
+root-cache fast paths; **.5** compile-time constant folding plus a
+`Share()` scalar fast path. Numbers in [tinygo.md](technical/tinygo.md).
+
+### M16.6 - Developer tooling: linting
+
+**Done.** `jennifer lint` flags compile-legal-but-suspect patterns:
+grouped IDs (**L0nn** source errors, always on / **L1nn** correctness /
+**L2nn** style / **L3nn** lifecycle), `# lint-disable[-file]: IDS`
+suppression, `--checks` / `.jennifer-lint` config, and human / JSON /
+GitHub output (source errors render in the chosen format, so a JSON
+pipeline stays valid); exit 0/1/2. `!tinygo`. See
+[cli_lint.md](technical/cli_lint.md).
+
+### M16.7 - Developer tooling: profiling
+
+**Done.** `jennifer profile` attributes work to `.j` source positions
+(what `go tool pprof` cannot): a statement profile (hit count +
+self/cumulative wall-clock) and an `--allocs` value-copy profile; table /
+pprof (hand-encoded gzipped protobuf) / Chrome-trace output; program
+output goes to stderr so the profile owns stdout. `!tinygo`. See
+[cli_profile.md](technical/cli_profile.md).
+
+### M16.8 - Testing framework consolidation
+
+**Done.** An assertion vocabulary on M16.4's primitives (`assertEqual`
+... `assertThrows`, throwing `Error{kind:"assertion"}` at the call site),
+`CallByNameWith`/`runWith` argument dispatch, and the `jennifer test`
+subcommand (`test*` discovery or `--filter`, `setUp`/`tearDown`,
+`--isolated` per-test subprocess, text/TAP/JUnit, exit 0/1/2). Builtins
+can now raise a catchable Jennifer error via `interpreter.RaiseError`. See
+[cli_test.md](technical/cli_test.md).
+
+### M16.9 - `json`
+
+**Done.** Hand-rolled RFC 8259 encode/decode onto the tagged-union Value
+(no `encoding/json`, no reflect). `encode`/`encodePretty`/`decode`;
+structs and `map of string to V` map to objects, `bytes` to base64,
+numbers to `int` when integral else `float`. Also closed a type hole: a
+generic collection (a fresh literal or decode result) is validated entry
+by entry against the declared element type at every binding boundary.
+Decode's return shape was later superseded by
+[M16.16](#m1616---jsonvalue). See [json.md](libraries/json.md).
+
+### M16.10 - `uuid`
+
+**Done.** RFC 9562: `uuid.generate("v4")` (random) / `generate("v7")`
+(time-ordered), the version tag a string argument (identifiers are
+letters-only), plus `parse`/`isValid`/`version` and constant `NIL`.
+Randomness draws from `math`'s shared seedable RNG (documented
+non-crypto; swaps when M19 `crypto` lands). See [uuid.md](libraries/uuid.md).
+
+### M16.11 - `compress`
+
+**Done.** Byte-stream size reduction (distinct from `encoding`'s
+representation codecs): `pack`/`unpack` for `"gzip"`/`"zlib"`/`"deflate"`
+with an optional `"fast"`/`"default"`/`"best"` level, plus a streaming
+`compress.Stream` handle. Go `compress/*`, TinyGo-clean. See
+[compress.md](libraries/compress.md).
+
+### M16.12 - `archive`
+
+**Done.** tar / zip containers over `bytes` (no `fs`, value-semantic):
+`pack`/`unpack` (verbs shared with `compress`) for
+`"tar"`/`"zip"`/`"tar.gz"`; a bundle is a
+`list of archive.Entry{name,data,mode,mtime}`. Go
+`archive/tar`+`archive/zip`. See [archive.md](libraries/archive.md).
+
+### M16.13 - `os.isTerminal`
+
+**Done.** `os.isTerminal(stream)` (`"stdout"`/`"stderr"`/`"stdin"`) ->
+bool, the gate for ANSI colour, via the character-device mode bit
+(`os.ModeCharDevice`) - pure stdlib (keeps `x/term` CLI-scoped),
+TinyGo-clean; an unstattable stream reports `false`. See
+[os.md](libraries/os.md).
+
+### M16.14 - `net` TLS
+
+**Done.** `net.connectTLS(address)` (implicit TLS) and
+`net.startTLS(conn)` (in-place STARTTLS upgrade), both yielding the
+transport-agnostic `net.Conn`. Certificate verification is on by default,
+with a `net.TLSOptions{skipVerify as bool, caCert as bytes}` opt-out. Go
+`crypto/tls` on the `!tinygo` build (stubbed on `jennifer-tiny`). See
+[net.md](libraries/net.md).
+
+### M16.15 - `encoding` completion
+
+**Done.** Filled out `encoding`: `toText`/`fromText` gained
+`quoted-printable`, `base32`/`base32-hex`, `ascii85`, and `z85`; the full
+ISO-8859-{1..16} / Windows-{1250..1258} single-byte codecs, generated
+from the Unicode mapping files (`gen_codecs.go` -> `codecs_gen.go`) so
+only `ascii`/`ebcdic` stay hand-written. Format and codec names are
+exact-match (the normalisation layer was dropped as a strictness lift,
+stance #2). See [encoding.md](libraries/encoding.md).
+
+### M16.16 - `json.Value`
+
+**Done.** The strict home for heterogeneous JSON without a language top
+type: `json.decode` returns an opaque `json.Value` - the first
+`KindObject` (the opaque sibling of `KindStruct`: discriminated by
+`(namespace, name)`, minted only by a library, rejecting operators /
+`[i]` / `.field`). `convert.typeOf` reports `"object"`,
+`convert.objectType` the specific `"json.Value"`. Reads and non-mutating
+writes share JSON Pointer (RFC 6901) addressing -
+`typeOf`/`get`/`has`/`keys`/`length`/`as*`/`isNull` and
+`map`/`list`/`set`/`insert`/`append`/`remove`/`move` (strict / no-vivify,
+`-` end-marker), with node types in `list`/`map` vocabulary - and a
+displayer hook renders a handle as its JSON. `json.decode`'s return type
+changed (a pre-1.0 break) and the decoder's number grammar was tightened
+to json.org. No `any` keyword (rationale in
+[rejected.md](technical/rejected.md)). See [json.md](libraries/json.md).
 
 ---
 
@@ -1784,14 +1104,23 @@ to a file.
   (Go-built) libraries stay in `internal/lib/*/`. Distro packaging ships
   modules to `/usr/share/jennifer/modules/` (FHS: read-only,
   arch-independent data), loadable without recompiling the interpreter.
-- Three import shapes, classified by the *leading* token of the string:
+- **Import paths are OS-independent.** The string is a *logical* path,
+  always `/`-separated (like a URL, or the `.j` string literal itself),
+  never the host separator - a `\` in an import string is a syntax error,
+  not a Windows separator. The shape is classified on that logical string;
+  the actual file is then located with `path/filepath`, so Windows `\`,
+  drive letters, and mixed separators are handled by the Go stdlib at
+  resolve time, not by the grammar. Three shapes, by the *leading* token:
   - `import "./f.j"` / `"../f.j"` - **local**: relative to the importing
     file's directory; no search path consulted.
-  - `import "/abs/f.j"` - **absolute**: exactly that file; no search
-    path.
+  - `import "/abs/f.j"` - **absolute**: exactly that file, detected with
+    `filepath.IsAbs` (so a Windows `C:/f.j` counts too), no search path.
+    Absolute imports are inherently non-relocatable - prefer a `-I` search
+    path for machine-specific locations.
   - `import "f.j"` - **module**: walk the search path (system module
     dir, then each `-I DIR` in order). The importing file's directory is
-    never consulted.
+    never consulted. `-I DIR` values are OS-native paths (the user types
+    them in a shell), so `\` and drive letters are fine there.
 - Subdirectories: a `/` anywhere but the leading position is an ordinary
   path component, so all three shapes accept `sub/f.j`.
 - Multi-file modules: one entry file (`modules/bigmod/bigmod.j`)
@@ -1851,7 +1180,11 @@ placement, one-time init, ordering, cycles, error surfacing.
   distinct from the `use`-backed `ImportStmt`.
 - Interpreter gains a module loader + cache. Loading a module lexes,
   preprocesses, parses, resolves, and executes it once against a fresh
-  module scope, keyed by resolved absolute path.
+  module scope, keyed by a **canonical** resolved path (`filepath.Abs` +
+  `Clean`, and case-folded on a case-insensitive filesystem like Windows /
+  macOS) so that `Util.j` and `util.j` resolve to one module scope - the
+  run-once guarantee and cycle detection both depend on the key being
+  canonical, not on the string the importer happened to type.
 
 **Decisions.**
 

@@ -166,3 +166,46 @@ func TestIsTerminalRejectsBadArgs(t *testing.T) {
 		}
 	}
 }
+
+func TestCwdReturnsWorkingDirectory(t *testing.T) {
+	want, err := stdos.Getwd()
+	if err != nil {
+		t.Skipf("cannot determine cwd: %v", err)
+	}
+	v, err := cwdFn(interpreter.BuiltinCtx{}, nil)
+	if err != nil {
+		t.Fatalf("os.cwd: %v", err)
+	}
+	if v.Kind != interpreter.KindString || v.Str != want {
+		t.Errorf("os.cwd = %v, want string %q", v, want)
+	}
+}
+
+func TestHomeDirNonEmpty(t *testing.T) {
+	v, err := homeDirFn(interpreter.BuiltinCtx{}, nil)
+	if err != nil {
+		t.Skipf("home dir unavailable in this environment: %v", err)
+	}
+	if v.Kind != interpreter.KindString || v.Str == "" {
+		t.Errorf("os.homeDir = %v, want a non-empty string", v)
+	}
+}
+
+func TestTempDirMatchesHost(t *testing.T) {
+	v, err := tempDirFn(interpreter.BuiltinCtx{}, nil)
+	if err != nil {
+		t.Fatalf("os.tempDir: %v", err)
+	}
+	if v.Kind != interpreter.KindString || v.Str != stdos.TempDir() {
+		t.Errorf("os.tempDir = %v, want %q", v, stdos.TempDir())
+	}
+}
+
+func TestDirFunctionsRejectArguments(t *testing.T) {
+	arg := []interpreter.Value{interpreter.StringVal("x")}
+	for name, fn := range map[string]interpreter.Builtin{"cwd": cwdFn, "homeDir": homeDirFn, "tempDir": tempDirFn} {
+		if _, err := fn(interpreter.BuiltinCtx{}, arg); err == nil {
+			t.Errorf("os.%s: expected an arity error with an argument", name)
+		}
+	}
+}

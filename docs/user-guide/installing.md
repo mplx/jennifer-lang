@@ -88,12 +88,36 @@ sudo install -m 0644 share/mime/packages/jennifer.xml /usr/local/share/mime/pack
 sudo update-mime-database /usr/local/share/mime || true
 ```
 
-### macOS / Windows
+### macOS / Windows (unsupported)
 
-Not supported yet. The interpreter is pure Go and *should* build
-on either, but no CI coverage and no release artifacts ship. See
-[milestones.md](../milestones.md) ("Future directions") for the
-platform-portability work that gates these.
+**Linux is the only supported platform.** As a convenience, best-effort
+**unsupported** binaries for macOS (Intel + Apple Silicon) and Windows
+(64- and 32-bit) are attached to each
+[release](https://github.com/mplx/jennifer-lang/releases), named
+`...-UNSUPPORTED`. Read the caveats before relying on them:
+
+- **Best-effort, may be absent.** They come from a pipeline step that is
+  allowed to fail; if a build breaks, that release simply won't have them,
+  and it does not hold up the Linux release.
+- **Standard `jennifer` only.** No `jennifer-tiny` - TinyGo's macOS /
+  Windows host support is too limited to ship. This is the full-featured
+  build, so `os.run` / `os.spawn`, the `net` library, and the rest of the
+  surface all work.
+- **Unsigned.** On macOS, Gatekeeper quarantines the download - clear it
+  with `xattr -d com.apple.quarantine ./jennifer` (or right-click ->
+  Open). On Windows, SmartScreen warns about an unknown publisher - choose
+  "More info" -> "Run anyway".
+- **No support.** Bugs specific to macOS / Windows may not be fixed;
+  supported development and testing happen on Linux. Fully supported
+  builds for these platforms are separate future work (see
+  [milestones.md](../milestones.md)).
+- **Just the binary.** No installer, man pages, MIME registration, or
+  shell completion off Linux - the archive holds the executable plus
+  `JENNIFER.md`, `README.md`, and the licence.
+
+Windows XP and earlier are not possible: this project's Go toolchain
+produces binaries that require Windows 10 or newer. The 32-bit build
+targets 32-bit Windows 10 / 11.
 
 ### Build from source
 

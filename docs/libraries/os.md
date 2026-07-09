@@ -36,6 +36,9 @@ function - see
 | `os.poll(p)`       | bool         | Non-blocking: true once `$p` has exited (a following `os.wait` returns immediately). |
 | `os.kill(p)`       | null         | Send SIGTERM to `$p`.                                                               |
 | `os.isTerminal(stream)` | bool    | Is `stream` (`"stdout"` / `"stderr"` / `"stdin"`) an interactive terminal? See "Terminal detection". |
+| `os.cwd()`         | string       | Absolute path of the current working directory. Errors only if it can't be determined. |
+| `os.homeDir()`     | string       | The current user's home directory (`$HOME` on Unix, `%USERPROFILE%` on Windows). Errors if unresolved. |
+| `os.tempDir()`     | string       | Directory for temporary files (`$TMPDIR` or `/tmp` on Unix; the `%TMP%`/`%TEMP%` location on Windows). Never errors; the directory is not created. |
 
 ### Terminal detection
 
