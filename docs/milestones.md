@@ -786,17 +786,18 @@ serialization, its own design problem). See
 character codecs (`encode`/`decode`/`codecs`). The cross-kind
 UTF-8 pair stays in `convert` (M12); `encoding` owns the
 table-based codec proliferation. Four codecs ship: `"ascii"`,
-`"latin-1"` (alias `"iso-8859-1"`), `"windows-1252"` (alias
-`"cp1252"`), `"ebcdic"` (alias `"ibm-1047"`). The spec's per-format
+`"iso-8859-1"`, `"windows-1252"`, `"ebcdic"`. The spec's per-format
 verbs (`encoding.hex`, `encoding.base64`, ...) consolidated into
 the codec-table pair to dodge the same digit-in-identifier rule
-M15.6 hit. Codec names normalise case-insensitively (strip
-`-`/`_`/spaces); format strings stay case-sensitive (smaller set).
+M15.6 hit. Codec names and format strings are exact-match (the one
+canonical spelling only; the original alias / case normalisation was
+later dropped as a strictness lift, stance #2).
 Windows-1252's five canonically-undefined positions (0x81, 0x8D,
 0x8F, 0x90, 0x9D) reject symmetrically on encode and decode.
 Long-tail single-byte codecs (ISO-8859-{2..16},
-Windows-{1250,1251,1253..1258}) parked in
-[M25+](#m25---encoding-long-tail-codecs). See
+Windows-{1250,1251,1253..1258}) later shipped in
+[M16.15](#m1615---encoding-completion), generated from the Unicode
+mapping files. See
 [libraries/encoding.md](libraries/encoding.md),
 `examples/encoding.j`.
 
@@ -1514,82 +1515,60 @@ needs no `fs`.
 
 ## M16.13 - `os.isTerminal`
 
-A small `os` addition: is a given standard stream an interactive
-terminal? The one host fact terminal styling needs - escape-code
-generation is otherwise pure string work, so the styling itself lives in
-the `ansi` module ([M17.5](#m175---ansi-first-reference-module)). Named
-`isTerminal`, not the C-tradition `isatty`, to match the `is*` camelCase
-family (`isAscii`, `isFile`, `isDir`).
+**Status:** done.
 
-- **Surface.** `os.isTerminal(stream) -> bool`, where `stream` is
-  `"stdout"` / `"stderr"` / `"stdin"` (a string argument, like the rest
-  of `os`). True only when that stream is an interactive terminal, not a
-  pipe / file / CI.
-- **Implementation.** The character-device mode bit (`os.File.Stat` +
-  `os.ModeCharDevice`) - pure stdlib, so the library stays dependency-free
-  (`golang.org/x/term` stays CLI-scoped) and TinyGo-clean. A pipe or a
-  file redirect reports `false`, a terminal `true`; a stream that can't be
-  stat'd reports `false`. Both binaries (on `jennifer-tiny`, an
-  unstattable stream just falls through to the conservative `false`).
-- **Acceptance.** `true` on an interactive TTY, `false` under a pipe /
-  redirect; both toolchains build.
+`os.isTerminal(stream) -> bool` (`stream` = `"stdout"` / `"stderr"` /
+`"stdin"`): is that standard stream an interactive terminal? The one host
+fact terminal styling needs (the styling itself is pure string work, in the
+`ansi` module, [M17.5](#m175---ansi-first-reference-module)). Detected via
+the character-device mode bit (`os.File.Stat` + `os.ModeCharDevice`) - pure
+stdlib, so `golang.org/x/term` stays CLI-scoped and both binaries build; a
+pipe, redirect, or unstattable stream (TinyGo) reports the conservative
+`false`. Named `isTerminal`, not `isatty`, to match the `is*` family.
 
 ## M16.14 - `net` TLS
 
-Encrypted transport for `net`, so TLS-only protocols work (mail on
-465 / 993 / 995, HTTPS). TLS is cryptographic and cannot be pure
-Jennifer, so it lives in the system library - as a transport variant of
-the existing socket, not a separate library.
+**Status:** done.
 
-- **Surface.** `net.connectTLS(address)` (implicit TLS; `address` is
-  `host:port`, same as `net.connect`) and `net.startTLS(conn)` (upgrade a
-  plaintext connection in place, for STARTTLS on 587 / 143 / 110). Both
-  yield the same connection handle as `net.connect`, so `net.readBytes` /
-  `writeBytes` / `close` / `address` work unchanged and callers stay
-  transport-agnostic. The certificate is verified against the address's
-  host for `connectTLS` (a missing port errors) and against the host the
-  connection was opened with for `startTLS` (reused, not repeated). Both
-  take an optional trailing `net.TLSOptions` argument.
-- **Certificate verification.** On by default. The knobs live in an
-  explicit, greppable struct - never a bare flag or default:
-  `net.TLSOptions { skipVerify as bool, caCert as bytes }`, zero value
-  verifies against the system roots. `caCert` (a PEM certificate) trusts a
-  specific / self-signed cert - the secure path; `skipVerify: true`
-  accepts any certificate (dev / testing). Struct is the right vehicle
-  because a heterogeneous options bag (bool + bytes, later a serverName
-  string / client cert) can't be a `map` without `any`, which was dropped;
-  further fields (mTLS client cert, `minVersion`) join it without changing
-  the default.
-- **Implementation.** Standard-Go `crypto/tls` over the existing TCP
-  dial; part of `net`'s `!tinygo` build (`netlib_std.go`), stubbed on
-  `jennifer-tiny` with the same friendly-error pattern as the rest of
-  `net` (TinyGo 0.41 has no usable `crypto/tls` + netdev). `startTLS`
-  wraps the connection's buffered reader so no read-ahead plaintext is
-  lost across the upgrade, then swaps the registry entry to the TLS conn.
-- **Prerequisite for.** M18.2 `http` (HTTPS) and M18.6 `mail`.
-- **Acceptance.** A handshake against a known-good endpoint round-trips
-  bytes; `startTLS` upgrades an open connection; a bad certificate errors
-  (positioned) unless `skipVerify` is set; the default binary builds and
-  `jennifer-tiny` returns the friendly stub error.
+Encrypted transport for `net`: `net.connectTLS(address)` (implicit TLS) and
+`net.startTLS(conn)` (upgrade a plaintext connection in place, for
+STARTTLS). Both yield the same `net.Conn` handle as `net.connect`, so
+read/write/close/address stay transport-agnostic; the certificate is
+verified against the address host (`connectTLS`) or the host the connection
+was opened with (`startTLS`, reused). Verification is on by default, with an
+explicit `net.TLSOptions { skipVerify as bool, caCert as bytes }` opt-out (a
+PEM `caCert` trusts a self-signed cert; `skipVerify` accepts any). Go
+`crypto/tls` on the `!tinygo` build (stubbed on `jennifer-tiny`); `startTLS`
+preserves buffered plaintext across the upgrade. Prerequisite for M18.2
+`http` (HTTPS) and M18.6 `mail`.
 
-## M16.15 - `encoding` quoted-printable
+## M16.15 - `encoding` completion
 
-Add quoted-printable (RFC 2045) to `encoding`'s binary-to-text codecs,
-the topical sibling of the base64 / hex already there. Needed by M18.6
-`mail` (a MIME transfer encoding) and generally useful.
+**Status:** done.
 
-- **Surface.** A new format string for the existing verbs -
-  `encoding.toText(b, "quoted-printable")` /
-  `encoding.fromText(s, "quoted-printable")` - not a new function; it
-  slots into the same dispatch as `"hex"` / `"base64"` / `"base64-url"`,
-  under the existing codec-name normalisation (case, `-` / `_`).
-- **Semantics.** Encode: printable ASCII stays literal; `=`, control,
-  and 8-bit bytes become `=XX`; soft line breaks (`=` + CRLF) keep lines
-  within the 76-column limit. Decode reverses it, tolerant of CRLF and
-  LF soft breaks. Round-trips `bytes`.
-- **Acceptance.** Canonical RFC 2045 vectors round-trip; the 76-column
-  soft-wrap is applied on encode and unwound on decode; both toolchains
-  build.
+Filled out the `encoding` library across all three axes - the binary-to-text
+formats, the single-byte character-codec set, and a strict naming policy.
+
+- **Binary-to-text** (`toText` / `fromText`). Added `"quoted-printable"`
+  (RFC 2045 MIME transfer encoding, Go `mime/quotedprintable`, 76-column
+  soft-wrap), `"base32"` / `"base32-hex"` (RFC 4648, Go `encoding/base32`),
+  `"ascii85"` (Adobe / btoa, `z` for all-zero groups, Go `encoding/ascii85`),
+  and `"z85"` (ZeroMQ Base85, RFC 32 - a small hand-rolled table, no stdlib
+  codec) - joining the existing `"hex"` / `"base64"` / `"base64-url"`.
+- **Character codecs** (`encode` / `decode`). The full ISO-8859-{1..16}
+  (no 12) and Windows-{1250..1258} single-byte families, alongside the
+  existing `ascii` / `ebcdic`. Every ISO-8859 and Windows table is
+  **generated from the Unicode Consortium mapping files** (`gen_codecs.go`
+  -> `codecs_gen.go`, via `go generate`), so the 256-rune tables are exact
+  rather than hand-transcribed; only `ascii` (7-bit) and `ebcdic` (IBM-1047,
+  no standard Unicode source) stay hand-written. Undefined bytes (e.g.
+  Windows-1252's five holes) hold `utf8.RuneError` and error on decode.
+  `encoding.codecs()` lists all 26.
+- **Strict names.** Both the `toText` / `fromText` format names and the
+  charset codec names are **exact-match** - no case-folding,
+  separator-stripping, or IANA aliases (an earlier normalisation layer was
+  dropped as a strictness lift, stance #2): `"iso-8859-1"`, never
+  `"latin-1"` or `"ISO-8859-1"`.
 
 ## M16.16 - `json.Value`
 
@@ -2045,7 +2024,7 @@ Sub-milestones in priority order:
     587 / 143 / 110), and TLS is cryptographic - it must be the host's
     (`net.connectTLS` / `net.startTLS`), never interpreted `.j`.
   - **quoted-printable in `encoding`
-    ([M16.15](#m1615---encoding-quoted-printable), system).** The MIME
+    ([M16.15](#m1615---encoding-completion), system).** The MIME
     transfer codec, alongside the base64 the module also leans on.
   With those in place the `mail` module stays pure Jennifer: connection
   dialogue, header parse/build, MIME-tree assembly and walk, and
@@ -2267,43 +2246,6 @@ Each domain its own milestone with sub-milestones as needed:
 Ordered when demand surfaces. WASM libraries (M23.x) may cover
 some of this space first.
 
-## M25+ - encoding long-tail codecs
-
-The remaining `encoding` codecs, parked here so they're picked
-up only when a real Jennifer program asks for them: the
-single-byte character sets the original M15.7 spec listed, plus
-a few binary-to-text additions. The character codec-table
-infrastructure shipped with M15.7 - each new character-set entry
-is just a 256-entry table plus its alias list.
-
-- **Binary-to-text** (`toText` / `fromText`, joining today's
-  `hex` / `base64` / `base64-url`): `base32` and `base32-hex`
-  (RFC 4648), `ascii85` (Adobe / btoa, the `!`-`u` alphabet with
-  `z` for an all-zero group), and `z85` (ZeroMQ Base85, the
-  source-safe alphabet). `base32` and `ascii85` map onto Go's
-  `encoding/base32` / `encoding/ascii85`; `z85` is a small
-  hand-rolled table (no stdlib codec). Names normalise case and
-  `-` / `_` like the existing entries.
-- **ISO-8859-{2..16}** (15 codecs): Central / Eastern European,
-  Cyrillic, Arabic, Greek, Hebrew, Turkish, Nordic, Celtic,
-  South-Eastern European. Canonical alias form `"iso-8859-N"`.
-- **Windows-{1250, 1251, 1253..1258}** (8 codecs): Microsoft's
-  Central, Cyrillic, Greek, Turkish, Hebrew, Arabic, Baltic,
-  Vietnamese code pages. Canonical alias form `"windows-N"`
-  with `"cpN"` accepted.
-
-**What stays out (deferred further).**
-
-- Variable-width Asian encodings: `Shift-JIS`, `Big5`, `GB2312`,
-  `GBK`, `GB18030`, `EUC-JP`, `EUC-KR`. Each is a state-machine
-  implementation with multiple variants and ambiguity edge
-  cases; one or two of these is a whole milestone of work, not
-  a row in a table.
-- `UTF-16` / `UTF-16LE` / `UTF-16BE` and `UTF-32` - byte-order
-  marks, surrogate pair handling, endianness.
-- `UTF-7`, `quoted-printable`, mail-transport hacks - belong
-  with `mail` / `mime` library work, not core encoding.
-
 ---
 
 ## Path to 1.0.0 distribution (parallel track)
@@ -2337,6 +2279,14 @@ willing to keep it green; they're not blocking anything.
   line endings, or process behavior, prefer portable stdlib
   helpers (`path/filepath`, not hardcoded `/`); avoid Linux-only
   assumptions.
+- **`encoding` - the harder codecs.** The single-byte character codecs and
+  binary-to-text formats all shipped (M16.15); the deferred remainder,
+  picked up only when a real program needs one: variable-width Asian
+  encodings (`Shift-JIS`, `Big5`, `GB2312`, `GBK`, `GB18030`, `EUC-JP`,
+  `EUC-KR`) - each a state machine with variant / ambiguity edge cases, a
+  whole milestone apiece; `UTF-16` / `UTF-16LE` / `UTF-16BE` / `UTF-32` (BOM,
+  surrogate pairs, endianness); and `UTF-7` (mail-transport - though
+  `quoted-printable` already shipped as a general codec).
 - **FCGI.** `use FCGI as web;` library when `net` and `httpd`
   mature. Lets Jennifer host CGI / FastCGI workloads end-to-end.
 - **Inline assembler.**

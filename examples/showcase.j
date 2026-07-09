@@ -481,12 +481,14 @@ io.printf("sha256 stream = %s\n", encoding.toText(hash.finalize($sha), "hex"));
 # --- encoding introspection + binary-to-text + codecs ---
 io.printf("=== encoding ===\n");
 io.printf("base64(abc)  = %s\n", encoding.toText($digestIn, "base64"));
+def qpbytes as bytes init convert.bytesFromString("a=b=c", "utf-8");
+io.printf("qprintable   = %s\n", encoding.toText($qpbytes, "quoted-printable"));
 io.printf("hex round    = %s\n", convert.stringFromBytes(encoding.fromText("616263", "hex"), "utf-8"));   # lint-disable: L203
 io.printf("isAscii(abc) = %t\n", encoding.isAscii($digestIn));
 io.printf("lenRunes     = %d\n", encoding.lenRunes(convert.bytesFromString("café", "utf-8")));
-def latin as bytes init encoding.encode("café", "latin-1");
-io.printf("latin-1 hex  = %s\n", encoding.toText($latin, "hex"));
-io.printf("latin-1 back = %s\n", encoding.decode($latin, "latin-1"));
+def latin as bytes init encoding.encode("café", "iso-8859-1");
+io.printf("iso-8859-1 hex = %s\n", encoding.toText($latin, "hex"));
+io.printf("iso-8859-1 dec = %s\n", encoding.decode($latin, "iso-8859-1"));
 
 # --- task (spawn a computation, wait for the value) ---
 #

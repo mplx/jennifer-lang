@@ -25,7 +25,7 @@ always supports the full surface.
 | [`archive`](archive.md)   | `use archive;`  | full                                                    | tar / zip containers over `bytes` (no `fs`). `archive.pack`/`unpack` with format `"tar"`/`"zip"`/`"tar.gz"`; bundle is a `list of archive.Entry` `{name, data, mode, mtime}` |
 | [`compress`](compress.md) | `use compress;` | full                                                    | byte-stream compression. `compress.pack`/`unpack` for `"gzip"`/`"zlib"`/`"deflate"` (`bytes` in/out, optional `"fast"`/`"default"`/`"best"` level) + streaming (`compress.stream`/`update`/`finalize`); struct `compress.Stream` |
 | [`crc`](crc.md)           | `use crc;`      | full                                                    | `crc.compute(b, algo)` + streaming (`crc.stream`/`update`/`finalize`) for `"crc32"`, `"crc64"`; output is big-endian bytes; struct `crc.Stream`                          |
-| [`encoding`](encoding.md) | `use encoding;` | full                                                    | introspection (`isAscii`, `lenBytes`, `lenRunes`); binary-to-text `toText`/`fromText` for `"hex"`, `"base64"`, `"base64-url"`; character codecs `encode`/`decode` for `"ascii"`, `"latin-1"`, `"windows-1252"`, `"ebcdic"` |
+| [`encoding`](encoding.md) | `use encoding;` | full                                                    | introspection (`isAscii`, `lenBytes`, `lenRunes`); binary-to-text `toText`/`fromText` for `"hex"`, `"base64"`, `"base64-url"`; character codecs `encode`/`decode` for `"ascii"`, `"iso-8859-1"`, `"windows-1252"`, `"ebcdic"` |
 | [`fs`](fs.md)             | `use fs;`       | full                                                    | filesystem I/O. Whole-file `readString`/`readBytes`/`writeString`/`writeBytes`/`appendString`/`appendBytes`; metadata `exists`/`isFile`/`isDir`/`stat`; dir ops `mkdir`/`mkdirAll`/`remove`/`removeAll`/`rename`/`list`/`walk`; handles `open`/`readLine`/`readChars`/`readBytes`/`writeString`/`writeBytes`/`eof`/`close`; structs `fs.Stat`, `fs.File` |
 | [`hash`](hash.md)         | `use hash;`     | full                                                    | `hash.compute(b, algo)` + streaming (`hash.stream`/`update`/`finalize`) for `"md5"`, `"sha1"`, `"sha256"`; struct `hash.Stream`                                          |
 | [`io`](io.md)             | `use io;`       | full                                                    | `io.printf`, `io.sprintf`, `io.readLine`, `io.eof`, plus the format-verb mini-language                                                                                         |
@@ -100,7 +100,7 @@ large ones. The organizing principle, captured for future extensions:
   The split keeps "transport integrity" and "content
   addressing" visible at the import line.
 - Byte / string introspection and character-set codecs (ASCII,
-  Latin-1, Windows-1252, EBCDIC IBM-1047) plus hex / base64
+  ISO-8859-1, Windows-1252, EBCDIC IBM-1047) plus hex / base64
   binary-to-text -> `encoding` (long-tail codecs parked for later).
 - Observing / joining background computations launched with `spawn`
   -> `task`. Concurrency itself is a language feature

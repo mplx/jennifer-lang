@@ -8,15 +8,38 @@ fromText hex roundtrip len = 4
 toText base64     = SGVsbG8=
 toText base64-url = SGVsbG8=
 fromText base64 = Hello
+toText quoted-printable = a =3D caf=C3=A9
+qp round-trips = true
 codec: ascii
-codec: latin-1
-codec: windows-1252
 codec: ebcdic
-encode latin-1 'café' bytes = 99 97 102 233
-decode latin-1 = café
+codec: iso-8859-1
+codec: iso-8859-2
+codec: iso-8859-3
+codec: iso-8859-4
+codec: iso-8859-5
+codec: iso-8859-6
+codec: iso-8859-7
+codec: iso-8859-8
+codec: iso-8859-9
+codec: iso-8859-10
+codec: iso-8859-11
+codec: iso-8859-13
+codec: iso-8859-14
+codec: iso-8859-15
+codec: iso-8859-16
+codec: windows-1250
+codec: windows-1251
+codec: windows-1252
+codec: windows-1253
+codec: windows-1254
+codec: windows-1255
+codec: windows-1256
+codec: windows-1257
+codec: windows-1258
+encode iso-8859-1 'café' bytes = 99 97 102 233
+decode iso-8859-1 = café
 encode windows-1252 '€100' first byte = 128
 decode back = €100
 encode ebcdic 'Hello' bytes = 200 133 147 147 150
 decode ebcdic = Hello
-alias ISO-8859-1 latin-1 = café
-alias cp1252 windows-1252 = €100
+codec names are exact: use 'iso-8859-1', not 'ISO-8859-1'

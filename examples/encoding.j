@@ -32,17 +32,24 @@ io.printf("toText base64-url = %s\n", encoding.toText($src, "base64-url"));
 def roundStd as bytes init encoding.fromText("SGVsbG8=", "base64");
 io.printf("fromText base64 = %s\n", convert.stringFromBytes($roundStd, "utf-8"));
 
+# --- toText / fromText: quoted-printable (RFC 2045 MIME transfer encoding) ---
+def qpIn as bytes init convert.bytesFromString("a = café", "utf-8");
+def qp as string init encoding.toText($qpIn, "quoted-printable");
+io.printf("toText quoted-printable = %s\n", $qp);
+def qpBack as bytes init encoding.fromText($qp, "quoted-printable");
+io.printf("qp round-trips = %t\n", convert.stringFromBytes($qpBack, "utf-8") == "a = café");
+
 # --- Codec list ---
 def codecs as list of string init encoding.codecs();
 for (def name in $codecs) {
     io.printf("codec: %s\n", $name);
 }
 
-# --- Latin-1 round-trip ---
-def latin as bytes init encoding.encode($cafe, "latin-1");
-io.printf("encode latin-1 'café' bytes = %d %d %d %d\n",
+# --- ISO-8859-1 round-trip ---
+def latin as bytes init encoding.encode($cafe, "iso-8859-1");
+io.printf("encode iso-8859-1 'café' bytes = %d %d %d %d\n",
     $latin[0], $latin[1], $latin[2], $latin[3]);
-io.printf("decode latin-1 = %s\n", encoding.decode($latin, "latin-1"));
+io.printf("decode iso-8859-1 = %s\n", encoding.decode($latin, "iso-8859-1"));
 
 # --- Windows-1252: 0x80 is the EURO SIGN (versus Latin-1's C1 control) ---
 def euroBytes as bytes init encoding.encode("€100", "windows-1252");
@@ -56,8 +63,10 @@ io.printf("encode ebcdic 'Hello' bytes = %d %d %d %d %d\n",
     $helloEbcdic[3], $helloEbcdic[4]);
 io.printf("decode ebcdic = %s\n", encoding.decode($helloEbcdic, "ebcdic"));
 
-# --- Alias normalisation ---
-io.printf("alias ISO-8859-1 latin-1 = %s\n",
-    encoding.decode($latin, "ISO-8859-1"));
-io.printf("alias cp1252 windows-1252 = %s\n",
-    encoding.decode($euroBytes, "cp1252"));
+# --- Codec names are exact (canonical only, no IANA aliases) ---
+try {
+    encoding.decode($latin, "ISO-8859-1");   # an alias, not the canonical name
+    io.printf("ISO-8859-1: unexpectedly accepted\n");
+} catch (aliasErr) {
+    io.printf("codec names are exact: use 'iso-8859-1', not 'ISO-8859-1'\n");
+}

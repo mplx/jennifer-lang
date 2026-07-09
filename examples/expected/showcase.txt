@@ -212,11 +212,12 @@ crc64(abc)   = 2cd8094a1a277627
 sha256 stream = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
 === encoding ===
 base64(abc)  = YWJj
+qprintable   = a=3Db=3Dc
 hex round    = abc
 isAscii(abc) = true
 lenRunes     = 4
-latin-1 hex  = 636166e9
-latin-1 back = café
+iso-8859-1 hex = 636166e9
+iso-8859-1 dec = café
 === task ===
 wait single  = 42
 waitAll      = [1, 2, 3]

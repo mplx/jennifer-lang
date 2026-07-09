@@ -319,7 +319,7 @@ func TestUnknownCodecRejected(t *testing.T) {
 	_, err := run(t, `
 use io;
 use convert;
-def b as bytes init convert.bytesFromString("hi", "latin-1");
+def b as bytes init convert.bytesFromString("hi", "iso-8859-1");
 `)
 	if err == nil || !strings.Contains(err.Error(), "not supported") {
 		t.Errorf("expected unsupported-codec error, got %v", err)

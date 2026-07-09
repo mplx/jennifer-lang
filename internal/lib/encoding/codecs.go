@@ -20,6 +20,11 @@ import (
 	"unicode/utf8"
 )
 
+// The long-tail ISO-8859-N / Windows-125N codecs live in codecs_gen.go,
+// produced from the Unicode Consortium mapping files by:
+//
+//go:generate go run gen_codecs.go
+
 // codec carries the encode/decode pair plus the canonical name we
 // echo back in error messages and `encoding.codecs()`.
 type codec struct {
@@ -32,30 +37,7 @@ type codec struct {
 // returns this list verbatim.
 var canonicalCodecOrder = []string{
 	"ascii",
-	"latin-1",
-	"windows-1252",
 	"ebcdic",
-}
-
-// codecAliases maps every accepted normalised codec name to the
-// canonical name. The normaliser strips `-`, `_`, spaces and
-// lower-cases ASCII (see normalizeCodec in encodinglib.go), so the
-// keys here are already in that form.
-var codecAliases = map[string]string{
-	"ascii":   "ascii",
-	"usascii": "ascii",
-
-	"latin1":   "latin-1",
-	"iso88591": "latin-1",
-
-	"windows1252": "windows-1252",
-	"cp1252":      "windows-1252",
-	"ms1252":      "windows-1252",
-	"win1252":     "windows-1252",
-
-	"ebcdic":  "ebcdic",
-	"ibm1047": "ebcdic",
-	"cp1047":  "ebcdic",
 }
 
 // codecs holds the live codec implementations keyed by canonical
@@ -69,16 +51,6 @@ func init() {
 		encodeFn:  encodeAscii,
 		decodeFn:  decodeAscii,
 	}
-	codecs["latin-1"] = &codec{
-		canonical: "latin-1",
-		encodeFn:  encodeLatin1,
-		decodeFn:  decodeLatin1,
-	}
-	codecs["windows-1252"] = &codec{
-		canonical: "windows-1252",
-		encodeFn:  makeTableEncoder("windows-1252", windows1252Table),
-		decodeFn:  makeTableDecoder("windows-1252", windows1252Table),
-	}
 	codecs["ebcdic"] = &codec{
 		canonical: "ebcdic",
 		encodeFn:  makeTableEncoder("ebcdic (IBM-1047)", ebcdicTable),
@@ -86,14 +58,27 @@ func init() {
 	}
 }
 
-// lookupCodec resolves an arbitrary codec string (possibly with
-// mixed case, hyphens, underscores, or spaces) to the live codec.
-func lookupCodec(name string) (*codec, bool) {
-	canonical, ok := codecAliases[normalizeCodec(name)]
-	if !ok {
-		return nil, false
+// registerTableCodec installs a single-byte table codec, keyed by canonical
+// name and appended to canonicalCodecOrder. Called from codecs_gen.go for
+// every generated ISO-8859 / Windows codec.
+func registerTableCodec(name string, table *[256]rune, appendOrder bool) {
+	codecs[name] = &codec{
+		canonical: name,
+		encodeFn:  makeTableEncoder(name, table),
+		decodeFn:  makeTableDecoder(name, table),
 	}
-	c, ok := codecs[canonical]
+	if appendOrder {
+		canonicalCodecOrder = append(canonicalCodecOrder, name)
+	}
+}
+
+// lookupCodec resolves a codec string to the live codec. Names are exact
+// (the canonical form only): unlike a charset library that accepts every
+// IANA alias and spelling, this is strict - `"iso-8859-1"`, never
+// `"latin-1"`, `"ISO-8859-1"`, or `"iso88591"`. Callers name the one
+// canonical form or get a positioned error listing them.
+func lookupCodec(name string) (*codec, bool) {
+	c, ok := codecs[name]
 	return c, ok
 }
 
@@ -132,32 +117,6 @@ func decodeAscii(b []byte) (string, error) {
 		}
 	}
 	return string(b), nil
-}
-
-// ----- latin-1 (ISO-8859-1) ------------------------------------------
-//
-// Latin-1 is the identity mapping for byte 0x00..0xFF <-> rune
-// U+0000..U+00FF. No table needed.
-
-func encodeLatin1(s string) ([]byte, error) {
-	out := make([]byte, 0, len(s))
-	pos := 0
-	for _, r := range s {
-		if r >= 0x100 {
-			return nil, fmt.Errorf("rune U+%04X at byte position %d does not fit in Latin-1 (U+0000..U+00FF)", r, pos)
-		}
-		out = append(out, byte(r))
-		pos += utf8.RuneLen(r)
-	}
-	return out, nil
-}
-
-func decodeLatin1(b []byte) (string, error) {
-	out := make([]byte, 0, len(b)) // up to 2 bytes per rune in UTF-8 for U+0080..U+00FF
-	for _, by := range b {
-		out = utf8.AppendRune(out, rune(by))
-	}
-	return string(out), nil
 }
 
 // ----- table-driven single-byte codecs -------------------------------
@@ -214,59 +173,6 @@ func makeTableEncoder(name string, table *[256]rune) func(string) ([]byte, error
 		return out, nil
 	}
 }
-
-// windows1252Table is the byte->rune mapping for Windows-1252 (CP1252).
-// Positions 0x00..0x7F are ASCII identity; 0xA0..0xFF are Latin-1
-// identity; the C1 range 0x80..0x9F maps to the printable
-// "smart-quotes" code points that distinguish Windows-1252 from
-// Latin-1. Five positions (0x81, 0x8D, 0x8F, 0x90, 0x9D) are
-// undefined in the canonical table; we store utf8.RuneError so
-// encode and decode both reject them.
-var windows1252Table = func() *[256]rune {
-	var t [256]rune
-	// ASCII identity.
-	for i := 0; i < 0x80; i++ {
-		t[i] = rune(i)
-	}
-	// C1 range: Windows-1252 specials.
-	t[0x80] = 0x20AC // EURO SIGN
-	t[0x81] = utf8.RuneError
-	t[0x82] = 0x201A // SINGLE LOW-9 QUOTATION MARK
-	t[0x83] = 0x0192 // LATIN SMALL LETTER F WITH HOOK
-	t[0x84] = 0x201E // DOUBLE LOW-9 QUOTATION MARK
-	t[0x85] = 0x2026 // HORIZONTAL ELLIPSIS
-	t[0x86] = 0x2020 // DAGGER
-	t[0x87] = 0x2021 // DOUBLE DAGGER
-	t[0x88] = 0x02C6 // MODIFIER LETTER CIRCUMFLEX ACCENT
-	t[0x89] = 0x2030 // PER MILLE SIGN
-	t[0x8A] = 0x0160 // LATIN CAPITAL LETTER S WITH CARON
-	t[0x8B] = 0x2039 // SINGLE LEFT-POINTING ANGLE QUOTATION MARK
-	t[0x8C] = 0x0152 // LATIN CAPITAL LIGATURE OE
-	t[0x8D] = utf8.RuneError
-	t[0x8E] = 0x017D // LATIN CAPITAL LETTER Z WITH CARON
-	t[0x8F] = utf8.RuneError
-	t[0x90] = utf8.RuneError
-	t[0x91] = 0x2018 // LEFT SINGLE QUOTATION MARK
-	t[0x92] = 0x2019 // RIGHT SINGLE QUOTATION MARK
-	t[0x93] = 0x201C // LEFT DOUBLE QUOTATION MARK
-	t[0x94] = 0x201D // RIGHT DOUBLE QUOTATION MARK
-	t[0x95] = 0x2022 // BULLET
-	t[0x96] = 0x2013 // EN DASH
-	t[0x97] = 0x2014 // EM DASH
-	t[0x98] = 0x02DC // SMALL TILDE
-	t[0x99] = 0x2122 // TRADE MARK SIGN
-	t[0x9A] = 0x0161 // LATIN SMALL LETTER S WITH CARON
-	t[0x9B] = 0x203A // SINGLE RIGHT-POINTING ANGLE QUOTATION MARK
-	t[0x9C] = 0x0153 // LATIN SMALL LIGATURE OE
-	t[0x9D] = utf8.RuneError
-	t[0x9E] = 0x017E // LATIN SMALL LETTER Z WITH CARON
-	t[0x9F] = 0x0178 // LATIN CAPITAL LETTER Y WITH DIAERESIS
-	// 0xA0..0xFF: Latin-1 identity.
-	for i := 0xA0; i < 0x100; i++ {
-		t[i] = rune(i)
-	}
-	return &t
-}()
 
 // ebcdicTable is the byte->rune mapping for IBM Code Page 1047
 // (Open Systems Latin-1 EBCDIC). The values mirror the official

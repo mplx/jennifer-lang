@@ -1,7 +1,9 @@
 # Examples
 
-The repository's `examples/` directory holds these plus more (`showcase.j`,
-`wordcount.j`) - golden-tested by `cmd/jennifer/examples_test.go`.
+The repository's [`examples/` directory](https://github.com/mplx/jennifer-lang/tree/main/examples)
+holds these plus many more (`showcase.j`, `wordcount.j`, `encoding.j`,
+`net.j`, `archive.j`, ...) - all golden-tested by
+`cmd/jennifer/examples_test.go`.
 
 ## Strings
 

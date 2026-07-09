@@ -83,7 +83,9 @@ internal/lib/compress/compresslib_test.go  compress unit tests (round-trips, gzi
 internal/lib/archive/archivelib.go         `archive` library: tar/zip/tar.gz pack/unpack over bytes (archive.Entry struct); no fs dependency
 internal/lib/archive/archivelib_test.go    archive unit tests (round-trips tar/zip/tar.gz, mode/mtime, default mode, gzip magic, empty, errors)
 internal/lib/encoding/encodinglib.go       `encoding` library: introspection + toText/fromText + encode/decode dispatch
-internal/lib/encoding/codecs.go            character codec tables for ascii / latin-1 / windows-1252 / ebcdic (IBM-1047)
+internal/lib/encoding/codecs.go            hand-written codecs (ascii, ebcdic) + table infra (makeTableEncoder/Decoder, registerTableCodec)
+internal/lib/encoding/codecs_gen.go        generated ISO-8859-N / Windows-125N tables (from Unicode mapping files; DO NOT EDIT)
+internal/lib/encoding/gen_codecs.go        codegen for codecs_gen.go (go:build ignore; fetches unicode.org, run via go generate)
 internal/lib/encoding/encodinglib_test.go  encoding library unit tests
 internal/lib/json/jsonlib.go               `json` library: RFC 8259 encode/encodePretty + Value->JSON emitter (structs/maps->object, bytes->base64)
 internal/lib/json/jsondecode.go            `json` library: recursive-descent decoder -> generic Values (int/float split, positioned line/col errors)
