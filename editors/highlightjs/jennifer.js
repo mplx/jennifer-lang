@@ -56,11 +56,18 @@
   // A method name immediately before `(`.
   var FUNCTION = { className: "title", begin: /\b[A-Za-z]+(?=\s*\()/ };
 
+  // REPL transcript prompts (`>>> ` input, `... ` continuation) at line
+  // start, so a pasted `jennifer repl` session highlights: the prompt shows
+  // as meta and the rest of the line is highlighted as Jennifer. Real source
+  // never begins a line with these, so this is inert in ordinary code.
+  var PROMPT = { className: "meta", begin: /^(>>>|\.\.\.)\s/ };
+
   return {
     name: "Jennifer",
     aliases: ["j"],
     keywords: KEYWORDS,
     contains: [
+      PROMPT,
       hljs.COMMENT("#", "$"),
       hljs.COMMENT(/\/\*/, /\*\//),
       STRING,

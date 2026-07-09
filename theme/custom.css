@@ -16,12 +16,13 @@
 }
 
 /*
- * Let an over-wide table scroll inside its own box rather than forcing the
- * whole page wider than the viewport on a narrow screen.
+ * Make tables fill the (widened) content column rather than shrinking to
+ * their content. mdBook's default `table { width: auto; margin: 0 auto; }`
+ * leaves a short-content table sitting tiny and centered in a wide column;
+ * 100% gives every table the full width to lay its columns out. mdBook
+ * already wraps tables in a `.table-wrapper` with `overflow-x: auto`, so a
+ * table too wide to fit still scrolls on its own - we don't touch overflow.
  */
 .content table {
-    display: block;
-    width: fit-content;
-    max-width: 100%;
-    overflow-x: auto;
+    width: 100%;
 }

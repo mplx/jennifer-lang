@@ -147,7 +147,7 @@ to the current working directory.
 For experimenting with the language, start an interactive session
 with `jennifer repl`:
 
-```text
+```jennifer
 $ jennifer repl
 jennifer - Jennifer programming language interpreter
 type :quit (or Ctrl-D) to exit; :help for help
