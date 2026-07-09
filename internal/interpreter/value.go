@@ -6,6 +6,7 @@ package interpreter
 import (
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
@@ -37,6 +38,7 @@ const (
 	KindMap    // ordered key-value map; iteration is insertion order
 	KindStruct // user-defined record; fields are an ordered list of (name, value)
 	KindTask   // a pending or completed `spawn { ... }` computation
+	KindObject // opaque, library-owned value (e.g. json.Value); wraps an inner tree in Obj
 )
 
 func (k ValueKind) String() string {
@@ -61,6 +63,8 @@ func (k ValueKind) String() string {
 		return "struct"
 	case KindTask:
 		return "task"
+	case KindObject:
+		return "object"
 	}
 	return "?"
 }
@@ -155,6 +159,7 @@ type Value struct {
 	KeyTyp     *parser.Type  // KindMap:  key type
 	ValTyp     *parser.Type  // KindMap:  value type
 	Task       *TaskState    // KindTask: shared handle - copying a task copies the pointer
+	Obj        *Value        // KindObject: wrapped opaque payload (e.g. json.Value's decoded tree); StructNS/StructName carry the owning type
 
 	// shared is the aliasing marker for compound backings.
 	// nil for freshly-constructed compounds and for scalars; set by
@@ -194,6 +199,55 @@ func StructVal(name string, fields []StructField) Value {
 // type matching at variable bindings keeps the two apart.
 func NamespacedStructVal(ns, name string, fields []StructField) Value {
 	return Value{Kind: KindStruct, StructNS: ns, StructName: name, Fields: fields}
+}
+
+// ObjectVal wraps an inner value tree as an opaque, library-owned
+// KindObject (e.g. json.Value). ns/name identify the owning type; the
+// language rejects operators / [index] / .field on it, so only that
+// library's accessors reach into the wrapped tree.
+func ObjectVal(ns, name string, inner Value) Value {
+	return Value{Kind: KindObject, StructNS: ns, StructName: name, Obj: &inner}
+}
+
+// AsObject unwraps a KindObject of the given ns/name, returning its inner
+// tree. Reports false for any other value, so a builtin can reject a
+// wrong-typed argument cleanly.
+func (v Value) AsObject(ns, name string) (Value, bool) {
+	if v.Kind == KindObject && v.StructNS == ns && v.StructName == name {
+		if v.Obj != nil {
+			return *v.Obj, true
+		}
+		return Null(), true
+	}
+	return Value{}, false
+}
+
+// ObjectDisplayer renders an opaque object's inner tree for Display() (the
+// REPL echo, `%v`, error messages). A library supplies one when it registers
+// its object type; without one, Display falls back to the bare `<ns.name>`
+// form.
+type ObjectDisplayer func(inner Value) string
+
+// objectDisplayers is keyed by "ns.name". It is package-level because
+// Value.Display() has no Interpreter reference, and safe as shared state: the
+// registered function is a stateless renderer that a library re-registers
+// identically per interpreter. A sync.Map keeps registration (setup time) and
+// lookup (possibly from spawn goroutines) race-free.
+var objectDisplayers sync.Map
+
+// registerObjectDisplayer records the renderer for an opaque object type.
+func registerObjectDisplayer(ns, name string, d ObjectDisplayer) {
+	if d != nil {
+		objectDisplayers.Store(ns+"."+name, d)
+	}
+}
+
+// objectDisplayer looks up the renderer for an opaque object type, or nil.
+func objectDisplayer(ns, name string) ObjectDisplayer {
+	if d, ok := objectDisplayers.Load(ns + "." + name); ok {
+		return d.(ObjectDisplayer)
+	}
+	return nil
 }
 
 // ListVal constructs a list value with the given element type and data.
@@ -312,6 +366,14 @@ func (v Value) DeepCopy() Value {
 			out[i] = StructField{Name: f.Name, Value: f.Value.Copy()}
 		}
 		return Value{Kind: KindStruct, StructNS: v.StructNS, StructName: v.StructName, Fields: out}
+	case KindObject:
+		// opaque, immutable payload; deep-copy the wrapped tree so value
+		// semantics hold even though there are no mutation paths on it.
+		if v.Obj == nil {
+			return Value{Kind: KindObject, StructNS: v.StructNS, StructName: v.StructName}
+		}
+		inner := v.Obj.DeepCopy()
+		return Value{Kind: KindObject, StructNS: v.StructNS, StructName: v.StructName, Obj: &inner}
 	}
 	return v
 }
@@ -456,6 +518,19 @@ func (v Value) Display() string {
 			return "task<error>"
 		}
 		return "task<done>"
+	case KindObject:
+		// opaque - the payload is reachable only through the owning
+		// library's accessors, but a library may register a displayer so
+		// `$v` at the REPL and `%v` show its content instead of the bare
+		// type name.
+		if d := objectDisplayer(v.StructNS, v.StructName); d != nil {
+			inner := Null()
+			if v.Obj != nil {
+				inner = *v.Obj
+			}
+			return d(inner)
+		}
+		return "<" + v.StructNS + "." + v.StructName + ">"
 	}
 	return "<unknown>"
 }
@@ -490,12 +565,11 @@ func (v Value) MatchesDeclared(t parser.Type) bool {
 	case parser.TypeBytes:
 		return v.Kind == KindBytes
 	case parser.TypeStruct:
-		// struct types match by (namespace, name). A
-		// struct value with empty fields and matching name+ns matches
-		// the declared type; that's how ZeroFor's placeholder gets
-		// accepted before the interpreter materialises the real field
-		// set in execDefine.
-		return v.Kind == KindStruct && v.StructName == t.StructName && v.StructNS == t.StructNS
+		// struct types match by (namespace, name). This also covers the
+		// opaque KindObject types (json.Value): they register like a
+		// namespaced struct for parsing / declaration and carry the same
+		// ns+name, but their runtime kind is KindObject.
+		return (v.Kind == KindStruct || v.Kind == KindObject) && v.StructName == t.StructName && v.StructNS == t.StructNS
 	case parser.TypeList:
 		if v.Kind != KindList {
 			return false

@@ -5,11 +5,12 @@ package interpreter_test
 
 import "testing"
 
-// A generic collection (a fresh literal, or a json.decode result - neither
-// records an element type) must be validated entry by entry against the
-// declared element type, at every binding boundary, so a mismatched or
-// heterogeneous collection can't be relabeled as matching. Literals stand in
-// for decode results here (both are generic).
+// A generic collection - a fresh literal, which records no element type -
+// must be validated entry by entry against the declared element type, at
+// every binding boundary, so a mismatched or heterogeneous collection can't
+// be relabeled as matching. (json.decode results are no longer generic
+// collections: they come back as an opaque json.Value the accessors walk, so
+// literals are the remaining generic source and stand in here.)
 
 func TestGenericCollectionRejectedAtDefInit(t *testing.T) {
 	cases := []string{

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package jsonlib is the `json` library: RFC 8259 encode / decode mapping onto
-// the interpreter's tagged-union Value. Hand-rolled (no `encoding/json`, no
-// `reflect`) to stay TinyGo-clean, the same reason the AST-JSON emitter is
-// hand-rolled. Decode produces generic Values (objects become `map of string
-// to V`, numbers become int when integral else float); there is no map-to-
-// struct coercion - Jennifer does no coercion at binding boundaries, so a
-// typed target is rebuilt explicitly from the decoded map (see the library
-// doc, and docs/technical/rejected.md).
+// Package jsonlib is the `json` library: RFC 8259 encode / decode. Hand-rolled
+// (no `encoding/json`, no `reflect`) to stay TinyGo-clean, the same reason the
+// AST-JSON emitter is hand-rolled. `decode` returns an opaque `json.Value` (a
+// KindObject wrapping the decoded tree: objects become `map of string to V`,
+// numbers become int when integral else float); the accessors in
+// jsonaccess.go walk it, and there is no map-to-struct coercion - a typed
+// target is rebuilt explicitly from the decoded value (see the library doc,
+// and docs/technical/rejected.md). `encode` accepts ordinary typed values and
+// json.Values alike (a decode/encode round-trip).
 package jsonlib
 
 import (
@@ -24,8 +25,20 @@ import (
 // LibraryName is the namespace prefix (`json.`) and the `use` name.
 const LibraryName = "json"
 
-// Install registers json.encode / json.encodePretty / json.decode.
+// Install registers the json surface. `decode` returns an opaque
+// `json.Value` (a KindObject) that callers walk with the accessors below;
+// `encode` accepts ordinary typed values and json.Values alike.
 func Install(in *interpreter.Interpreter) {
+	// A json.Value displays as its compact JSON, so `$v` at the REPL and
+	// `%v` show the document rather than an opaque `<json.Value>`.
+	in.RegisterNamespacedObject(LibraryName, "Value", func(inner interpreter.Value) string {
+		var sb strings.Builder
+		if err := encodeValue(&sb, inner, false, 0); err != nil {
+			return "<json.Value>"
+		}
+		return sb.String()
+	})
+
 	in.RegisterNamespaced(LibraryName, "encode", func(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 		return encodeFn(args, false)
 	})
@@ -33,8 +46,34 @@ func Install(in *interpreter.Interpreter) {
 		return encodeFn(args, true)
 	})
 	in.RegisterNamespaced(LibraryName, "decode", func(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
-		return decodeFn(args)
+		tree, err := decodeFn(args)
+		if err != nil {
+			return interpreter.Null(), err
+		}
+		return interpreter.ObjectVal(LibraryName, "Value", tree), nil
 	})
+
+	// json.Value accessors (jsonaccess.go).
+	in.RegisterNamespaced(LibraryName, "typeOf", typeOfFn)
+	in.RegisterNamespaced(LibraryName, "get", getFn)
+	in.RegisterNamespaced(LibraryName, "has", hasFn)
+	in.RegisterNamespaced(LibraryName, "keys", keysFn)
+	in.RegisterNamespaced(LibraryName, "length", lengthFn)
+	in.RegisterNamespaced(LibraryName, "asInt", asIntFn)
+	in.RegisterNamespaced(LibraryName, "asFloat", asFloatFn)
+	in.RegisterNamespaced(LibraryName, "asString", asStringFn)
+	in.RegisterNamespaced(LibraryName, "asBool", asBoolFn)
+	in.RegisterNamespaced(LibraryName, "isNull", isNullFn)
+
+	// json.Value write surface (jsonwrite.go) - all non-mutating, returning
+	// a fresh handle; the idiom is `$v = json.set($v, ...)`.
+	in.RegisterNamespaced(LibraryName, "list", listFn)
+	in.RegisterNamespaced(LibraryName, "map", mapFn)
+	in.RegisterNamespaced(LibraryName, "set", setFn)
+	in.RegisterNamespaced(LibraryName, "insert", insertFn)
+	in.RegisterNamespaced(LibraryName, "append", appendFn)
+	in.RegisterNamespaced(LibraryName, "remove", removeFn)
+	in.RegisterNamespaced(LibraryName, "move", moveFn)
 }
 
 func encodeFn(args []interpreter.Value, pretty bool) (interpreter.Value, error) {
@@ -101,6 +140,12 @@ func encodeValue(sb *strings.Builder, v interpreter.Value, pretty bool, depth in
 			sb.WriteString(colon(pretty))
 			return encodeValue(sb, v.Fields[i].Value, pretty, depth+1)
 		})
+	case interpreter.KindObject:
+		// a json.Value round-trips: unwrap it and encode its inner tree.
+		if inner, ok := v.AsObject(LibraryName, "Value"); ok {
+			return encodeValue(sb, inner, pretty, depth)
+		}
+		return fmt.Errorf("cannot encode an opaque %s.%s value", v.StructNS, v.StructName)
 	case interpreter.KindTask:
 		return fmt.Errorf("cannot encode a task value")
 	default:

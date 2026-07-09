@@ -284,19 +284,35 @@ func (d *decoder) parseKeyword() (interpreter.Value, error) {
 }
 
 // parseNumber scans a JSON number and returns int when it has no fractional
-// or exponent part (and fits int64), else float.
+// or exponent part (and fits int64), else float. The grammar is walked
+// explicitly rather than delegated to strconv, so json.org's rules are
+// enforced strictly: no leading zeros (`01`), a fraction needs at least one
+// digit (`1.` is invalid), and an exponent needs at least one digit (`1e`).
+// strconv accepts all of those, so a permissive scan-then-parse would leak
+// them through.
 func (d *decoder) parseNumber() (interpreter.Value, error) {
 	start := d.pos
 	if d.pos < len(d.s) && d.s[d.pos] == '-' {
 		d.pos++
 	}
-	for d.pos < len(d.s) && isDigit(d.s[d.pos]) {
-		d.pos++
+	// integer part: a lone 0, or a nonzero digit followed by more digits.
+	if d.pos >= len(d.s) || !isDigit(d.s[d.pos]) {
+		return interpreter.Null(), d.errf("invalid number: expected a digit")
+	}
+	if d.s[d.pos] == '0' {
+		d.pos++ // a leading 0 stands alone; 01 / 00 are rejected below
+	} else {
+		for d.pos < len(d.s) && isDigit(d.s[d.pos]) {
+			d.pos++
+		}
 	}
 	isFloat := false
 	if d.pos < len(d.s) && d.s[d.pos] == '.' {
 		isFloat = true
 		d.pos++
+		if d.pos >= len(d.s) || !isDigit(d.s[d.pos]) {
+			return interpreter.Null(), d.errf("invalid number: a fraction needs at least one digit")
+		}
 		for d.pos < len(d.s) && isDigit(d.s[d.pos]) {
 			d.pos++
 		}
@@ -307,9 +323,18 @@ func (d *decoder) parseNumber() (interpreter.Value, error) {
 		if d.pos < len(d.s) && (d.s[d.pos] == '+' || d.s[d.pos] == '-') {
 			d.pos++
 		}
+		if d.pos >= len(d.s) || !isDigit(d.s[d.pos]) {
+			return interpreter.Null(), d.errf("invalid number: an exponent needs at least one digit")
+		}
 		for d.pos < len(d.s) && isDigit(d.s[d.pos]) {
 			d.pos++
 		}
+	}
+	// A digit immediately after a lone leading 0 (`01`) never gets consumed
+	// above, so it surfaces as trailing content at the call site; catch the
+	// clearer message here instead.
+	if d.pos < len(d.s) && isDigit(d.s[d.pos]) {
+		return interpreter.Null(), d.errf("invalid number: leading zeros are not allowed")
 	}
 	tok := d.s[start:d.pos]
 	if !isFloat {

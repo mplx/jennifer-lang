@@ -574,13 +574,13 @@ io.printf("replace      = %s\n", regex.replace("\\d+", "port 8080 host 22", "###
 io.printf("split        = %a\n", regex.split("\\s+", "a  b  c"));
 io.printf("escape       = %s\n", regex.escape("1+2=(3)"));
 
-# --- json (encode / decode; decode yields generic values) ---
+# --- json (encode; decode yields an opaque json.Value the accessors walk) ---
 use json;
 
 io.printf("=== json ===\n");
 io.printf("encode       = %s\n", json.encode({"name": "jen", "nums": [1, 2, 3], "ok": true}));
-def parsed as map of string to int init json.decode("{\"x\": 7, \"y\": 8}");
-io.printf("decode x+y   = %d\n", $parsed["x"] + $parsed["y"]);
+def parsed as json.Value init json.decode("{\"x\": 7, \"y\": 8}");
+io.printf("decode x+y   = %d\n", json.asInt($parsed, "/x") + json.asInt($parsed, "/y"));
 
 # --- uuid (RFC 9562; values are random / time-based, so assert facts) ---
 use uuid;

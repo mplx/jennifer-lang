@@ -29,6 +29,7 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "toString", toStringFn)
 	in.RegisterNamespaced(LibraryName, "toBool", toBoolFn)
 	in.RegisterNamespaced(LibraryName, "typeOf", typeOfFn)
+	in.RegisterNamespaced(LibraryName, "objectType", objectTypeFn)
 	// bytes <-> string codecs. Two-argument shape (value, codec)
 	// follows the `toInt(v)` / `toFloat(v)` style; codec selects the
 	// encoding (only "utf-8" today). Further codecs ship with the
@@ -170,6 +171,20 @@ func typeOfFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 		return interpreter.Null(), err
 	}
 	return interpreter.StringVal(args[0].Kind.String()), nil
+}
+
+// objectTypeFn implements `convert.objectType(v) -> string`: the specific
+// registered name of an opaque object value (e.g. "json.Value"), where
+// convert.typeOf only reports the generic "object". Errors on a non-object.
+func objectTypeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityOne("objectType", args); err != nil {
+		return interpreter.Null(), err
+	}
+	v := args[0]
+	if v.Kind != interpreter.KindObject {
+		return interpreter.Null(), fmt.Errorf("convert.objectType: argument must be an object (convert.typeOf == \"object\"), got %s", v.Kind)
+	}
+	return interpreter.StringVal(v.StructNS + "." + v.StructName), nil
 }
 
 // bytesFromStringFn implements `convert.bytesFromString(s, codec) -> bytes`.

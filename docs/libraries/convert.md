@@ -25,7 +25,8 @@ io.printf("%s\n", convert.typeOf(5 // 2));     # "int"
 | `convert.toFloat(v)`                       | int / float / string / bool | convert / identity / parse / `true`=1.0, `false`=0.0                  |
 | `convert.toString(v)`                      | any                         | always succeeds; uses the value's display form                        |
 | `convert.toBool(v)`                        | bool / int / float / string | identity / canonical only (`0`/`1`, `0.0`/`1.0`, `"true"`/`"false"`)  |
-| `convert.typeOf(v)`                        | any                         | returns the kind as a string: `"int"`, `"float"`, etc.                |
+| `convert.typeOf(v)`                        | any                         | returns the kind as a string: `"int"`, `"float"`, ..., `"list"`, `"map"`, `"object"` |
+| `convert.objectType(v)`                    | object                      | specific registered name of an opaque object, e.g. `"json.Value"`; errors on a non-object |
 | `convert.bytesFromString(s, codec)` | (string, string)            | string to bytes; `"utf-8"` only (other codecs live in `encoding`)                            |
 | `convert.stringFromBytes(b, codec)` | (bytes, string)             | bytes to string; `"utf-8"` only; invalid UTF-8 is an error |
 
@@ -71,5 +72,24 @@ identifier and is not a type keyword.
 
 Writing the bare form (`int("42")`, `string(42)`, ...) is
 a parse error directing you at the `convert.to*` form.
+
+## Objects: `typeOf` vs `objectType`
+
+Some libraries hand back an **opaque object** - a value that carries data
+but exposes it only through that library's own accessors, not through
+operators or `[index]` / `.field`. The first is
+[`json.Value`](json.md) (from `json.decode`). For any such value
+`convert.typeOf` returns the generic `"object"`, and `convert.objectType`
+returns the specific registered name so you can tell one object family
+from another:
+
+```jennifer
+def doc as json.Value init json.decode("{}");
+io.printf("%s\n", convert.typeOf($doc));       # object
+io.printf("%s\n", convert.objectType($doc));   # json.Value
+```
+
+`convert.objectType` errors on a non-object, so guard with
+`convert.typeOf(v) == "object"` first if the kind is unknown.
 
 See also: [encoding.md](encoding.md) (all other character and binary-to-text codecs), [../user-guide/index.md](../user-guide/index.md), [../technical/interpreter.md](../technical/interpreter.md#builtins-and-libraries), [index.md](index.md).

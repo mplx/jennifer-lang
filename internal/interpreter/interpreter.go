@@ -76,6 +76,7 @@ type Interpreter struct {
 	NSBuiltins      map[nsKey]Builtin           // namespaced builtins: os.getEnv, bio.translate, ...
 	NSConstants     map[nsKey]Value             // namespaced constants: os.PLATFORM, ...
 	NSStructs       map[nsKey]*parser.StructDef // namespaced struct definitions (os.Result, time.Time)
+	objectTypes     map[nsKey]bool              // opaque object types (json.Value): registered like structs, but KindObject at runtime
 	knownLibs       map[string]bool             // libraries with at least one registered builtin OR constant
 	knownNamespaces map[string]bool             // libraries that registered through the namespaced API
 	libsWithGlobals map[string]bool             // libraries that registered any RegisterGlobal name
@@ -125,6 +126,7 @@ func New() *Interpreter {
 		NSBuiltins:        map[nsKey]Builtin{},
 		NSConstants:       map[nsKey]Value{},
 		NSStructs:         map[nsKey]*parser.StructDef{},
+		objectTypes:       map[nsKey]bool{},
 		knownLibs:         map[string]bool{},
 		knownNamespaces:   map[string]bool{},
 		libsWithGlobals:   map[string]bool{},
@@ -224,6 +226,26 @@ func (i *Interpreter) RegisterNamespacedStruct(lib, name string, fields []parser
 	i.NSStructs[nsKey{NS: lib, Name: name}] = def
 	i.knownLibs[lib] = true
 	i.knownNamespaces[lib] = true
+}
+
+// RegisterNamespacedObject registers an opaque, library-owned object type
+// (e.g. json.Value). It registers like a fieldless namespaced struct so
+// `def r as json.Value` parses and type-checks, but the runtime values are
+// KindObject (built via interpreter.ObjectVal) - operators, `[index]`, and
+// `.field` all reject them, and only the owning library's accessors reach
+// inside. The library supplies the values through its own builtins. An
+// optional display func renders the wrapped payload for Display() (REPL echo,
+// `%v`); pass nil to fall back to the bare `<ns.name>` form.
+func (i *Interpreter) RegisterNamespacedObject(lib, name string, display ObjectDisplayer) {
+	i.RegisterNamespacedStruct(lib, name, nil)
+	i.objectTypes[nsKey{NS: lib, Name: name}] = true
+	registerObjectDisplayer(lib, name, display)
+}
+
+// isObjectType reports whether (ns, name) names a registered opaque object
+// type rather than an ordinary namespaced struct.
+func (i *Interpreter) isObjectType(ns, name string) bool {
+	return i.objectTypes[nsKey{NS: ns, Name: name}]
 }
 
 // LookupNamespacedBuiltin returns the registered builtin for
@@ -1169,7 +1191,11 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 		// populate every field's zero value. Route through a dedicated
 		// helper that materialises the full field list (and validates
 		// that the named struct actually exists).
-		if st.VarType.Kind == parser.TypeStruct {
+		if st.VarType.Kind == parser.TypeStruct && i.isObjectType(st.VarType.StructNS, st.VarType.StructName) {
+			// an opaque object type (json.Value) zeroes to an empty payload:
+			// a wrapped null node, not a struct.
+			val = ObjectVal(st.VarType.StructNS, st.VarType.StructName, Null())
+		} else if st.VarType.Kind == parser.TypeStruct {
 			zero, err := i.zeroStructFor(st.VarType.StructNS, st.VarType.StructName, st)
 			if err != nil {
 				return err
@@ -2300,6 +2326,10 @@ func (i *Interpreter) evalFieldAccess(ex *parser.FieldAccessExpr, env *Environme
 	if err != nil {
 		return Value{}, err
 	}
+	if parent.Kind == KindObject {
+		file, line, col := posFor(ex)
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("`.%s`: a %s.%s is opaque - use the %s.* accessors (e.g. %s.get) to reach inside", ex.Field, parent.StructNS, parent.StructName, parent.StructNS, parent.StructNS), File: file, Line: line, Col: col}
+	}
 	if parent.Kind != KindStruct {
 		file, line, col := posFor(ex)
 		return Value{}, &runtimeError{Msg: fmt.Sprintf("field access `.%s` requires a struct, got %s", ex.Field, parent.Kind), File: file, Line: line, Col: col}
@@ -2325,6 +2355,10 @@ func (i *Interpreter) evalIndex(ex *parser.IndexExpr, env *Environment) (Value, 
 	idx, err := i.evalExpr(ex.Index, env)
 	if err != nil {
 		return Value{}, err
+	}
+	if parent.Kind == KindObject {
+		file, line, col := posFor(ex)
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("a %s.%s is opaque - cannot index with `[ ]`; use %s.get with a JSON pointer", parent.StructNS, parent.StructName, parent.StructNS), File: file, Line: line, Col: col}
 	}
 	if parent.Kind == KindBytes {
 		return readByteAt(parent, idx, ex)

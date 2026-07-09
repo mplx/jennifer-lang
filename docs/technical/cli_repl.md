@@ -8,6 +8,29 @@ imports and method definitions are idempotent / re-assignable so the user
 can iterate, and the value of a trailing `ExprStmt` is returned so the loop
 can print it.
 
+## Echoing a value
+
+Because `EvalInteractive` returns the trailing `ExprStmt`'s value, you can
+inspect any variable by typing **its bare reference followed by `;`** - the
+REPL prints the value's `Display()` form:
+
+```
+>>> def x as int init 41;
+>>> $x;
+41
+>>> def doc as json.Value init json.decode("{\"a\":[1,2]}");
+>>> $doc;
+{"a":[1,2]}
+```
+
+This is a REPL-only convenience: `Run` (the batch path) evaluates an
+expression statement but discards its value, so a bare `$x;` in a `.j`
+**script prints nothing**. To show a value from a script, format it
+explicitly - `io.printf("%v\n", $x);` (or `io.sprintf($x)` /
+`convert.toString($x)`). Opaque values render through their registered
+displayer, so `$doc;` shows a `json.Value` as its JSON rather than
+`<json.Value>`.
+
 Multi-line input is handled by a small `inputComplete(tokens)` helper that
 balances `{`/`(` against `}`/`)` (using the lexer's tokens so string and
 comment contents are ignored) and requires the input to end in `;` or `}`.

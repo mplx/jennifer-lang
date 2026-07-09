@@ -1572,6 +1572,23 @@ formats, the single-byte character-codec set, and a strict naming policy.
 
 ## M16.16 - `json.Value`
 
+**Status:** done. Reads are addressed by **JSON Pointer** (RFC 6901): every
+accessor takes an optional trailing pointer string relative to the node
+(`""` = the node itself), so `json.get`/`typeOf`/`asInt`/... all share one
+`(node, pointer)` shape and `json.at` is unnecessary (a pointer segment
+resolves as a key or a list index by the node's kind). Node types are
+reported in Jennifer's vocabulary (`list` / `map`, never "array" /
+"object" - see docs/glossary.md). The decoder's number grammar was
+tightened to json.org strictness (no leading zeros, a fraction / exponent
+needs a digit). A path-addressed, **non-mutating write** surface ships
+alongside the reads: `json.map()` / `json.list()` constructors and
+`set` / `insert` / `append` / `remove` / `move`, each returning a fresh
+`json.Value` (idiom `$v = json.set($v, ...)`), addressed by the same
+pointer, strict / no-vivify (the final segment only; `-` is the
+insert/append end-marker), and mirroring 1:1 to a future `xml`. A
+JSONPath-style query layer was considered and deferred (a pointer names
+one node, which is what keeps reads and writes symmetric).
+
 The strict home for heterogeneous JSON - without a language-level top
 type. Jennifer stays fully typed: there is **no `any` keyword**, and
 JSON's dynamism is confined to a single opaque library type,
@@ -1606,38 +1623,51 @@ yields a generic collection that has to match some homogeneous type
     non-object). Rarely reached - a programmer knows what they decoded -
     but there for introspection.
 - **The type.** `json.Value` is an **opaque** parsed JSON node, exactly
-  one of: null, bool, int, float, string, array, object. Value-semantic
+  one of: null, bool, int, float, string, list, map. Value-semantic
   at the Jennifer boundary (assignment copies; a decoded tree is
   read-only), holding the decoded node inline - no handle into a package
   registry, so it is GC'd normally with no leak (the deliberate difference
   from the `hash.Stream` / `compress.Stream` handles).
   `def r as json.Value init json.decode(s);` holds an arbitrary decoded
-  document.
-- **Navigation returns `json.Value`, uniformly.** `json.get(v, key)`
-  (objects) and `json.at(v, i)` (arrays) always return a `json.Value` -
-  never a native scalar - because a member could be a string, a number, a
-  nested object, or an array, and that heterogeneous return type is
-  exactly what would need `any`. Every extracted node stays wrapped until
-  you unwrap a leaf. Also `json.has(v, key) -> bool`, `json.keys(v) ->
-  list of string` (insertion order), and `json.length(v) -> int` (array
-  length or object field count).
-- **`json.typeOf` - the internal-shape reader, two arg forms.** Because
-  every node is a `KindObject`, `convert.typeOf` says `"object"` for all
-  of them; `json.typeOf` recovers the real JSON shape (`"null"` /
-  `"bool"` / `"int"` / `"float"` / `"string"` / `"array"` / `"object"`),
-  so it is genuinely additive over `convert.typeOf` (which flattens array
-  and every scalar to `"object"`):
-  - `json.typeOf(v) -> string` - the node's own JSON type; needed for the
-    root (`json.decode` hands you a node with no key yet) and any node you
-    hold.
-  - `json.typeOf(v, key)` / `json.typeOf(v, index) -> string` - the JSON
-    type of the value *at* that object key or array index: the everyday
-    "peek before you extract" form, so you seldom call it on a bare
-    object.
-- **Leaf extraction (checked).** `json.asInt(v)` / `asFloat(v)` /
-  `asString(v)` / `asBool(v)` return the scalar at its Jennifer type - a
-  **checked extraction** raising a positioned, catchable error when the
-  node is a different kind - plus `json.isNull(v) -> bool`.
+  document. It **displays as its compact JSON** (the REPL echo, `%v`,
+  `convert.toString`) via a per-object-type displayer hook registered
+  through `RegisterNamespacedObject`, so the opaque handle is still
+  inspectable; `json.encodePretty` is the multi-line dump.
+- **Navigation returns `json.Value`, uniformly.** `json.get(v[, ptr])`
+  always returns a `json.Value` - never a native scalar - because a member
+  could be a string, a number, a nested map, or a list, and that
+  heterogeneous return type is exactly what would need `any`. Every
+  extracted node stays wrapped until you unwrap a leaf. The optional `ptr`
+  is a JSON Pointer relative to `v` (omitted = `v` itself), so one `get`
+  reaches any depth and both map keys and list indices are just pointer
+  segments (no separate `at`). Also `json.has(v, ptr) -> bool` (does the
+  pointer resolve), `json.keys(v[, ptr]) -> list of string` (map keys,
+  insertion order), and `json.length(v[, ptr]) -> int` (list length or map
+  entry count).
+- **`json.typeOf` - the internal-shape reader.** Because every node is a
+  `KindObject`, `convert.typeOf` says `"object"` for all of them;
+  `json.typeOf(v[, ptr])` recovers the real JSON shape (`"null"` /
+  `"bool"` / `"int"` / `"float"` / `"string"` / `"list"` / `"map"`), so it
+  is genuinely additive over `convert.typeOf`. With no pointer it reports
+  the node's own type (needed for the root, which `json.decode` hands you
+  with no key yet); with a pointer it is the everyday "peek at a member
+  before you extract" form.
+- **Leaf extraction (checked).** `json.asInt(v[, ptr])` / `asFloat` /
+  `asString` / `asBool` return the addressed scalar at its Jennifer type -
+  a **checked extraction** raising a positioned, catchable error when the
+  node is a different kind - plus `json.isNull(v[, ptr]) -> bool`.
+- **Write surface (non-mutating).** `json.map()` / `json.list()` mint
+  empty containers; `json.set(v, ptr, val)` (upsert a map key / replace an
+  in-range list index), `json.insert(v, ptr, val)` (list, before an index
+  or `-` at end), `json.append(v, ptr, val)` (sugar for insert at the
+  end), `json.remove(v, ptr)`, and `json.move(v, from, to)` each return a
+  **fresh** `json.Value` (the tree is rebuilt persistently - only the
+  edited spine is copied). Strict / no-vivify: only the final pointer
+  segment is created, a missing intermediate or a write on a scalar / bare
+  `null` root is an error, and lists grow only through insert / append.
+  The stored value may be a scalar, a Jennifer list / map / struct (a
+  struct normalizes to a map, `bytes` to base64), or another `json.Value`
+  (spliced in). Same verb vocabulary a future `xml` inherits.
 - **Encode is unchanged and round-trips.** `json.encode` / `encodePretty`
   still take ordinary typed values (structs, maps, lists, scalars,
   bytes), and *also* accept a `json.Value`, so `encode(decode(s))`
@@ -1646,8 +1676,8 @@ yields a generic collection that has to match some homogeneous type
   `json.typeOf`, and pull leaves at their kind:
 
       def r as json.Value init json.decode(s);
-      def name as string init json.asString(json.get($r, "name"));
-      def age as int init json.asInt(json.get($r, "age"));
+      def name as string init json.asString($r, "/name");
+      def age as int init json.asInt($r, "/age");
 
   For a known object shape, an explicit map-to-struct conversion
   (deferred to Long horizon) could offer a one-call form over this.
@@ -1680,11 +1710,13 @@ yields a generic collection that has to match some homogeneous type
 - **Acceptance.** `def r as json.Value init json.decode(s);` holds a
   mixed object; `convert.typeOf($r)` is `"object"` and
   `convert.objectType($r)` is `"json.Value"`; `json.typeOf($r)` is
-  `"object"` while `json.typeOf($r, "tags")` is `"array"`;
-  `json.asInt(json.get($r, "a"))` reads a number; a wrong-kind accessor
+  `"map"` while `json.typeOf($r, "/tags")` is `"list"`;
+  `json.asInt($r, "/a")` reads a number; a wrong-kind accessor
   (`json.asString` on a number node) raises a catchable error;
   `json.Value` rejects `+`, `[i]`, and `.field`;
-  `json.encode(json.decode(s))` round-trips; both toolchains build.
+  `json.encode(json.decode(s))` round-trips; a heterogeneous top-level
+  array walks element by element; the decoder rejects `01` / `1.`; both
+  toolchains build.
 
 ---
 
