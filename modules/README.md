@@ -2,11 +2,21 @@
 
 Jennifer-coded library modules (`.j` files) live here. Unlike the Go
 system libraries (`internal/lib/*`, enabled with `use NAME;`), a module is
-distributable Jennifer source, brought in with `import "NAME.j" as NAME;`
-once the module system (M17) ships.
+distributable Jennifer source, brought in with `import "NAME.j" as NAME;`.
 
 Distribution packages install these to the system module directory
 (`/usr/share/jennifer/modules/` by default; see `jennifer version -v`),
 so `import "NAME.j";` resolves without a path. Local modules resolve with
 `import "./NAME.j";`, and extra search directories are added with
 `jennifer run -I DIR ...`.
+
+## Available modules
+
+- **`ansi.j`** - terminal styling as explicit string wrappers.
+  `ansi.color(s, name)` / `ansi.bgColor(s, name)` / `ansi.style(s, name)`
+  (bold / dim / italic / underline / reverse) / `ansi.rgb(s, r, g, b)`,
+  `ansi.strip(s)` to remove escapes, plus per-colour and per-style
+  shortcuts (`ansi.red(s)`, `ansi.bold(s)`, ...). Stateless and TTY-aware:
+  styling suppresses itself when stdout is not a terminal or `NO_COLOR` is
+  set, and is forced on by `FORCE_COLOR`. See
+  [`examples/modules/ansi_demo.j`](../examples/modules/ansi_demo.j).

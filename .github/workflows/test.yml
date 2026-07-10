@@ -86,6 +86,23 @@ jobs:
         # readable in the CI log and consumable by TAP-aware reporters.
         run: ./jennifer test --format=tap examples/testsuite.j
 
+      - name: Run the shipped module tests
+        # Every module in modules/ ships a white-box `MODULE_test.j` overlay
+        # (see modules/README.md); each must pass 100%. A failure fails the
+        # build, so a broken module never reaches a release. All overlays run
+        # (rc accumulates) so every failure shows, not just the first.
+        run: |
+          shopt -s nullglob
+          rc=0
+          tested=0
+          for t in modules/*_test.j; do
+            echo "== $t =="
+            ./jennifer test "$t" || rc=1
+            tested=$((tested + 1))
+          done
+          echo "ran $tested module test overlay(s)"
+          exit $rc
+
       - name: Run the benchmark suite (regression check)
         # Only on the main target, linux/amd64. This job runs on a single
         # ubuntu-latest (x64) runner today, so the guard is belt-and-braces:

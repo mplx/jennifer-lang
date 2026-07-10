@@ -1090,300 +1090,82 @@ The settled, cross-cutting decisions (turned-down alternatives live in
 - Modules need a filesystem; hosted `jennifer-tiny` loads them, an
   FS-less host fails with the ordinary search-path error.
 
-Ships as four dependency-ordered submilestones (M17.1 resolution, M17.2
-loader, M17.3 scope, M17.4 exports), then M17.5 dogfoods them with the
-first real module. **M18.x cannot start until M17.1-M17.4 land.**
+Shipped as four dependency-ordered submilestones - **M17.1-M17.4 are
+done** (resolution, loader, scope, exports); their full per-milestone
+specs live in git history, compacted below. M17.5 dogfoods them with the
+first real module (`ansi`) and M17.6 adds `semver`. **M18.x is now
+unblocked.**
 
 ### M17.1 - Source tree and resolution
 
-**Status:** done. The resolution layer shipped in `internal/module`
-(`Classify` / `Resolve` + the sysmoddir precedence), wired to
-`meta.SYSMODDIR`, `jennifer version -v`, and the `run` flags `--sysmoddir`
-/ `-I`. The `import` statement that exercises the resolver end to end is
-M17.2, so the "imports and runs" half of the acceptance below lands there;
-M17.1's own acceptance (the three shapes + duplicate / missing errors,
-sysmoddir precedence + validation, `meta.SYSMODDIR`, `version -v`) is met
-and unit-tested in `internal/module/*_test.go`.
-
-Where modules live on disk, and how an import string resolves to a file.
-
-- **Layout.** A top-level `modules/` directory for Jennifer-coded
-  modules; Go system libraries stay in `internal/lib/*/`. Distro
-  packaging ships modules to `/usr/share/jennifer/modules/` (FHS
-  read-only, arch-independent data), loadable without recompiling the
-  interpreter.
-- **OS-independent import paths.** The string is a *logical* path, always
-  `/`-separated (like a URL or the `.j` string literal), never the host
-  separator - a `\` in an import is a syntax error. The shape is
-  classified on the logical string; the file is then located with
-  `path/filepath`, so Windows `\`, drive letters, and mixed separators are
-  the stdlib's job at resolve time, not the grammar's. Three shapes, by
-  the *leading* token:
-  - `import "./f.j"` / `"../f.j"` - **local**: relative to the importing
-    file's directory; no search path consulted.
-  - `import "/abs/f.j"` - **absolute**: exactly that file (detected with
-    `filepath.IsAbs`, so a Windows `C:/f.j` counts), no search path.
-    Non-relocatable by nature - prefer `-I` for machine-specific paths.
-  - `import "f.j"` - **module**: walk the search path (system module dir,
-    then each `-I DIR` in order); the importing file's directory is never
-    consulted. `-I` values are OS-native shell paths, so `\` / drives are
-    fine there.
-
-  A `/` anywhere but the leading position is an ordinary path component,
-  so all three shapes accept `sub/f.j`.
-- **Multi-file modules.** One entry file (`modules/bigmod/bigmod.j`)
-  `include`s its parts (subdirs allowed); the splice is one module scope
-  and one export surface, and the consumer imports only the entry file.
-- **System module dir.** `--sysmoddir` > `JENNIFER_SYSMODDIR` >
-  compile-time default (baked via the Makefile codegen path, since TinyGo
-  ignores `-ldflags -X`). Inspectable through `meta.SYSMODDIR` (resolved
-  after argv/env, not a static const) and `jennifer version -v` (each
-  layer tagged `cli` / `env` / `compile`).
-
-**Decisions.** Path shapes are disjoint at the character level, so a
-reader tells "local file" from "vetted module" without leaving the line;
-working-directory-first search is a supply-chain footgun (rejected), so
-system modules win over `-I`, and `-I` only *adds* names. Duplicate module
-names across `-I` dirs (or `-I` vs system) are a hard error at load,
-naming both paths. `--sysmoddir` / `JENNIFER_SYSMODDIR` are validated at
-`Run()` (missing / non-dir refuses to start); the compile-time default is
-best-effort, so a fresh checkout that imports nothing still runs. The bare
-form (`import "sub/bigmod.j";`, no `as`) reserves the file stem
-(`bigmod`) as the prefix. `../` in a local import is allowed - the
-supply-chain rule targets the consumer's working directory, not
-navigation within an author-controlled tree. No directory-as-module, no
-cross-file re-export, no versioning / upgrade / signing (the distro or
-`-I` places versions; the interpreter picks what it finds). TinyGo:
-resolution needs `fs` (present under TinyGo), so a hosted `jennifer-tiny`
-loads modules and an FS-less host fails with the ordinary search-path
-error; a build-time `embed.FS` bundle is a deferred future option.
-
-**Acceptance.** A module in `modules/bigmod/bigmod.j` that `include`s
-`sub/extra.j` imports and runs under both binaries via each of the three
-path shapes; the three sysmoddir sources resolve in precedence and surface
-identically through `meta.SYSMODDIR` and `jennifer version -v`; duplicate
-`-I` names and a missing named sysmoddir both error at `Run()`.
+**Done.** Path resolution in `internal/module`: `Classify` + `Resolve` map
+an import path (local `./` / `../`, absolute `/`, or a bare name walked on
+the search path) to a canonical absolute path, rejecting a name found in
+two search dirs and a not-found. The system module directory resolves
+`--sysmoddir` > `JENNIFER_SYSMODDIR` > compile-time default (surfaced as
+`meta.SYSMODDIR`; a named CLI / env dir that is missing or not a directory
+refuses to start, the compile default is best-effort), and `-I DIR`
+(repeatable) appends to the search path after it. `jennifer version -v`
+reports the resolved layers. See [cli.md](technical/cli.md).
 
 ### M17.2 - Import statement and loader
 
-**Status:** done.
-
-The `import "..." as NAME;` statement end to end: pipeline placement,
-one-time init, ordering, cycles, error surfacing.
-
-- **Pipeline.** The preprocessor stops rejecting `import` and passes its
-  tokens through (as it already does for `use`); `include` stays a
-  preprocessor splice - the two keywords diverge cleanly by stage. The
-  parser gains a `ModuleImportStmt` node (path + optional alias), distinct
-  from the `use`-backed `ImportStmt`.
-- **Loader + cache.** Loading a module lexes, preprocesses, parses,
-  resolves, and executes it once against a fresh module scope, keyed by a
-  **canonical** resolved path (`filepath.Abs` + `Clean`, case-folded on a
-  case-insensitive filesystem) - so `Util.j` and `util.j` are one module
-  scope. Run-once and cycle detection both depend on the key being
-  canonical, not on the string the importer typed.
-
-**Decisions.** **Run-once**: a module inits exactly once per program run;
-later imports (any importer, any point) reuse the cached AST and
-initialised namespace. Two aliases of one file share an instance; the same
-relative name from two directories are two modules. **Init order is
-depth-first post-order** - a module fully inits before any module that
-imports it (script -> A -> B -> C inits C, B, A, then the script body),
-each module's struct hoisting and `def const` initializers running once on
-first reach. **Cycles are rejected**: the loader tracks in-progress
-modules on the load stack and errors at load on reaching an in-progress
-import, before any initializer in the cycle runs, naming each edge
-(`module cycle: A -> B -> C -> A`); no Python-style partial init (fix by
-factoring a shared module, Go's model; mirrors the M10 include-cycle
-rejection). **Load-time errors are not catchable**: a `def const`
-initializer that throws fails the program at load, before the importer's
-body - `import` is a declaration, not an expression, so `try`/`catch`
-cannot wrap it; parse errors surface positioned in the imported file.
-`jennifer fmt` / `ast` / `tokens` preserve `import "..." as x;` textually,
-same as `include`.
-
-**Acceptance.** A three-module chain inits post-order exactly once each
-(observable via a load-time `io.printf` in each initializer); a re-import
-returns the cached instance without re-running init; an A->B->C->A cycle
-errors at `Run()` naming every edge; a throwing initializer fails at load
-and is not caught by a `try` around the `import`; `jennifer fmt`
-round-trips an `import` line unchanged.
-
-**As built.** The loader lives in `internal/interpreter/module.go` (the
-`moduleReg` shared cache + load stack + search path, one fresh
-sub-interpreter per module) and is wired onto the CLI in `main.go`'s
-`runFile` via `EnableModules`. Each module loads into its own
-sub-interpreter sharing the registry, so run-once, post-order init, and
-cycle detection fall out of the recursion. `ModuleImportStmt.AsName` is
-parsed and carried on the node but not yet **bound**: today an `import`
-runs a module for its initialisation side effects. Binding `NAME.member`
-to a module's exported surface is the job of M17.3 (module scope and
-namespacing) and M17.4 (exports). Runnable demo: `examples/modules/`.
-Coverage: `internal/interpreter/module_test.go` (post-order/run-once,
-cycle, positioned parse error, load-time throw, imports-without-enable).
+**Done.** `import "path.j" [as NAME];` is a real statement
+(`ModuleImportStmt`) - the preprocessor passes it through, the parser
+builds the node. The loader (`internal/interpreter/module.go`) runs each
+module in a fresh sub-interpreter sharing one `moduleReg` (run-once cache
+by canonical path, in-progress load stack, search path), so **run-once**,
+**depth-first post-order init**, and **cycle detection** (erroring with
+every edge named) all fall out of the recursion. Load-time errors (a parse
+error or a throwing `def const` initializer) fail the program and are not
+catchable - an `import` is a declaration, not an expression, so it cannot
+sit in a `try` / block. `jennifer fmt` / `ast` / `tokens` round-trip an
+`import` line. See [imports.md](user-guide/imports.md).
 
 ### M17.3 - Module scope and namespacing
 
-**Status:** done.
-
-What a module's top level may contain, how its names resolve, and how it
-reaches other libraries and modules.
-
-- **Per-module resolution context.** Each loaded module carries its own
-  `nsPrefixes`, namespace tables, and private + export symbol tables in
-  the module cache entry.
-- **Declarations-only top level.** Exactly these forms - the three
-  declaration forms take an optional leading `export`, the two import
-  forms do not:
-  - `def const NAME as TYPE init EXPR;` (export-able)
-  - `def struct Name { ... };` (export-able)
-  - `func name(...) { ... }` (export-able)
-  - `use LIB [as ALIAS];`
-  - `import "..." as NAME;`
-- **Consumer-side qualified resolution** (`points.mid(...)`,
-  `points.Point`) reuses the M10 namespacing machinery through the
-  consumer's module-import table into the module's export table.
-
-**Decisions.** **No mutable module state**: a mutable `def VAR ...;` at
-module top level errors, as does any free-standing statement (bare
-expression, assignment, `if` / `while` / `for` / `repeat`). A `def const`
-initializer still runs once at load - "declarations-only" bounds statement
-forms, not initializer evaluation; value-producing init is
-`export def const T init buildTable();` calling a private `func`.
-**`spawn` is unaffected**: with no mutable module state there is nothing
-new to capture, so `snapshotForSpawn`'s two-frame model is unchanged and
-module constants (deep-immutable) are safe to reference. **`use` is not
-transitive**: a module's `use net;` gives the module `net.*`, but the
-importer needs its own `use net;` - a module's implementation choices do
-not leak into a consumer's namespace. **Bare type names resolve in the
-module's own type table**: inside `points.j`, `func mid(a as Point, ...)`
-checks against the module-local `Point` (identity `(points, Point)`); a
-module names another module's type only through that module's prefix
-(struct identity stays a `(namespace, name)` pair, M15.2). **One global
-`Error`**: M13.2's reserved struct is canonical across every module and
-never redefined; richer payloads are distinctly-named structs
-(`export def struct ParseError { ... };`), and cross-module identity makes
-`a.ParseError` and `b.ParseError` distinct. Scripts (via `jennifer run`)
-keep top-level mutable `def` and free-standing statements - a script is a
-single execution context with no importer.
-
-**Acceptance.** A mutable `def` or a free-standing statement at module top
-level is a positioned parse error; a `def const` initializer runs once at
-load; a module using `use net;` internally works while its importer
-without `use net;` cannot call `net.*`; a struct made in a module and
-passed back to a module `func` type-checks; a `spawn` body calling a
-module `func` behaves identically to the serial call under `-race`.
-
-**As built.** The declarations-only check runs in `loadModule`
-(`checkModuleDeclarationsOnly`): a module's `TopLevel` may hold only
-`def const` (structs / methods / imports live in their own `Program`
-slices), so a mutable `def` or free-standing statement is a positioned
-load-time error; scripts run through the CLI never reach the check.
-`loadModuleImports` binds each import's alias (the `as NAME` clause, or the
-file stem) into `Interpreter.moduleAliases`, collision-checked against
-library prefixes and other module aliases. Consumer-side resolution is at
-the eval layer (the resolver and `resolveQualifiedRefs` already defer
-unknown prefixes to runtime): `evalQualifiedCall` / `evalQualifiedConst`
-check `moduleAliases` first and dispatch `alias.fn(args)` into the module's
-own interpreter via `CallByNameWith` (arguments evaluated in the consumer,
-body run against the module's globals + methods) and read `alias.CONST`
-from the module's global scope. `use` non-transitivity, run-once sharing,
-and `-race` safety all fall out of the fresh-sub-interpreter-per-module
-model - a module's interpreter holds only immutable constants and read-only
-methods. `throw` / `exit` from a module `func` propagate unchanged (caught
-by a `try` around the call, or setting the exit code). Runnable demo:
-`examples/modules/` (qualified calls, a qualified constant, a
-module-to-module call). Coverage: `internal/interpreter/module_scope_test.go`.
-
-**Deferred to M17.4.** A struct *value* built by a module and passed back
-through module calls type-checks today (it never leaves the module's
-identity space), but a consumer *naming* a module struct type
-(`def p as points.Point;`, `points.Point{...}`) needs the cross-module
-struct identity `(module-prefix, name)` that M17.4 owns; until then that
-form is a positioned "module struct types are not available yet" error
-pointing the caller at a function that returns the value. The `export`
-visibility filter is also M17.4 - in M17.3 every top-level module name is
-reachable behind the alias.
+**Done.** A module top level is **declarations-only**
+(`checkModuleDeclarationsOnly`: only `def const` / `def struct` / `func` /
+`use` / `import`; a mutable `def` or free-standing statement is a
+positioned load-time error - scripts keep both). `loadModuleImports` binds
+each alias (the `as NAME`, or the file stem) into `moduleAliases`,
+collision-checked against library prefixes. Consumer resolution rides the
+qualified-reference eval layer: `evalQualifiedCall` / `evalQualifiedConst`
+dispatch `alias.fn(args)` into the module's own interpreter via
+`CallByNameWith` (arguments evaluated in the consumer, body run against the
+module's globals + methods) and read `alias.CONST` from its scope. `use`
+non-transitivity, run-once sharing, and `-race` safety all follow from the
+fresh-sub-interpreter-per-module model - a module holds only immutable
+constants and read-only methods. See [interpreter.md](technical/interpreter.md).
 
 ### M17.4 - Exports and visibility
 
-**Status:** done.
+**Done.** `export` (a keyword) publishes a top-level `func` / `def struct` /
+`def const`; unmarked names stay private (reaching `mod.helper` from
+outside is a positioned "not exported from module" error), and `export` in
+a `jennifer run` script is rejected (module vs script by entry, via the
+`isModule` flag). `checkReferentialClosure` rejects an exported struct
+field or exported function parameter typed as a *private* module struct;
+library / namespaced types cross freely. **Cross-module struct identity**
+is boundary translation (`retagStructs`): a module's structs are bare
+inside it and re-tagged to `(module-stem, name)` as a value crosses out to
+an importer and back on the way in, so `def p as mod.Point`,
+`mod.Point{...}`, field reads, and pass-back all type-check while `a.Point`
+and `b.Point` stay distinct. A co-located `MODULE_test.j` overlay (a token
+splice in `jennifer test`) runs white-box tests against the module's
+private names.
 
-Which top-level names cross the module boundary, and the script-vs-module
-and test-overlay rules that follow. This submilestone touches parser
-grammar (the `export` keyword), so it ships last; M17.1-M17.3 are tooling,
-loading, and resolution.
+### M17.5 - `ansi` module
 
-- **`export` marker** on a top-level `def const` / `def struct` / `func`
-  publishes the name; unmarked names are module-private. One marker, one
-  direction.
-- **Referential-closure check**: an exported struct field (or exported
-  `func` parameter / return) whose type is a *private* struct errors at
-  the export-annotation site.
-- **Cross-module struct identity** `(module-prefix, name)` (extends
-  M15.2).
-- **`MODULE_test.j`** white-box test-overlay convention (pairs with M16.8
-  `jennifer test`).
-
-**Decisions.** **Private by default** (stance 2): the public API is the
-`export`-ed set, greppable in one pass, and a forgotten marker stays
-internal (the fail-safe direction) - no `public` / `private` keyword.
-**Accessing a private name** from outside errors positioned at the call
-site (`foo.helper: 'helper' is not exported from module 'foo'`); no
-field-level visibility - an exported struct exports its whole shape.
-**Library types cross the boundary freely**: the referential-closure check
-concerns only *module* structs, so a library type in an exported
-signature - a system-library struct (`net.Conn`, `time.Time`) or an opaque
-object (`json.Value`, a `KindObject`) - is always visible and
-value-semantic, and an exported `func` may take or return one with no
-restriction. **Scripts vs modules by entry, not content**: `export` in a
-`jennifer run` script is a parse error ("script has no importers"); a
-module with zero exports loads fine and yields an empty namespace (any
-`NAME.x` errors as undefined) - promoting a script to a module is the
-deliberate "I now have a public API" moment. **Test overlays**: a
-co-located `MODULE_test.j` is spliced into `MODULE.j`'s scope *before*
-`parser.Resolve` runs over the combined file, so slot numbering covers
-both and the overlay reads private names by bare identifier (black-box
-tests use `import "./MODULE.j";` instead); one overlay per module. Splicing
-after resolution would strand the overlay at `(-1, -1)` and force
-name-based fallback, so it folds in pre-resolve.
-
-**Acceptance.** An unmarked helper is unreachable as `mod.helper` (with the
-positioned error) while an `export`-ed name resolves; an exported struct
-with a private-struct field errors at annotation; `export` in a run script
-is a parse error; a zero-export module imports but every `NAME.x` errors;
-a `MODULE_test.j` overlay reads `MODULE.j`'s private names and runs under
-`jennifer test`.
-
-**As built.** `TOKEN_EXPORT` is a keyword; `parseExported` accepts it only
-in front of a top-level `func` / `def struct` / `def const`, stamping
-`Exported` on the AST node (anything else is a parse error). `collectExports`
-records a module's public names; `callModuleMethod` / `moduleConst` /
-`evalStructLit` / the `def`-type check gate `alias.member` on that set with a
-positioned "not exported from module" error. `checkReferentialClosure` (at
-load) rejects an exported struct field or exported function parameter whose
-type is a *private* module struct; library / namespaced types cross freely.
-`rejectExportInScript` (in `Run`, gated by the `isModule` flag that
-`loadModule` sets) makes `export` in a `jennifer run` script a positioned
-error. **Cross-module struct identity** is boundary translation: a module's
-structs are bare (`StructNS ""`) internally, and `retagStructs` re-tags them
-to `(module-stem, name)` as a value crosses out to an importer and back on
-the way in, so `def p as mod.Point`, `mod.Point{...}`, field access, and
-pass-back all type-check while `a.Point` and `b.Point` stay distinct. The
-`MODULE_test.j` overlay is a token splice in `jennifer test`
-(`overlayBaseFor` + `spliceTokens`): running `MODULE_test.j` prepends
-`MODULE.j` before parse/resolve and runs the combined program in module
-context, so the tests read private names by bare identifier. Runnable demo:
-`examples/modules/`. Coverage: `internal/interpreter/module_export_test.go`,
-`cmd/jennifer/module_overlay_test.go`.
-
-**Deferred.** Cross-module identity handles direct `mod.Struct` types and
-one level of `list`/`map` nesting through the boundary retag; deeply nested
-consumer construction of module structs that themselves contain other
-modules' structs is a rare edge not exercised here. Field-level export
-visibility stays out (an exported struct exposes its whole shape, by design).
-
-### M17.5 - `ansi` (first reference module)
+**Status:** done. Ships as `modules/ansi.j` - the ESC byte is built from a
+one-byte `bytes` (no string-literal escape for it); `enabled()` reads
+`NO_COLOR` / `FORCE_COLOR` / `os.isTerminal("stdout")` per call (stateless);
+`strip` uses `regex`; unknown colour / style names `throw`. `color` /
+`bgColor` / `style` / `rgb` / `strip` plus per-colour and per-style
+shortcuts are `export`ed. Demo: `examples/modules/ansi_demo.j`. Coverage:
+`internal/interpreter/module_ansi_test.go`, plus a white-box
+`modules/ansi_test.j` overlay (`jennifer test`) that reads ansi's private
+tables - dogfooding M17.4's test overlay on the reference module itself.
 
 The first module built on the system - small, useful, pure Jennifer, and a
 real dogfood of `import` / `export` / resolution end to end. Terminal
@@ -1415,7 +1197,7 @@ nests; `strip` reverses it; styling suppresses when `os.isTerminal` is
 false and when `NO_COLOR` is set, and is forced on by `FORCE_COLOR`; the
 module holds no mutable top-level state.
 
-### M17.6 - `semver` (module)
+### M17.6 - `semver` module
 
 The second pure reference module (alongside M17.5 `ansi`): strict
 [SemVer 2.0.0](https://semver.org) parsing, comparison, and increment as a
@@ -1474,11 +1256,11 @@ Built atop the existing system libraries. Each one ships as a Jennifer
 them are compiled into the interpreter binary. Sub-milestones in priority
 order.
 
-### M18.1 - `csv`
+### M18.1 - `csv` module
 
 Simple, useful early.
 
-### M18.2 - `markdown`
+### M18.2 - `markdown` module
 
 A lightweight `.j` renderer: Markdown to HTML, and to ANSI for terminal
 output (reusing the `ansi` module from M17.5). Line-oriented text
@@ -1487,7 +1269,7 @@ CommonMark subset (headings, emphasis, links, lists, code spans / blocks)
 rather than the full spec. Documents are small, so per-line interpreter
 overhead is a non-issue.
 
-### M18.3 - `mail`
+### M18.3 - `mail` module
 
 SMTP / IMAP / POP3 clients plus MIME (RFC 5322 headers, multipart, 7bit /
 8bit / quoted-printable / base64 transfer encodings). **Pure Jennifer**:
@@ -1518,7 +1300,7 @@ date formatting.
   LDAP client (M24+) reuses. SASL / SCRAM is a *consumer* of crypto
   primitives, never part of M20.1 itself.
 
-### M18.4 - `redis`
+### M18.4 - `redis` module
 
 A Redis client over `net`. RESP2 framing (`+OK`, `$len`, `*count`,
 `:int`, `-ERR`) parses cleanly in `.j`; commands go out as RESP arrays.
@@ -1531,7 +1313,7 @@ an opaque `redis.Reply` walked with accessors, the same pattern as
 `json.Value` ([M16.16](#m1616---jsonvalue)). No hard prerequisites (just
 `net`), so it can land ahead of `mail`.
 
-### M18.5 - `memcache`
+### M18.5 - `memcache` module
 
 A client for the `memcached` server's text protocol (`set` / `get` /
 `delete` / `incr` / `decr`; replies `STORED` / `VALUE ... END`) over
@@ -1539,13 +1321,13 @@ A client for the `memcached` server's text protocol (`set` / `get` /
 `bytes` / `string`. Named `memcache` for the client / protocol; it talks
 to a `memcached` daemon.
 
-### M18.6 - `http` (client)
+### M18.6 - `http` module
 
 A client over `net`. HTTPS needs net TLS ([M16.14](#m1614---net-tls)).
 Groups with the `httpd` server below; the two can share HTTP request /
 response parsing.
 
-### M18.6.1 - `gotify` (reference module)
+### M18.6.1 - `gotify` module on top of `http` module
 
 A tiny real-world module built on the M18.6 `http` client: push a
 notification to a [Gotify](https://gotify.net) server. It is the second
@@ -1580,7 +1362,7 @@ the message appears in the server's feed; a bad token surfaces the server's
 and never committed - the example reads them from the environment and the
 docs use placeholders.
 
-### M18.6.2 - `rest` (module)
+### M18.6.2 - `rest` module
 
 The ergonomic REST layer over the M18.6 `http` client - a genuine
 library-sized `.j` module (a step up from `gotify`'s one endpoint), and the
@@ -1622,7 +1404,7 @@ returns the expected statuses and decoded bodies; a 4xx / 5xx is reported
 as a `Response` value (status inspectable), not a crash; base-URL joining
 and query params compose without double slashes.
 
-### M18.7 - `httpd` (server)
+### M18.7 - `httpd` module
 
 A pure-Jennifer HTTP server atop `net`, shipped as a module (same shape
 as the other M18 modules), not baked into the interpreter - the point
@@ -1631,7 +1413,7 @@ handlers run in `spawn` blocks (depends on **M16.0** concurrency) over the
 `net` TCP listener (**M16.2**); it can share HTTP request / response
 parsing with the M18.6 client. (Formerly the standalone M20.)
 
-### M18.8 - `toml`
+### M18.8 - `toml` module
 
 A `.j` module: TOML's regular, line / section-oriented grammar
 (`[table]`, `key = value`) maps cleanly to `map` / `list` / `time.Time` -
@@ -1641,7 +1423,7 @@ strings, inline tables, arrays of tables. (`.ini` is a deferred tiny
 cousin only if demand surfaces - no real standard, ambiguous quoting /
 typing.)
 
-### M18.9 - `flatdb` (module)
+### M18.9 - `flatdb` module
 
 A file-backed JSON document store as a `.j` module - the "embed a small
 store" need, built from parts that already exist: `json`
@@ -1684,7 +1466,7 @@ overselling "database."
 rename) leaves the original intact; the docs state plainly it is not
 transactional.
 
-### M18.10 - `gpio` (module)
+### M18.10 - `gpio` module
 
 Raspberry-Pi (and any Linux SBC) GPIO as a **pure `.j` module** over
 sysfs - the physical-computing / IoT-teaching use case, with no core
