@@ -26,6 +26,10 @@ internal/lexer/lexer_test.go               Lexer tests
 internal/preproc/preproc.go                File-import preprocessor; trivia stripping
 internal/preproc/preproc_test.go           Preprocessor tests
 
+internal/module/resolve.go                 Module path classification + resolution
+internal/module/sysmoddir.go               System module dir: cli/env/compile precedence + validation
+internal/module/resolve_test.go            Resolver + sysmoddir tests
+
 internal/parser/ast.go                     AST node types + Sprint (incl. namespaced struct types)
 internal/parser/parser.go                  Recursive-descent parser; namespaced struct literals
 internal/parser/resolver.go                parse-time scope/slot resolution; undefined-variable + shadowing errors

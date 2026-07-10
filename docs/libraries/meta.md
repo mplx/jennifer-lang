@@ -22,8 +22,9 @@ io.printf("Jennifer %s (%s build)\n",
 
 | Name           | Kind   | Value                                                              |
 | -------------- | ------ | ------------------------------------------------------------------ |
-| `meta.VERSION` | string | The interpreter's build version. See format below.                 |
-| `meta.BUILD`   | string | Which Go toolchain compiled the interpreter: `"go"` or `"tinygo"`. |
+| `meta.VERSION`   | string | The interpreter's build version. See format below.                 |
+| `meta.BUILD`     | string | Which Go toolchain compiled the interpreter: `"go"` or `"tinygo"`. |
+| `meta.SYSMODDIR` | string | The resolved system module directory (where bare `import`s look). Resolved from `--sysmoddir` > `JENNIFER_SYSMODDIR` > the compile-time default; `jennifer version -v` shows the layers. |
 
 ### `VERSION` string format
 

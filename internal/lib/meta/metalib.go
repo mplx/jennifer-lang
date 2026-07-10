@@ -32,10 +32,23 @@ import (
 // constants, and doubles as the namespace prefix.
 const LibraryName = "meta"
 
+// sysmoddir holds the resolved system module directory. The CLI resolves
+// it from its --sysmoddir / JENNIFER_SYSMODDIR / compile-time layers and
+// hands the winning value to SetSysmoddir before Install runs, so
+// meta.SYSMODDIR reflects the actual resolved directory (not a static
+// Install-time constant). Empty until set.
+var sysmoddir string
+
+// SetSysmoddir records the resolved system module directory for the
+// meta.SYSMODDIR constant. The CLI calls it once at startup, after
+// resolving the layer precedence, before Install.
+func SetSysmoddir(dir string) { sysmoddir = dir }
+
 // Install registers the meta library's constants.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespacedConst(LibraryName, "VERSION", interpreter.StringVal(version.Version))
 	in.RegisterNamespacedConst(LibraryName, "BUILD", interpreter.StringVal(buildTag()))
+	in.RegisterNamespacedConst(LibraryName, "SYSMODDIR", interpreter.StringVal(sysmoddir))
 }
 
 // buildTag distinguishes which Go variant compiled the interpreter.

@@ -1096,6 +1096,15 @@ first real module. **M18.x cannot start until M17.1-M17.4 land.**
 
 ### M17.1 - Source tree and resolution
 
+**Status:** done. The resolution layer shipped in `internal/module`
+(`Classify` / `Resolve` + the sysmoddir precedence), wired to
+`meta.SYSMODDIR`, `jennifer version -v`, and the `run` flags `--sysmoddir`
+/ `-I`. The `import` statement that exercises the resolver end to end is
+M17.2, so the "imports and runs" half of the acceptance below lands there;
+M17.1's own acceptance (the three shapes + duplicate / missing errors,
+sysmoddir precedence + validation, `meta.SYSMODDIR`, `version -v`) is met
+and unit-tested in `internal/module/*_test.go`.
+
 Where modules live on disk, and how an import string resolves to a file.
 
 - **Layout.** A top-level `modules/` directory for Jennifer-coded

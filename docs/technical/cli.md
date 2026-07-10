@@ -1,7 +1,7 @@
 # CLI (`cmd/jennifer`)
 
 ```
-jennifer run <file.j>      run a Jennifer program
+jennifer run [flags] <file.j> [args...]  run a Jennifer program
 jennifer run -             read source from stdin
 jennifer repl              interactive REPL
 jennifer tokens <file.j>   dump the lexer's token stream
@@ -10,9 +10,28 @@ jennifer fmt <file.j>      format source per docs/user-guide/style-guide.md
 jennifer lint <file.j>     report compile-legal but suspect patterns
 jennifer profile <file.j>  profile hit counts and wall-clock per source position
 jennifer test <file.j>     discover and run the file's test methods
-jennifer version           print the build version and exit
+jennifer version [-v]      print the build version (-v adds module-path layers)
 jennifer help              show usage
 ```
+
+## Module resolution flags (`run`)
+
+`jennifer run` accepts interpreter flags before the source file; anything
+after the file is the program's own `os.ARGS`.
+
+- `--sysmoddir DIR` (or `--sysmoddir=DIR`) - the system module directory
+  for bare `import "name.j";`. Overrides `JENNIFER_SYSMODDIR`, which
+  overrides the compile-time default. A named (CLI or env) dir that is
+  missing or not a directory refuses to start; the compile-time default is
+  best-effort. The resolved value is `meta.SYSMODDIR`.
+- `-I DIR` (or `-I=DIR`, repeatable) - add a directory to the module
+  search path after the system dir. A `-I` dir *adds* names; a module name
+  appearing in two search dirs is a hard error at load. (Resolution lives
+  in `internal/module`; the `import` statement that consumes it is not yet
+  implemented.)
+
+`jennifer version -v` reports the resolved system module dir and the
+layers (compile default, `JENNIFER_SYSMODDIR`) behind it.
 
 - Verifies the `.j` extension
 - Reads the file, parses, runs

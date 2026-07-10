@@ -7,8 +7,9 @@
 #
 #   source packaging/completions/jennifer.bash
 #
-# It completes subcommands, then .j files for the file-taking ones, and
-# the lint / profile flags and their values.
+# It completes subcommands, then .j files for the file-taking ones, the
+# run / lint / profile / test flags and their values, and directories for
+# the `run` module-path flags (--sysmoddir, -I).
 
 _jennifer() {
     local cur prev words cword
@@ -22,7 +23,7 @@ _jennifer() {
         words=("${COMP_WORDS[@]}")
     fi
 
-    local subcommands="run repl tokens ast fmt lint profile version help"
+    local subcommands="run repl tokens ast fmt lint profile test version help"
 
     # Find the subcommand: the first non-flag word after the program name.
     local sub="" i
@@ -53,22 +54,49 @@ _jennifer() {
         case "$sub" in
         lint) vals="human json github" ;;
         profile) vals="table pprof trace" ;;
+        test) vals="text tap junit" ;;
         esac
         COMPREPLY=( $(compgen -W "$vals" -- "${flagword#--format=}") )
         return
         ;;
     --checks=*)
         # Comma-separated IDS, optionally negated with `!`; complete the
-        # segment after the last comma.
-        local ids="L001 L002 L003 L004 L005 L006 L007 L008 L009 L010"
-        COMPREPLY=( $(compgen -W "$ids" -- "${flagword##*,}") )
+        # segment after the last comma. Grouped: L0nn source, L1nn
+        # correctness, L2nn style, L3nn lifecycle.
+        local ids="L001 L002 L003 L004 L101 L102 L103 L104 L105 L201 L202 L203 L301 L302"
+        local val="${flagword#--checks=}"
+        COMPREPLY=( $(compgen -W "$ids" -- "${val##*,}") )
+        return
+        ;;
+    --sysmoddir=*)
+        _jennifer_dirs "${flagword#--sysmoddir=}"
+        return
+        ;;
+    -I=*)
+        _jennifer_dirs "${flagword#-I=}"
         return
         ;;
     esac
 
     case "$sub" in
-    run | tokens | ast | fmt)
+    tokens | ast | fmt)
         _jennifer_files "$cur"
+        ;;
+    run)
+        # --sysmoddir DIR and -I DIR each take a directory (the =forms are
+        # handled above). Otherwise offer the flags or a .j file.
+        case "$prev" in
+        --sysmoddir | -I)
+            _jennifer_dirs "$cur"
+            ;;
+        *)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--sysmoddir -I" -- "$cur") )
+            else
+                _jennifer_files "$cur"
+            fi
+            ;;
+        esac
         ;;
     lint)
         if [[ "$cur" == -* ]]; then
@@ -86,6 +114,17 @@ _jennifer() {
             _jennifer_files "$cur"
         fi
         ;;
+    test)
+        if [[ "$cur" == -* ]]; then
+            COMPREPLY=( $(compgen -W "--filter= --format= --isolated --help" -- "$cur") )
+            [[ "$cur" == --filter || "$cur" == --format ]] && compopt -o nospace 2>/dev/null
+        else
+            _jennifer_files "$cur"
+        fi
+        ;;
+    version)
+        [[ "$cur" == -* ]] && COMPREPLY=( $(compgen -W "-v --verbose" -- "$cur") )
+        ;;
     esac
 }
 
@@ -95,6 +134,13 @@ _jennifer_files() {
     local cur="$1"
     local IFS=$'\n'
     COMPREPLY=( $(compgen -f -X '!*.j' -- "$cur") $(compgen -d -S / -- "$cur") )
+}
+
+# Complete directories (for --sysmoddir / -I values).
+_jennifer_dirs() {
+    local cur="$1"
+    local IFS=$'\n'
+    COMPREPLY=( $(compgen -d -S / -- "$cur") )
 }
 
 complete -F _jennifer jennifer

@@ -12,7 +12,9 @@ import (
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 	"github.com/mplx/jennifer-lang/internal/lexer"
+	metalib "github.com/mplx/jennifer-lang/internal/lib/meta"
 	"github.com/mplx/jennifer-lang/internal/lib/os"
+	"github.com/mplx/jennifer-lang/internal/module"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 	"github.com/mplx/jennifer-lang/internal/stdlib"
@@ -24,22 +26,42 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+	// Baseline system module directory (env / compile-time default),
+	// unvalidated, so meta.SYSMODDIR has a value for every subcommand. The
+	// program-running paths (run / repl) re-resolve with any --sysmoddir
+	// flag and validate.
+	metalib.SetSysmoddir(module.ResolveSysmoddir("", os.Getenv).Dir)
+
 	switch os.Args[1] {
 	case "run":
 		if len(os.Args) < 3 {
 			usage()
 			os.Exit(2)
 		}
-		// args[3:] become the user program's command-line arguments.
-		// Convention (matches Python sys.argv, Go os.Args): index 0 of
-		// the user-visible `os.ARGS` is the script path, the rest are
-		// the user-supplied args.
-		userArgs := append([]string{os.Args[2]}, os.Args[3:]...)
-		oslib.SetUserArgs(userArgs)
-		os.Exit(runFile(os.Args[2]))
+		// Interpreter flags (--sysmoddir, -I) precede the source file;
+		// everything after the file is the user program's argv. Convention
+		// (matches Python sys.argv, Go os.Args): index 0 of the
+		// user-visible `os.ARGS` is the script path, the rest are the
+		// user-supplied args.
+		file, sysmoddirFlag, _, userArgs, perr := parseRunArgs(os.Args[2:])
+		if perr != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", perr)
+			usage()
+			os.Exit(2)
+		}
+		if err := setupSysmoddir(sysmoddirFlag); err != nil {
+			fmt.Fprintf(os.Stderr, "jennifer: %v\n", err)
+			os.Exit(2)
+		}
+		oslib.SetUserArgs(append([]string{file}, userArgs...))
+		os.Exit(runFile(file))
 	case "repl":
 		if len(os.Args) != 2 {
 			usage()
+			os.Exit(2)
+		}
+		if err := setupSysmoddir(""); err != nil {
+			fmt.Fprintf(os.Stderr, "jennifer: %v\n", err)
 			os.Exit(2)
 		}
 		os.Exit(runRepl())
@@ -68,7 +90,11 @@ func main() {
 	case "test":
 		os.Exit(runTest(os.Args[2:]))
 	case "version", "--version", "-v":
-		fmt.Println(version.Version)
+		if len(os.Args) > 2 && (os.Args[2] == "-v" || os.Args[2] == "--verbose") {
+			printVersionVerbose()
+		} else {
+			fmt.Println(version.Version)
+		}
 		os.Exit(0)
 	case "-h", "--help", "help":
 		usage()
@@ -104,6 +130,68 @@ func usage() {
 	printDevUsage(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  jennifer version         print the version and exit")
 	fmt.Fprintln(os.Stderr, "  jennifer help            show this message")
+}
+
+// parseRunArgs splits `run`'s arguments into the interpreter flags
+// (--sysmoddir, and -I which extends the module search path), the source
+// file, and the user program's argv. Flags precede the file; the first
+// non-flag token (or `-` for stdin) is the file, and everything after it
+// is passed through to the program untouched.
+func parseRunArgs(args []string) (file, sysmoddir string, includes, userArgs []string, err error) {
+	i := 0
+	for i < len(args) {
+		a := args[i]
+		if a == "-" || !strings.HasPrefix(a, "-") {
+			return a, sysmoddir, includes, args[i+1:], nil
+		}
+		switch {
+		case strings.HasPrefix(a, "--sysmoddir="):
+			sysmoddir = strings.TrimPrefix(a, "--sysmoddir=")
+			i++
+		case a == "--sysmoddir":
+			if i+1 >= len(args) {
+				return "", "", nil, nil, fmt.Errorf("jennifer run: --sysmoddir needs a directory argument")
+			}
+			sysmoddir, i = args[i+1], i+2
+		case strings.HasPrefix(a, "-I="):
+			includes = append(includes, strings.TrimPrefix(a, "-I="))
+			i++
+		case a == "-I":
+			if i+1 >= len(args) {
+				return "", "", nil, nil, fmt.Errorf("jennifer run: -I needs a directory argument")
+			}
+			includes, i = append(includes, args[i+1]), i+2
+		default:
+			return "", "", nil, nil, fmt.Errorf("jennifer run: unknown flag %q", a)
+		}
+	}
+	return "", "", nil, nil, fmt.Errorf("jennifer run: no source file given")
+}
+
+// setupSysmoddir resolves the system module directory from the layer
+// precedence (--sysmoddir, then JENNIFER_SYSMODDIR, then the compile-time
+// default), validates an explicitly-named one (a missing or non-directory
+// CLI/env value refuses to start), and records the winner for
+// meta.SYSMODDIR.
+func setupSysmoddir(cliFlag string) error {
+	sm := module.ResolveSysmoddir(cliFlag, os.Getenv)
+	if err := sm.Validate(os.Stat); err != nil {
+		return err
+	}
+	metalib.SetSysmoddir(sm.Dir)
+	return nil
+}
+
+// printVersionVerbose backs `jennifer version -v`: the build version plus
+// the resolved system module directory and the layers behind it.
+func printVersionVerbose() {
+	fmt.Println("jennifer " + version.Version)
+	sm := module.ResolveSysmoddir("", os.Getenv)
+	fmt.Printf("system module dir: %s (%s)\n", sm.Dir, sm.Source)
+	fmt.Printf("  compile default: %s\n", module.CompileDefaultSysmoddir())
+	if env := os.Getenv(module.SysmoddirEnv); env != "" {
+		fmt.Printf("  env %s: %s\n", module.SysmoddirEnv, env)
+	}
 }
 
 func runFile(path string) int {

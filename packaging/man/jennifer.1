@@ -31,10 +31,21 @@ extension. The language reference and library documentation ship in
 .IR /usr/share/doc/jennifer/ .
 .SH SUBCOMMANDS
 .TP
-.BR run " " \fIfile.j\fR
+.BR run " " [\fIflags\fR] " " \fIfile.j\fR " " [\fIargs\fR...]
 Execute a Jennifer source file. Pass
 .B -
-as the filename to read from standard input.
+as the filename to read from standard input; any arguments after the file
+become the program's
+.BR os.ARGS .
+Flags precede the file:
+.B \-\-sysmoddir=\fIDIR\fR
+sets the system module directory (validated when given, and exposed as
+.B meta.SYSMODDIR
+and by
+.BR "jennifer version \-v" ),
+and
+.B \-I " " \fIDIR\fR
+(repeatable) adds a directory to the module search path.
 .TP
 .BR repl
 Start the interactive read-eval-print loop. Built-in line editor
@@ -106,8 +117,21 @@ selects the report shape;
 runs each test in a fresh interpreter subprocess. Exit status is 0
 when all pass, 1 on failures, 2 on a runner error.
 .TP
-.BR version
+.BR version " " [\fB\-v\fR]
 Print the build version.
+.B \-v
+(or
+.BR \-\-verbose )
+also reports the resolved system module directory and the layers behind
+it (the compile-time default and
+.BR JENNIFER_SYSMODDIR ).
+.SH ENVIRONMENT
+.TP
+.B JENNIFER_SYSMODDIR
+System module directory for bare module imports, below a
+.B \-\-sysmoddir
+flag and above the compile-time default. A value that is missing or not a
+directory refuses to start.
 .SH FILES
 .TP
 .I /usr/share/mime/packages/jennifer.xml
@@ -132,6 +156,15 @@ without configuration.
 .I /usr/share/doc/jennifer/JENNIFER.md
 Self-contained language reference (also usable as context for an AI
 coding assistant).
+.TP
+.I /usr/share/jennifer/modules/
+Default system module directory: Jennifer-coded library modules a distro
+package installs here resolve as bare
+.B import
+paths. Override with
+.B \-\-sysmoddir
+or
+.BR JENNIFER_SYSMODDIR .
 .SH "SEE ALSO"
 .BR jennifer-tiny (1),
 .UR https://github.com/mplx/jennifer-lang
