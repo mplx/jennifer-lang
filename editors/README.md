@@ -31,9 +31,29 @@ cp vim/ftdetect/jennifer.vim ~/.vim/ftdetect/
   `contributes.grammars` points at this file, mapping `source.jennifer` to the
   `.j` extension. (`yo code` scaffolds one; drop the grammar in and set
   `"language": "jennifer"`, `"extensions": [".j"]`.)
-- **Sublime Text**: install a package that references the grammar, or convert
-  it to a `.sublime-syntax`.
+- **Sublime Text**: use the native `sublime/jennifer.sublime-syntax` (see
+  below), or install a package that references this TextMate grammar.
 - **Zed**: reference the grammar from a language extension.
+
+## bat / Sublime Text (`.sublime-syntax`)
+
+`sublime/jennifer.sublime-syntax` is a native Sublime Text syntax (scope
+`source.jennifer`). Sublime Text reads it directly from a package; it is also
+what [`bat`](https://github.com/sharkdp/bat) consumes.
+
+`bat` compiles syntaxes into a per-user cache, so - unlike Vim/Neovim - it
+cannot pick the file up from a system path automatically. Activate it once:
+
+```sh
+mkdir -p "$(bat --config-dir)/syntaxes"
+cp sublime/jennifer.sublime-syntax "$(bat --config-dir)/syntaxes/"
+bat cache --build
+```
+
+After that, `bat file.j` highlights as Jennifer (`bat --list-languages | grep
+Jennifer` confirms it registered). The Jennifer packages ship this file at
+`/usr/share/jennifer/syntaxes/jennifer.sublime-syntax`, so on a packaged
+install copy it from there instead. `bat cache --clear` reverts.
 
 ## highlight.js (docs sites, blogs, static pages)
 
@@ -57,8 +77,8 @@ the definitions here work in local editors and self-hosted sites regardless.
 
 ## Contributing another editor
 
-Emacs (`jennifer-mode.el`), a Sublime `.sublime-syntax`, a nano `.nanorc`, or a
-tree-sitter grammar are all welcome. Keep the token classes aligned with the
+Emacs (`jennifer-mode.el`), a nano `.nanorc`, or a tree-sitter grammar are all
+welcome. Keep the token classes aligned with the
 files here: keywords, type keywords (`int float string bool bytes list map
 task`), `$` variables, `UPPER_CASE` constants, `NS.name` calls, `#` / `/* */`
 comments, and the numeric literal forms.

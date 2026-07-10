@@ -119,7 +119,8 @@ jobs:
           mkdir -p "$STAGE/share/man/man1" "$STAGE/share/mime/packages" \
                    "$STAGE/share/bash-completion/completions" \
                    "$STAGE/share/vim/vimfiles/syntax" "$STAGE/share/vim/vimfiles/ftdetect" \
-                   "$STAGE/share/nvim/site/syntax" "$STAGE/share/nvim/site/ftdetect"
+                   "$STAGE/share/nvim/site/syntax" "$STAGE/share/nvim/site/ftdetect" \
+                   "$STAGE/share/jennifer/syntaxes"
           cp jennifer jennifer-tiny "$STAGE/"
           cp packaging/man/jennifer.1      "$STAGE/share/man/man1/"
           cp packaging/man/jennifer-tiny.1 "$STAGE/share/man/man1/"
@@ -131,6 +132,8 @@ jobs:
           cp editors/vim/ftdetect/jennifer.vim "$STAGE/share/vim/vimfiles/ftdetect/"
           cp editors/vim/syntax/jennifer.vim   "$STAGE/share/nvim/site/syntax/"
           cp editors/vim/ftdetect/jennifer.vim "$STAGE/share/nvim/site/ftdetect/"
+          # Sublime Text / bat syntax (activated manually - see editors/README.md).
+          cp editors/sublime/jennifer.sublime-syntax "$STAGE/share/jennifer/syntaxes/"
           cp README.md "$STAGE/" 2>/dev/null || true
           cp JENNIFER.md "$STAGE/" 2>/dev/null || true
           tar -czf "dist/${STAGE}.tar.gz" "$STAGE"

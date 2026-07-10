@@ -1,0 +1,126 @@
+%YAML 1.2
+---
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 <developer@mplx.eu>
+#
+# Sublime Text syntax for the Jennifer language (.j). Also consumed by
+# `bat` (https://github.com/sharkdp/bat), which reads Sublime `.sublime-
+# syntax` files: copy this into `$(bat --config-dir)/syntaxes/` and run
+# `bat cache --build`. See editors/README.md.
+name: Jennifer
+file_extensions:
+  - j
+scope: source.jennifer
+
+contexts:
+  main:
+    - include: comments
+    - include: strings
+    - include: numbers
+    - include: keywords
+    - include: types
+    - include: language-constants
+    - include: user-constants
+    - include: variables
+    - include: namespace-call
+    - include: call
+    - include: operators
+
+  comments:
+    # `#` line comments (covers the `#!` shebang on line 1 too).
+    - match: '#.*$'
+      scope: comment.line.number-sign.jennifer
+    - match: '/\*'
+      scope: punctuation.definition.comment.begin.jennifer
+      push: block-comment
+
+  block-comment:
+    - meta_scope: comment.block.jennifer
+    # Block comments nest: push the same context on an inner `/*`.
+    - match: '/\*'
+      push: block-comment
+    - match: '\*/'
+      scope: punctuation.definition.comment.end.jennifer
+      pop: true
+
+  strings:
+    - match: '"'
+      scope: punctuation.definition.string.begin.jennifer
+      push: double-string
+    - match: "'"
+      scope: punctuation.definition.string.begin.jennifer
+      push: single-string
+
+  double-string:
+    - meta_scope: string.quoted.double.jennifer
+    - match: '\\[nrt\\"''0]'
+      scope: constant.character.escape.jennifer
+    - match: '"'
+      scope: punctuation.definition.string.end.jennifer
+      pop: true
+
+  single-string:
+    - meta_scope: string.quoted.single.jennifer
+    - match: '\\[nrt\\"''0]'
+      scope: constant.character.escape.jennifer
+    - match: "'"
+      scope: punctuation.definition.string.end.jennifer
+      pop: true
+
+  numbers:
+    - match: '\b0[xX][0-9a-fA-F][0-9a-fA-F_]*\b'
+      scope: constant.numeric.hex.jennifer
+    - match: '\b0[oO][0-7][0-7_]*\b'
+      scope: constant.numeric.octal.jennifer
+    - match: '\b0[bB][01][01_]*\b'
+      scope: constant.numeric.binary.jennifer
+    - match: '\b[0-9][0-9_]*\.[0-9][0-9_]*\b'
+      scope: constant.numeric.float.jennifer
+    - match: '\b[0-9][0-9_]*\b'
+      scope: constant.numeric.integer.jennifer
+
+  keywords:
+    - match: '\b(if|elseif|else|while|for|in|repeat|until|break|continue|return|exit|try|catch|throw|spawn)\b'
+      scope: keyword.control.jennifer
+    - match: '\b(def|const|func|struct|use|include|import|as|of|to|init)\b'
+      scope: keyword.declaration.jennifer
+    - match: '\b(and|or|not)\b'
+      scope: keyword.operator.word.jennifer
+    - match: '\blen\b'
+      scope: support.function.builtin.jennifer
+
+  types:
+    - match: '\b(int|float|string|bool|bytes|list|map|task|null)\b'
+      scope: storage.type.jennifer
+
+  language-constants:
+    - match: '\b(true|false|null)\b'
+      scope: constant.language.jennifer
+
+  user-constants:
+    # UPPER_CASE constant names: chunks of A-Z joined by single underscores.
+    - match: '\b[A-Z]+(_[A-Z]+)*\b'
+      scope: variable.other.constant.jennifer
+
+  variables:
+    # Use-site variable references carry the `$` sigil.
+    - match: '\$[A-Za-z]+'
+      scope: variable.other.jennifer
+
+  namespace-call:
+    # `io.printf` - namespace prefix, accessor dot, function name.
+    - match: '\b([A-Za-z]+)(\.)([A-Za-z]+)\b'
+      captures:
+        1: entity.name.namespace.jennifer
+        2: punctuation.accessor.jennifer
+        3: entity.name.function.jennifer
+
+  call:
+    # Bare `name(` method calls.
+    - match: '\b([A-Za-z]+)\s*(?=\()'
+      captures:
+        1: entity.name.function.jennifer
+
+  operators:
+    - match: '(//|<<|>>|<=|>=|==|[-+*/%&|\^~<>=])'
+      scope: keyword.operator.jennifer

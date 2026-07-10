@@ -22,6 +22,7 @@ makedepends=('git' 'go' 'tinygo')
 optdepends=(
     'shared-mime-info: registers the .j file extension with file managers'
     'vim: syntax highlighting for .j files'
+    'bat: syntax highlighting for .j files (run `bat cache --build` after install)'
 )
 install='jennifer.install'
 source=("$_realname::git+$url.git")
@@ -81,6 +82,12 @@ package() {
         "$pkgdir/usr/share/nvim/site/syntax/jennifer.vim"
     install -Dm644 editors/vim/ftdetect/jennifer.vim \
         "$pkgdir/usr/share/nvim/site/ftdetect/jennifer.vim"
+
+    # Sublime Text / bat syntax. bat compiles syntaxes into a per-user cache,
+    # so it can't auto-activate from here; the user copies it to
+    # `$(bat --config-dir)/syntaxes/` and runs `bat cache --build`.
+    install -Dm644 editors/sublime/jennifer.sublime-syntax \
+        "$pkgdir/usr/share/jennifer/syntaxes/jennifer.sublime-syntax"
 
     # Language reference for coding assistants (also a human quick-reference).
     install -Dm644 JENNIFER.md "$pkgdir/usr/share/doc/jennifer/JENNIFER.md"

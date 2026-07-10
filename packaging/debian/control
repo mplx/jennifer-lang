@@ -11,7 +11,7 @@ Package: jennifer
 Architecture: amd64 arm64
 Depends: ${misc:Depends}
 Recommends: shared-mime-info
-Suggests: vim
+Suggests: vim, bat
 Description: Jennifer programming language interpreter
  Jennifer is a small, experimental, interpreted programming language.
  Source files use the .j extension.

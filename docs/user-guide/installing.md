@@ -39,7 +39,11 @@ under `/usr/share/man/man1/`, bash completion, the XDG MIME definition
 that registers `.j` as `text/x-jennifer` with file managers and
 editors, and Vim + Neovim syntax highlighting (dropped in both
 `/usr/share/vim/vimfiles` and `/usr/share/nvim/site` so `.j` files
-highlight with no per-user setup in either editor).
+highlight with no per-user setup in either editor). A Sublime Text /
+[`bat`](https://github.com/sharkdp/bat) syntax also ships at
+`/usr/share/jennifer/syntaxes/jennifer.sublime-syntax`; `bat` needs a
+one-time activation (copy it into `$(bat --config-dir)/syntaxes/` and run
+`bat cache --build`) since it compiles syntaxes into a per-user cache.
 
 ### Arch Linux (AUR)
 
@@ -86,7 +90,8 @@ jennifer-X.Y.Z-linux-ARCH/
     ├── mime/packages/    # jennifer.xml (XDG MIME)
     ├── bash-completion/  # completions/jennifer (+ jennifer-tiny symlink)
     ├── vim/vimfiles/     # syntax/ + ftdetect/ (Vim highlighting)
-    └── nvim/site/        # syntax/ + ftdetect/ (Neovim highlighting)
+    ├── nvim/site/        # syntax/ + ftdetect/ (Neovim highlighting)
+    └── jennifer/syntaxes/ # jennifer.sublime-syntax (Sublime Text / bat)
 ```
 
 To install system-wide:

@@ -111,6 +111,15 @@ install -m 0644 "$REPO_ROOT/editors/vim/syntax/jennifer.vim" \
 install -m 0644 "$REPO_ROOT/editors/vim/ftdetect/jennifer.vim" \
     "$STAGE/usr/share/nvim/site/ftdetect/jennifer.vim"
 
+# Sublime Text / bat syntax. Unlike Vim/Neovim (read from the runtimepath at
+# startup), bat compiles syntaxes into a per-user cache, so this can't
+# auto-activate from a system path. It ships here for discovery; the user
+# activates it once (see editors/README.md): copy to
+# `$(bat --config-dir)/syntaxes/` and run `bat cache --build`.
+mkdir -p "$STAGE/usr/share/jennifer/syntaxes"
+install -m 0644 "$REPO_ROOT/editors/sublime/jennifer.sublime-syntax" \
+    "$STAGE/usr/share/jennifer/syntaxes/jennifer.sublime-syntax"
+
 # Language reference for coding assistants (also a human quick-reference).
 install -m 0644 "$REPO_ROOT/JENNIFER.md" "$STAGE/usr/share/doc/jennifer/JENNIFER.md"
 

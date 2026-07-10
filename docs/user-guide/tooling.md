@@ -20,6 +20,11 @@ and `/* */` comments.
 - **VS Code / Sublime Text / Zed** - use the TextMate grammar
   [`editors/textmate/jennifer.tmLanguage.json`](https://github.com/mplx/jennifer-lang/blob/main/editors/textmate/jennifer.tmLanguage.json)
   (scope `source.jennifer`) from a thin language extension.
+- **`bat` / Sublime Text** - the native
+  [`editors/sublime/jennifer.sublime-syntax`](https://github.com/mplx/jennifer-lang/blob/main/editors/sublime/jennifer.sublime-syntax).
+  For `bat`, copy it into `$(bat --config-dir)/syntaxes/` and run
+  `bat cache --build` (it caches syntaxes per user, so a system path can't
+  auto-activate it).
 - **Static sites / blogs** - the
   [highlight.js definition](https://github.com/mplx/jennifer-lang/blob/main/editors/highlightjs/jennifer.js)
   registers a `jennifer` language.

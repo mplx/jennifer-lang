@@ -113,7 +113,7 @@ jobs:
               --include='*.md' --include='*.go' --include='*.j' \
               --include='*.yml' --include='*.yaml' --include='*.toml' \
               --include='*.sh' --include='*.bash' --include='*.1' \
-              --include='PKGBUILD*' --include='Makefile' \
+              --include='PKGBUILD*' --include='Makefile' --include='*.sublime-syntax' \
               --exclude-dir=.git --exclude-dir=book-output \
               .; then
             echo "em-dash or en-dash found - use plain ASCII '-' instead"
