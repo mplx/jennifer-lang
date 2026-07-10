@@ -1352,6 +1352,58 @@ nests; `strip` reverses it; styling suppresses when `os.isTerminal` is
 false and when `NO_COLOR` is set, and is forced on by `FORCE_COLOR`; the
 module holds no mutable top-level state.
 
+### M17.6 - `semver` (module)
+
+The second pure reference module (alongside M17.5 `ansi`): strict
+[SemVer 2.0.0](https://semver.org) parsing, comparison, and increment as a
+`.j` module. Like `ansi` it is pure Jennifer with no system dependency, so
+it lands on just the module system (no M18 library needed) - and it is the
+foundation the future `jvc` package manager
+([Long horizon](#long-horizon-recorded-not-scheduled)) needs, since
+`install gotify>=1.0.0` is semver comparison at its core.
+
+- **Strict SemVer 2.0.0, not a loose parser.** Exactly
+  `MAJOR.MINOR.PATCH` plus an optional `-prerelease` and `+build`. The spec
+  buys precise precedence - major / minor / patch compared numerically, a
+  prerelease sorts *below* its release (`1.0.0-alpha < 1.0.0`), and build
+  metadata is **ignored** in comparison. A looser N-segment form (e.g.
+  `1.2.3.4`) has no defined ordering (`1.2.3` vs `1.2.3.0`?), which would
+  quietly break sorting and the package manager's constraint solving, so it
+  is rejected as invalid. The interpreter's own `meta.VERSION`
+  (`0.16.0-dev+4.a927e1d`) is already valid strict semver, so the module
+  parses Jennifer's own version out of the box.
+- **Surface.** `export def struct Version { major as int, minor as int,
+  patch as int, prerelease as string, build as string };` plus:
+  `semver.parse(s) -> Version` (throws on invalid), `semver.isValid(s) ->
+  bool`, `semver.toString(v) -> string` (round-trips `parse`);
+  `semver.compare(a, b) -> int` (`-1`/`0`/`1`, SemVer precedence) with
+  `semver.lt` / `eq` / `gt` wrappers; `semver.isStable(v) -> bool` (no
+  prerelease; note `0.y.z` is unstable by convention) and
+  `semver.isPrerelease(v) -> bool`; `semver.incMajor` / `incMinor` /
+  `incPatch(v) -> Version` (each resets the lower parts and clears
+  prerelease + build); `semver.sort(vs) -> list of Version`. `export`ed
+  from `modules/semver.j`.
+- **`sort` is implemented in the module.** `lists.sort` is scalar-only and
+  comparator-based `lists.sortBy` is deferred, so `semver.sort` orders a
+  `list of Version` with its own pass over `semver.compare` - a real
+  algorithm written in Jennifer, another honest dogfood of the module.
+- **Stateless, declarations-only.** `Version` is a value-semantic struct
+  the caller holds and passes; nothing is stored, so M17.3's no-mutable-
+  state rule holds.
+- **Range matching deferred.** Constraint grammar
+  (`satisfies(v, "^1.2.0"` / `">=1.0.0"` / `"~1.2.3")`) is out of scope
+  here; it is the harder parser and lands with (or just before) `jvc`.
+  M17.6 ships the version *values* and their ordering.
+
+**Acceptance.** `import "semver.j" as semver;` resolves and exports
+`Version` + the functions; `parse` of a full `X.Y.Z-pre+build` round-trips
+through `toString`; an invalid string (four segments, empty part, bad
+prerelease) is rejected; `compare` orders `1.0.0-alpha < 1.0.0 < 1.0.1 <
+1.1.0 < 2.0.0` and ignores build metadata; `isStable` / `isPrerelease`
+agree with the presence of a prerelease tag; the `inc*` helpers reset lower
+parts and drop prerelease / build; `sort` orders a shuffled list; and
+`semver.parse(meta.VERSION)` succeeds.
+
 ## M18.x - Jennifer-coded modules
 
 Built atop the existing system libraries. Each one ships as a Jennifer
@@ -1845,9 +1897,11 @@ willing to keep it green; they're not blocking anything.
   `vendor/` is an added entry, not a new resolution model. Needs a manifest
   + lockfile format, semver constraint solving, a registry service and
   publish flow, and integrity pinning (content hash per version). A whole
-  track of its own; the module system (M17) is the prerequisite, and
-  `gotify` ([M18.6.1](#m1861---gotify-reference-module)) is the first
-  module worth publishing through it.
+  track of its own; the module system (M17) is the prerequisite,
+  `semver` ([M17.6](#m176---semver-module)) supplies the version
+  comparison and constraint core it resolves against, and `gotify`
+  ([M18.6.1](#m1861---gotify-reference-module)) is the first module worth
+  publishing through it.
 - **FCGI.** `use FCGI as web;` library when `net` and `httpd`
   mature. Lets Jennifer host CGI / FastCGI workloads end-to-end.
 - **Inline assembler.**

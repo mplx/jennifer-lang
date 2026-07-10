@@ -135,54 +135,57 @@ dev numbers above; dev builds keep symbols for debugging.
 
 ## Single-binary benchmark results
 
-Reference numbers from `examples/benchmark.j` on an **AMD Ryzen 5
-7600X3D** (6 cores, 12 threads; desktop active, load low). The
-serial section is single-threaded by design; the parallel section
-fans out to `PARALLEL_WORKERS = 4` spawn tasks per workload. The
-interpreter build is the current one (shared-marker COW, lexical
-slot resolution, parse-time constant folding), so append-in-a-loop
-is amortised O(1).
+Reference numbers from `examples/benchmark.j` (version
+`0.16.0-dev+7.de20da4`) on an **AMD Ryzen 5 7600X3D** (6 cores, 12
+threads; desktop active, load low) - the machine the suite now prints in
+its own header, from `os.NCPU` plus a `/proc/cpuinfo` read done in
+Jennifer. The serial section is single-threaded by design; the parallel
+section fans out to `PARALLEL_WORKERS = 4` spawn tasks per workload. The
+interpreter build is the current one (shared-marker COW, lexical slot
+resolution, parse-time constant folding), so append-in-a-loop is
+amortised O(1).
 
 ### `jennifer` (standard-Go binary, default)
 
 ```
 === Jennifer benchmark suite ===
 build:   go
-version: 0.15.0-dev+30.e1e3909
+version: 0.16.0-dev+7.de20da4
+cpu:     AMD Ryzen 5 7600X3D 6-Core Processor (12 cores)
 
 ----------------------------------------------------------------------
 Workload                               base        iters      time_ms
 ----------------------------------------------------------------------
-fib(N) recursive                         23            1           76
-primes up to LIMIT                   100000            1        19406
-newton sqrt batch                     10000        10000          317
-monte carlo pi                       500000       500000          994
-list sort/reverse/slice               10000          500         1536
-struct list build+read                10000        10000           34
-string join                           10000        10000           10
-map insert+read                       10000        10000         1227
+fib(N) recursive                         23            1           74
+primes up to LIMIT                   100000            1        16407
+newton sqrt batch                     10000        10000          298
+monte carlo pi                       500000       500000          839
+list sort/reverse/slice               10000          500         1449
+struct list build+read                10000        10000           30
+string join                           10000        10000           13
+map insert+read                       10000        10000         1206
 ----------------------------------------------------------------------
-total                                                           23600
+total                                                           20316
 
 Parallel comparison (workers = 4, scheduler = go)
 ----------------------------------------------------------------------
 Workload                          serial_ms       par_ms      speedup
 ----------------------------------------------------------------------
-primes up to LIMIT                    19406         6536         2.97
-newton sqrt batch                       317           85         3.73
-monte carlo pi                          994          296         3.36
-fib(N) x workers                        304           93         3.27
+primes up to LIMIT                    16407         6298         2.61
+newton sqrt batch                       298           78         3.82
+monte carlo pi                          839          290         2.89
+fib(N) x workers                        296           95         3.12
 ----------------------------------------------------------------------
 
-user   44.67s
-sys     0.33s
-real   30.62s     (146% CPU)
+user   40.96s
+sys     0.44s
+real   27.08s     (152% CPU)
 ```
 
-`user + sys` (45.0s) exceeds `real` (30.6s) by ~14.4s - that
+`user + sys` (41.4s) exceeds `real` (27.1s) by ~14.3s - that
 gap is Go's concurrent GC running on a second CPU during the
 serial section, plus the four spawn workers running in
-parallel during the parallel section. Sys time is tiny (0.3s)
+parallel during the parallel section. Sys time is tiny (0.4s)
 because Go's runtime coordinates goroutines with cheap in-process
 sync primitives.
 
@@ -191,45 +194,47 @@ sync primitives.
 ```
 === Jennifer benchmark suite ===
 build:   tinygo
-version: 0.15.0-dev+30.e1e3909
+version: 0.16.0-dev+7.de20da4
+cpu:     AMD Ryzen 5 7600X3D 6-Core Processor (1 cores)
 
 ----------------------------------------------------------------------
 Workload                               base        iters      time_ms
 ----------------------------------------------------------------------
-fib(N) recursive                         23            1           72
-primes up to LIMIT                   100000            1        12128
-newton sqrt batch                     10000        10000          212
-monte carlo pi                       500000       500000          843
-list sort/reverse/slice               10000          500         1085
-struct list build+read                10000        10000           31
+fib(N) recursive                         23            1           76
+primes up to LIMIT                   100000            1        13287
+newton sqrt batch                     10000        10000          242
+monte carlo pi                       500000       500000          896
+list sort/reverse/slice               10000          500         1275
+struct list build+read                10000        10000           34
 string join                           10000        10000           21
-map insert+read                       10000        10000         1657
+map insert+read                       10000        10000         1775
 ----------------------------------------------------------------------
-total                                                           16049
+total                                                           17606
 
 Parallel comparison (workers = 4, scheduler = tinygo)
 ----------------------------------------------------------------------
 Workload                          serial_ms       par_ms      speedup
 ----------------------------------------------------------------------
-primes up to LIMIT                    12128        11650         1.04
-newton sqrt batch                       212          232         0.91
-monte carlo pi                          843          776         1.09
-fib(N) x workers                        288          245         1.18
+primes up to LIMIT                    13287        13181         1.01
+newton sqrt batch                       242          243         1.00
+monte carlo pi                          896          821         1.09
+fib(N) x workers                        304          260         1.17
 ----------------------------------------------------------------------
 
-user   28.74s
-sys     0.05s
-real   28.97s     (99% CPU)
+user   31.93s
+sys     0.03s
+real   32.12s     (99% CPU)
 ```
 
 This is the pinned build (`-scheduler=tasks -stack-size=2mb`): the
-whole suite completes, serial and parallel. The parallel column
-hovers at ~1.0 by design - `spawn` under the cooperative
-single-thread scheduler is concurrency, not multi-core throughput -
-and `user ~= real` at 99% CPU confirms the single-thread execution
-(contrast Go's 146% above). The 2MB stack (up from 1MB) is what lets
-the serial recursive `fib` run at all: at 1MB it fit bare but
-overflowed nested one call frame deeper, inside `benchFib`.
+whole suite completes, serial and parallel. `os.NCPU` reports `1` here -
+honest about the cooperative single-thread scheduler's usable
+parallelism, not the 12 threads the machine has. The parallel column
+hovers at ~1.0 by design - `spawn` under that scheduler is concurrency,
+not multi-core throughput - and `user ~= real` at 99% CPU confirms the
+single-thread execution (contrast Go's 152% above). The 2MB stack (up
+from 1MB) is what lets the serial recursive `fib` run at all: at 1MB it
+fit bare but overflowed nested one call frame deeper, inside `benchFib`.
 
 ### Per-workload comparison (serial section)
 
@@ -237,33 +242,31 @@ Ratios are `tiny_ms / go_ms`; > 1.0 means `jennifer-tiny` is slower, < 1.0 means
 
 | Workload                  | tiny (ms) | go (ms) | Ratio  | Where the time goes                                                            |
 | ------------------------- | --------- | ------- | ------ | ------------------------------------------------------------------------------ |
-| `fib(N) recursive`        |        72 |      76 | *0.9x* | Tight interpreter dispatch loop; effectively tied now.                         |
-| `primes up to LIMIT`      |     12128 |   19406 | *0.6x* | Long numeric dispatch loop; TinyGo pulls well ahead at scale.                  |
-| `newton sqrt batch`       |       212 |     317 | *0.7x* | Float arithmetic + dispatch; TinyGo ahead.                                     |
-| `monte carlo pi`          |       843 |     994 | *0.8x* | Float arithmetic + RNG calls; TinyGo ahead.                                    |
-| `list sort/reverse/slice` |      1085 |    1536 | *0.7x* | Allocation-heavy; TinyGo's simpler GC beats Go's concurrent GC at this scale.  |
-| `struct list build+read`  |        31 |      34 | *0.9x* | Append hot loop is O(1). Both binaries are effectively free.                   |
-| `string join`             |        21 |      10 | 2.1x   | Build-up-a-string pattern is O(1); both free in absolute terms (sub-30ms), Go's runtime a step ahead. |
-| `map insert+read`         |      1657 |    1227 | 1.4x   | Go's runtime map implementation outperforms TinyGo's at this churn rate.       |
-| **total**                 |     16049 |   23600 | *0.7x* | Compute- and alloc-heavy averages favour TinyGo; Go leads only on small stdlib-churn workloads. |
+| `fib(N) recursive`        |        76 |      74 | 1.0x   | Tight interpreter dispatch loop; effectively tied.                             |
+| `primes up to LIMIT`      |     13287 |   16407 | *0.8x* | Long numeric dispatch loop; TinyGo pulls ahead at scale - and this row carries the whole aggregate lead. |
+| `newton sqrt batch`       |       242 |     298 | *0.8x* | Float arithmetic + dispatch; TinyGo ahead.                                     |
+| `monte carlo pi`          |       896 |     839 | 1.1x   | Float arithmetic + RNG calls; now marginally Go's.                             |
+| `list sort/reverse/slice` |      1275 |    1449 | *0.9x* | Allocation-heavy; TinyGo's simpler GC beats Go's concurrent GC at this scale.  |
+| `struct list build+read`  |        34 |      30 | 1.1x   | Append hot loop is O(1). Both binaries are effectively free (sub-40ms).        |
+| `string join`             |        21 |      13 | 1.6x   | Build-up-a-string pattern is O(1); both free in absolute terms (sub-30ms), Go's runtime a step ahead. |
+| `map insert+read`         |      1775 |    1206 | 1.5x   | Go's runtime map implementation outperforms TinyGo's at this churn rate.       |
+| **total**                 |     17606 |   20316 | *0.9x* | TinyGo still posts the lower serial total, but the entire margin is the `primes` row. |
 
-The story has inverted from earlier builds: on the workloads that
-carry real time TinyGo is faster across the board, and it posts the
-lower serial total (16.0s vs 23.6s). The old "Go wins CPU-bound work
-by 2-5x" gap is gone - eliminating the compound-write O(N^2)
-deep-copy pattern (which once pushed the tiny total to ~49s) plus the
-dispatch-path optimizations closed it and then flipped it.
+The two binaries have **converged** from the earlier build: TinyGo still
+posts the lower serial total (17.6s vs 20.3s, ~13% faster), but the gap
+has closed from the old ~32% - Go's serial total fell (~23.6s -> 20.3s)
+while TinyGo's rose slightly (~16.0s -> 17.6s), a normal cross-build
+drift as the interpreter grew.
 
-Two things stand behind the inversion. The dispatch-path work
-(constant folding, slot resolution, the `Share()` scalar fast path,
-COW) cut per-call cost, and TinyGo's per-call overhead was higher to
-start, so it gained *disproportionately* - its serial total fell
-~49s -> 16s while Go moved only ~25s -> 24s. And tiny's lead is
-*concentrated*: of the ~7.6s gap, `primes` alone is ~7.3s (the
-tightest, longest dispatch loop), with `list` adding most of the
-rest. Go still wins the stdlib-churn workloads (`map insert+read`,
-`string join`), so those stay Go's, but they're a shrinking minority
-of the total.
+More telling: TinyGo's entire aggregate lead is **one workload**. The
+`primes` row alone is 3120 ms in TinyGo's favour (13287 vs 16407), which
+is *larger* than the whole 2710 ms total gap - so on the sum of every
+other workload Go is actually ~410 ms faster. TinyGo wins the long tight
+numeric loops (`primes`, `newton`) and stays ahead on allocation-heavy
+`list`; Go wins the stdlib-churn workloads (`map insert+read`, `string
+join`), the tiny structural rows, and now edges `monte carlo`. The
+"compute-bound favours TinyGo" rule of thumb is now really "the longest
+dispatch loop favours TinyGo, and it's big enough to tip the total."
 
 ### Parallel section
 
@@ -274,22 +277,32 @@ cooperative scheduler stays at ~1.0 by design.
 
 | Workload             | Go serial (ms) | Go par (ms) | Go speedup | TinyGo serial (ms) | TinyGo par (ms) | TinyGo speedup |
 | -------------------- | -------------- | ----------- | ---------- | ------------------ | --------------- | -------------- |
-| `primes up to LIMIT` |          19406 |        6536 |   **2.97** |              12128 |           11650 |      1.04      |
-| `newton sqrt batch`  |            317 |          85 |   **3.73** |                212 |             232 |      0.91      |
-| `monte carlo pi`     |            994 |         296 |   **3.36** |                843 |             776 |      1.09      |
-| `fib(N) x workers`   |            304 |          93 |   **3.27** |                288 |             245 |      1.18      |
+| `primes up to LIMIT` |          16407 |        6298 |   **2.61** |              13287 |           13181 |      1.01      |
+| `newton sqrt batch`  |            298 |          78 |   **3.82** |                242 |             243 |      1.00      |
+| `monte carlo pi`     |            839 |         290 |   **2.89** |                896 |             821 |      1.09      |
+| `fib(N) x workers`   |            296 |          95 |   **3.12** |                304 |             260 |      1.17      |
 
-Go reaches real multi-core speedup (2.97x-3.73x on four workers).
+Go reaches real multi-core speedup (2.61x-3.82x on four workers).
 `jennifer-tiny` pins the cooperative scheduler, so `spawn` there
 is concurrency without multi-core throughput (~1.0 by design); use
 the default binary when parallel throughput matters.
 
-Picking a binary, in short: tiny leads CPU-bound dispatch (well
-ahead on the long numeric loops, and it posts the lower serial
-total); both are essentially free on allocation-heavy workloads
-(tiny's simpler GC slightly ahead); Go leads on string/map churn;
-Go is the choice for parallel `spawn`; and tiny trades all of this
-for a larger resident-memory footprint (below).
+**This is where the serial-total lead reverses.** TinyGo has the lower
+*serial* total (17.6s vs 20.3s), but Go finishes the *whole suite* in
+less wall-clock time: `real` is **27.1s for Go vs 32.1s for TinyGo**. The
+parallel section is why - Go crunches it in ~6.8s (four workers, real
+speedup) where TinyGo takes ~14.5s (no parallelism), and that ~7.7s swing
+more than erases TinyGo's ~2.7s serial edge. Lower single-thread compute
+time does not mean a faster end-to-end run once any `spawn` parallelism is
+in play.
+
+Picking a binary, in short: TinyGo leads single-thread dispatch on the
+long numeric loops and posts the lower serial total, but that lead lives
+almost entirely in `primes`; both are essentially free on the small
+structural workloads; Go leads on string/map churn, wins the end-to-end
+wall clock whenever `spawn` parallelism is involved, and is the only
+choice for real multi-core throughput; TinyGo trades all of this for a
+larger resident-memory footprint (below).
 
 ### Memory and page faults
 
@@ -298,9 +311,9 @@ timings within noise of the tables above):
 
 | Metric              | `jennifer` (Go) | `jennifer-tiny` (TinyGo) |
 | ------------------- | --------------- | ------------------------ |
-| peak resident (RSS) | ~34 MB          | ~70 MB                   |
-| minor page faults   | ~116,500        | ~11,600                  |
-| CPU                 | 146%            | 99%                      |
+| peak resident (RSS) | ~35 MB          | ~68 MB                   |
+| minor page faults   | ~213,000        | ~13,100                  |
+| CPU                 | 152%            | 99%                      |
 
 The two runtimes trade opposite resources. **TinyGo uses ~2x the peak
 RSS** - its cooperative scheduler reserves each goroutine's full
@@ -308,10 +321,10 @@ RSS** - its cooperative scheduler reserves each goroutine's full
 2MB stack, ~8MB before the interpreter's own data), where Go grows
 goroutine stacks on demand from ~8KB. Bumping the stack from 1MB to 2MB
 (to fit the recursive `fib` body) doubled that reservation, and it shows
-here. **Go, in turn, churns ~10x the page faults** (~116k vs ~12k): its
+here. **Go, in turn, churns ~16x the page faults** (~213k vs ~13k): its
 concurrent GC allocates and reclaims pages aggressively across cores -
-the same activity behind its 146% CPU and the `user` >> `real` gap.
+the same activity behind its 152% CPU and the `user` >> `real` gap.
 TinyGo's simpler GC touches far fewer pages and runs single-threaded at
-99% CPU. So TinyGo buys faster compute and low GC churn with a larger,
-flatter memory footprint; Go buys a smaller footprint with heavy GC
-activity.
+99% CPU. So TinyGo buys lower single-thread compute and low GC churn with
+a larger, flatter memory footprint; Go buys a smaller footprint and real
+multi-core parallelism with heavy GC activity.

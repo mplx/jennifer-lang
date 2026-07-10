@@ -19,7 +19,9 @@ release - see [Install](#install) for the caveats.
 Same source, same language; pick by use case:
 
 - **`jennifer`** (standard Go toolchain, the default): full
-  host-feature surface, faster on compute-bound code, supports
+  host-feature surface, competitive on single-thread compute and the
+  reliable choice for multi-core parallel `spawn` (it wins the
+  end-to-end wall clock whenever parallelism is in play), supports
   `os.run` / `os.spawn` / the whole `net` library. This is what
   you want unless you have a specific reason to use the constrained
   variant.
