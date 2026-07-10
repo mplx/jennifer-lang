@@ -66,6 +66,7 @@ func Install(in *interpreter.Interpreter) {
 
 	in.RegisterNamespacedConst(LibraryName, "PLATFORM", interpreter.StringVal(runtime.GOOS))
 	in.RegisterNamespacedConst(LibraryName, "ARCH", interpreter.StringVal(runtime.GOARCH))
+	in.RegisterNamespacedConst(LibraryName, "NCPU", interpreter.IntVal(int64(runtime.NumCPU())))
 	in.RegisterNamespacedConst(LibraryName, "EOL", interpreter.StringVal(platformLineEnding()))
 	in.RegisterNamespacedConst(LibraryName, "DIRSEP", interpreter.StringVal(string(stdos.PathSeparator)))
 	in.RegisterNamespacedConst(LibraryName, "PATHSEP", interpreter.StringVal(string(stdos.PathListSeparator)))

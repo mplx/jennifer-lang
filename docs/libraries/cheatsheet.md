@@ -234,6 +234,7 @@ flat lookup view, not authoritative.
 | [`os`](os.md)`.ARGS`                       | list of string | Argv. Index 0 is the script path, the rest are user args.                                        |
 | [`os`](os.md)`.DIRSEP`                     | `string`       | Path-component separator: `"/"` Unix, `"\\"` Windows.                                            |
 | [`os`](os.md)`.EOL`                        | `string`       | Platform line ending. `"\n"` Unix-likes, `"\r\n"` Windows.                                       |
+| [`os`](os.md)`.NCPU`                       | `int`          | Logical CPUs usable by the process (`runtime.NumCPU`). `1` on `jennifer-tiny` (single-thread scheduler). |
 | [`os`](os.md)`.PATHSEP`                    | `string`       | PATH-list separator: `":"` Unix, `";"` Windows.                                                  |
 | [`os`](os.md)`.PLATFORM`                   | `string`       | OS tag: `"linux"`, `"darwin"`, `"windows"`, ...                                                  |
 | [`time`](time.md)`.PROGRAM_START`          | `time.Time`    | Captured the moment the time library installed; "since program launched" anchor.                 |

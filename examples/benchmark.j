@@ -23,6 +23,8 @@ use strings;
 use convert;
 use meta;
 use task;
+use os;
+use fs;
 
 # --- Tunables ------------------------------------------------------
 # Bump these if the suite runs too fast to see meaningful numbers, or
@@ -368,11 +370,33 @@ func printSpeedupRow(name as string, serialMs as int, parallelMs as int) {
         $name, $serialMs, $parallelMs, $ratio);
 }
 
+# cpuModel returns the CPU brand string. The OS-specific probing lives here
+# in Jennifer, not the interpreter: `os` stays portable (it only exposes the
+# stdlib `os.NCPU`), and this reads Linux's /proc/cpuinfo via `fs` when it is
+# present. Off Linux (or if the field is absent) it returns "unknown".
+func cpuModel() {
+    def path as string init "/proc/cpuinfo";
+    if (not fs.exists($path)) {
+        return "unknown";
+    }
+    def lines as list of string init strings.split(fs.readString($path), "\n");
+    for (def line in $lines) {
+        if (strings.startsWith($line, "model name")) {
+            def colon as int init strings.indexOf($line, ":");
+            if ($colon >= 0) {
+                return strings.trim(strings.substring($line, $colon + 1, len($line)));
+            }
+        }
+    }
+    return "unknown";
+}
+
 # --- Driver --------------------------------------------------------
 
 io.printf("=== Jennifer benchmark suite ===\n");
 io.printf("build:   %s\n", meta.BUILD);
 io.printf("version: %s\n", meta.VERSION);
+io.printf("cpu:     %s (%d cores)\n", cpuModel(), os.NCPU);
 io.printf("\n");
 
 printDivider();

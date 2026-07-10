@@ -178,6 +178,7 @@ friendly-error pattern.
 | ------------- | ------ | ----------------------------------------------------------------------------------------- |
 | `os.PLATFORM` | string | Operating-system name as reported by the runtime: `"linux"`, `"darwin"`, `"windows"`, ... |
 | `os.ARCH`     | string | CPU architecture: `"amd64"`, `"arm64"`, `"wasm"`, ...                                     |
+| `os.NCPU`     | int    | Number of logical CPUs usable by the running process (`runtime.NumCPU`). Portable stdlib, so it stays OS-independent - it reports usable parallelism, not a raw core count: on `jennifer-tiny` (cooperative single-thread scheduler) it is `1`. For richer host details (CPU model, RAM), read the OS's own files from Jennifer, e.g. `/proc/cpuinfo` via `fs` on Linux, so the interpreter stays portable. |
 | `os.EOL`      | string | Platform line ending. `"\n"` on Unix-likes, `"\r\n"` on Windows.                          |
 | `os.DIRSEP`   | string | Path-component separator: `"/"` on Unix-likes, `"\\"` on Windows.                         |
 | `os.PATHSEP`  | string | PATH-list separator (between entries in `$PATH`): `":"` on Unix-likes, `";"` on Windows.  |
