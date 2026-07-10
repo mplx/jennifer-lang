@@ -48,11 +48,11 @@ func runScopedModuleMain(t *testing.T, files map[string]string) (string, error) 
 // pointsModule is a small declarations-only module reused across tests: a
 // struct, a constant, and functions that build and consume the struct.
 const pointsModule = `
-def struct Point { x as int, y as int };
-def const DIM as int init 2;
-func make(x as int, y as int) { return Point{x: $x, y: $y}; }
-func getX(p as Point) { return $p.x; }
-func sumXY(p as Point) { return $p.x + $p.y; }
+export def struct Point { x as int, y as int };
+export def const DIM as int init 2;
+export func make(x as int, y as int) { return Point{x: $x, y: $y}; }
+export func getX(p as Point) { return $p.x; }
+export func sumXY(p as Point) { return $p.x + $p.y; }
 `
 
 func TestModuleQualifiedCallAndConst(t *testing.T) {
@@ -118,7 +118,7 @@ func TestModuleUseIsNotTransitive(t *testing.T) {
 	// (which never `use io;`) cannot call io.* itself.
 	out, err := runScopedModuleMain(t, map[string]string{
 		"logger.j": `use io;
-func log(msg as string) { io.printf("[log] %s\n", $msg); return; }`,
+export func log(msg as string) { io.printf("[log] %s\n", $msg); return; }`,
 		"main.j": `import "./logger.j" as logger;
 logger.log("ok");
 io.printf("leaked\n");`,
@@ -153,7 +153,7 @@ import "./points.j" as io;`,
 
 func TestModuleMethodThrowIsCatchable(t *testing.T) {
 	out, err := runScopedModuleMain(t, map[string]string{
-		"thrower.j": `func boom() { throw Error{kind: "x", message: "boom", file: "", line: 0, col: 0}; return 0; }`,
+		"thrower.j": `export func boom() { throw Error{kind: "x", message: "boom", file: "", line: 0, col: 0}; return 0; }`,
 		"main.j": `use io;
 import "./thrower.j" as thrower;
 try { def x as int init thrower.boom(); } catch (e) { io.printf("caught %s\n", $e.message); }`,

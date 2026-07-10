@@ -1,0 +1,119 @@
+// SPDX-License-Identifier: LGPL-3.0-only
+// Copyright (C) 2026 <developer@mplx.eu>
+
+package interpreter_test
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestModulePrivateNameNotExported(t *testing.T) {
+	_, err := runScopedModuleMain(t, map[string]string{
+		"lib.j": `export func pub() { return priv(); }
+func priv() { return 5; }`,
+		"main.j": `use io;
+import "./lib.j" as lib;
+io.printf("%d\n", lib.priv());`,
+	})
+	if err == nil {
+		t.Fatal("calling a private module function should error")
+	}
+	if !strings.Contains(err.Error(), "not exported from module") {
+		t.Errorf("error should say not exported: %v", err)
+	}
+}
+
+func TestModuleExportedNameResolves(t *testing.T) {
+	// The exported `pub` reaches the private `priv` internally by bare name.
+	out, err := runScopedModuleMain(t, map[string]string{
+		"lib.j": `export func pub() { return priv() + 1; }
+func priv() { return 5; }`,
+		"main.j": `use io;
+import "./lib.j" as lib;
+io.printf("%d\n", lib.pub());`,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.TrimSpace(out) != "6" {
+		t.Errorf("output = %q, want 6", out)
+	}
+}
+
+func TestModuleReferentialClosureRejectsPrivateField(t *testing.T) {
+	_, err := runScopedModuleMain(t, map[string]string{
+		"lib.j": `def struct Secret { code as int };
+export def struct Public { s as Secret };`,
+		"main.j": `import "./lib.j" as lib;`,
+	})
+	if err == nil {
+		t.Fatal("an exported struct with a private-struct field should error")
+	}
+	if !strings.Contains(err.Error(), "private struct") {
+		t.Errorf("error should mention the private struct: %v", err)
+	}
+}
+
+func TestModuleReferentialClosureAllowsExportedField(t *testing.T) {
+	_, err := runScopedModuleMain(t, map[string]string{
+		"lib.j": `export def struct Inner { code as int };
+export def struct Outer { i as Inner };
+export func mk() { return Outer{i: Inner{code: 1}}; }`,
+		"main.j": `use io;
+import "./lib.j" as lib;
+def o as lib.Outer init lib.mk();
+io.printf("ok\n");`,
+	})
+	if err != nil {
+		t.Fatalf("an all-exported struct chain should load: %v", err)
+	}
+}
+
+func TestModuleExportInScriptRejected(t *testing.T) {
+	// main.j is run as a script (not imported); an `export` in it is rejected.
+	_, err := runScopedModuleMain(t, map[string]string{
+		"main.j": `export func f() { return 1; }`,
+	})
+	if err == nil {
+		t.Fatal("`export` in a run script should be a parse/load error")
+	}
+	if !strings.Contains(err.Error(), "only allowed in a module") {
+		t.Errorf("error should say export is module-only: %v", err)
+	}
+}
+
+func TestModuleConsumerStructTypeAndConstruction(t *testing.T) {
+	out, err := runScopedModuleMain(t, map[string]string{
+		"points.j": pointsModule,
+		"main.j": `use io;
+import "./points.j" as points;
+def p as points.Point init points.make(3, 4);
+def q as points.Point init points.Point{x: 10, y: 20};
+io.printf("%d %d %d\n", $p.x, points.getX($p), points.getX($q));`,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := strings.TrimSpace(out); got != "3 3 10" {
+		t.Errorf("output = %q, want '3 3 10'", got)
+	}
+}
+
+func TestModuleStructIdentitiesAreDistinct(t *testing.T) {
+	// A struct from module `a` must not satisfy module `b`'s same-named type.
+	_, err := runScopedModuleMain(t, map[string]string{
+		"a.j": `export def struct Point { x as int };
+export func mk() { return Point{x: 1}; }`,
+		"b.j": `export def struct Point { x as int };`,
+		"main.j": `import "./a.j" as a;
+import "./b.j" as b;
+def p as b.Point init a.mk();`,
+	})
+	if err == nil {
+		t.Fatal("a.Point should not satisfy b.Point")
+	}
+	if !strings.Contains(err.Error(), "Point") {
+		t.Errorf("error should be a struct type mismatch: %v", err)
+	}
+}

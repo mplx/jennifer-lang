@@ -249,17 +249,19 @@ type StructField struct {
 // definitions so order of declaration doesn't matter.
 type StructDef struct {
 	pos
-	Name   string
-	Fields []StructField
+	Name     string
+	Fields   []StructField
+	Exported bool // `export def struct ...` - published from the enclosing module
 }
 
 func (*StructDef) stmtNode() {}
 
 type MethodDef struct {
 	pos
-	Name   string
-	Params []Param
-	Body   *Block
+	Name     string
+	Params   []Param
+	Body     *Block
+	Exported bool // `export func ...` - published from the enclosing module
 }
 
 func (*MethodDef) stmtNode() {}
@@ -282,6 +284,7 @@ func (*Block) stmtNode() {}
 type DefineStmt struct {
 	pos
 	IsConst  bool
+	Exported bool   // `export def const ...` - published from the enclosing module
 	VarName  string // for variables: the $-name; for constants: the UPPERCASE name
 	VarType  Type
 	InitExpr Expr // may be nil for uninitialized variables; never nil for constants

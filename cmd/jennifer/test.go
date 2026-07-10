@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -107,6 +108,20 @@ func loadForTest(path string) (*interpreter.Interpreter, int) {
 		printErrorContext(src, absPath, err)
 		return nil, testExitFailure
 	}
+	// White-box module overlay: running `jennifer test MODULE_test.j`
+	// splices the sibling `MODULE.j` in front of the test file, so the test
+	// methods reach the module's private names by bare identifier and slot
+	// numbering covers both. The combined program is run as the module it
+	// tests (module context), so the module's `export` markers are legal.
+	moduleContext := false
+	if base := overlayBaseFor(absPath); base != "" {
+		baseToks, ok := tokenizeForSplice(base)
+		if !ok {
+			return nil, testExitFailure
+		}
+		tokens = spliceTokens(baseToks, tokens)
+		moduleContext = true
+	}
 	prog, err := parser.ParseTokens(tokens)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %s\n", label, err.Error())
@@ -115,12 +130,62 @@ func loadForTest(path string) (*interpreter.Interpreter, int) {
 	}
 	in := interpreter.New()
 	installLibraries(in)
+	if moduleContext {
+		in.SetModuleContext(true)
+	}
 	if err := in.Run(prog); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: setting up test file: %s\n", label, err.Error())
 		printErrorContext(src, absPath, err)
 		return nil, testExitFailure
 	}
 	return in, testExitPass
+}
+
+// overlayBaseFor returns the module file a `_test.j` overlay tests: for
+// `.../MODULE_test.j` it is `.../MODULE.j` when that sibling exists, else "".
+// A file not ending in `_test.j` has no base (returns "").
+func overlayBaseFor(absPath string) string {
+	const suffix = "_test.j"
+	if !strings.HasSuffix(absPath, suffix) {
+		return ""
+	}
+	base := strings.TrimSuffix(absPath, suffix) + ".j"
+	if info, err := os.Stat(base); err == nil && !info.IsDir() {
+		return base
+	}
+	return ""
+}
+
+// tokenizeForSplice reads, lexes, and preprocesses a file for splicing into
+// another token stream, reporting any error to stderr.
+func tokenizeForSplice(path string) ([]lexer.Token, bool) {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "jennifer test: %v\n", err)
+		return nil, false
+	}
+	toks, err := lexer.TokenizeWithFile(string(src), path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %s\n", path, err.Error())
+		printErrorContext(string(src), path, err)
+		return nil, false
+	}
+	toks, err = preproc.Process(toks, filepath.Dir(path), path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %s\n", path, err.Error())
+		printErrorContext(string(src), path, err)
+		return nil, false
+	}
+	return toks, true
+}
+
+// spliceTokens concatenates two token streams into one program: the base's
+// trailing EOF is dropped so the overlay's tokens continue the same stream.
+func spliceTokens(base, overlay []lexer.Token) []lexer.Token {
+	if n := len(base); n > 0 && base[n-1].Type == lexer.TOKEN_EOF {
+		base = base[:n-1]
+	}
+	return append(base, overlay...)
 }
 
 // runSingleTest runs one method and prints a single concise result line

@@ -16,7 +16,15 @@ Terminals in CAPITALS are token classes from the lexer (see
 punctuation that match the corresponding token's lexeme.
 
 ```ebnf
-program     = { useStmt | moduleImport | methodDef | structDef | statement } EOF ;
+program     = { useStmt | moduleImport | exported | methodDef | structDef | statement } EOF ;
+exported    = "export" ( methodDef | structDef | constDefine ) ;
+                                       (* `export` publishes a name from a
+                                          module; it may only precede a
+                                          `func`, `def struct`, or `def const`.
+                                          Whether a program may contain
+                                          `export` at all (module vs script)
+                                          is decided at load time, not by the
+                                          grammar. *)
 useStmt     = "use" IDENT [ "as" IDENT ] ";" ;      (* library import; the
                                                        optional "as ALIAS"
                                                        renames the namespace
@@ -68,6 +76,9 @@ throwStmt   = "throw" expr ";" ;
 
 returnStmt  = "return" [ expr ] ";" ;
 
+constDefine = "def" "const" IDENT "as" type "init" expr ";" ; (* the const
+                                          form of defineStmt - the only `def`
+                                          an `export` may mark *)
 defineStmt  = "def" [ "const" ] IDENT "as" type [ "init" expr ] ";" ;
                                        (* constants require "init" and an
                                           uppercase name matching

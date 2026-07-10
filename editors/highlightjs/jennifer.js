@@ -17,7 +17,7 @@
 })(function (hljs) {
   var KEYWORDS = {
     keyword:
-      "def const func struct use include import as of to init " +
+      "export def const func struct use include import as of to init " +
       "if elseif else while for in repeat until break continue return exit " +
       "try catch throw spawn and or not",
     built_in: "len",

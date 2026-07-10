@@ -26,7 +26,7 @@ syn match   jenniferNumber "\<[0-9][0-9_]*\>"
 
 " Keywords.
 syn keyword jenniferControl if elseif else while for in repeat until break continue return exit try catch throw spawn
-syn keyword jenniferKeyword def const func struct use include import as of to init
+syn keyword jenniferKeyword export def const func struct use include import as of to init
 syn keyword jenniferOperatorWord and or not
 syn keyword jenniferBuiltin len
 syn keyword jenniferType int float string bool bytes list map task

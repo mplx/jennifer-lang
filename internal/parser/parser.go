@@ -149,6 +149,13 @@ func (p *parser) parseProgram() (*Program, error) {
 				return nil, err
 			}
 			prog.ModuleImports = append(prog.ModuleImports, m)
+		case lexer.TOKEN_EXPORT:
+			// `export` publishes a module's `def const` / `def struct` /
+			// `func`. It is only valid at the top level in front of one of
+			// those three forms; anything else is a parse error.
+			if err := p.parseExported(prog); err != nil {
+				return nil, err
+			}
 		case lexer.TOKEN_FUNC:
 			// `func NAME() { ... }` - methods are hoisted so they can be
 			// called regardless of textual order.
@@ -316,6 +323,48 @@ func (p *parser) parseMethodDef() (*MethodDef, error) {
 		return nil, err
 	}
 	return &MethodDef{pos: pos{File: def.File, Line: def.Line, Col: def.Col}, Name: name.Lexeme, Params: params, Body: body}, nil
+}
+
+// parseExported consumes a leading `export` and the top-level declaration it
+// marks - `func`, `def struct`, or `def const` - appending it to the program
+// with Exported set. `export` in front of anything else (a mutable `def`, a
+// statement, or nothing) is a positioned parse error. Whether a program may
+// contain `export` at all (module vs script) is decided at load time, not
+// here.
+func (p *parser) parseExported(prog *Program) error {
+	exp, _ := p.match(lexer.TOKEN_EXPORT)
+	switch {
+	case p.peek().Type == lexer.TOKEN_FUNC:
+		m, err := p.parseMethodDef()
+		if err != nil {
+			return err
+		}
+		m.Exported = true
+		prog.Methods = append(prog.Methods, m)
+		return nil
+	case p.peek().Type == lexer.TOKEN_DEFINE && p.peekN(1).Type == lexer.TOKEN_STRUCT:
+		sd, err := p.parseStructDef()
+		if err != nil {
+			return err
+		}
+		sd.Exported = true
+		prog.Structs = append(prog.Structs, sd)
+		return nil
+	case p.peek().Type == lexer.TOKEN_DEFINE && p.peekN(1).Type == lexer.TOKEN_CONST:
+		st, err := p.parseDefineLike()
+		if err != nil {
+			return err
+		}
+		d, ok := st.(*DefineStmt)
+		if !ok || !d.IsConst {
+			return &ParseError{Msg: "only `def const`, `def struct`, and `func` can be exported", File: exp.File, Line: exp.Line, Col: exp.Col}
+		}
+		d.Exported = true
+		prog.TopLevel = append(prog.TopLevel, st)
+		return nil
+	default:
+		return &ParseError{Msg: "`export` must precede a top-level `def const`, `def struct`, or `func`", File: exp.File, Line: exp.Line, Col: exp.Col}
+	}
 }
 
 // parseStructDef parses `def struct Name { field as type, ... };`.

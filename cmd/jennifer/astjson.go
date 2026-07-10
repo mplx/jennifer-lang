@@ -51,6 +51,7 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 		startObj(b, indent)
 		emitTypeAndPos(b, "MethodDef", v, indent+1)
 		emitStringField(b, "name", v.Name, indent+1)
+		emitBoolField(b, "exported", v.Exported, indent+1)
 		emitParamsField(b, "params", v.Params, indent+1)
 		emitNodeField(b, "body", v.Body, indent+1)
 		endObj(b, indent)
@@ -65,6 +66,7 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 		startObj(b, indent)
 		emitTypeAndPos(b, "DefineStmt", v, indent+1)
 		emitBoolField(b, "isConst", v.IsConst, indent+1)
+		emitBoolField(b, "exported", v.Exported, indent+1)
 		emitStringField(b, "varName", v.VarName, indent+1)
 		emitStringField(b, "varType", v.VarType.String(), indent+1)
 		if v.InitExpr != nil {

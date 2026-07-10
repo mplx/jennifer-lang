@@ -8,6 +8,6 @@
 import "./config.j" as config;
 
 # status builds a line from config's own describe(), a module-to-module call.
-func status() {
+export func status() {
     return "db up, " + config.describe();
 }

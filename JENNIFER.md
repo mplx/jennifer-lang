@@ -211,13 +211,19 @@ import "./util.j" as u; # load util.j as a module, addressed u.fn(...) / u.CONST
 - `import "PATH.j" [as NAME];` - **module** import (a real boundary, not a
   splice). Path forms: `./x.j` / `../x.j` local, `/x.j` absolute, bare `x.j`
   from the module search path. Loads once (run-once, cached), depth-first
-  post-order; cycles error. Reach the module's surface as `NAME.fn(args)` and
-  `NAME.CONST` (`NAME` is the `as` alias, else the file stem). A **module top
-  level is declarations-only**: `def const`, `def struct`, `func`, `use`,
-  `import` - no mutable `def`, no free-standing statements. `use` is not
-  transitive across the boundary. Naming a module's struct *type* at the
-  consumer (`x.Point`) is not available yet - call a module function that
-  returns the value.
+  post-order; cycles error. Reach the module's surface as `NAME.fn(args)`,
+  `NAME.CONST`, and `NAME.Struct` / `NAME.Struct{...}` (`NAME` is the `as`
+  alias, else the file stem). A **module top level is declarations-only**:
+  `def const`, `def struct`, `func`, `use`, `import` - no mutable `def`, no
+  free-standing statements. `use` is not transitive across the boundary.
+- `export` publishes a top-level `def const` / `def struct` / `func` from a
+  module; unmarked names are private (reaching one from outside errors). A
+  module struct type keeps its identity `(module, name)` at the consumer, so
+  `def p as NAME.Struct init NAME.make();` type-checks and `a.Point` /
+  `b.Point` are distinct. An exported struct/func may not expose a private
+  struct. `export` is only valid in a module (a parse error in a `run`
+  script). A co-located `MODULE_test.j` white-box overlay runs under
+  `jennifer test`.
 
 ## Standard library (all namespaced, all opt-in via `use`)
 

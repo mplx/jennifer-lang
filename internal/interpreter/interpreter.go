@@ -107,6 +107,10 @@ type Interpreter struct {
 	// module's own interpreter. Populated by loadModuleImports; nil until a
 	// program imports a module.
 	moduleAliases map[string]*loadedModule
+	// isModule is true when this interpreter is running a file loaded as a
+	// module (via loadModule), false for a top-level script (CLI Run) or the
+	// REPL. It gates `export`: a module publishes names, a script may not.
+	isModule bool
 
 	// spawned task registry. Every `spawn { ... }` appends its
 	// TaskState here; the CLI scans the slice on shutdown to surface
@@ -688,12 +692,26 @@ func (i *Interpreter) MethodNames() []string {
 	return out
 }
 
+// SetModuleContext marks this interpreter as running a module (rather than a
+// script), which permits `export`. The `jennifer test` white-box overlay path
+// uses it: a `MODULE_test.j` spliced onto its `MODULE.j` is run as the module
+// it tests, so the module's `export` markers are legal.
+func (i *Interpreter) SetModuleContext(b bool) { i.isModule = b }
+
 func (i *Interpreter) Run(prog *parser.Program) error {
 	if i.Out == nil {
 		i.Out = os.Stdout
 	}
 	if i.In == nil {
 		i.In = os.Stdin
+	}
+	// `export` publishes a module's names; it is meaningless in a script.
+	// A module interpreter (loadModule) sets isModule; a script (CLI Run) or
+	// the REPL does not, so an `export` here is a positioned error.
+	if !i.isModule {
+		if err := rejectExportInScript(prog); err != nil {
+			return err
+		}
 	}
 	// the scope-analysis pass runs here so callers that
 	// obtained a *Program via parser.Parse (which itself no longer
@@ -1163,7 +1181,15 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 	// Bare names look up in i.structs (user-defined); namespaced names
 	// resolve the alias prefix first, then look up in i.NSStructs.
 	if st.VarType.Kind == parser.TypeStruct {
-		if st.VarType.StructNS != "" {
+		if mod, ok := i.moduleAliases[st.VarType.StructNS]; ok {
+			// `def x as alias.Struct` - a module struct type. Verify it is an
+			// exported struct of the module, then stamp the module's namespace
+			// so the value (which crosses the boundary tagged the same way)
+			// matches.
+			if err := i.stampModuleStructType(&st.VarType, mod, st); err != nil {
+				return err
+			}
+		} else if st.VarType.StructNS != "" {
 			canonical, err := i.resolveNamespacePrefix(st.VarType.StructNS)
 			if err != nil {
 				file, line, col := posFor(st)
@@ -2284,7 +2310,20 @@ func (i *Interpreter) evalStructLit(ex *parser.StructLit, env *Environment) (Val
 	// user-defined struct table as before.
 	var def *parser.StructDef
 	var resolvedNS string
-	if ex.NS != "" {
+	if mod, ok := i.moduleAliases[ex.NS]; ok {
+		// `alias.Struct{...}` - construct an importer-visible module struct.
+		d, exists := mod.interp.structs[ex.Name]
+		if !exists {
+			file, line, col := posFor(ex)
+			return Value{}, &runtimeError{Msg: fmt.Sprintf("module %q has no struct %q", ex.NS, ex.Name), File: file, Line: line, Col: col}
+		}
+		if !mod.exports[ex.Name] {
+			file, line, col := posFor(ex)
+			return Value{}, &runtimeError{Msg: fmt.Sprintf("%s.%s: struct %q is not exported from module %q", ex.NS, ex.Name, ex.Name, ex.NS), File: file, Line: line, Col: col}
+		}
+		def = d
+		resolvedNS = mod.ns
+	} else if ex.NS != "" {
 		canonical, err := i.resolveNamespacePrefix(ex.NS)
 		if err != nil {
 			file, line, col := posFor(ex)

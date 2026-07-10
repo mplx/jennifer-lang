@@ -491,13 +491,34 @@ of the fresh-sub-interpreter-per-module model: a module's interpreter holds
 only immutable constants and read-only methods, so concurrent calls from
 parallel `spawn` bodies share no mutable state.
 
-Naming a module's struct *type* at the consumer (`def p as points.Point;`,
-`points.Point{...}`) needs cross-module struct identity `(module-prefix,
-name)`, deferred to M17.4 with the `export` visibility filter; until then
-`resolveNamespacePrefix` returns a positioned "module struct types are not
-available yet" error for a module-alias type prefix. A struct *value* built
-by a module and passed back through module calls already type-checks - it
-never leaves the module's identity space.
+### Exports, visibility, and cross-module struct identity
+
+`export` marks a top-level `func` / `def struct` / `def const` as a
+module's public surface (`parseExported`); `collectExports` records the
+set on the `loadedModule`, and `callModuleMethod` / `moduleConst` /
+`evalStructLit` / the `def`-type check reject an unexported `alias.member`
+with a positioned "not exported from module" error. `export` is illegal in
+a script: `Run` calls `rejectExportInScript` unless `isModule` is set (only
+`loadModule`, and the `jennifer test` overlay via `SetModuleContext`, set
+it). `checkReferentialClosure` (at load) rejects an exported struct field
+or exported function parameter typed as a *private* module struct; only the
+module's own bare struct types are checked, so library / namespaced types
+cross freely.
+
+**Cross-module struct identity** is boundary translation, not internal
+tagging. A module's own structs stay bare (`StructNS ""`) inside the module,
+where all the existing struct machinery works unchanged. `retagStructs`
+re-tags them to `(module-stem, name)` as a value crosses *out* to an
+importer (a `callModuleMethod` return, a `moduleConst` read) and back to
+bare on the way *in* (a `callModuleMethod` argument), recursing through
+struct fields, list elements, and map values; library / other-module
+structs (a different namespace) are untouched. So the consumer can type a
+module struct (`def p as points.Point`, the `def`-check stamps the type's
+namespace to the module stem), construct one (`points.Point{...}` in
+`evalStructLit`), read its fields, and pass it back - all type-checking -
+while `a.Point` and `b.Point` stay distinct `(namespace, name)` pairs
+(M15.2). The retag copies only compound values at the boundary (module
+calls are not a hot path).
 
 ## Builtins and libraries
 

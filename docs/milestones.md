@@ -1307,6 +1307,8 @@ reachable behind the alias.
 
 ### M17.4 - Exports and visibility
 
+**Status:** done.
+
 Which top-level names cross the module boundary, and the script-vs-module
 and test-overlay rules that follow. This submilestone touches parser
 grammar (the `export` keyword), so it ships last; M17.1-M17.3 are tooling,
@@ -1352,6 +1354,34 @@ with a private-struct field errors at annotation; `export` in a run script
 is a parse error; a zero-export module imports but every `NAME.x` errors;
 a `MODULE_test.j` overlay reads `MODULE.j`'s private names and runs under
 `jennifer test`.
+
+**As built.** `TOKEN_EXPORT` is a keyword; `parseExported` accepts it only
+in front of a top-level `func` / `def struct` / `def const`, stamping
+`Exported` on the AST node (anything else is a parse error). `collectExports`
+records a module's public names; `callModuleMethod` / `moduleConst` /
+`evalStructLit` / the `def`-type check gate `alias.member` on that set with a
+positioned "not exported from module" error. `checkReferentialClosure` (at
+load) rejects an exported struct field or exported function parameter whose
+type is a *private* module struct; library / namespaced types cross freely.
+`rejectExportInScript` (in `Run`, gated by the `isModule` flag that
+`loadModule` sets) makes `export` in a `jennifer run` script a positioned
+error. **Cross-module struct identity** is boundary translation: a module's
+structs are bare (`StructNS ""`) internally, and `retagStructs` re-tags them
+to `(module-stem, name)` as a value crosses out to an importer and back on
+the way in, so `def p as mod.Point`, `mod.Point{...}`, field access, and
+pass-back all type-check while `a.Point` and `b.Point` stay distinct. The
+`MODULE_test.j` overlay is a token splice in `jennifer test`
+(`overlayBaseFor` + `spliceTokens`): running `MODULE_test.j` prepends
+`MODULE.j` before parse/resolve and runs the combined program in module
+context, so the tests read private names by bare identifier. Runnable demo:
+`examples/modules/`. Coverage: `internal/interpreter/module_export_test.go`,
+`cmd/jennifer/module_overlay_test.go`.
+
+**Deferred.** Cross-module identity handles direct `mod.Struct` types and
+one level of `list`/`map` nesting through the boundary retag; deeply nested
+consumer construction of module structs that themselves contain other
+modules' structs is a rare edge not exercised here. Field-level export
+visibility stays out (an exported struct exposes its whole shape, by design).
 
 ### M17.5 - `ansi` (first reference module)
 

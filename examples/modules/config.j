@@ -6,10 +6,11 @@
 # module's surface, reached from an importer as `config.NAME` / `config.fn()`.
 use convert;
 
-def const MAXCONN as int init 16;
+export def const MAXCONN as int init 16;
 def const NAME as string init "jennifer-db";
 
-# describe formats the configuration as a human-readable line.
-func describe() {
+# describe formats the configuration as a human-readable line. NAME stays
+# private (unmarked) - only the `export`-ed names cross the module boundary.
+export func describe() {
     return NAME + " (max " + convert.toString(MAXCONN) + " connections)";
 }

@@ -64,6 +64,7 @@ const (
 	TOKEN_LEN    // `len(EXPR)` polymorphic structural-length built-in
 	TOKEN_TASK   // the word "task" used as a type: `task of T`
 	TOKEN_SPAWN  // `spawn { ... }` block primary expression producing a `task of T`
+	TOKEN_EXPORT // `export` marker before a module's public `def const` / `def struct` / `func`
 
 	// Punctuation
 	TOKEN_LBRACE   // {
@@ -164,6 +165,7 @@ var tokenNames = map[TokenType]string{
 	TOKEN_LEN:         "LEN",
 	TOKEN_TASK:        "TASK",
 	TOKEN_SPAWN:       "SPAWN",
+	TOKEN_EXPORT:      "EXPORT",
 	TOKEN_LBRACE:      "LBRACE",
 	TOKEN_RBRACE:      "RBRACE",
 	TOKEN_LPAREN:      "LPAREN",
@@ -268,6 +270,7 @@ var keywords = map[string]TokenType{
 	"len":      TOKEN_LEN,
 	"task":     TOKEN_TASK,
 	"spawn":    TOKEN_SPAWN,
+	"export":   TOKEN_EXPORT,
 }
 
 func lookupKeyword(ident string) (TokenType, bool) {
