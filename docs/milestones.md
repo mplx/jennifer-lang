@@ -1151,7 +1151,10 @@ is boundary translation (`retagStructs`): a module's structs are bare
 inside it and re-tagged to `(module-stem, name)` as a value crosses out to
 an importer and back on the way in, so `def p as mod.Point`,
 `mod.Point{...}`, field reads, and pass-back all type-check while `a.Point`
-and `b.Point` stay distinct. A co-located `MODULE_test.j` overlay (a token
+and `b.Point` stay distinct. The retag walks values *and* the collection
+type tags a `list` / `map` carries (`retagType`), so a
+`list of mod.Point` handed back into a module reads as its bare
+`list of Point` parameter. A co-located `MODULE_test.j` overlay (a token
 splice in `jennifer test`) runs white-box tests against the module's
 private names.
 
@@ -1198,6 +1201,18 @@ false and when `NO_COLOR` is set, and is forced on by `FORCE_COLOR`; the
 module holds no mutable top-level state.
 
 ### M17.6 - `semver` module
+
+**Done.** Ships as `modules/semver.j` with a white-box `modules/semver_test.j`
+overlay (12 tests) and `examples/modules/semver_demo.j`. `parse` uses the
+canonical anchored SemVer RE2 pattern with named groups (`regex.find` +
+`groupsNamed`); precedence `compare`, prerelease-field ordering, and the
+insertion `sort` are hand-written Jennifer (the algorithmic dogfood). No
+system dependency beyond `use strings; use convert; use regex;`, so it runs
+on both binaries. Building the demo surfaced and fixed a latent M17.4
+boundary gap: passing a consumer-typed `list of semver.Version` back into a
+module function (`semver.sort`) failed because the retag re-tagged the struct
+element *values* but not the list's element-*type* metadata - now covered by
+`retagType` (regression: `TestModuleListOfStructCrossesBoundary`).
 
 The second pure reference module (alongside M17.5 `ansi`): strict
 [SemVer 2.0.0](https://semver.org) parsing, comparison, and increment as a

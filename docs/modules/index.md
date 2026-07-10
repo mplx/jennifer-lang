@@ -1,0 +1,72 @@
+# Jennifer modules
+
+A **module** is distributable Jennifer source - a `.j` file whose
+`export`ed names you bring in with `import`, the same call shape as a
+system library:
+
+```jennifer
+import "ansi.j" as ansi;
+io.printf("%s\n", ansi.bold(ansi.red("error")));
+```
+
+Modules are **not** the Go system libraries. A library
+(`use NAME;` - see [../libraries/index.md](../libraries/index.md)) is
+compiled into the interpreter binary; a module is ordinary Jennifer code
+that ships as a file, so you can read it, fork it, or write your own. The
+modules listed here are the reference set that ships with Jennifer under
+`modules/`; the mechanism itself (`import` / `export`, resolution,
+run-once init) is documented in the
+[Imports guide](../user-guide/imports.md).
+
+## How a module resolves
+
+`import` picks the resolution mode from the leading token of the path:
+
+- `import "./util.j" as u;` (or `../`) - **local**, relative to the
+  importing file's directory.
+- `import "/opt/m.j" as m;` - **absolute** path.
+- `import "ansi.j" as ansi;` (no `./`, no `/`) - **module** lookup
+  through the search path: the system module directory first (see
+  `jennifer version -v` or `meta.SYSMODDIR`), then any `-I DIR` passed to
+  `jennifer run`. The importing file's own directory is never consulted
+  in this mode.
+
+Distribution packages install the shipped modules to the system module
+directory (`/usr/share/jennifer/modules/` by default), so
+`import "ansi.j";` resolves with no path. The `as ALIAS` clause is
+optional - without it the module is addressed by its file stem
+(`import "ansi.j";` then `ansi.red(...)`).
+
+## Available modules
+
+The **TinyGo** column reports whether the module runs on the constrained
+`jennifer-tiny` binary. A module is only as portable as the libraries it
+`use`s; both reference modules below are pure Jennifer over TinyGo-clean
+libraries, so both run on either binary.
+
+| Module                | Import with            | TinyGo | Contents                                                                                                                                    |
+| --------------------- | ---------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`ansi`](ansi.md)     | `import "ansi.j";`     | full   | terminal styling as string wrappers. `color` / `bgColor` / `style` / `rgb` / `strip` plus per-colour and per-style shortcuts; TTY-aware.    |
+| [`semver`](semver.md) | `import "semver.j";`   | full   | strict Semantic Versioning 2.0.0. `parse` / `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` / `isPrerelease`, `inc*`, `sort`; struct `Version`. |
+
+## Writing your own
+
+A module is a declarations-only file: its top level permits only
+`def const`, `def struct`, `func`, `use`, and `import` - no mutable
+module state and no free-standing statements. Prefix a top-level
+`func` / `def struct` / `def const` with `export` to publish it; unmarked
+names stay module-private. Each file states its own `use` imports
+(`use` is not transitive across a module boundary).
+
+Every module that ships in this repository carries a co-located
+white-box test overlay (`NAME_test.j`) run with `jennifer test`, and a
+runnable demo under `examples/modules/`. See
+[`modules/README.md`](https://github.com/mplx/jennifer-lang/blob/main/modules/README.md)
+for the contributor checklist.
+
+## See also
+
+- [Imports guide](../user-guide/imports.md) - `use` vs `include` vs
+  `import`, resolution rules, and the module boundary in depth.
+- [Libraries catalog](../libraries/index.md) - the Go system libraries a
+  module builds on.

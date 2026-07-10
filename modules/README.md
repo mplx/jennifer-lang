@@ -20,3 +20,13 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   styling suppresses itself when stdout is not a terminal or `NO_COLOR` is
   set, and is forced on by `FORCE_COLOR`. See
   [`examples/modules/ansi_demo.j`](../examples/modules/ansi_demo.j).
+- **`semver.j`** - strict Semantic Versioning 2.0.0: parse, compare, sort,
+  and increment version numbers. `semver.parse(s)` / `isValid(s)` /
+  `toString(v)`, `compare(a, b)` / `lt` / `eq` / `gt`, `isStable(v)` /
+  `isPrerelease(v)`, `incMajor` / `incMinor` / `incPatch(v)`, and
+  `sort(vs)`, over an exported `Version` struct. Pure Jennifer; parsing
+  uses the canonical SemVer regex, precedence and sort are hand-written.
+  See [`examples/modules/semver_demo.j`](../examples/modules/semver_demo.j).
+
+Reference docs for each module live under
+[`docs/modules/`](../docs/modules/index.md).

@@ -47,6 +47,12 @@
 - [`time`](libraries/time.md)
 - [`uuid`](libraries/uuid.md)
 
+# Modules
+
+- [Catalog](modules/index.md)
+- [`ansi`](modules/ansi.md)
+- [`semver`](modules/semver.md)
+
 # Technical reference
 
 - [Overview](technical/index.md)
