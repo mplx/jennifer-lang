@@ -33,6 +33,7 @@ type lineEditor struct {
 	buf      []rune
 	cur      int    // 0..len(buf), insertion point
 	prompt   string // currently-active prompt (>>> or ...)
+	color    bool   // recolour the committed line with syntax highlighting
 	browsing int    // history position; 0 = "below the bottom" (current buffer); positive walks back
 	stashed  []rune // edited buffer saved when user starts walking history
 	stashedC int    // saved cursor position to restore when leaving history
@@ -82,7 +83,13 @@ func (e *lineEditor) readLine(prompt string) (string, error) {
 			continue
 		case '\r', '\n':
 			// Commit the line. Terminal raw mode produces \r on Enter;
-			// either way we want to leave the cursor on a fresh line.
+			// either way we want to leave the cursor on a fresh line. When
+			// colour is on, redraw the committed line one last time with
+			// syntax highlighting before the newline, so the just-entered
+			// source shows coloured above its output.
+			if e.color {
+				e.redrawCommitted()
+			}
 			e.out.Write([]byte("\r\n"))
 			s := string(e.buf)
 			return s, nil
@@ -408,6 +415,19 @@ func (e *lineEditor) redraw() {
 		b.WriteString(itoa(back))
 		b.WriteString("D")
 	}
+	e.out.Write([]byte(b.String()))
+}
+
+// redrawCommitted rewrites the line one final time with syntax highlighting,
+// used at commit (Enter) just before the newline. There is no cursor-back
+// step: the cursor is about to move to a fresh line, so the colour spans (all
+// zero-width ANSI escapes) don't disturb the layout.
+func (e *lineEditor) redrawCommitted() {
+	var b strings.Builder
+	b.WriteByte('\r')
+	b.WriteString("\x1b[K")
+	b.WriteString(e.prompt)
+	b.WriteString(highlightLine(string(e.buf)))
 	e.out.Write([]byte(b.String()))
 }
 

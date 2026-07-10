@@ -99,5 +99,32 @@ continuation prompt (`... `) is still driven by the surrounding REPL
 loop's `inputComplete()` check, so unclosed `{` / `(` accumulate
 across calls to `editor.readLine`.
 
+### Syntax highlighting on commit (`cmd/jennifer/highlight.go`)
+
+While you type, the line is drawn plain. On Enter, if colour is enabled,
+the editor redraws the committed line one last time with syntax
+highlighting (`redrawCommitted` -> `highlightLine`) before the newline,
+so the source shows coloured just above its output. Highlighting only at
+commit (not per keystroke) keeps the edit path cheap and sidesteps
+recolouring half-typed, unlexable input.
+
+`highlightLine` lexes the line and wraps each token's source span in an
+ANSI SGR colour (keyword, type, string, number, `$var`, comment; other
+tokens stay default). It slices by each token's 1-based **rune column**
+rather than its lexeme, so the user's exact spacing is preserved and a
+processed `TOKEN_STRING` lexeme (quotes stripped, escapes resolved)
+can't desync the offsets. A span runs to the next token's start, so
+trailing whitespace inherits the token's colour - invisible for
+foreground-only codes. The colours are zero-width escapes, so the
+editor's cursor-column arithmetic is unaffected; the commit redraw skips
+the cursor-back step because a newline follows immediately. On any lex
+error (e.g. an unterminated string mid-edit) `highlightLine` returns the
+input unchanged, so the line always echoes verbatim.
+
+Colour is gated by `colorEnabled()`: stdout must be a TTY and `NO_COLOR`
+(https://no-color.org) must be unset. The editor already requires a TTY
+stdin, so the two together mean colour appears only in a genuine
+interactive session; piped or redirected output stays plain.
+
 
 Part of the [CLI reference](cli.md).

@@ -80,6 +80,9 @@ func runRepl() int {
 		// a fresh line before drawing the next prompt.
 		stdoutWrap := &crlfWriter{w: os.Stdout}
 		editor = newLineEditor(os.Stdin, stdoutWrap, history)
+		// Recolour committed input when stdout is a terminal and NO_COLOR
+		// is unset. The editor already only exists on a TTY stdin.
+		editor.color = colorEnabled()
 		readLine = func(prompt string) (string, error) {
 			s, err := editor.readLine(prompt)
 			if err != nil {
