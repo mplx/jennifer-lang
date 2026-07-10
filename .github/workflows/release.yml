@@ -6,14 +6,14 @@
 # the constrained, embeddable variant) for every supported platform
 # from a single amd64 runner via cross-compilation, runs a smoke
 # test on each native-arch artifact via QEMU user-mode emulation
-# when the runner can't execute the target arch directly, runs the
-# M15.5.3 benchmark suite on the runner's native arch (linux/amd64)
-# so the release notes carry a fresh number, and publishes everything
-# to GitHub Releases as a draft for human review before going live.
+# when the runner can't execute the target arch directly, and
+# publishes everything to GitHub Releases. Pre-1.0.0 tags publish as a
+# pre-release; benchmarks run in the test pipeline (test.yml), not
+# here - CI-runner numbers are too noisy for release notes.
 #
-# Initial supported platforms (M15.8 scope): linux/amd64,
-# linux/arm64. macOS and Windows are post-M15.8 work that adds new
-# matrix rows.
+# Supported platforms: linux/amd64, linux/arm64 (two binaries each).
+# macOS and Windows ship best-effort, UNSUPPORTED `jennifer`-only
+# builds in a separate matrix.
 
 name: release
 
@@ -108,18 +108,6 @@ jobs:
           ./jennifer run examples/hello.j
           ./jennifer-tiny run examples/hello.j
 
-      - name: Run benchmark suite (native arch only)
-        if: matrix.arch == 'amd64'
-        timeout-minutes: 30
-        run: |
-          # Captured for the release-notes template; non-native
-          # runs would report QEMU's overhead rather than real
-          # numbers, so we run only on the matrix entry whose arch
-          # matches the runner.
-          mkdir -p bench-out
-          ./jennifer run examples/benchmark.j | tee bench-out/jennifer-${{ matrix.arch }}.txt
-          ./jennifer-tiny run examples/benchmark.j | tee bench-out/jennifer-tiny-${{ matrix.arch }}.txt
-
       - name: Package artifacts
         run: |
           mkdir -p dist
@@ -130,15 +118,19 @@ jobs:
           STAGE="jennifer-${TAG}-${{ matrix.os }}-${{ matrix.arch }}"
           mkdir -p "$STAGE/share/man/man1" "$STAGE/share/mime/packages" \
                    "$STAGE/share/bash-completion/completions" \
-                   "$STAGE/share/vim/vimfiles/syntax" "$STAGE/share/vim/vimfiles/ftdetect"
+                   "$STAGE/share/vim/vimfiles/syntax" "$STAGE/share/vim/vimfiles/ftdetect" \
+                   "$STAGE/share/nvim/site/syntax" "$STAGE/share/nvim/site/ftdetect"
           cp jennifer jennifer-tiny "$STAGE/"
           cp packaging/man/jennifer.1      "$STAGE/share/man/man1/"
           cp packaging/man/jennifer-tiny.1 "$STAGE/share/man/man1/"
           cp packaging/mime/jennifer.xml "$STAGE/share/mime/packages/"
           cp packaging/completions/jennifer.bash "$STAGE/share/bash-completion/completions/jennifer"
           ln -sf jennifer "$STAGE/share/bash-completion/completions/jennifer-tiny"
+          # Vim and Neovim read separate runtimepaths; ship a copy for each.
           cp editors/vim/syntax/jennifer.vim   "$STAGE/share/vim/vimfiles/syntax/"
           cp editors/vim/ftdetect/jennifer.vim "$STAGE/share/vim/vimfiles/ftdetect/"
+          cp editors/vim/syntax/jennifer.vim   "$STAGE/share/nvim/site/syntax/"
+          cp editors/vim/ftdetect/jennifer.vim "$STAGE/share/nvim/site/ftdetect/"
           cp README.md "$STAGE/" 2>/dev/null || true
           cp JENNIFER.md "$STAGE/" 2>/dev/null || true
           tar -czf "dist/${STAGE}.tar.gz" "$STAGE"
@@ -164,14 +156,6 @@ jobs:
             dist/*.tar.gz
             dist/*.deb
             dist/*.sha256
-          retention-days: 7
-
-      - name: Upload benchmark output
-        if: matrix.arch == 'amd64'
-        uses: actions/upload-artifact@v7
-        with:
-          name: benchmarks
-          path: bench-out/
           retention-days: 7
 
   # Best-effort, UNSUPPORTED macOS + Windows builds. Standard `jennifer`
@@ -251,7 +235,7 @@ jobs:
           retention-days: 7
 
   release:
-    name: Publish GitHub Release (draft)
+    name: Publish GitHub Release
     # Wait for both build jobs, but publish as long as the SUPPORTED Linux
     # build passed; the unsupported job's outcome (pass / fail / partial)
     # never gates the release.
@@ -298,37 +282,37 @@ jobs:
           echo "--- generated PKGBUILD-bin ---"
           cat release/PKGBUILD-bin
 
+      - name: Generate release-ready PKGBUILD-git
+        run: |
+          # The -git package builds from the main branch and computes its
+          # own pkgver via the pkgver() function at makepkg time, so there
+          # is no tarball hash to substitute (git sources are 'SKIP'). We
+          # still attach it to the Release for parity with PKGBUILD-bin and
+          # so the AUR maintainer has both in one place; the only edit is to
+          # seed the pkgver placeholder with the released tag as the base
+          # (pkgver() overrides it on an actual build).
+          PKGVER="${GITHUB_REF_NAME}"
+          sed \
+              -e "s/^pkgver=.*/pkgver=${PKGVER}.r0.g0000000/" \
+              packaging/arch/PKGBUILD-git > release/PKGBUILD-git
+          echo "--- generated PKGBUILD-git ---"
+          cat release/PKGBUILD-git
+
       - name: Compose release notes
         run: |
           TAG="${GITHUB_REF_NAME}"
           {
             echo "## Jennifer ${TAG}"
             echo
-            echo "Two binaries per platform - both are supported:"
+            echo "**Linux** ships two binaries - same source, same language, different compiler:"
             echo
             echo "- \`jennifer\`       - standard Go build. Default, full-featured; what most users want."
             echo "- \`jennifer-tiny\`  - TinyGo build. Smaller, embeddable; no \`os/exec\` or network stack."
             echo
+            echo "**macOS and Windows** get the standard \`jennifer\` only, as best-effort *unsupported* builds (no \`jennifer-tiny\`)."
+            echo
             echo "Install \`jennifer\` unless you have a specific reason to use the constrained variant; see \`docs/user-guide/installing.md\` for guidance."
             echo
-            echo "### Benchmark on the release runner (linux/amd64)"
-            echo
-            if [ -f artifacts/benchmarks/jennifer-amd64.txt ]; then
-              echo "**\`jennifer\` (standard Go):**"
-              echo
-              echo '```'
-              cat artifacts/benchmarks/jennifer-amd64.txt
-              echo '```'
-              echo
-            fi
-            if [ -f artifacts/benchmarks/jennifer-tiny-amd64.txt ]; then
-              echo "**\`jennifer-tiny\` (TinyGo):**"
-              echo
-              echo '```'
-              cat artifacts/benchmarks/jennifer-tiny-amd64.txt
-              echo '```'
-              echo
-            fi
             echo "### Artifacts"
             echo
             for f in release/*.tar.gz release/*.zip; do
@@ -343,10 +327,24 @@ jobs:
           } > release_notes.md
           cat release_notes.md
 
-      - name: Create GitHub Release (draft)
+      - name: Determine pre-release status
+        id: prerel
+        run: |
+          # Everything in the 0.x.y series is a pre-release; 1.0.0 and later
+          # publish as full releases. Tags are bare semver, so the major
+          # version is the leading segment.
+          case "${GITHUB_REF_NAME}" in
+            0.*) echo "prerelease=true"  >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          draft: true
+          # Published (not a draft) so anonymous users see it. Pre-1.0.0
+          # tags are flagged as pre-releases until the first stable release.
+          draft: false
+          prerelease: ${{ steps.prerel.outputs.prerelease }}
           generate_release_notes: false
           body_path: release_notes.md
           files: |
@@ -355,3 +353,4 @@ jobs:
             release/*.deb
             release/*.sha256
             release/PKGBUILD-bin
+            release/PKGBUILD-git

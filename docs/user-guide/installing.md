@@ -2,8 +2,9 @@
 
 ## Which binary?
 
-Jennifer ships as two binaries per platform. Same source, same
-language; only the compiler differs. Pick by use case:
+On **Linux** (the supported platform) Jennifer ships as two binaries.
+Same source, same language; only the compiler differs. Pick by use
+case:
 
 | Binary          | Build                  | Pick when                                                                                                                                          |
 | --------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -12,7 +13,9 @@ language; only the compiler differs. Pick by use case:
 
 Both binaries install side by side and never overlap. The packaged
 distributions below install both; for tarball or from-source builds
-you get both binaries in one go too.
+you get both binaries in one go too. (The best-effort **macOS /
+Windows** builds ship the standard `jennifer` only - see
+[macOS / Windows](#macos--windows-unsupported) below.)
 
 ## Install
 
@@ -32,8 +35,11 @@ sudo dpkg -i "jennifer_X.Y.Z_${ARCH}.deb"
 ```
 
 Installs `/usr/bin/jennifer` + `/usr/bin/jennifer-tiny`, man pages
-under `/usr/share/man/man1/`, and the XDG MIME definition that
-registers `.j` as `text/x-jennifer` with file managers and editors.
+under `/usr/share/man/man1/`, bash completion, the XDG MIME definition
+that registers `.j` as `text/x-jennifer` with file managers and
+editors, and Vim + Neovim syntax highlighting (dropped in both
+`/usr/share/vim/vimfiles` and `/usr/share/nvim/site` so `.j` files
+highlight with no per-user setup in either editor).
 
 ### Arch Linux (AUR)
 
@@ -74,9 +80,13 @@ jennifer-X.Y.Z-linux-ARCH/
 ├── jennifer              # standard-Go binary (default)
 ├── jennifer-tiny         # TinyGo binary (constrained)
 ├── README.md
+├── JENNIFER.md
 └── share/
     ├── man/man1/         # jennifer.1, jennifer-tiny.1
-    └── mime/packages/    # jennifer.xml (XDG MIME)
+    ├── mime/packages/    # jennifer.xml (XDG MIME)
+    ├── bash-completion/  # completions/jennifer (+ jennifer-tiny symlink)
+    ├── vim/vimfiles/     # syntax/ + ftdetect/ (Vim highlighting)
+    └── nvim/site/        # syntax/ + ftdetect/ (Neovim highlighting)
 ```
 
 To install system-wide:

@@ -14,7 +14,7 @@ Because `EvalInteractive` returns the trailing `ExprStmt`'s value, you can
 inspect any variable by typing **its bare reference followed by `;`** - the
 REPL prints the value's `Display()` form:
 
-```
+```jennifer
 >>> def x as int init 41;
 >>> $x;
 41

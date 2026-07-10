@@ -70,12 +70,17 @@ package() {
         "$pkgdir/usr/share/bash-completion/completions/jennifer"
     ln -sf jennifer "$pkgdir/usr/share/bash-completion/completions/jennifer-tiny"
 
-    # Vim / Neovim syntax highlighting. /usr/share/vim/vimfiles is on Vim's
-    # default runtimepath, so `.j` files highlight with no user setup.
+    # Vim / Neovim syntax highlighting, so `.j` files highlight with no user
+    # setup. Vim and Neovim read separate runtimepaths (/usr/share/vim/vimfiles
+    # vs /usr/share/nvim/site), so install a copy under each.
     install -Dm644 editors/vim/syntax/jennifer.vim \
         "$pkgdir/usr/share/vim/vimfiles/syntax/jennifer.vim"
     install -Dm644 editors/vim/ftdetect/jennifer.vim \
         "$pkgdir/usr/share/vim/vimfiles/ftdetect/jennifer.vim"
+    install -Dm644 editors/vim/syntax/jennifer.vim \
+        "$pkgdir/usr/share/nvim/site/syntax/jennifer.vim"
+    install -Dm644 editors/vim/ftdetect/jennifer.vim \
+        "$pkgdir/usr/share/nvim/site/ftdetect/jennifer.vim"
 
     # Language reference for coding assistants (also a human quick-reference).
     install -Dm644 JENNIFER.md "$pkgdir/usr/share/doc/jennifer/JENNIFER.md"

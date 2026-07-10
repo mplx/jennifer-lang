@@ -74,6 +74,8 @@ mkdir -p "$STAGE/usr/share/mime/packages"
 mkdir -p "$STAGE/usr/share/doc/jennifer"
 mkdir -p "$STAGE/usr/share/vim/vimfiles/syntax"
 mkdir -p "$STAGE/usr/share/vim/vimfiles/ftdetect"
+mkdir -p "$STAGE/usr/share/nvim/site/syntax"
+mkdir -p "$STAGE/usr/share/nvim/site/ftdetect"
 mkdir -p "$STAGE/DEBIAN"
 
 # Binaries.
@@ -95,12 +97,19 @@ install -m 0644 "$PKG_DIR/completions/jennifer.bash" \
     "$STAGE/usr/share/bash-completion/completions/jennifer"
 ln -sf jennifer "$STAGE/usr/share/bash-completion/completions/jennifer-tiny"
 
-# Vim / Neovim syntax highlighting. /usr/share/vim/vimfiles is on Vim's
-# default runtimepath, so `.j` files highlight with no user setup.
+# Vim / Neovim syntax highlighting, so `.j` files highlight with no user
+# setup. Vim and Neovim have separate runtimepaths: /usr/share/vim/vimfiles
+# for Vim, /usr/share/nvim/site for Neovim (on its default runtimepath via
+# XDG_DATA_DIRS). The same syntax file works for both, so install a copy in
+# each - dropping it only under vimfiles leaves Neovim without highlighting.
 install -m 0644 "$REPO_ROOT/editors/vim/syntax/jennifer.vim" \
     "$STAGE/usr/share/vim/vimfiles/syntax/jennifer.vim"
 install -m 0644 "$REPO_ROOT/editors/vim/ftdetect/jennifer.vim" \
     "$STAGE/usr/share/vim/vimfiles/ftdetect/jennifer.vim"
+install -m 0644 "$REPO_ROOT/editors/vim/syntax/jennifer.vim" \
+    "$STAGE/usr/share/nvim/site/syntax/jennifer.vim"
+install -m 0644 "$REPO_ROOT/editors/vim/ftdetect/jennifer.vim" \
+    "$STAGE/usr/share/nvim/site/ftdetect/jennifer.vim"
 
 # Language reference for coding assistants (also a human quick-reference).
 install -m 0644 "$REPO_ROOT/JENNIFER.md" "$STAGE/usr/share/doc/jennifer/JENNIFER.md"
