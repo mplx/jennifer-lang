@@ -1430,6 +1430,83 @@ A client over `net`. HTTPS needs net TLS ([M16.14](#m1614---net-tls)).
 Groups with the `httpd` server below; the two can share HTTP request /
 response parsing.
 
+### M18.6.1 - `gotify` (reference module)
+
+A tiny real-world module built on the M18.6 `http` client: push a
+notification to a [Gotify](https://gotify.net) server. It is the second
+reference module (after M17.5 `ansi`), and the first that crosses the
+module boundary into a *network* dependency - small enough to read in one
+sitting, and the headline example that makes the http client tangible.
+
+- **Surface.** `export def struct Config { url as string, token as string };`
+  plus `export func push(cfg as Config, title as string, message as string,
+  priority as int)`. `push` POSTs `title` / `message` / `priority` as
+  `application/x-www-form-urlencoded` to `cfg.url + "/message"` with an
+  `X-Gotify-Key: cfg.token` header - Gotify's
+  [push-message](https://gotify.net/docs/pushmsg) contract, where
+  [priority](https://gotify.net/docs/priority) is a plain int. Returns the
+  `http` response so the caller can check the status.
+- **Stateless, declarations-only.** No `init()` that stashes url + token:
+  M17.3 forbids mutable module state. The caller holds a value-semantic
+  `Config` and passes it per call, the same shape as the `time` / `hash`
+  structs. Usage: `def g as gotify.Config init gotify.Config{ url: $url,
+  token: $tok }; gotify.push($g, "Title", "Body", 5);`.
+- **Built on `http.post`, not hand-rolled.** The module is ~15 lines
+  because M18.6 owns the HTTP framing, TLS (HTTPS via M16.14), and form
+  encoding; a version predating the http client would hand-roll HTTP/1.1
+  over `net.connectTLS` and be thrown away when M18.6 landed, so it is
+  deliberately sequenced after it. Ships as `modules/gotify.j`, resolved
+  through the module search path like any other module.
+
+**Acceptance.** `import "gotify.j" as gotify;` resolves and exports
+`Config` + `push`; a `push` to a running Gotify server returns a 2xx and
+the message appears in the server's feed; a bad token surfaces the server's
+4xx as a value, not a crash. The URL and token are supplied by the caller
+and never committed - the example reads them from the environment and the
+docs use placeholders.
+
+### M18.6.2 - `rest` (module)
+
+The ergonomic REST layer over the M18.6 `http` client - a genuine
+library-sized `.j` module (a step up from `gotify`'s one endpoint), and the
+proof that the module system carries a real utility written in the language
+itself. It is a **module, not a system library**, because it needs no host
+capability of its own: everything hard is already owned by `http` (verbs,
+headers, TLS, body framing) and `json` ([M16.9](#m169---json)); `rest` is
+pure composition over the two, so putting it in Go would duplicate `http`
+and break the dependency-free / TinyGo-clean stances for no gain. The split
+is deliberate: `http` is the transport primitive (Go, needs `net` / TLS),
+`rest` is the convenience layer (`.j`).
+
+- **Surface.** A value-semantic client plus JSON-aware verbs:
+  `export def struct Client { baseUrl as string, headers as map of string
+  to string };` and `export func get/post/put/patch/delete(c as Client,
+  path as string, ...)` returning a `Response` struct
+  `{ status as int, headers as map of string to string, body as string }`.
+  JSON convenience wrappers - `rest.getJson(c, path) -> json.Value`,
+  `rest.postJson(c, path, body as json.Value)` - encode / decode through
+  `json` and set `Content-Type`. Base-URL joining, query-string building,
+  and `Authorization` (Bearer / Basic, the latter via `encoding` base64)
+  are string / map work.
+- **Stateless, declarations-only.** Like `gotify`, the caller holds the
+  `Client` value and threads it per call (M17.3 forbids mutable module
+  state); auth lives in `Client.headers`. A stateful cookie-jar *session*
+  is deliberately out of scope for v1 - it would need either a
+  functionally-threaded jar or an `http`-side handle (a system library may
+  hold stateful handles like `net.Conn`; a module may not), so it is
+  deferred to `http` rather than dragging `rest` into Go.
+- **Built on `http` + `json`, not hand-rolled.** No sockets, no TLS, no
+  parsing in this module - it calls `http` for transport and `json` for
+  bodies. Ships as `modules/rest.j`, resolved through the module search
+  path.
+
+**Acceptance.** `import "rest.j" as rest;` resolves and exports `Client` +
+the verb functions; a full CRUD round-trip against a test server
+(`postJson` create -> `getJson` read -> `put`/`patch` update -> `delete`)
+returns the expected statuses and decoded bodies; a 4xx / 5xx is reported
+as a `Response` value (status inspectable), not a crash; base-URL joining
+and query params compose without double slashes.
+
 ### M18.7 - `httpd` (server)
 
 A pure-Jennifer HTTP server atop `net`, shipped as a module (same shape
@@ -1759,6 +1836,18 @@ willing to keep it green; they're not blocking anything.
   whole milestone apiece; `UTF-16` / `UTF-16LE` / `UTF-16BE` / `UTF-32` (BOM,
   surrogate pairs, endianness); and `UTF-7` (mail-transport - though
   `quoted-printable` already shipped as a general codec).
+- **Module package manager + registry (`jvc`).** A CLI package tool plus a
+  public registry (packagist-style) so a developer can declare and install
+  third-party `.j` modules: `jvc install gotify>=1.0.0` resolves a version
+  constraint against the registry and downloads into a project-local
+  `./vendor` directory, which becomes one more module search root - the M17
+  resolver already walks a search path (system dir, then `-I` dirs), so
+  `vendor/` is an added entry, not a new resolution model. Needs a manifest
+  + lockfile format, semver constraint solving, a registry service and
+  publish flow, and integrity pinning (content hash per version). A whole
+  track of its own; the module system (M17) is the prerequisite, and
+  `gotify` ([M18.6.1](#m1861---gotify-reference-module)) is the first
+  module worth publishing through it.
 - **FCGI.** `use FCGI as web;` library when `net` and `httpd`
   mature. Lets Jennifer host CGI / FastCGI workloads end-to-end.
 - **Inline assembler.**
