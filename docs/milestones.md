@@ -1046,55 +1046,23 @@ to json.org. No `any` keyword (rationale in
 
 ## M17 - Module system for Jennifer-coded libraries
 
-Real modules, so Jennifer-coded libraries get their own namespace, scope,
-and explicit exports. "Module" is the canonical term for a distributable
-`.j` library (matching Python, ES2015, Rust). Two mechanisms coexist and
-divide by pipeline stage: `include "x.j";` stays the **textual splice**
-(preprocessor) for composing one module out of several files;
-`import "x.j" as x;` is the new **module boundary** (parser + interpreter).
-
-```jennifer
-# points.j - a module
-export def struct Point { x as int, y as int };
-
-export func mid(a as Point, b as Point) {
-    return Point{ x: ($a.x + $b.x) // 2, y: ($a.y + $b.y) // 2 };
-}
-
-func doubleCoord(v as int) { return $v * 2; }   # private: no export marker
-```
-
-```jennifer
-# consumer.j
-use io;
-import "./points.j" as points;
-
-def p as points.Point init points.Point{ x: 0, y: 10 };
-io.printf("mid = %v\n", points.mid($p, points.Point{ x: 4, y: 6 }));
-```
-
-The settled, cross-cutting decisions (turned-down alternatives live in
-[rejected.md](technical/rejected.md)):
-
-- `import` is a parser + interpreter feature, not a preprocessor splice.
-- Each module is its own resolution context: own `use` set, namespace
-  tables, and export table.
-- Module top level is **declarations-only** - no mutable module state - so
-  `spawn` capture is unaffected (nothing mutable to snapshot).
-- One global `Error` (M13.2 stands); modules add distinctly-named error
-  structs, never redefine `Error`.
-- **Private by default**; a leading `export` publishes a name. No
-  `public` / `private` keyword.
-- Multi-file modules assemble via `include` behind one entry file - no
-  directory-as-module, no cross-file re-export.
-- Modules need a filesystem; hosted `jennifer-tiny` loads them, an
-  FS-less host fails with the ordinary search-path error.
-
-Shipped as four dependency-ordered submilestones - **M17.1-M17.4 are
-done** (resolution, loader, scope, exports); their full per-milestone
-specs live in git history, compacted below. M17.5 dogfoods them with the
-first real module (`ansi`) and M17.6 adds `semver`. **M18.x is now
-unblocked.**
+**Status:** done. All six sub-milestones shipped. Jennifer-coded libraries
+now get their own namespace, scope, and explicit `export`s via a real
+**module boundary** (`import "x.j" as x;`, parser + interpreter) that lives
+beside the textual `include "x.j";` splice (preprocessor, for composing one
+module out of several files). The settled, cross-cutting decisions
+(turned-down alternatives in [rejected.md](technical/rejected.md)): `import`
+is a parser + interpreter feature, not a preprocessor splice; each module is
+its own resolution context (own `use` set, namespace + export tables); the
+module top level is **declarations-only** - no mutable module state, so
+`spawn` capture is unaffected; the one global `Error` stands (modules add
+distinctly-named error structs, never redefine it); **private by default**,
+a leading `export` publishes a name (no `public` / `private` keyword);
+multi-file modules assemble via `include` behind one entry file (no
+directory-as-module, no cross-file re-export); modules need a filesystem
+(an FS-less `jennifer-tiny` host fails with the ordinary search-path error).
+User-facing reference: [imports.md](user-guide/imports.md) +
+[modules/index.md](modules/index.md). M18.x builds on top.
 
 ### M17.1 - Source tree and resolution
 
@@ -1160,109 +1128,55 @@ private names.
 
 ### M17.5 - `ansi` module
 
-**Status:** done. Ships as `modules/ansi.j` - the ESC byte is built from a
-one-byte `bytes` (no string-literal escape for it); `enabled()` reads
-`NO_COLOR` / `FORCE_COLOR` / `os.isTerminal("stdout")` per call (stateless);
-`strip` uses `regex`; unknown colour / style names `throw`. `color` /
-`bgColor` / `style` / `rgb` / `strip` plus per-colour and per-style
-shortcuts are `export`ed. Demo: `examples/modules/ansi_demo.j`. Coverage:
-`internal/interpreter/module_ansi_test.go`, plus a white-box
-`modules/ansi_test.j` overlay (`jennifer test`) that reads ansi's private
-tables - dogfooding M17.4's test overlay on the reference module itself.
-
-The first module built on the system - small, useful, pure Jennifer, and a
-real dogfood of `import` / `export` / resolution end to end. Terminal
-styling as explicit string wrappers; escape-code generation is pure string
-work, so no Go is needed.
-
-- **Surface.** `ansi.color(s, name)` / `ansi.bgColor(s, name)`,
-  `ansi.style(s, name)` (bold / dim / italic / underline / reverse),
-  `ansi.rgb(s, r, g, b)` for truecolor, `ansi.strip(s)` to remove all
-  escapes, plus convenience shortcuts `ansi.red(s)` / `ansi.bold(s)` /
-  ... `export`ed from `modules/ansi.j`.
-- **TTY-aware and stateless.** Gates styling on `os.isTerminal("stdout")`
-  ([M16.13](#m1613---osisterminal)) so redirected output stays clean,
-  overridable by the `NO_COLOR` / `FORCE_COLOR` environment convention
-  (read per call via `os.getEnv`) - a standard cross-tool signal, and
-  stateless, so the module honours M17.3's no-mutable-state rule (there is
-  no `enabled(flag)` toggle to store). Degrades to always-on if
-  `os.isTerminal` is absent.
-- **Why it is the reference module.** It exercises the whole module path -
-  a real `import`, `export`ed names, one system dependency (`use os;`)
-  across the boundary - with code small enough to read in one sitting; a
-  better M17 proof than a toy.
-- **Not a `printf` modifier.** Colour is a string wrapper, not I/O and not
-  value formatting, so a `%s|color=` printf modifier is rejected in its
-  favour ([rejected.md](technical/rejected.md)).
-
-**Acceptance.** `import`s and resolves as a module; wrapping composes and
-nests; `strip` reverses it; styling suppresses when `os.isTerminal` is
-false and when `NO_COLOR` is set, and is forced on by `FORCE_COLOR`; the
-module holds no mutable top-level state.
+**Done.** `modules/ansi.j` - terminal styling as explicit string wrappers,
+the first module built on the system (pure Jennifer, one `use os;`
+dependency across the boundary; a real end-to-end dogfood of `import` /
+`export` / resolution). Exports `color` / `bgColor` / `style` (bold / dim /
+italic / underline / reverse) / `rgb` truecolor / `strip`, plus per-colour
+and per-style shortcuts (`ansi.red(s)`, `ansi.bold(s)`, ...). The ESC byte
+is built from a one-byte `bytes` (no string-literal escape for it); `strip`
+uses `regex`; unknown colour / style names `throw`. Stateless and
+TTY-aware: `enabled()` re-reads `NO_COLOR` / `FORCE_COLOR` /
+`os.isTerminal("stdout")` per call, so redirected output stays clean and no
+toggle state is stored (honours the no-mutable-state rule); degrades to
+always-on when `os.isTerminal` is absent. Colour is a string wrapper, so a
+`%s|color=` printf modifier is rejected in its favour
+([rejected.md](technical/rejected.md)). Demo
+`examples/modules/ansi_demo.j`; coverage
+`internal/interpreter/module_ansi_test.go` + a white-box
+`modules/ansi_test.j` overlay reading ansi's private tables; reference doc
+[modules/ansi.md](modules/ansi.md).
 
 ### M17.6 - `semver` module
 
-**Done.** Ships as `modules/semver.j` with a white-box `modules/semver_test.j`
-overlay (12 tests) and `examples/modules/semver_demo.j`. `parse` uses the
-canonical anchored SemVer RE2 pattern with named groups (`regex.find` +
-`groupsNamed`); precedence `compare`, prerelease-field ordering, and the
-insertion `sort` are hand-written Jennifer (the algorithmic dogfood). No
-system dependency beyond `use strings; use convert; use regex;`, so it runs
-on both binaries. Building the demo surfaced and fixed a latent M17.4
-boundary gap: passing a consumer-typed `list of semver.Version` back into a
-module function (`semver.sort`) failed because the retag re-tagged the struct
-element *values* but not the list's element-*type* metadata - now covered by
-`retagType` (regression: `TestModuleListOfStructCrossesBoundary`).
-
-The second pure reference module (alongside M17.5 `ansi`): strict
-[SemVer 2.0.0](https://semver.org) parsing, comparison, and increment as a
-`.j` module. Like `ansi` it is pure Jennifer with no system dependency, so
-it lands on just the module system (no M18 library needed) - and it is the
-foundation the future `jvc` package manager
-([Long horizon](#long-horizon-recorded-not-scheduled)) needs, since
-`install gotify>=1.0.0` is semver comparison at its core.
-
-- **Strict SemVer 2.0.0, not a loose parser.** Exactly
-  `MAJOR.MINOR.PATCH` plus an optional `-prerelease` and `+build`. The spec
-  buys precise precedence - major / minor / patch compared numerically, a
-  prerelease sorts *below* its release (`1.0.0-alpha < 1.0.0`), and build
-  metadata is **ignored** in comparison. A looser N-segment form (e.g.
-  `1.2.3.4`) has no defined ordering (`1.2.3` vs `1.2.3.0`?), which would
-  quietly break sorting and the package manager's constraint solving, so it
-  is rejected as invalid. The interpreter's own `meta.VERSION`
-  (`0.16.0-dev+4.a927e1d`) is already valid strict semver, so the module
-  parses Jennifer's own version out of the box.
-- **Surface.** `export def struct Version { major as int, minor as int,
-  patch as int, prerelease as string, build as string };` plus:
-  `semver.parse(s) -> Version` (throws on invalid), `semver.isValid(s) ->
-  bool`, `semver.toString(v) -> string` (round-trips `parse`);
-  `semver.compare(a, b) -> int` (`-1`/`0`/`1`, SemVer precedence) with
-  `semver.lt` / `eq` / `gt` wrappers; `semver.isStable(v) -> bool` (no
-  prerelease; note `0.y.z` is unstable by convention) and
-  `semver.isPrerelease(v) -> bool`; `semver.incMajor` / `incMinor` /
-  `incPatch(v) -> Version` (each resets the lower parts and clears
-  prerelease + build); `semver.sort(vs) -> list of Version`. `export`ed
-  from `modules/semver.j`.
-- **`sort` is implemented in the module.** `lists.sort` is scalar-only and
-  comparator-based `lists.sortBy` is deferred, so `semver.sort` orders a
-  `list of Version` with its own pass over `semver.compare` - a real
-  algorithm written in Jennifer, another honest dogfood of the module.
-- **Stateless, declarations-only.** `Version` is a value-semantic struct
-  the caller holds and passes; nothing is stored, so M17.3's no-mutable-
-  state rule holds.
-- **Range matching deferred.** Constraint grammar
-  (`satisfies(v, "^1.2.0"` / `">=1.0.0"` / `"~1.2.3")`) is out of scope
-  here; it is the harder parser and lands with (or just before) `jvc`.
-  M17.6 ships the version *values* and their ordering.
-
-**Acceptance.** `import "semver.j" as semver;` resolves and exports
-`Version` + the functions; `parse` of a full `X.Y.Z-pre+build` round-trips
-through `toString`; an invalid string (four segments, empty part, bad
-prerelease) is rejected; `compare` orders `1.0.0-alpha < 1.0.0 < 1.0.1 <
-1.1.0 < 2.0.0` and ignores build metadata; `isStable` / `isPrerelease`
-agree with the presence of a prerelease tag; the `inc*` helpers reset lower
-parts and drop prerelease / build; `sort` orders a shuffled list; and
-`semver.parse(meta.VERSION)` succeeds.
+**Done.** `modules/semver.j` - strict [SemVer 2.0.0](https://semver.org) as
+a second pure-Jennifer reference module (no system dependency beyond
+`use strings; use convert; use regex;`, so it runs on both binaries), and
+the foundation the future `jvc` package manager
+([Long horizon](#long-horizon-recorded-not-scheduled)) needs since
+`install gotify>=1.0.0` is semver comparison at its core. Exports
+`Version { major, minor, patch, prerelease, build }` plus `parse` (throws
+on invalid) / `isValid` / `toString` (round-trips `parse`); `compare` /
+`lt` / `eq` / `gt` (SemVer precedence: numeric core, a prerelease ranks
+*below* its release, prerelease fields compared numeric-below-alphanumeric,
+build metadata ignored); `isStable` (no prerelease and `major >= 1`;
+`0.y.z` is unstable by convention) / `isPrerelease`; `incMajor` / `incMinor`
+/ `incPatch` (reset the lower parts, clear pre + build); and `sort` (own
+pass over `compare`, since `lists.sort` is scalar-only). Strict, not a loose
+parser: a looser N-segment form (`1.2.3.4`) has no defined ordering and is
+rejected. `parse` matches the canonical anchored SemVer RE2 pattern with
+named groups (`regex.find` + `groupsNamed`); the precedence comparison and
+sort are hand-written Jennifer - the algorithmic dogfood. `meta.VERSION` is
+valid strict semver, so the module parses Jennifer's own version. Range /
+constraint matching (`^1.2.0`, `>=1.0.0`, `~1.2.3`) is the harder parser and
+is deferred to (or just before) `jvc`. Building the demo surfaced and fixed
+a latent M17.4 boundary gap: passing a consumer-typed `list of semver.Version`
+back into a module `list of Version` parameter (`semver.sort`) failed because
+the retag re-tagged the struct element *values* but not the list's
+element-*type* metadata - now covered by `retagType` (regression
+`TestModuleListOfStructCrossesBoundary`). Demo
+`examples/modules/semver_demo.j`; white-box `modules/semver_test.j` overlay
+(12 tests); reference doc [modules/semver.md](modules/semver.md).
 
 ## M18.x - Jennifer-coded modules
 
