@@ -189,19 +189,31 @@ func TestRejectsIncludeOfLibraryName(t *testing.T) {
 	}
 }
 
-func TestImportKeywordReserved(t *testing.T) {
-	// The pre-namespacing spelling `import "x.j";` is rejected with a
-	// migration hint pointing at `include`. The `import` keyword itself
-	// is reserved for the planned module system.
-	src := `func app() { import "foo.j"; }`
+func TestModuleImportPassesThrough(t *testing.T) {
+	// `import "x.j" [as NAME];` is a module import: passed through to the
+	// parser unchanged (not spliced like `include`, not rejected).
+	src := `import "foo.j" as foo; func app() {}`
+	toks, _ := lexer.Tokenize(src)
+	out, err := Process(toks, ".", "")
+	if err != nil {
+		t.Fatalf("module import should pass through, got: %v", err)
+	}
+	if out[0].Type != lexer.TOKEN_IMPORT {
+		t.Errorf("import token not preserved: %v", out[0])
+	}
+}
+
+func TestUnquotedImportRejected(t *testing.T) {
+	// `import foo;` (unquoted) is the common mistake - a module path must be
+	// a quoted string; a system library uses `use`.
+	src := `import foo; func app() {}`
 	toks, _ := lexer.Tokenize(src)
 	_, err := Process(toks, ".", "")
 	if err == nil {
-		t.Fatal("expected `import` reserved-keyword error")
+		t.Fatal("expected an error for unquoted `import foo;`")
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "include") || !strings.Contains(msg, "reserved") {
-		t.Errorf("error should redirect to `include` and mention reservation: %v", err)
+	if !strings.Contains(err.Error(), "quoted") {
+		t.Errorf("error should mention quoting: %v", err)
 	}
 }
 

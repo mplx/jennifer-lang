@@ -377,8 +377,12 @@ Two moves close out the optimization pass:
    no duplicate method names, and no method name that collides with a
    registered builtin whose owning library has been imported (the no-shadowing
    rule extended to builtins - see `evalCall` below).
-4. Creates the global `Environment` (`i.global`) and executes `prog.TopLevel`
-   statements in source order in that global scope.
+4. Creates the global `Environment` (`i.global`). Before executing the
+   body, `loadModuleImports(prog)` loads and initialises every
+   `import "..."` module (see [Module loading](#module-loading)), so an
+   imported module is fully initialised before the importer's body runs.
+   Then executes `prog.TopLevel` statements in source order in the global
+   scope.
 5. Method calls execute the body in a fresh call frame whose parent is
    `effectiveGlobal(env)` (an O(1) `env.root` field read; in
    serial code that's `i.global`, inside a `spawn` body it's the
@@ -403,6 +407,62 @@ aren't hot loops.
 There is no required entry point. A program with only imports and method
 defs is valid and runs to completion immediately (those methods are simply
 never called).
+
+## Module loading
+
+`import "PATH.j" [as NAME];` (an `ast.ModuleImportStmt`) loads another
+`.j` file as a module. `internal/interpreter/module.go` holds the
+loader; `internal/module` holds the path resolver.
+
+`EnableModules(baseDir, searchDirs, load, setup)` wires the system onto
+the root interpreter and builds a `moduleReg` shared across the whole
+run:
+
+- `cache map[string]*loadedModule` - the run-once table keyed by
+  resolved absolute path.
+- `stack []string` - canonical paths currently loading, for cycle
+  detection.
+- `search []string` - the module search path (system module dir, then
+  each `-I` dir).
+- `load func(string) (*parser.Program, error)` - lex + preprocess +
+  parse a resolved file. The CLI passes `main.go`'s
+  `loadModuleProgram`; tests pass an equivalent.
+- `setup func(*Interpreter)` - install the standard library into a
+  module's fresh sub-interpreter. The CLI passes `installLibraries`.
+
+`loadModuleImports(prog)` runs from `Run` (step 4) before the body. For
+each import it calls `loadModule(path, at)`:
+
+1. `module.Resolve(path, baseDir, search)` -> canonical absolute path
+   (local `./`/`../` and absolute `/` resolve directly; a bare name
+   walks `search`, where a name found in two search dirs is a hard
+   error). Resolution errors are positioned at the import statement.
+2. **Cycle check** - if the canonical path is already on `reg.stack`,
+   error `module cycle: A -> B -> C -> A` naming every edge.
+3. **Run-once** - if it's already in `reg.cache`, return the cached
+   `*loadedModule` without re-running.
+4. `reg.load(canonical)` parses the module (parse errors stay
+   positioned in that file).
+5. A **fresh sub-interpreter** is the module's own scope: `sub := New();
+   reg.setup(sub); sub.modReg = reg; sub.baseDir = dir(canonical)`.
+   Sharing `reg` means the sub's own imports use the same cache and
+   stack.
+6. Push the canonical path, `sub.Run(modProg)` (which recurses into the
+   sub's imports, then runs its body), pop the path, and cache the
+   result.
+
+The recursion is what delivers the guarantees: **run-once** from the
+cache, **depth-first post-order init** from initialising a module before
+its importer's body, and **cycle detection** from the load stack. Load
+errors (a parse error or a `throw` during a module's top level)
+propagate out of `Run` as ordinary errors and fail the program; they are
+**not** catchable, because an `import` is a top-level declaration, not an
+expression, so it cannot sit inside a `try`/`catch` (the parser rejects
+`import` in a block).
+
+Addressing a module's `export`ed members as `NAME.member` is a later
+milestone; `AsName` is parsed and carried on the node but not yet bound.
+Today an `import` runs a module for its initialisation side effects.
 
 ## Builtins and libraries
 

@@ -186,10 +186,11 @@ func NamespacedStructType(ns, name string) Type {
 
 type Program struct {
 	pos
-	Imports  []*ImportStmt
-	Methods  []*MethodDef
-	Structs  []*StructDef // top-level `def struct Name { ... };` declarations
-	TopLevel []Stmt       // top-level statements executed in source order after method hoisting
+	Imports       []*ImportStmt       // `use LIB;` library imports
+	ModuleImports []*ModuleImportStmt // `import "path.j" [as NAME];` module imports
+	Methods       []*MethodDef
+	Structs       []*StructDef // top-level `def struct Name { ... };` declarations
+	TopLevel      []Stmt       // top-level statements executed in source order after method hoisting
 	// Number of slots the global frame needs. Populated by
 	// Resolve() during parse. Zero when Resolve() hasn't run - the
 	// interpreter falls back to name-based lookup in that case, which
@@ -211,6 +212,18 @@ type ImportStmt struct {
 }
 
 func (*ImportStmt) stmtNode() {}
+
+// ModuleImportStmt is a `import "path.j" [as NAME];` module import - a real
+// module boundary (unlike `include`'s textual splice). Path is the logical,
+// `/`-separated import string; AsName is the namespace prefix, empty for the
+// bare form (the prefix is then the file stem, resolved by the interpreter).
+type ModuleImportStmt struct {
+	pos
+	Path   string
+	AsName string // empty when there's no `as NAME` clause
+}
+
+func (*ModuleImportStmt) stmtNode() {}
 
 // Param is one formal parameter of a method.
 type Param struct {

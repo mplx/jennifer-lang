@@ -27,8 +27,10 @@ after the file is the program's own `os.ARGS`.
 - `-I DIR` (or `-I=DIR`, repeatable) - add a directory to the module
   search path after the system dir. A `-I` dir *adds* names; a module name
   appearing in two search dirs is a hard error at load. (Resolution lives
-  in `internal/module`; the `import` statement that consumes it is not yet
-  implemented.)
+  in `internal/module`; the `import` statement consumes it via the loader
+  wired in `main.go`'s `runFile` - `in.EnableModules(baseDir, searchDirs,
+  loadModuleProgram, installLibraries)`, where `searchDirs` is the system
+  dir followed by each `-I` dir.)
 
 `jennifer version -v` reports the resolved system module dir and the
 layers (compile default, `JENNIFER_SYSMODDIR`) behind it.

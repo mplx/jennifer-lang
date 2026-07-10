@@ -1166,6 +1166,8 @@ identically through `meta.SYSMODDIR` and `jennifer version -v`; duplicate
 
 ### M17.2 - Import statement and loader
 
+**Status:** done.
+
 The `import "..." as NAME;` statement end to end: pipeline placement,
 one-time init, ordering, cycles, error surfacing.
 
@@ -1206,6 +1208,19 @@ returns the cached instance without re-running init; an A->B->C->A cycle
 errors at `Run()` naming every edge; a throwing initializer fails at load
 and is not caught by a `try` around the `import`; `jennifer fmt`
 round-trips an `import` line unchanged.
+
+**As built.** The loader lives in `internal/interpreter/module.go` (the
+`moduleReg` shared cache + load stack + search path, one fresh
+sub-interpreter per module) and is wired onto the CLI in `main.go`'s
+`runFile` via `EnableModules`. Each module loads into its own
+sub-interpreter sharing the registry, so run-once, post-order init, and
+cycle detection fall out of the recursion. `ModuleImportStmt.AsName` is
+parsed and carried on the node but not yet **bound**: today an `import`
+runs a module for its initialisation side effects. Binding `NAME.member`
+to a module's exported surface is the job of M17.3 (module scope and
+namespacing) and M17.4 (exports). Runnable demo: `examples/modules/`.
+Coverage: `internal/interpreter/module_test.go` (post-order/run-once,
+cycle, positioned parse error, load-time throw, imports-without-enable).
 
 ### M17.3 - Module scope and namespacing
 

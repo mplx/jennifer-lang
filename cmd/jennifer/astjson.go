@@ -24,6 +24,7 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 		startObj(b, indent)
 		emitTypeAndPos(b, "Program", v, indent+1)
 		emitNodeListField(b, "imports", asNodes(v.Imports), indent+1)
+		emitNodeListField(b, "moduleImports", asNodes(v.ModuleImports), indent+1)
 		emitNodeListField(b, "methods", asNodes(v.Methods), indent+1)
 		emitStmtListField(b, "topLevel", v.TopLevel, indent+1)
 		endObj(b, indent)
@@ -32,6 +33,15 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 		startObj(b, indent)
 		emitTypeAndPos(b, "ImportStmt", v, indent+1)
 		emitStringField(b, "name", v.Name, indent+1)
+		if v.AsName != "" {
+			emitStringField(b, "as", v.AsName, indent+1)
+		}
+		endObj(b, indent)
+
+	case *parser.ModuleImportStmt:
+		startObj(b, indent)
+		emitTypeAndPos(b, "ModuleImportStmt", v, indent+1)
+		emitStringField(b, "path", v.Path, indent+1)
 		if v.AsName != "" {
 			emitStringField(b, "as", v.AsName, indent+1)
 		}

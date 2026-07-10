@@ -43,24 +43,27 @@ func main() {
 		// (matches Python sys.argv, Go os.Args): index 0 of the
 		// user-visible `os.ARGS` is the script path, the rest are the
 		// user-supplied args.
-		file, sysmoddirFlag, _, userArgs, perr := parseRunArgs(os.Args[2:])
+		file, sysmoddirFlag, includes, userArgs, perr := parseRunArgs(os.Args[2:])
 		if perr != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", perr)
 			usage()
 			os.Exit(2)
 		}
-		if err := setupSysmoddir(sysmoddirFlag); err != nil {
+		sm, err := setupSysmoddir(sysmoddirFlag)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "jennifer: %v\n", err)
 			os.Exit(2)
 		}
+		// Module search path: system module dir first, then each -I dir.
+		searchDirs := append([]string{sm.Dir}, includes...)
 		oslib.SetUserArgs(append([]string{file}, userArgs...))
-		os.Exit(runFile(file))
+		os.Exit(runFile(file, searchDirs))
 	case "repl":
 		if len(os.Args) != 2 {
 			usage()
 			os.Exit(2)
 		}
-		if err := setupSysmoddir(""); err != nil {
+		if _, err := setupSysmoddir(""); err != nil {
 			fmt.Fprintf(os.Stderr, "jennifer: %v\n", err)
 			os.Exit(2)
 		}
@@ -173,13 +176,13 @@ func parseRunArgs(args []string) (file, sysmoddir string, includes, userArgs []s
 // default), validates an explicitly-named one (a missing or non-directory
 // CLI/env value refuses to start), and records the winner for
 // meta.SYSMODDIR.
-func setupSysmoddir(cliFlag string) error {
+func setupSysmoddir(cliFlag string) (module.Sysmoddir, error) {
 	sm := module.ResolveSysmoddir(cliFlag, os.Getenv)
 	if err := sm.Validate(os.Stat); err != nil {
-		return err
+		return sm, err
 	}
 	metalib.SetSysmoddir(sm.Dir)
-	return nil
+	return sm, nil
 }
 
 // printVersionVerbose backs `jennifer version -v`: the build version plus
@@ -194,7 +197,26 @@ func printVersionVerbose() {
 	}
 }
 
-func runFile(path string) int {
+// loadModuleProgram is the interpreter's module loader: it reads, lexes,
+// preprocesses, and parses a resolved module file into a program the loader
+// then resolves and runs. Errors carry the module file's position.
+func loadModuleProgram(path string) (*parser.Program, error) {
+	srcBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read module %q: %v", path, err)
+	}
+	toks, err := lexer.TokenizeWithFile(string(srcBytes), path)
+	if err != nil {
+		return nil, err
+	}
+	toks, err = preproc.Process(toks, filepath.Dir(path), path)
+	if err != nil {
+		return nil, err
+	}
+	return parser.ParseTokens(toks)
+}
+
+func runFile(path string, searchDirs []string) int {
 	var (
 		src     string
 		label   string // path used in error messages
@@ -255,6 +277,11 @@ func runFile(path string) int {
 	}
 	in := interpreter.New()
 	installLibraries(in)
+	// Enable `import "..."` module resolution: local imports resolve
+	// relative to this file's directory; bare names walk searchDirs (the
+	// system module dir, then any -I dirs). Each module loads into a fresh
+	// sub-interpreter that installLibraries populates.
+	in.EnableModules(baseDir, searchDirs, loadModuleProgram, installLibraries)
 	runErr := in.Run(prog)
 
 	// The exit-time loud-fail. Even when Run returned cleanly,

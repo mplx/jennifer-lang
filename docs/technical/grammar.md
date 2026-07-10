@@ -6,19 +6,28 @@ the AST node table and the parser's structure.
 ## Grammar - EBNF
 
 This grammar describes the token stream **after** preprocessing - file
-imports (`import STRING ;`) are spliced before the parser runs, so they
-don't appear here. Only library imports (`use IDENT ;`) reach the parser.
+splices (`include STRING ;`) are expanded before the parser runs, so
+they don't appear here. Library imports (`use IDENT ;`) and module
+imports (`import STRING [ "as" IDENT ] ;`) do reach the parser: `use`
+becomes an `ImportStmt`, `import` a `ModuleImportStmt`.
 
 Terminals in CAPITALS are token classes from the lexer (see
 [Lexer > Token types](lexer.md#token-types)); quoted strings are keywords or
 punctuation that match the corresponding token's lexeme.
 
 ```ebnf
-program     = { useStmt | methodDef | structDef | statement } EOF ;
+program     = { useStmt | moduleImport | methodDef | structDef | statement } EOF ;
 useStmt     = "use" IDENT [ "as" IDENT ] ";" ;      (* library import; the
                                                        optional "as ALIAS"
                                                        renames the namespace
                                                        at the use site *)
+moduleImport = "import" STRING [ "as" IDENT ] ";" ;  (* module import; the
+                                                       STRING path must end
+                                                       in ".j". Top-level
+                                                       only - a module is a
+                                                       declaration, so an
+                                                       import inside a block
+                                                       is a parse error *)
 methodDef   = "func" IDENT "(" [ paramList ] ")" block ;
 paramList   = param { "," param } ;
 param       = IDENT "as" type ;

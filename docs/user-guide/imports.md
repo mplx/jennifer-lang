@@ -1,15 +1,17 @@
 # Imports
 
-Two keywords, two mechanisms:
+Three keywords, three mechanisms:
 
 ```jennifer
 use io;                   # library import - enables `io.printf`, `io.sprintf`, ...
 include "helpers.j";      # textual file splice - pastes helpers.j here
+import "./config.j";      # module import - loads config.j as its own module
 ```
 
-A third keyword, `import`, is **reserved** for the planned module
-system. Writing `import "x.j";` today produces a migration-hint
-error pointing at `include`.
+`use` and `include` operate at the textual level; `import` is the
+module system - a real module boundary with run-once initialisation. A
+module loads and initialises before the code that imports it (see
+[Module imports](#module-imports) below).
 
 ## Library imports
 
@@ -139,19 +141,71 @@ io.printf($helperValue);
 Circular includes (file A includes file B, B includes A) are detected
 and rejected with an error.
 
+## Module imports
+
+`import "PATH.j" [as NAME];` loads another `.j` file as a **module** - a
+real boundary, not a textual splice. Where an `include` pastes tokens
+into the current scope, an `import` runs the referenced file as its own
+program: its top level executes once, in its own scope, before the
+importing file's body runs.
+
+```jennifer
+use io;
+import "./config.j";   # config.j initialises before this line returns
+import "./db.j";       # db.j (which may itself import config.j) initialises next
+
+io.printf("app: running\n");
+```
+
+The path decides where the module is found by its leading token:
+
+- **Local** - `import "./util.j";` or `import "../shared.j";` resolves
+  relative to the importing file's directory.
+- **Absolute** - `import "/opt/pkg/m.j";` (leading `/`) is an absolute
+  filesystem path.
+- **Module** - `import "util.j";` (no `./`, no `/`) is looked up on the
+  module search path: the system module directory first, then each
+  `-I DIR` passed on the command line. The importing file's own
+  directory is **not** consulted for this form. A `/` anywhere but the
+  front is an ordinary subdirectory (`import "sub/util.j";` works in
+  every form).
+
+Guarantees:
+
+- **Run-once.** A module's top level runs exactly once per program,
+  cached by its resolved absolute path. Importing it again returns the
+  same initialised module without re-running it.
+- **Post-order init.** Imports initialise depth-first: a module is fully
+  initialised before any module that imports it. If `main` imports `db`
+  and `db` imports `config`, the order is `config`, then `db`, then
+  `main`'s body.
+- **Acyclic.** An import cycle (`a` imports `b` imports `a`) is a
+  load-time error that names every edge in the loop.
+- **Load errors are not catchable.** A parse error or a `throw` during a
+  module's initialisation fails the program at load. An `import` is a
+  declaration, not an expression, so it cannot appear inside a
+  `try`/`catch` - wrapping one is itself a parse error.
+
+Addressing a module's exported members as `NAME.member` (with `export`
+marking the public surface) arrives in a later milestone; today an
+`import` runs a module for its top-level initialisation and its
+side effects. See the runnable [`examples/modules/`](https://github.com/mplx/jennifer-lang/tree/main/examples/modules)
+chain.
+
 ### `include` vs `import`
 
-`include` does a textual splice with no module boundary - the spliced
-file's top-level names land directly in the enclosing program's scope.
-The `import` keyword is reserved for the planned module system, which
-will add real modules with their own namespaces and explicit exports.
-Writing `import "foo.j";` today is rejected with a migration-hint
-pointing at `include`.
+Both read another `.j` file, but they differ at the boundary:
+
+- `include` does a **textual splice** with no module boundary - the
+  spliced file's top-level names land directly in the enclosing
+  program's scope, and the same file spliced twice contributes its
+  definitions twice. Use it to share snippets within one program.
+- `import` loads a **module** - separate scope, run-once, post-order
+  init. Use it to compose independent files.
+
+Mixing the keywords up produces a positioned, actionable error:
 
 ```
-import "x.j";   → error: use `include "x.j";` for textual file
-                  splicing; the `import` keyword is reserved for
-                  the planned module system
 include io;     → error: `include` is for files; use `use io;` for
                   system libraries
 use foo.j;      → error: `use` is for system libraries; for files use
@@ -159,6 +213,8 @@ use foo.j;      → error: `use` is for system libraries; for files use
 include foo.j;  → error: file splices take a string literal:
                   `include "foo.j";`
 include "foo.go"; → error: include path "foo.go" must end with `.j`
+import foo;     → error: `import` takes a quoted module path
+                  (`import "foo.j";`); for a system library use `use foo;`
 ```
 
 Notes:

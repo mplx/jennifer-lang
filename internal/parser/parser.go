@@ -141,6 +141,14 @@ func (p *parser) parseProgram() (*Program, error) {
 				return nil, err
 			}
 			prog.Imports = append(prog.Imports, imp)
+		case lexer.TOKEN_IMPORT:
+			// `import "path.j" [as NAME];` - a module import (the preprocessor
+			// passes it through; the interpreter's loader resolves and runs it).
+			m, err := p.parseModuleImport()
+			if err != nil {
+				return nil, err
+			}
+			prog.ModuleImports = append(prog.ModuleImports, m)
 		case lexer.TOKEN_FUNC:
 			// `func NAME() { ... }` - methods are hoisted so they can be
 			// called regardless of textual order.
@@ -180,6 +188,36 @@ func (p *parser) parseProgram() (*Program, error) {
 // `use bio as b;`, only `b.translate(...)` resolves; `bio.` errors with a
 // "did you mean `b`?" hint. The alias follows the same identifier rule as
 // any other Jennifer name (letters only, no `_`).
+// parseModuleImport parses `import "path.j" [as NAME];`. The path is a
+// quoted, `.j`-suffixed string; the optional `as NAME` names the module's
+// namespace prefix (bare form derives it from the file stem in the
+// interpreter). The preprocessor has already rejected the unquoted mistake.
+func (p *parser) parseModuleImport() (*ModuleImportStmt, error) {
+	imp, _ := p.match(lexer.TOKEN_IMPORT)
+	path, err := p.expect(lexer.TOKEN_STRING, "a quoted module path after `import`")
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasSuffix(path.Lexeme, ".j") {
+		return nil, &ParseError{Msg: fmt.Sprintf("module path %q must end in `.j`", path.Lexeme), File: path.File, Line: path.Line, Col: path.Col}
+	}
+	m := &ModuleImportStmt{pos: pos{File: imp.File, Line: imp.Line, Col: imp.Col}, Path: path.Lexeme}
+	if _, ok := p.match(lexer.TOKEN_AS); ok {
+		alias, err := p.expect(lexer.TOKEN_IDENT, "after `as` in `import`")
+		if err != nil {
+			return nil, err
+		}
+		if containsUnderscore(alias.Lexeme) {
+			return nil, &ParseError{Msg: fmt.Sprintf("module alias %q may not contain `_`", alias.Lexeme), File: alias.File, Line: alias.Line, Col: alias.Col}
+		}
+		m.AsName = alias.Lexeme
+	}
+	if _, err := p.expect(lexer.TOKEN_SEMI, "after `import` statement"); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func (p *parser) parseImport() (*ImportStmt, error) {
 	use, _ := p.match(lexer.TOKEN_USE)
 	// `use task;` activates the task library. `task` is a type

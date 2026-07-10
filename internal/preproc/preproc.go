@@ -9,10 +9,10 @@
 // include. Includes are processed recursively, with a cycle check to
 // prevent infinite inclusion.
 //
-// The spelling `import "name.j";` is no longer accepted. The
-// `import` keyword is reserved for the module system; an `import`
-// token reaching the preprocessor produces a positioned error pointing
-// the caller at `include`.
+// `import "name.j" [as NAME];` is a module import - a real statement
+// handled by the parser and interpreter, not a textual splice. Its tokens
+// pass through the preprocessor unchanged (like `use`); only the common
+// unquoted mistake (`import foo;`) is caught here with a positioned hint.
 //
 // Library imports use the `use` keyword (e.g. `use io;`) and are left in
 // place; the parser turns them into ImportStmt nodes.
@@ -101,11 +101,17 @@ func processTokens(tokens []lexer.Token, baseDir string, visited map[string]bool
 			continue
 		}
 
-		// `import ...;` - the spelling is no longer accepted. Map it
-		// to the canonical "use `include`" error so the migration message
-		// is visible at the source position the user wrote.
+		// `import "path.j" [as NAME];` - a module import. It is a real
+		// statement (parser + interpreter), not a preprocessor splice like
+		// `include`, so the tokens pass through unchanged to the parser.
+		// The one thing checked here is the common unquoted mistake.
 		if tok.Type == lexer.TOKEN_IMPORT {
-			return nil, importReservedError(tokens, i)
+			if err := validateModuleImport(tokens, i); err != nil {
+				return nil, err
+			}
+			out = append(out, tok)
+			i++
+			continue
 		}
 
 		// `use NAME ;` - library import. Check for a common mistake
@@ -179,23 +185,29 @@ func handleInclude(tokens []lexer.Token, i int, baseDir string, visited map[stri
 	}
 }
 
-// importReservedError produces the migration message a user sees when they
-// write the `import "..."` (or `import foo;`) spelling. The
-// `import` keyword itself is still reserved at the lexer level so the
-// error is positioned precisely.
-func importReservedError(tokens []lexer.Token, i int) error {
+// validateModuleImport catches the common unquoted mistake right after an
+// `import` keyword: a module path must be a quoted string. A quoted path
+// passes through to the parser, which builds the ModuleImportStmt.
+func validateModuleImport(tokens []lexer.Token, i int) error {
 	imp := tokens[i]
-	if i+1 < len(tokens) && tokens[i+1].Type == lexer.TOKEN_STRING {
-		// `import "foo.j";` shape - the most common migration target.
+	if i+1 >= len(tokens) {
+		return nil // a truncated statement; the parser reports it
+	}
+	next := tokens[i+1]
+	if next.Type == lexer.TOKEN_IDENT {
+		// `import foo.j;` (unquoted path) vs `import foo;` (looks like a use).
+		if i+3 < len(tokens) && tokens[i+2].Type == lexer.TOKEN_DOT && tokens[i+3].Type == lexer.TOKEN_IDENT {
+			return &PreprocessError{
+				Msg:  fmt.Sprintf("module paths are quoted: `import \"%s.%s\";`", next.Lexeme, tokens[i+3].Lexeme),
+				File: imp.File, Line: imp.Line, Col: imp.Col,
+			}
+		}
 		return &PreprocessError{
-			Msg:  fmt.Sprintf("use `include %q;` for textual file splicing; the `import` keyword is reserved for the planned module system", tokens[i+1].Lexeme),
+			Msg:  fmt.Sprintf("`import` takes a quoted module path (`import \"%s.j\";`); for a system library use `use %s;`", next.Lexeme, next.Lexeme),
 			File: imp.File, Line: imp.Line, Col: imp.Col,
 		}
 	}
-	return &PreprocessError{
-		Msg:  "the `import` keyword is reserved for the planned module system; use `include \"path.j\";` for textual file splicing",
-		File: imp.File, Line: imp.Line, Col: imp.Col,
-	}
+	return nil
 }
 
 func spliceFile(path, baseDir string, visited map[string]bool, originTok lexer.Token) ([]lexer.Token, error) {

@@ -96,6 +96,13 @@ type Interpreter struct {
 	structs           map[string]*parser.StructDef // top-level struct definitions hoisted at Run() time
 	global            *Environment                 // global scope where top-level statements live
 
+	// Module system: the registry shared across a program run (cache,
+	// cycle stack, search path, loader), and this interpreter's source
+	// directory for resolving local imports. Wired by EnableModules; a nil
+	// registry means module imports are not available here.
+	modReg  *moduleReg
+	baseDir string
+
 	// spawned task registry. Every `spawn { ... }` appends its
 	// TaskState here; the CLI scans the slice on shutdown to surface
 	// unobserved error tasks (the "loud-fail" stance). The mutex
@@ -730,6 +737,12 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 		i.methods[m.Name] = m
 	}
 	i.global = NewEnvironment(nil)
+	// Module imports load (and their modules initialise) before this
+	// program's body runs - depth-first post-order, so an imported module
+	// is fully initialised before the code that imports it.
+	if err := i.loadModuleImports(prog); err != nil {
+		return err
+	}
 	if i.prof != nil {
 		i.prof.Start(time.Now())
 	}
