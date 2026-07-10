@@ -54,7 +54,7 @@ func (c *Collector) tableAllocs(w io.Writer) {
 	fmt.Fprintln(w, "Jennifer allocation profile (value-semantics copies)")
 	fmt.Fprintln(w)
 
-	detaches := eventsSorted(c.detach)
+	detaches := c.eventsSorted(c.detach)
 	fmt.Fprintln(w, "COW detachments - an Ensure() that copied a shared backing:")
 	if len(detaches) == 0 {
 		fmt.Fprintln(w, "  (none)")
@@ -71,7 +71,7 @@ func (c *Collector) tableAllocs(w io.Writer) {
 	}
 
 	fmt.Fprintln(w)
-	eagers := eventsSorted(c.eager)
+	eagers := c.eventsSorted(c.eager)
 	fmt.Fprintln(w, "Eager copies - a def / assignment / parameter binding that deep-copied a compound value:")
 	if len(eagers) == 0 {
 		fmt.Fprintln(w, "  (none)")
@@ -88,7 +88,7 @@ func (c *Collector) tableAllocs(w io.Writer) {
 	}
 
 	fmt.Fprintln(w)
-	spawns := eventsSorted(c.spawn)
+	spawns := c.eventsSorted(c.spawn)
 	fmt.Fprintln(w, "Spawn-frame deep copies - a scope snapshot captured at spawn launch:")
 	if len(spawns) == 0 {
 		fmt.Fprintln(w, "  (none)")
@@ -117,8 +117,9 @@ func (c *Collector) Trace(w io.Writer) error {
 		Tid  int                    `json:"tid"`
 		Args map[string]interface{} `json:"args"`
 	}
-	events := make([]event, 0, len(c.calls))
-	for _, ce := range c.calls {
+	calls := c.callsSnapshot()
+	events := make([]event, 0, len(calls))
+	for _, ce := range calls {
 		events = append(events, event{
 			Name: ce.name,
 			Ph:   "X",

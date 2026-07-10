@@ -150,13 +150,13 @@ func (c *Collector) Pprof(w io.Writer) error {
 			s.msgField(3, label(st.intern("kind"), st.intern(kind)))
 			prof.msgField(2, s.buf)
 		}
-		for _, e := range eventsSorted(c.detach) {
+		for _, e := range c.eventsSorted(c.detach) {
 			emit(e, "detach")
 		}
-		for _, e := range eventsSorted(c.eager) {
+		for _, e := range c.eventsSorted(c.eager) {
 			emit(e, "eager")
 		}
-		for _, e := range eventsSorted(c.spawn) {
+		for _, e := range c.eventsSorted(c.spawn) {
 			emit(e, "spawn")
 		}
 	} else {

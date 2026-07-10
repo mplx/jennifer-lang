@@ -9,11 +9,40 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/mplx/jennifer-lang/internal/profile"
 )
+
+// TestCollectorConcurrentRecord hammers a single Collector from many
+// goroutines, the shape a profiled `spawn` fan-out produces. Without the
+// mutex this crashes with "concurrent map read and map write" even without
+// the race detector; under `-race` it also flags the map access directly.
+func TestCollectorConcurrentRecord(t *testing.T) {
+	c := profile.NewCollector(profile.ModeStatement, 0)
+	const goroutines, perG = 8, 4000
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for n := 0; n < perG; n++ {
+				c.RecordStmt("a.j", 1, 1, time.Microsecond, time.Microsecond) // shared position
+				c.RecordDetach("b.j", g+1, 1)                                 // per-goroutine position
+			}
+		}(g)
+	}
+	wg.Wait()
+	// Rendering after the concurrent writes must not panic and the shared
+	// position must reflect every goroutine's hits.
+	var out bytes.Buffer
+	c.Table(&out)
+	if !strings.Contains(out.String(), "a.j:1:1") {
+		t.Errorf("shared position missing after concurrent record:\n%s", out.String())
+	}
+}
 
 func TestStatementAggregation(t *testing.T) {
 	c := profile.NewCollector(profile.ModeStatement, 0)

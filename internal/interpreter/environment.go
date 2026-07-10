@@ -6,6 +6,7 @@ package interpreter
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/mplx/jennifer-lang/internal/parser"
 )
@@ -70,6 +71,7 @@ func releaseBlockEnv(e *Environment) {
 	}
 	e.parent = nil
 	e.root = nil
+	e.profChild = 0
 	e.slots = e.slots[:0]
 	envPool.Put(e)
 }
@@ -109,6 +111,13 @@ type Environment struct {
 	// and inherited from the parent, so effectiveGlobal() becomes an
 	// O(1) field read instead of an O(depth) parent-chain walk.
 	root *Environment
+	// profChild accumulates nested-statement wall-clock time for the
+	// statement profiler's self/cumulative split. It lives on the root
+	// env, not the Interpreter, so each `spawn` goroutine (which gets its
+	// own snapshot root) accumulates independently - a shared field on the
+	// interpreter would be raced by parallel spawn bodies. Only ever
+	// touched through env.root while statement profiling is active.
+	profChild time.Duration
 }
 
 // rootFor computes the root marker for a fresh Environment. When

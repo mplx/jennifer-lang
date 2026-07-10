@@ -115,13 +115,14 @@ type Interpreter struct {
 	// path being a nil check). Set via SetProfiler; the concrete collector
 	// lives in internal/profile and is wired by `jennifer profile`. The
 	// three flags gate the three instrumentation streams so an unused one
-	// costs nothing. profChild accumulates nested-statement time so the
-	// statement timer can report self time as well as cumulative.
+	// costs nothing. The statement timer's self/cumulative split
+	// accumulates nested-statement time in the root Environment
+	// (Environment.profChild), not here, so parallel `spawn` bodies each
+	// use their own snapshot root instead of racing a shared field.
 	prof       Profiler
 	profStmts  bool
 	profCalls  bool
 	profAllocs bool
-	profChild  time.Duration
 }
 
 func New() *Interpreter {
@@ -1078,14 +1079,22 @@ func (i *Interpreter) execStmt(s parser.Stmt, env *Environment) (blockResult, er
 	if i.prof == nil || !i.profStmts {
 		return i.execStmtRaw(s, env)
 	}
+	// The self/cumulative split accumulates nested-statement time in
+	// root.profChild. It lives on the per-goroutine root env (not the shared
+	// Interpreter), so parallel `spawn` bodies each accumulate into their own
+	// snapshot root instead of racing one field.
+	root := env.root
+	if root == nil {
+		root = env
+	}
 	file, line, col := posFor(s)
 	start := time.Now()
-	savedChild := i.profChild
-	i.profChild = 0
+	savedChild := root.profChild
+	root.profChild = 0
 	res, err := i.execStmtRaw(s, env)
 	elapsed := time.Since(start)
-	i.prof.RecordStmt(file, line, col, elapsed-i.profChild, elapsed)
-	i.profChild = savedChild + elapsed
+	i.prof.RecordStmt(file, line, col, elapsed-root.profChild, elapsed)
+	root.profChild = savedChild + elapsed
 	return res, err
 }
 

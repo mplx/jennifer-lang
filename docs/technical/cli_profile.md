@@ -17,7 +17,11 @@ run path. Hook points:
 - **`execStmt`** wraps `execStmtRaw`, timing each statement. A
   `profChild` accumulator splits *self* time (this statement) from
   *cumulative* time (this statement plus everything it called), the
-  standard nested-timing subtraction.
+  standard nested-timing subtraction. The accumulator lives on each
+  goroutine's **root `Environment`** (`env.root.profChild`), not the
+  shared `Interpreter`, so parallel `spawn` bodies each accumulate into
+  their own snapshot root instead of racing one field; the collector's
+  maps are mutex-guarded for the same reason.
 - **`evalCall`** times each method-call body for the trace timeline.
 - **`ensureCOW`** (replacing the bare `Value.Ensure()` at the four
   mutation sites) records a COW detachment when a shared backing is
@@ -56,6 +60,23 @@ stance - `go tool pprof` and speedscope.app read it), `--format=trace`
 (Chrome-trace JSON of the call timeline). Unknown `--format` and the
 unsupported `--allocs --format=trace` combination (allocation events
 have no timeline) are rejected at argv parse, not deferred to output.
+
+**Concurrency.** `spawn` bodies are profiled too - they run on their own
+goroutines and record onto the shared, mutex-guarded collector with a
+per-goroutine self/cumulative accumulator (see `execStmt` above). Two
+things to keep in mind reading a profile of a parallel program:
+
+- **Self time aggregates across goroutines**, so the total self time can
+  exceed the program's wall-clock elapsed. Four workers each spending 5s
+  at the same position report ~20s of self time at that line even though
+  only ~5s of wall-clock passed. The profile measures time-at-position
+  summed over all goroutines (like `pprof`'s CPU time exceeding wall
+  time), not a single timeline.
+- **Blocking counts as self time.** A statement that waits - `task.wait`
+  / `task.waitAll` blocking on in-flight workers, or `time.sleep` -
+  attributes that wall-clock wait to itself, so a `waitAll` line can show
+  large self time with a hit count of one. That is real elapsed time the
+  statement occupied, not computation.
 
 **TinyGo.** Build-tag split like the linter: `profile.go` (`!tinygo`) is
 the only importer of `internal/profile`; `devtools_tinygo.go` stubs the
