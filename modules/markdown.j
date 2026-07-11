@@ -59,6 +59,12 @@ def struct TableScan {
     next as int
 };
 
+# The reformatted lines of one table plus the line index to resume at.
+def struct TablePretty {
+    lines as list of string,
+    next as int
+};
+
 # --- span + block constructors (private) ---------------------------
 
 func span(kind as string, text as string, url as string) {
@@ -921,4 +927,120 @@ export func table(headings as list of string, aligns as list of string,
         $out = $out + "\n" + tableRow($row, $cols);
     }
     return $out;
+}
+
+# --- prettify: align table source columns (exported) ---------------
+
+# maxInt is the larger of two ints.
+func maxInt(a as int, b as int) {
+    if ($a > $b) {
+        return $a;
+    }
+    return $b;
+}
+
+# srcLen is a cell's re-emitted source width (pipes re-escaped, newline to
+# space).
+func srcLen(cell as string) {
+    return len(cellText($cell));
+}
+
+# sourceWidths is the per-column source width: the widest cell, at least 3 (so
+# the delimiter has room for a colon and dashes).
+func sourceWidths(b as Block, cols as int) {
+    def widths as list of int init [];
+    def i as int init 0;
+    while ($i < $cols) {
+        def w as int init 3;
+        if ($i < len($b.headings)) {
+            $w = maxInt($w, srcLen($b.headings[$i]));
+        }
+        for (def row in $b.rows) {
+            if ($i < len($row)) {
+                $w = maxInt($w, srcLen($row[$i]));
+            }
+        }
+        $widths[] = $w;
+        $i = $i + 1;
+    }
+    return $widths;
+}
+
+# delimCell renders one aligned delimiter cell filling `width`.
+func delimCell(width as int, align as string) {
+    if ($align == "left") {
+        return ":" + strings.repeat("-", $width - 1);
+    }
+    if ($align == "right") {
+        return strings.repeat("-", $width - 1) + ":";
+    }
+    if ($align == "center") {
+        return ":" + strings.repeat("-", $width - 2) + ":";
+    }
+    return strings.repeat("-", $width);
+}
+
+# prettyRow renders one padded `| a | b |` source row to the column widths.
+func prettyRow(cells as list of string, widths as list of int,
+        aligns as list of string, cols as int) {
+    def out as string init "|";
+    def i as int init 0;
+    while ($i < $cols) {
+        def text as string init "";
+        if ($i < len($cells)) {
+            $text = cellText($cells[$i]);
+        }
+        $out = $out + " " + padCell($text, len($text), $widths[$i], alignOf($aligns, $i)) + " |";
+        $i = $i + 1;
+    }
+    return $out;
+}
+
+# prettyDelim renders the padded `| :--- | ---: |` delimiter row.
+func prettyDelim(widths as list of int, aligns as list of string, cols as int) {
+    def out as string init "|";
+    def i as int init 0;
+    while ($i < $cols) {
+        $out = $out + " " + delimCell($widths[$i], alignOf($aligns, $i)) + " |";
+        $i = $i + 1;
+    }
+    return $out;
+}
+
+# prettyTableAt reformats the table at line `i` into aligned source lines.
+func prettyTableAt(lines as list of string, i as int) {
+    def ts as TableScan init tableFrom($lines, $i);
+    def b as Block init $ts.block;
+    def cols as int init len($b.headings);
+    def widths as list of int init sourceWidths($b, $cols);
+    def out as list of string init [];
+    $out[] = prettyRow($b.headings, $widths, $b.aligns, $cols);
+    $out[] = prettyDelim($widths, $b.aligns, $cols);
+    for (def row in $b.rows) {
+        $out[] = prettyRow($row, $widths, $b.aligns, $cols);
+    }
+    return TablePretty{lines: $out, next: $ts.next};
+}
+
+# tablePretty reformats every GFM table in Markdown text so its source columns
+# line up (padded cells, aligned delimiters), leaving all other lines exactly
+# as written. The handcraft-then-prettify workflow, in one call.
+export func tablePretty(md as string) {
+    def lines as list of string init strings.split($md, "\n");
+    def out as list of string init [];
+    def n as int init len($lines);
+    def i as int init 0;
+    while ($i < $n) {
+        if (looksLikeTable($lines, $i)) {
+            def tp as TablePretty init prettyTableAt($lines, $i);
+            for (def line in $tp.lines) {
+                $out[] = $line;
+            }
+            $i = $tp.next;
+            continue;
+        }
+        $out[] = $lines[$i];
+        $i = $i + 1;
+    }
+    return strings.join($out, "\n");
 }

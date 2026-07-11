@@ -40,4 +40,8 @@ io.printf("=== authored table ===\n%s\n\n", $tbl);
 
 # The reader round-trips a table: author it, then render both ways.
 io.printf("=== that table as HTML ===\n%s\n\n", markdown.toHtml($tbl));
-io.printf("=== that table as ANSI ===\n%s\n", markdown.toAnsi($tbl));
+io.printf("=== that table as ANSI ===\n%s\n\n", markdown.toAnsi($tbl));
+
+# tablePretty aligns the source columns of a handcrafted table.
+def messy as string init "| Name | Score |\n|:-|-:|\n| Ada | 95 |\n| Grace | 8 |";
+io.printf("=== tablePretty (source aligned) ===\n%s\n", markdown.tablePretty($messy));

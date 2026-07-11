@@ -321,3 +321,33 @@ func testTableRoundTripsToHtml() {
         "<table><thead><tr><th align=\"left\">A</th><th align=\"right\">B</th></tr></thead>" +
         "<tbody><tr><td align=\"left\">1</td><td align=\"right\">2</td></tr></tbody></table>");
 }
+
+# --- tablePretty (public) ---
+
+func testTablePrettyAligns() {
+    def messy as string init "| Name | Score |\n|:-|-:|\n| Ada | 95 |\n| Grace | 8 |";
+    testing.assertEqual(tablePretty($messy),
+        "| Name  | Score |\n| :---- | ----: |\n| Ada   |    95 |\n| Grace |     8 |");
+}
+
+func testTablePrettyPreservesOtherLines() {
+    def src as string init "# Title\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\ntail | pipe not a table";
+    def out as string init tablePretty($src);
+    # Non-table lines pass through byte-for-byte.
+    testing.assertTrue(strings.startsWith($out, "# Title\n\n"));
+    testing.assertTrue(strings.endsWith($out, "\ntail | pipe not a table"));
+    testing.assertContains($out, "| a   | b   |");
+}
+
+func testTablePrettyIdempotent() {
+    def src as string init "| a | b |\n| --- | --- |\n| x\\|y | z |";
+    def once as string init tablePretty($src);
+    testing.assertEqual(tablePretty($once), $once);
+    # Escaped pipe survives.
+    testing.assertContains($once, "x\\|y");
+}
+
+func testTablePrettyNoTableUnchanged() {
+    def src as string init "just a paragraph\nwith two lines";
+    testing.assertEqual(tablePretty($src), $src);
+}

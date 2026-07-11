@@ -41,7 +41,8 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   the `htmlwriter` module (so escaping is automatic); `markdown.toAnsi(md)`
   renders through the `ansi` module. Also authors Markdown text with
   `markdown.header` / `style` / `link` / `bullets` / `numbered` / `codeBlock`,
-  and `markdown.table(headings, aligns, rows)` for GFM tables.
+  and `markdown.table(headings, aligns, rows)` for GFM tables, plus
+  `markdown.tablePretty(md)` to align handcrafted table columns.
   Pure Jennifer; the first module that imports sibling modules. See
   [`examples/modules/markdown_demo.j`](../examples/modules/markdown_demo.j).
 - **`semver.j`** - strict Semantic Versioning 2.0.0: parse, compare, sort,
@@ -53,4 +54,6 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   See [`examples/modules/semver_demo.j`](../examples/modules/semver_demo.j).
 
 Reference docs for each module live under
-[`docs/modules/`](../docs/modules/index.md).
+[`docs/modules/`](../docs/modules/index.md). A new module also earns a bullet
+in the **Module library** section of [`JENNIFER.md`](../JENNIFER.md) so an AI
+assistant writing Jennifer discovers it.

@@ -1239,7 +1239,8 @@ escaping is automatic and the markup can't be malformed, and `toAnsi`
 renders through the `ansi` module (self-suppressing off a TTY). The inverse
 authoring helpers (`header` / `style` / `link` / `bullets` / `numbered` /
 `codeBlock`, plus `table` for GFM tables) build Markdown text, so a program
-can assemble and round-trip a document. Line-oriented
+can assemble and round-trip a document, and `tablePretty` reformats
+handcrafted table source so its columns line up. Line-oriented
 block parsing (a `lineType` classifier plus per-kind handlers) over a small
 non-nesting inline scanner; documents are small, so per-line interpreter
 overhead is a non-issue. It is the first module that imports sibling modules,

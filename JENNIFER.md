@@ -261,6 +261,37 @@ the [cheatsheet](https://mplx.github.io/jennifer-lang/libraries/cheatsheet.html)
 [per-library pages](https://mplx.github.io/jennifer-lang/libraries/index.html)
 (e.g. `.../libraries/json.html`).
 
+## Module library (Jennifer-coded, brought in with `import`)
+
+Distributable `.j` modules that ship with Jennifer - ordinary Jennifer source
+you can read, fork, or replace, distinct from the Go libraries above. Installed
+to the system module dir, so `import "NAME.j";` resolves with no path (or
+`import "./NAME.j" as NAME;` for a local copy); addressed `NAME.fn(...)` /
+`NAME.Struct` like a library.
+
+- **`ansi`** - terminal styling as string wrappers: `ansi.color(s, name)` /
+  `bgColor` / `style(s, name)` (bold / dim / italic / underline / reverse) /
+  `rgb` / `strip`, plus per-colour and per-style shortcuts (`ansi.red(s)`,
+  `ansi.bold(s)`). TTY-aware: styling suppresses itself off a terminal or under
+  `NO_COLOR`, and is forced on by `FORCE_COLOR`.
+- **`csv`** - RFC 4180: `csv.parse(s)` / `format(rows)` (`parseWith` /
+  `formatWith` for any single-character delimiter, e.g. TSV), plus `toRecords` /
+  `fromRecords` for header-keyed `map of string to string`. Quoting-aware.
+- **`htmlwriter`** - build an HTML element tree and render escaped HTML5:
+  `html.element(tag, attrs, children)` / `text(s)` / `raw(s)` / `attr(n, v)`
+  constructors, `render` / `renderAll`, `escape`. A writer, not a parser.
+- **`markdown`** - render a small CommonMark subset (headings, emphasis, links,
+  lists, code, GFM tables) to HTML (`markdown.toHtml`, through `htmlwriter`) and
+  styled terminal text (`toAnsi`, through `ansi`); author Markdown with
+  `header` / `style` / `link` / `bullets` / `numbered` / `codeBlock` / `table`;
+  align handcrafted table source with `tablePretty`.
+- **`semver`** - strict SemVer 2.0.0 over a `Version` struct: `semver.parse(s)` /
+  `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` /
+  `isPrerelease`, `incMajor` / `incMinor` / `incPatch`, `sort`.
+
+Full per-module reference: the hosted
+[module docs](https://mplx.github.io/jennifer-lang/modules/index.html).
+
 ## Two complete programs
 
 Hello, with a helper and a loop:

@@ -38,6 +38,7 @@ Authoring (build Markdown text - the inverse):
 | `markdown.numbered(items)`   | `string` | Ordered list, `1. item` upward.                           |
 | `markdown.codeBlock(text)`   | `string` | Fenced code block around verbatim text.                   |
 | `markdown.table(headings, aligns, rows)` | `string` | GFM table from column headings, per-column alignment, and rows. |
+| `markdown.tablePretty(md)`   | `string` | Reformat every table's source columns to line up; other lines untouched. |
 
 ## Supported Markdown
 
@@ -138,6 +139,23 @@ and `toAnsi` renders aligned terminal columns. A parsed table needs a header
 row, a delimiter row (`| --- | :--: |`), and its data rows; cell content is
 inline-parsed (emphasis / code / links work in cells), and a table interrupts
 an open paragraph.
+
+`tablePretty` reformats the **source** of every table in a document so its
+columns line up - the handcraft-then-prettify workflow, in one call - and
+leaves every non-table line exactly as written:
+
+```jennifer
+def messy as string init "| Name | Score |\n|:-|-:|\n| Ada | 95 |";
+io.printf("%s\n", markdown.tablePretty($messy));
+# | Name | Score |
+# | :--- | ----: |
+# | Ada  |    95 |
+```
+
+Each column is padded to its widest cell (minimum three, so the delimiter
+keeps its dashes), data cells follow the column's alignment, and an escaped
+`\|` is preserved. It is idempotent: prettifying an already-pretty table is a
+no-op.
 
 ## Not supported
 
