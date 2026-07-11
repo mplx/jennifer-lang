@@ -93,5 +93,6 @@
 # Project
 
 - [Milestones](milestones.md)
+- [Beyond 1.0.0 (ideas)](horizon.md)
 - [Design stances](design-stances.md)
 - [Glossary](glossary.md)

@@ -2,6 +2,22 @@
 
 Jennifer is a small, experimental, interpreted programming language.
 
+But small is not bare. Jennifer is batteries-included: a broad standard
+library and a growing set of distributable modules cover what real programs
+actually need, so you build genuine tools, not toys. Text handling has full
+[regular expressions](docs/libraries/regex.md); structured data flows through
+[JSON](docs/libraries/json.md); email is a complete stack -
+[SMTP](docs/modules/smtp.md) to send, [POP3](docs/modules/pop.md) and
+[IMAP](docs/modules/imap.md) to receive; in-memory data stores come through
+[Redis](docs/modules/redis.md) and [memcached](docs/modules/memcache.md)
+clients; the web runs from an ergonomic [REST client](docs/modules/rest.md)
+to turnkey integrations such as [Gotify](docs/modules/gotify.md) push
+notifications; and lightweight
+[concurrency](docs/user-guide/concurrency.md) is built into the language via
+`spawn` and the [task](docs/libraries/task.md) library. Browse the full
+[library catalog](docs/libraries/index.md) and
+[module catalog](docs/modules/index.md) - both grow with every release.
+
 It is also a natural fit for teaching and learning: an interactive
 [REPL](docs/technical/cli_repl.md), an
 [easy-to-read grammar](docs/technical/grammar.md), and

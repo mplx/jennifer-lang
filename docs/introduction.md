@@ -12,6 +12,21 @@ written in (Tiny)Go and ships as two binaries:
   or embeddability matters (embedded systems, minimal containers,
   small-footprint scripting hosts).
 
+But small is not bare. Jennifer is batteries-included: a broad standard
+library and a growing set of distributable modules cover what real programs
+actually need, so you build genuine tools, not toys. Text handling has full
+[regular expressions](libraries/regex.md); structured data flows through
+[JSON](libraries/json.md); email is a complete stack -
+[SMTP](modules/smtp.md) to send, [POP3](modules/pop.md) and
+[IMAP](modules/imap.md) to receive; in-memory data stores come through
+[Redis](modules/redis.md) and [memcached](modules/memcache.md) clients; the
+web runs from an ergonomic [REST client](modules/rest.md) to turnkey
+integrations such as [Gotify](modules/gotify.md) push notifications; and
+lightweight [concurrency](user-guide/concurrency.md) is built into the language
+via `spawn` and the [task](libraries/task.md) library. Browse the full
+[library catalog](libraries/index.md) and
+[module catalog](modules/index.md) - both grow with every release.
+
 It is also a natural fit for teaching and learning: an interactive
 [REPL](technical/cli_repl.md), an [easy-to-read grammar](technical/grammar.md),
 and [token and AST dumps](technical/cli_inspect.md) that make it ideal for

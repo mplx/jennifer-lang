@@ -320,8 +320,9 @@ binaries, .deb / pacman / AUR packaging); Phase C (M16.x) ships
 I/O libraries on top of the now-released foundation; Phase D
 (M17-M20) ships the higher-level ecosystem (Jennifer-coded
 libraries, the module system that unblocks them, crypto, a
-server). Phase E (WASM and specialised domains) is the long
-horizon.
+server). Everything beyond a 1.0.0 - embedding, WASM, and
+specialised domains - lives in the
+[beyond-1.0.0 idea collection](horizon.md).
 
 The library milestones use sub-numbering (M15.1, M15.2, ...) so
 each library ships and is reviewed independently. This is the
@@ -1285,7 +1286,7 @@ demo / manual send-and-fetch against a real server, with the protocol logic
   most real-world mail. The challenge-response mechanisms (`SCRAM-SHA-256`,
   `CRAM-MD5`) need HMAC / PBKDF2 from **M20.1 `crypto`**, so they land with
   / after M20.1, factored into a small shared `sasl` `.j` module a later
-  LDAP client (M24+) reuses. SASL / SCRAM is a *consumer* of crypto
+  LDAP client reuses. SASL / SCRAM is a *consumer* of crypto
   primitives, never part of M20.1 itself.
 
 ### M18.4.1 - `mime` module
@@ -2140,9 +2141,11 @@ plain value handed to the next, so any stage can be swapped independently:
 description in **millimetres** (printer-independent), not device dots:
 `label.new(width, height)` then value-semantic field builders `text(label,
 x, y, opts, content)`, `barcode(label, x, y, type, data)` (Code 128 / EAN /
-QR - the main reason these printers exist), `box(label, x, y, w, h,
-thickness)`, and `quantity(label, n)`. Each returns a new `Label` (value
-semantics, like the other builders).
+QR / Interleaved 2 of 5 (ITF) - the main reason these printers exist), `box(label, x, y, w, h,
+thickness)`, and `quantity(label, n)`. ITF is numeric-only and even-length
+(the interleaving pairs digits), so the encoder pads / rejects odd input; it
+is the standard shipping-carton symbology (ITF-14). Each returns a new `Label`
+(value semantics, like the other builders).
 
 **Stage 2 - render (to the target language).** `render(label, device) ->
 string` turns the label into the command stream for a chosen dialect,
@@ -2168,9 +2171,10 @@ printable, saveable, and testable without a printer attached.
   label language), and cab Squix printers support it too - so this one
   dialect already drives cab hardware as well as Zebra and the rest.
   Encodes the caret / tilde stream - `^XA` start, `^FO` origin, `^A0` font,
-  `^FD`/`^FS` data, `^BY`/`^BC` (and `^BQ` for QR) barcodes, `^GB` box,
-  `^PQ` quantity, `^XZ` end - converting millimetres to dots via the
-  target dpi. From the public ZPL II reference.
+  `^FD`/`^FS` data, `^BY`/`^BC` (with `^BQ` for QR and `^B2` for
+  Interleaved 2 of 5 / ITF) barcodes, `^GB` box, `^PQ` quantity, `^XZ` end -
+  converting millimetres to dots via the target dpi. From the public ZPL II
+  reference.
 - **`"cab"` (cab JScript) - the second backend (M18.15.1).** The native
   language of cab printers (cab is a German industrial-printer maker; the
   user runs cab Squix). The dialect string is `"cab"`, not `"jscript"`
@@ -2313,188 +2317,75 @@ substitution from stateful external data, not presentation of the value in
 hand. Locale-aware *value* formatting (number / date grouping) is a separate,
 open `printf` question.
 
----
+### M20.5 - `term`
 
-**Phase E: embedding, WASM, and specialised domains (M21+).** Not
-committed to a timeline; recorded so the design doesn't foreclose
-them. Ordered by the size of the structural change each one is:
-M21's `internal/` -> `pkg/` restructure is a single-repo refactor;
-M22's WASM runtime brings in a whole new dependency; M23.x/M24+
-are indefinite-in-count library families.
+A `term` system library exposing the terminal host capabilities a TUI needs
+and pure `.j` cannot reach: **raw mode** (`makeRaw` / `restore` - unbuffered,
+no-echo input), **terminal size** (`size -> rows, cols`), and raw single-key
+reads from stdin. It reuses `golang.org/x/term` - already a repository
+dependency scoped to the REPL's line editor (`cmd/jennifer/lineedit.go`) - so
+it largely exposes a capability the interpreter already exercises. Build-tag
+split like `net` / `os`: a friendly-error stub on `jennifer-tiny` (embedded /
+minimal targets may have no controlling TTY). This is the **enabler for
+interactive TUIs**; the pure-ANSI screen control, key decoding, and rendering
+sit in the [M21.1](#m211---screen--tui-module) `screen` / `tui` module on top.
+Output-only TUIs (dashboards, progress bars) need neither this library nor raw
+mode - just `ansi` + `os.isTerminal`.
 
-## M21 - Public interpreter API for third-party embedding
+## M21 - general backlog (catch-all)
 
-Extract the interpreter core out from under `internal/` and
-expose a documented Go-side surface so external programs can
-embed Jennifer. Today `internal/interpreter`,
-`internal/parser`, `internal/lexer`, and `internal/lib/*` are
-unreachable from any module that isn't `github.com/mplx/jennifer-lang`
-- Go's `internal/` visibility rule is not a convention, it's
-a compile-time barrier. No submodule / require / replace
-workaround exists; embedding is impossible without a
-restructure.
+The general holding area for milestones that fit no other bucket - not a
+Jennifer-coded module (M18), not interpreter / tooling work (M19), not a Go
+system library (M20), and not a beyond-1.0.0 idea (embedding, WASM, and the
+rest live in the [horizon collection](horizon.md)). It is the top-level
+counterpart to M19's tooling bucket:
+anything worth recording that has no natural home lands here as a numbered
+sub-entry, and graduates out into its own bucket once a cluster grows enough to
+deserve one.
 
-Ships ahead of M22's WASM runtime because a Go-side embedding
-API is a strictly smaller change (repository restructure, no
-new external dependency), it unblocks the most immediate
-embedding scenarios (scripting slot in a Go host, LSP /
-formatter tooling, test harnesses), and it does not foreclose
-M22 - a WASM plugin surface can layer on the same `pkg/`
-facade once Wazero (or similar) is in play.
+### M21.1 - `screen` / `tui` module
 
-**Concretely.** Add a `pkg/` top-level (working name; the
-final path settles at start of M21):
+Jennifer's terminal-UI answer - a `.j` module for terminal user interfaces,
+since there is no GUI medium-term, so the terminal is the interactive surface.
+Layered so the output-only subset ships with no host dependency:
 
-- `pkg/interpreter` re-exports `Interpreter`, `Value`, error
-  types, and the `Install(in *Interpreter)` registration API
-  that every stdlib library already uses. The `internal/`
-  packages stay as the implementation; `pkg/` is the stable
-  facade with semver-covered surface once we ship 1.0.
-- `pkg/lib/*` re-exports each shipped library (`convert`,
-  `math`, `strings`, ...) so a host can install the ones it
-  wants and leave out the rest. Non-breaking for the current
-  CLI - `cmd/jennifer` picks up the same `Install` calls,
-  just through `pkg/lib` shims instead of directly.
-- Documented pluggable interfaces for the host-provided
-  facilities the OS-touching libraries currently reach for:
-  - `io.Writer` for `io.printf` output (already a
-    `*Interpreter` field; formalize as an interface).
-  - `io.Reader` for `io.readLine` / `io.readBytes` /
-    `io.readChars` stdin.
-  - `Clock` for `time.now()` / `time.local()` / `time.sleep`
-    (the `nowFunc` / `sleepFunc` test hooks in
-    `internal/lib/time` are the shape).
-  - `Rand` for `math.rand*` / `lists.shuffle` (the shared
-    random source).
-  - Filesystem / network / process hooks left as future
-    work - a host wanting those either installs the
-    stdlib libraries as-is (accepting the Go `os` /
-    `net` dependencies) or ships its own shims. A
-    documented registration pattern is the deliverable;
-    the shims themselves are per-host and out of scope
-    for M21.
+- **Stage 1 (no prerequisite).** Pure-ANSI screen control over `ansi`: cursor
+  movement, clear, alternate-screen buffer, hide / show cursor, box-drawing,
+  and a screen buffer + render / diff loop. Enables **output-only TUIs** - live
+  dashboards, progress bars, spinners, self-updating tables (the `rich`-style
+  subset). Pure strings; TinyGo-clean.
+- **Stage 2 (needs [M20.5](#m205---term)).** A key-event decoder (parse the raw
+  byte stream - `ESC [ A` -> Up, and so on) plus an event loop over `term`'s
+  raw mode / size / key reads. Enables **interactive TUIs** - menus, forms, key
+  navigation (the `curses` / `bubbletea` subset).
 
-**Stdlib-backed defaults.** Each pluggable interface
-carries a working default so `pkg/interpreter.New()`
-plus `pkg/lib/io.Install(in)` produces a running
-interpreter without every embedder wiring up seven
-interfaces first. `Clock` defaults to Go's `time.Now`,
-`Rand` to a `math/rand` source, `io.Writer` to
-`os.Stdout`, `io.Reader` to `os.Stdin`. Hosts override
-only what they need. A `no-os` embedder replaces every
-default; a Slack-bot embedder swaps just `io.Writer`
-for its outgoing-message pipe and leaves the rest.
+Positioned as an *explicit* terminal UI, not a GUI framework. Named `screen`
+or `tui` (settled at build time). Parked in the general backlog for now; it can
+graduate into the M18 module track when built.
 
-**Boundary rules at the Install site.** Three explicit
-error paths so hosts get loud, positioned failures
-instead of subtle misbehaviour:
+### M21.2 - `feed` module (RSS + Atom)
 
-- **Duplicate library `Install` at the Go level is
-  rejected**, mirroring how a duplicate `use NAME;`
-  errors at the Jennifer level (M10 rule, lifted). A
-  host installing `pkg/lib/math` and then its own
-  shim that also claims the `math` namespace fails at
-  the second `Install` call, not silently overlaid.
-- **`Install` and pluggable-interface setters are
-  frozen once `Run()` starts.** Attempts to call
-  `Install`, `SetClock`, `SetOut`, or friends after
-  the interpreter has begun executing produce a
-  positioned "cannot configure interpreter mid-run"
-  error at the Go call site. The interpreter can then
-  trust its host bindings for the rest of the run
-  without defensive re-checks.
-- **Host implementations are trusted at the interface
-  boundary.** The interpreter uses whatever `Clock.Now()`
-  or `Rand.Int63()` returns without validation - a
-  broken host implementation is the host's problem, not
-  the interpreter's. Stated so hosts don't expect
-  defensive checks that aren't there and so downstream
-  bug reports are triaged to the correct side of the
-  API boundary.
+A `feed` module for web syndication feeds: **build and parse** both RSS 2.0
+and Atom 1.0. **One** module, format selected on build and detected on parse
+(design stance 1 - not separate `rss` / `atom` modules); a feed is a value-
+semantic `Feed` (title, link, updated, entries) of `Entry` (title, link, id,
+published / updated, summary, content). It composes across the stack: `http`
+fetches a feed, `feed` parses it, `time` handles the RFC 3339 / RFC 822 dates -
+a feed reader, podcast client, news aggregator, or changelog-to-feed generator
+in a few lines.
 
-**Non-goals.**
-- A hosted no-`os` build target. Even after M21, the
-  shipping stdlib libraries lean on Go's `os` / `net` /
-  `time` packages. A truly bare-metal or `no-os` embedding
-  can only use the pure-value libraries (`convert`, `math`,
-  `strings`, `lists`, `maps`, `hash`, `crc`, `encoding`,
-  `regex`) plus whatever host-provided shims the embedder
-  wires up. That's a design constraint on the embedder, not
-  a milestone on Jennifer's side.
-- Semver freezing the public API. Jennifer stays pre-1.0
-  through M21; the milestone documents what's exported and
-  how libraries plug in, but breaking changes to that
-  surface remain allowed until 1.0.0.
-
-**Motivation.** Third-party embedding has multiple concrete
-consumers already imagined: scripting-language slot in a Go
-application, tooling that needs direct AST / interpreter
-access (LSP, formatter integrations, syntax highlighters),
-test harnesses that want to drive `.j` programs from Go,
-config-DSL runtimes, plugin systems for game engines and
-similar. None of them require an OS-free build; all of them
-need the `internal/` -> `pkg/` restructure.
-
-The `Install` pattern already works this way - every stdlib
-library is a `pkg.Install(in)` call. The missing piece is
-visibility, plus documented hooks for the pieces of host
-state currently exposed only as package-level test vars.
-
-## M22 - WASM runtime embedding
-
-Wazero or similar inside the interpreter binary. TinyGo-size
-cost evaluated honestly before commitment. Without M22, no WASM
-libraries.
-
-## M23.x - WASM libraries
-
-If M22 ships, sandboxed plugins via `use wasm:libname;`. Each
-library a sub-milestone.
-
-## M24+ - Specialised domains
-
-Each domain its own milestone with sub-milestones as needed:
-
-- **ML.**
-  - **M24.1 - `stats`** - descriptive statistics over
-    `list of int|float`: mean, median, mode, variance, stddev,
-    percentile, min / max / sum, correlation. Pure-value,
-    TinyGo-clean; the highest-value, simplest piece, so first.
-  - **M24.2 - `linalg`** - vectors as `list of float` (dot, norm,
-    cross, scale, add / sub) and matrices as `list of list of float`
-    (matmul, transpose, determinant, inverse, solve, identity).
-    Algorithms implemented directly - no `gonum`, too large a
-    dependency. Matrices stay `list of list of float` for v1
-    (idiomatic and value-semantic); a Go-backed matrix handle is the
-    noted future escape hatch when big-matrix performance demands it.
-  - **M24.3 - ML primitives** - atop `stats` / `linalg`, when demand
-    surfaces.
-- **Bioinformatics.** Sequence alignment (Smith-Waterman,
-  Needleman-Wunsch), FASTA/FASTQ parsers, molecule structures.
-- **Encoding / binary protocols.**
-  - **`asn1`** - ASN.1 BER/DER encode/decode, as a **Go system
-    library**. Byte-level binary parsing belongs in Go, not `.j` (the
-    `json` lesson: a char-by-char parser in the interpreter pays
-    overhead per byte). This is the *enabler* for a family of binary
-    protocols and PKI formats - LDAP, SNMP, X.509, PKCS. Go's stdlib
-    `encoding/asn1` is DER-only, so the full BER that LDAP / SNMP use
-    (indefinite lengths, alternative encodings) needs either a BER
-    dependency (e.g. `go-asn1-ber`) or a hand-rolled BER codec in Go.
-  - **`ldap` / `snmp` (layered on `asn1` + `net`).** With `asn1` doing
-    the byte crunching in Go and `net` providing TCP/UDP + TLS
-    (`connectTLS` / `startTLS` already cover LDAPS / StartTLS), the
-    protocol orchestration (bind, build request, iterate results) is
-    not per-byte hot and can live in a `.j` module or a thin Go library.
-    SNMP is the natural first client (simpler PDUs, UDP, no SASL); LDAP
-    adds controls + SASL (SCRAM builds on M20.1 `crypto`). A pure-`.j`
-    implementation of the BER layer itself is explicitly *not* the plan.
-    Existing pure implementations (e.g. PHP FreeDSx) are a protocol
-    reference, not a port target - their heavy OO shape does not map to
-    Jennifer's value-semantic structs.
-- **Sandbox.** Restricted-capability execution.
-
-Ordered when demand surfaces. WASM libraries (M23.x) may cover
-some of this space first.
+Parked here because it is **gated on [M20.2 `xml`](#m202---xml)**: RSS / Atom
+parsing needs a real XML parser (entities, CDATA, and Atom's XML namespaces),
+which is exactly why `xml` is a system library rather than a hand-rolled `.j`
+scanner - so feed *parsing* rides it. Feed *building* (emitting escaped XML)
+could predate `xml`, but build and parse ship together on the same layer. Also
+uses `http` (fetch) and `time` (dates); pure `.j` otherwise. It graduates into
+the M18 module track once `xml` lands. Discipline as usual: a
+`modules/feed_test.j` overlay (build / parse round-trips and date handling for
+both formats as pure helpers; a networked fetch-and-parse against an in-process
+server in a Go test), `docs/modules/feed.md`, a catalog row, a `SUMMARY.md`
+entry, a `modules/README.md` entry, a `JENNIFER.md` bullet, and a runnable
+`examples/modules/feed_demo.j`.
 
 ---
 
@@ -2509,7 +2400,7 @@ that can land any time and don't block any milestone:
 - **Snap** package.
 - **Nix flake** / Nix package.
 - **Cross-build for macOS / Windows.** Waits on the
-  platform-portability work in the Long-horizon list; ships as
+  platform-portability work in the [horizon ideas](horizon.md); ships as
   soon as that lands.
 - **Real apt repository** (replacing the "GitHub Release
   artifact" install of the M15.8 `.deb`) if user demand
@@ -2522,169 +2413,10 @@ willing to keep it green; they're not blocking anything.
 
 ---
 
-## Long horizon (recorded, not scheduled)
+## Long horizon
 
-- **Cross-platform support.** Today Jennifer targets Linux only.
-  Windows and macOS are planned. When touching filesystem, paths,
-  line endings, or process behavior, prefer portable stdlib
-  helpers (`path/filepath`, not hardcoded `/`); avoid Linux-only
-  assumptions.
-- **`time`: IANA / DST zones.** Real zone names (`Europe/Berlin`) with
-  historically-correct daylight-saving resolution, added to the `time`
-  **system library** - not a hand-maintained `.j` data map. A `.j` map is
-  the wrong shape: abbreviations (`CST` is US Central *and* China Standard
-  *and* Cuba Standard) don't identify a zone, and the real model is
-  offset-per-(zone, instant) over a transition history that ships several
-  updates a year. Back it with Go's `time.LoadLocation` + the embeddable
-  `time/tzdata` (or the host's `/usr/share/zoneinfo`), so the database is
-  the toolchain's problem and resolution is correct at any instant.
-  Standard-`jennifer` only: TinyGo's `time` can't load zones, so
-  `jennifer-tiny` stays fixed-offset (a build-tag split like `net`).
-  Level 1 first - an offset-at-instant resolver
-  (`time.offsetAt(name, $t)` / `time.zoneFor(name, $t) -> time.Zone`) that
-  leaves the `time.Time {nanos, offset}` model untouched (the snapshot is
-  fixed, so DST-crossing arithmetic must re-resolve); Level 2 - a
-  zone-carrying `time.Time` with DST-correct arithmetic - is a larger,
-  optional follow-up needing a Go-backed zone handle.
-- **Password hashing (Argon2id / bcrypt / scrypt).** The modern default
-  for password *storage*, deferred out of M20.1 `crypto` because it lives in
-  `golang.org/x/crypto` (a dependency, unlike the stdlib KDFs M20.1 ships)
-  and wants its own surface distinct from the KDFs: a self-describing
-  `crypto.hashPassword(pw) -> string` (`$argon2id$...`) plus a
-  constant-time `crypto.verifyPassword(pw, hash) -> bool`. Added when
-  password storage is a concrete need, taking the `x/crypto` dependency
-  then - crypto is the one place the dependency-free stance bends, since
-  you never hand-roll it.
-- **`encoding` - the harder codecs.** The single-byte character codecs and
-  binary-to-text formats all shipped (M16.15); the deferred remainder,
-  picked up only when a real program needs one: variable-width Asian
-  encodings (`Shift-JIS`, `Big5`, `GB2312`, `GBK`, `GB18030`, `EUC-JP`,
-  `EUC-KR`) - each a state machine with variant / ambiguity edge cases, a
-  whole milestone apiece; `UTF-16` / `UTF-16LE` / `UTF-16BE` / `UTF-32` (BOM,
-  surrogate pairs, endianness); and `UTF-7` (mail-transport - though
-  `quoted-printable` already shipped as a general codec).
-- **Module package manager + registry (`jvc`).** A CLI package tool plus a
-  public registry (packagist-style) so a developer can declare and install
-  third-party `.j` modules: `jvc install gotify>=1.0.0` resolves a version
-  constraint against the registry and downloads into a project-local
-  `./vendor` directory, which becomes one more module search root - the M17
-  resolver already walks a search path (system dir, then `-I` dirs), so
-  `vendor/` is an added entry, not a new resolution model. Needs a manifest
-  + lockfile format, semver constraint solving, a registry service and
-  publish flow, and integrity pinning (content hash per version). A whole
-  track of its own; the module system (M17) is the prerequisite,
-  `semver` ([M17.6](#m176---semver-module)) supplies the version
-  comparison and constraint core it resolves against, and `gotify`
-  ([M18.7.1](#m1871---gotify-module-on-top-of-http-module)) is the first module worth
-  publishing through it.
-- **FCGI.** `use FCGI as web;` library when `net` and `httpd`
-  mature. Lets Jennifer host CGI / FastCGI workloads end-to-end.
-- **Inline assembler.**
-- **Binary AST cache (`.jc` files).** Pre-parsed loading for big
-  programs and embedded scripting hosts. Its own milestone when
-  it lands - file-format design, versioning, and TinyGo-safe
-  serialization are enough work to merit dedicated treatment. The
-  text JSON form via `jennifer ast` is the placeholder until then.
-  Deferred from M5.
-- **Profiler: max-call-depth metric.** Have `jennifer profile` track
-  Jennifer call depth (bump in `evalCall`, drop on return) and report
-  the max reached, per source position and overall. Names stack-limit
-  problems directly - the recursion-depth-vs-`-stack-size` headroom
-  that the recursive `fib` in `examples/benchmark.j` exercises on
-  `jennifer-tiny`. Small and additive to the existing hit-count /
-  wall-clock / `--allocs` collector; deferred because stack limits are
-  diagnosable by hand today. Heap-per-position stays out of scope
-  (`--allocs` already proxies copy churn; true RSS needs
-  `runtime.ReadMemStats` sampling, coarse under TinyGo).
-- **`tinygo_devtools` build tag.** The dev subcommands (`tokens` /
-  `ast` / `fmt` / `lint` / `profile` / `test`) are `!tinygo` for binary
-  *size*, not compatibility - they are TinyGo-clean Go. A
-  `//go:build !tinygo || tinygo_devtools` constraint (stub as
-  `tinygo && !tinygo_devtools`) plus a `make build-tinygo-dev` target
-  would let them run under the actual TinyGo runtime - e.g. to
-  `profile` a TinyGo-specific perf or stack issue in situ. Pairs with
-  the depth metric above: together they are "TinyGo runtime
-  introspection." Deferred - build-tag complexity across ~6 files and a
-  larger dev-tiny binary, for a diagnostic reached for only
-  occasionally.
-- **Build-time library selection.** Choose which system (Go) libraries
-  are baked into a binary at compile time. Motivated by `jennifer-tiny`
-  size (an embedded target needing only `io` + `math` shouldn't carry
-  `net` / `regex` / `hash`) and by opt-in niche Go libraries that don't
-  merit defaulting. The install point is already consolidated - every
-  entry path (`run` / `repl` / `profile` / `test` and the test
-  harnesses) calls `internal/stdlib.InstallAll`, so a library is one
-  line there - and that is the seam a build-tag scheme would cut along:
-  gate each entry behind `//go:build lib_net` (or a `minimal` / `full`
-  profile) and grow `make build-minimal` / `make build TAGS=...`,
-  exactly like the existing `!tinygo` dev-tool split. **Compile-time
-  only** - Go's `plugin` package is Linux/macOS-only and unsupported by
-  TinyGo, and dynamic linking contradicts `jennifer-tiny`'s
-  no-hosted-runtime goal, so PHP-style loadable `.so` extensions are
-  out. Two caveats to design for: (1) a trimmed build breaks the "any
-  `.j` runs on any binary" portability promise (`use net;` becomes a
-  runtime error), so the default build stays full and trimmed builds are
-  an explicit opt-out - ideally with a `meta`-level "is library X
-  present?" query for graceful degradation; (2) CI grows a couple of
-  profiles (default / minimal), not 2^N. Complementary to, not a
-  substitute for, the M17 module system: `.j`-level extensibility
-  (community / uncommon libraries writable in Jennifer) is M17's job with
-  zero binary cost; build-time selection is only for the curated Go-level core.
-- **Relational databases (`sql`).** Postponed to M20+, pending a design
-  discussion. A system library - a storage engine and SQL planner can't
-  be interpreted, and wire-protocol auth needs crypto - driver-agnostic
-  over Go's `database/sql`, SQLite first, then MySQL / PostgreSQL;
-  standard-Go only, stubbed on `jennifer-tiny`. The questions that gate
-  it: the SQLite driver (cgo `mattn/go-sqlite3`, which breaks static /
-  cross-compile / TinyGo, vs pure-Go `modernc.org/sqlite`, multi-MB);
-  whether to accept the first heavyweight dependency in the library
-  layer (a break from "libraries stay dependency-free") and, if so, gate
-  it as a build-tag opt-in (per the note above); and the result-row
-  shape - an opaque `sql.Row` accessor type mirroring `json.Value`
-  (M16.16) vs a typed struct via the deferred map-to-struct conversion.
-  Values bind only
-  through `?` placeholders (injection safety). Contrast the
-  text-protocol stores redis / memcache (M18.5 / M18.6), which are pure
-  Jennifer over `net` and need none of this.
-- **Explicit map-to-struct conversion.** A spelled-out, validating way to
-  turn a `json.Value` object (or a homogeneous `map of string to T`) into
-  a typed struct - the sanctioned counterpart to the *rejected* implicit
-  coercion (see [technical/rejected.md](technical/rejected.md)). Deferred
-  from the M16.x line: once JSON is destructured through `json.Value`
-  accessors, the by-hand rebuild covers the need, so a one-call form is a
-  convenience, not a blocker. Two candidate shapes, decided on consistency
-  not brevity - a `convert.toStruct($map, "Point")` library call (a
-  two-arg, stringly-typed outlier in the otherwise one-arg `convert.toX`
-  family, or else not self-contained if it reads the binding's declared
-  type) versus a `Point{ ..$map }` struct-literal spread (names its type
-  statically, at the cost of new literal syntax). Either way strict: every
-  declared field present with a matching type, recursing into nested
-  structs / lists / maps, value-semantic, no partial fills or defaults.
-- **`io.lines() -> list of string`.** Slurp the whole stdin into a
-  list. Additive on top of the streaming `readLine()` + `eof()`
-  idiom; nice-to-have for tiny scripts, not blocking. Deferred from
-  M7.
-- **i18n.** Locale-aware case folding, collation, number / date
-  formatting, BiDi. Gated on the CLDR-data binary-size question
-  (likely an optional library shipped after the M22 WASM runtime
-  so locale tables aren't baked into every build).
-- **Host-embedding API.** *Promoted to a numbered milestone -
-  see [M21](#m21---public-interpreter-api-for-third-party-embedding).*
-- **Advanced scheduling knobs.** CPU affinity, work-stealing
-  pool sizing, NUMA awareness, `GOMAXPROCS`-equivalent runtime
-  tuning. Runtime-config surface for the M16.0 spawn scheduler,
-  not new language features. Ships when a real use case forces
-  it (the M16.0 default - "let Go's scheduler decide" -
-  handles every workload we've imagined so far).
-- **Performance & memory.** Interpreter-internal optimizations
-  that preserve stance #5 (value semantics) at the user level:
-  copy-on-write for lists / maps / bytes / structs (share
-  underlying storage until a write splits it), per-frame arena
-  allocation, and read-only slice views (`xs[1..5]` as a
-  non-owning window that errors on assignment). Strictly
-  optimizations - no user-visible aliasing or mutation rules
-  change. Stance-breaking variants (mutable references,
-  interior mutability, shared mutable state) are turned down in
-  [technical/rejected.md](technical/rejected.md#references-interior-mutability-shared-mutable-state).
-  Best landed post-M22 once the language is settled and the
-  interpreter doesn't churn under it.
+Ideas for development *beyond* 1.0.0 - embedding, a WASM runtime,
+specialised-domain libraries, and a grab-bag of smaller possibilities -
+live in their own collection, kept out of the near-term plan so this file
+stays focused on the road to 1.0.0. See the
+[beyond-1.0.0 idea collection](horizon.md).
