@@ -7,7 +7,7 @@
 #
 # The overlay splices imap.j in front of this file, so the tests reach its
 # private helpers (literalLength, extractLiteral, parseExists, parseSearch,
-# isTagged, quoteArg, expectTaggedOK, requireAscii) by bare identifier. The
+# isTagged, quoteArg, expectTaggedOK) by bare identifier. The
 # networked session is verified end to end against an in-process IMAP server in
 # the Go suite (TestImapReceive).
 use testing;
@@ -59,9 +59,3 @@ func testExpectTaggedOKPasses() {
     testing.assertTrue(true);
 }
 
-func testRequireAsciiThrowsOnIdn() {
-    testing.assertThrows("idnHost", "imap");
-}
-func idnHost() {
-    requireAscii("münchen.de", "host");
-}

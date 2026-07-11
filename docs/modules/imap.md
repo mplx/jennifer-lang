@@ -78,8 +78,8 @@ This is a reading subset, not full IMAP4rev1:
   mechanisms (`CRAM-MD5` / `SCRAM`) land with the `crypto` library.
 - **Literals are read as 7-bit / ASCII.** MIME transfer encoding keeps mail
   bodies ASCII; raw 8-bit literals are not yet byte-exact.
-- **ASCII host only (for now).** A non-ASCII (IDN) host throws rather than
-  failing silently; IDNA support is a planned follow-on (M18.4.5).
+- An internationalized (IDN) host is IDNA-encoded to its `xn--` form
+  automatically (via [`idna`](idna.md)).
 
 ## See also
 

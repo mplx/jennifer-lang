@@ -307,6 +307,11 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   tagged responses and `{N}` literals; messages are strings for `mime.parse`.
   Throws `Error` (kind `"imap"`) on `NO` / `BAD`. **Default `jennifer` binary
   only** (`net`).
+- **`idna`** - internationalized domain names: `idna.toAscii(domain)` /
+  `idna.toUnicode(domain)` over a Punycode (RFC 3492) core
+  (`münchen.de` <-> `xn--mnchen-3ya.de`), plus `idna.isAscii`. Pure Jennifer, no
+  net (uses `convert.toCodepoint` / `fromCodepoint`). The mail clients encode
+  hosts and SMTP envelope domains through it.
 - **`pop`** - receive mail (POP3, RFC 1939) over `net`: `pop.connect(opts)` ->
   `pop.Session`, then `stat` / `count` / `sizes` / `retrieve(session, n)` /
   `deleteMessage(session, n)` / `quit`, plus `pop.fetchAll(opts)` (every

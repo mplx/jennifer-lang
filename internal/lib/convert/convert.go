@@ -9,6 +9,7 @@ package convert
 import (
 	"fmt"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 )
@@ -36,6 +37,47 @@ func Install(in *interpreter.Interpreter) {
 	// `encoding` library.
 	in.RegisterNamespaced(LibraryName, "bytesFromString", bytesFromStringFn)
 	in.RegisterNamespaced(LibraryName, "stringFromBytes", stringFromBytesFn)
+	// Rune <-> code-point-integer, the inverse pair a Unicode algorithm
+	// (Punycode, escaping) needs and that `strings.chars` (rune strings)
+	// alone cannot give.
+	in.RegisterNamespaced(LibraryName, "toCodepoint", toCodepointFn)
+	in.RegisterNamespaced(LibraryName, "fromCodepoint", fromCodepointFn)
+}
+
+// toCodepointFn implements `convert.toCodepoint(char)`: the Unicode code point
+// of a one-rune string, as an int. Errors unless the argument is exactly one
+// code point (a grapheme cluster - base plus combining marks - is several code
+// points and is rejected).
+func toCodepointFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityOne("toCodepoint", args); err != nil {
+		return interpreter.Null(), err
+	}
+	if args[0].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("toCodepoint: argument must be string, got %s", args[0].Kind)
+	}
+	s := args[0].Str
+	if utf8.RuneCountInString(s) != 1 {
+		return interpreter.Null(), fmt.Errorf("toCodepoint: argument must be exactly one code point, got %q", s)
+	}
+	r, _ := utf8.DecodeRuneInString(s)
+	return interpreter.IntVal(int64(r)), nil
+}
+
+// fromCodepointFn implements `convert.fromCodepoint(n)`: the one-rune string
+// for a Unicode code point (whole range, 1-4 UTF-8 bytes). Errors on a
+// negative, out-of-range, or surrogate value.
+func fromCodepointFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if err := arityOne("fromCodepoint", args); err != nil {
+		return interpreter.Null(), err
+	}
+	if args[0].Kind != interpreter.KindInt {
+		return interpreter.Null(), fmt.Errorf("fromCodepoint: argument must be int, got %s", args[0].Kind)
+	}
+	n := args[0].Int
+	if n < 0 || n > utf8.MaxRune || (n >= 0xD800 && n <= 0xDFFF) {
+		return interpreter.Null(), fmt.Errorf("fromCodepoint: %d is not a valid Unicode code point", n)
+	}
+	return interpreter.StringVal(string(rune(n))), nil
 }
 
 // arityOne returns an error if args doesn't contain exactly one value.

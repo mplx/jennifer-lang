@@ -29,6 +29,8 @@ io.printf("%s\n", convert.typeOf(5 // 2));     # "int"
 | `convert.objectType(v)`                    | object                      | specific registered name of an opaque object, e.g. `"json.Value"`; errors on a non-object |
 | `convert.bytesFromString(s, codec)` | (string, string)            | string to bytes; `"utf-8"` only (other codecs live in `encoding`)                            |
 | `convert.stringFromBytes(b, codec)` | (bytes, string)             | bytes to string; `"utf-8"` only; invalid UTF-8 is an error |
+| `convert.toCodepoint(char)`         | string                      | Unicode code point (int) of a **one-rune** string; errors unless the argument is exactly one code point |
+| `convert.fromCodepoint(n)`          | int                         | the **one-rune** string for code point `n`; errors on a negative / out-of-range / surrogate value |
 
 `bytesFromString` / `stringFromBytes` are the **UTF-8** cross-kind pair
 (`string` to `bytes` and back) - the one codec every program needs. Every
@@ -36,6 +38,30 @@ other character encoding (ISO-8859-*, Windows-*, EBCDIC) and the
 binary-to-text codecs (hex, base64, quoted-printable) live in
 [`encoding`](encoding.md): `encoding.encode` / `decode` and
 `encoding.toText` / `fromText`.
+
+### `toCodepoint` / `fromCodepoint`: code point, not "character"
+
+These convert between a single **code point** (a Unicode scalar value, an
+`int`) and the **one-rune string** that holds it - the primitive a Unicode
+algorithm needs (Punycode digits, a `\x01` control byte, an escape). Two
+things worth being precise about:
+
+- **The whole range works, not just ASCII or the BMP.** `fromCodepoint`
+  accepts any scalar value `0`..`0x10FFFF` (hex literals are fine:
+  `fromCodepoint(0x20AC)` is `€`, `fromCodepoint(0x1F602)` is `😂`). The
+  result is *one rune* whose UTF-8 encoding is **1 to 4 bytes** - a code point
+  is not a byte. Only a negative value, one above `0x10FFFF`, or a UTF-16
+  surrogate (`0xD800`..`0xDFFF`) errors.
+- **"One rune" is not "one character a reader sees."** A user-perceived
+  character - a *grapheme cluster* - can be several code points: a base plus
+  combining marks (`e` + U+0301 = `é`), an NFD-decomposed accent, an emoji ZWJ
+  sequence (`👨‍👩‍👧`). Each of those code points round-trips individually, but
+  `toCodepoint` takes **exactly one** code point, so it rejects a multi-rune
+  cluster the same way it rejects `"ab"`. `len`, `strings.chars`, and
+  `strings.substring` are all **rune-indexed** too (see
+  [strings.md](strings.md)); Jennifer has no grapheme-cluster API. The tell:
+  precomposed `é` (U+00E9) is `len` 1 and `toCodepoint` gives 233; decomposed
+  `é` (`e` + U+0301) is `len` 2 and `toCodepoint` errors.
 
 ## Errors
 

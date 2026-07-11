@@ -95,13 +95,11 @@ server); a live send against a real daemon is the demo's job.
   mechanisms (`CRAM-MD5`, `SCRAM`) need the `crypto` library and land with it.
 - **No connection reuse / pipelining.** `send` opens, delivers, and closes one
   connection per call.
-- **ASCII addresses only (for now).** An internationalized domain
-  (`user@münchen.de`) or a non-ASCII local part cannot be put on the wire
-  without Punycode / SMTPUTF8, which this client does not yet do. Rather than
-  send a misrouted address, `send` **throws** a clear `Error` if the host or
-  any envelope address is non-ASCII. IDNA support (an `idna` module) is a
-  planned follow-on; until then, convert an IDN domain to its `xn--` form
-  yourself before calling `send`.
+- **Non-ASCII local parts only.** An internationalized **domain** in the host
+  or an envelope address (`user@münchen.de`) is IDNA-encoded to its `xn--`
+  form automatically (via [`idna`](idna.md)). A non-ASCII **local part**
+  (before the `@`) still **throws** - it needs SMTPUTF8 (RFC 6531), a later
+  step - rather than sending a misrouted address.
 
 ## See also
 

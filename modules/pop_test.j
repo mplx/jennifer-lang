@@ -6,8 +6,8 @@
 #     jennifer test modules/pop_test.j
 #
 # The overlay splices pop.j in front of this file, so the tests reach its
-# private helpers (statusOK, parseStat, parseDotBody, parseSizes, dotTerminated,
-# requireAscii) by bare identifier. The networked session is not covered here
+# private helpers (statusOK, parseStat, parseDotBody, parseSizes,
+# dotTerminated) by bare identifier. The networked session is not covered here
 # (it needs a live server); it is verified end to end against an in-process
 # POP3 server in the Go suite (TestPop3Receive).
 use testing;
@@ -50,14 +50,3 @@ func testParseSizes() {
     testing.assertEqual($szs[2], 300);
 }
 
-func testRequireAsciiThrowsOnIdn() {
-    testing.assertThrows("idnHost", "pop3");
-}
-func idnHost() {
-    requireAscii("münchen.de", "host");
-}
-
-func testRequireAsciiPassesAscii() {
-    requireAscii("mail.example.com", "host");   # no throw
-    testing.assertTrue(true);
-}

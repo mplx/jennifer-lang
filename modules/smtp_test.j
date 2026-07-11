@@ -47,16 +47,17 @@ func testCrlf() {
     testing.assertEqual(crlf("a\r\nb"), "a\r\nb");
 }
 
-func testRequireAsciiThrowsOnIdn() {
-    testing.assertThrows("idnRecipient", "smtp");
-}
-func idnRecipient() {
-    requireAscii("user@münchen.de", "recipient address");
+func testAsciiEnvelopeIdnDomain() {
+    # An IDN domain is Punycode-encoded; the ASCII local part is kept.
+    testing.assertEqual(asciiEnvelope("me@münchen.de"), "me@xn--mnchen-3ya.de");
+    testing.assertEqual(asciiEnvelope("ok@example.com"), "ok@example.com");
 }
 
-func testRequireAsciiPassesAscii() {
-    requireAscii("ok@example.com", "recipient");   # no throw
-    testing.assertTrue(true);
+func testAsciiEnvelopeRejectsNonAsciiLocal() {
+    testing.assertThrows("idnLocal", "smtp");
+}
+func idnLocal() {
+    return asciiEnvelope("kü@example.com");
 }
 
 func testClientNameDefault() {

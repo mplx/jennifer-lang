@@ -26,9 +26,9 @@
 use net;
 use strings;
 use convert;
-use encoding;
 use regex;
 import "./sasl.j" as sasl;
+import "./idna.j" as idna;
 
 # `auth` is "" (LOGIN) or "xoauth2" (SASL bearer via AUTHENTICATE, where `pass`
 # holds the OAuth2 access token).
@@ -119,16 +119,6 @@ func parseSearch(response as string) {
     return $out;
 }
 
-# requireAscii throws on a non-ASCII host: an IDN needs punycode, not yet done.
-func requireAscii(s as string, what as string) {
-    if (encoding.isAscii(convert.bytesFromString($s, "utf-8"))) {
-        return;
-    }
-    def msg as string init $what + " is not ASCII: an IDN domain needs punycode";
-    $msg = $msg + ", not yet supported (" + $s + ")";
-    throw Error{kind: "imap", message: $msg, file: "", line: 0, col: 0};
-}
-
 # expectTaggedOK throws unless a tagged completion line reports "OK".
 func expectTaggedOK(line as string, tag as string) {
     def rest as string init strings.substring($line, len($tag) + 1);
@@ -215,7 +205,7 @@ func readGreeting(conn as net.Conn) {
 }
 
 func dial(opts as Options) {
-    def addr as string init $opts.host + ":" + convert.toString($opts.port);
+    def addr as string init idna.toAscii($opts.host) + ":" + convert.toString($opts.port);
     if ($opts.security == "tls") {
         return net.connectTLS($addr);
     }
@@ -226,7 +216,6 @@ func dial(opts as Options) {
 
 # connect opens a session: greeting, optional STARTTLS, then LOGIN.
 export func connect(opts as Options) {
-    requireAscii($opts.host, "host");
     def conn as net.Conn init dial($opts);
     readGreeting($conn);
     if ($opts.security == "starttls") {

@@ -22,7 +22,7 @@
 use net;
 use strings;
 use convert;
-use encoding;
+import "./idna.j" as idna;
 import "./sasl.j" as sasl;
 
 # Connection settings. `security` is "none", "tls" (implicit TLS on connect,
@@ -117,15 +117,6 @@ func parseSizes(body as string) {
     return $out;
 }
 
-# requireAscii throws on a non-ASCII host: an IDN needs punycode, not yet done.
-func requireAscii(s as string, what as string) {
-    if (encoding.isAscii(convert.bytesFromString($s, "utf-8"))) {
-        return;
-    }
-    def msg as string init $what + " is not ASCII: an IDN domain needs punycode";
-    $msg = $msg + ", not yet supported (" + $s + ")";
-    throw Error{kind: "pop3", message: $msg, file: "", line: 0, col: 0};
-}
 
 func expectOK(line as string, ctx as string) {
     if (not statusOK($line)) {
@@ -183,7 +174,7 @@ func readMultiline(conn as net.Conn, ctx as string) {
 }
 
 func dial(opts as Options) {
-    def addr as string init $opts.host + ":" + convert.toString($opts.port);
+    def addr as string init idna.toAscii($opts.host) + ":" + convert.toString($opts.port);
     if ($opts.security == "tls") {
         return net.connectTLS($addr);
     }
@@ -194,7 +185,6 @@ func dial(opts as Options) {
 
 # connect opens a session: greet, optional STLS upgrade, then USER / PASS auth.
 export func connect(opts as Options) {
-    requireAscii($opts.host, "host");
     def conn as net.Conn init dial($opts);
     expectOK(readLine($conn), "greeting");
     if ($opts.security == "starttls") {

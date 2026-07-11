@@ -1367,7 +1367,7 @@ IMAP server in the Go suite (`TestImapReceive`). Out of scope: partial fetch,
 `examples/modules/imap_demo.j`.
 
 With this the mail suite's clients are complete (`mime` + `smtp` + `pop` +
-`imap`); the shared `sasl` piece is done, and only `idna` (M18.4.6) remains.
+`imap`), and so are the shared pieces `sasl` and `idna` - **M18.4 is done**.
 
 ### M18.4.5 - `sasl` (auth mechanisms, incl. XOAUTH2)
 
@@ -1395,19 +1395,22 @@ doc [docs/modules/sasl.md](modules/sasl.md).
 
 ### M18.4.6 - `idna` (internationalized domains)
 
-Planned, after the protocol clients. An `idna` module - IDNA2008 ToASCII /
-ToUnicode over a Punycode (RFC 3492) core, pure Jennifer - so the mail
-clients can put an internationalized domain (`münchen.de` to
-`xn--mnchen-3ya.de`) on the wire correctly instead of throwing. Wiring: apply
-ToASCII to the connection host and to the **domain** part of each envelope
-address, but only when the server does **not** advertise `SMTPUTF8` (RFC
-6531); when it does, send the UTF-8 address as-is with the `SMTPUTF8` param. A
-non-ASCII **local part** without SMTPUTF8 stays a hard error (it cannot be
-represented). Enabler: a `convert.toCodepoint(char)` / `convert.fromCodepoint(n)`
-pair (rune to / from its integer code point), which Punycode's bootstring
-arithmetic needs and Jennifer does not yet expose. Until this ships, `smtp`,
-`pop`, and `imap` fail loudly on a non-ASCII host or address rather than
-misrouting. Reusable beyond mail: URL hosts, DNS tools, any IDN.
+**Done.** An `idna` module (`modules/idna.j`): `toAscii` / `toUnicode` over a
+Punycode (RFC 3492) bootstring core, pure Jennifer, TinyGo-clean - so a
+domain like `münchen.de` goes on the wire as `xn--mnchen-3ya.de` and back,
+label by label, with ASCII labels lowercased. The mail clients apply
+`idna.toAscii` to the connection host and to the **domain** part of each SMTP
+envelope address, so an internationalized recipient is delivered instead of
+throwing; a non-ASCII **local part** still errors (it needs SMTPUTF8, a later
+step - full IDNA2008 nameprep / mapping tables and the SMTPUTF8 send path are
+out of scope here). Enabler shipped: `convert.toCodepoint(char)` /
+`convert.fromCodepoint(n)` (rune to / from its integer code point), which the
+bootstring arithmetic needs and is reusable for any Unicode algorithm.
+Reusable beyond mail: URL hosts, DNS tools, any IDN. Tested: Punycode against
+known vectors and round-trips in the overlay (`modules/idna_test.j`, 100%);
+the mail clients' `asciiEnvelope` domain-encode / local-part-reject in their
+overlays. Reference doc [docs/modules/idna.md](modules/idna.md); demo
+`examples/modules/idna_demo.j`.
 
 ### M18.5 - `redis` module
 

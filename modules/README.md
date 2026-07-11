@@ -82,6 +82,13 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   `Error` (kind `"imap"`) on `NO` / `BAD`. Uses `net`, so the **default
   `jennifer` binary only**. See
   [`examples/modules/imap_demo.j`](../examples/modules/imap_demo.j).
+- **`idna.j`** - internationalized domain names: `idna.toAscii(domain)` /
+  `idna.toUnicode(domain)` over a Punycode (RFC 3492) core
+  (`münchen.de` <-> `xn--mnchen-3ya.de`), plus `idna.isAscii`. Pure Jennifer
+  over `strings` / `convert` / `encoding` (uses `convert.toCodepoint` /
+  `fromCodepoint`); no networking. The mail clients IDNA-encode hosts and SMTP
+  envelope domains through it. See
+  [`examples/modules/idna_demo.j`](../examples/modules/idna_demo.j).
 - **`pop.j`** - receive mail (POP3, RFC 1939) over `net`: `pop.connect(opts)`
   opens a session, then `stat` / `count` / `sizes` / `retrieve(n)` /
   `deleteMessage(n)` / `quit`, with `fetchAll(opts)` for the common "get every

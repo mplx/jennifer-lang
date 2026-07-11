@@ -81,8 +81,8 @@ server.
   [`sasl`](sasl.md), for Google / Microsoft 365). `APOP` (MD5 challenge) and
   the SASL challenge-response mechanisms land with the `crypto` library.
 - **No `TOP` / `UIDL`.** Just `STAT` / `LIST` / `RETR` / `DELE`.
-- **ASCII host only (for now).** A non-ASCII (IDN) host throws rather than
-  failing DNS silently; IDNA support is a planned follow-on (M18.4.5).
+- An internationalized (IDN) host is IDNA-encoded to its `xn--` form
+  automatically (via [`idna`](idna.md)).
 
 ## See also
 
