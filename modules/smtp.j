@@ -26,17 +26,21 @@ use net;
 use strings;
 use convert;
 use encoding;
+import "./sasl.j" as sasl;
 
 # Connection settings. `security` is "none" (plaintext), "tls" (implicit TLS
-# on connect), or "starttls" (upgrade after EHLO). `user` "" skips AUTH.
-# `clientName` is the EHLO identity (defaults to "localhost" when empty).
+# on connect), or "starttls" (upgrade after EHLO). `clientName` is the EHLO
+# identity (defaults to "localhost" when empty). `auth` selects the SASL
+# mechanism: "" (auto - PLAIN when `user` is set, else no auth), "plain",
+# "login", or "xoauth2" (where `pass` holds the OAuth2 access token).
 export def struct Options {
     host as string,
     port as int,
     security as string,
     clientName as string,
     user as string,
-    pass as string
+    pass as string,
+    auth as string
 };
 
 # One parsed SMTP reply: its (final) status code and the raw reply text.
@@ -80,12 +84,6 @@ func replyFinalCode(text as string) {
         $i = $i + 1;
     }
     return -1;
-}
-
-# authPlain builds the SASL PLAIN token: base64 of "\0user\0pass".
-func authPlain(user as string, pass as string) {
-    def raw as string init "\0" + $user + "\0" + $pass;
-    return encoding.toText(convert.bytesFromString($raw, "utf-8"), "base64");
 }
 
 # dotStuff prefixes an extra "." to any body line that begins with one, per the
@@ -178,10 +176,31 @@ func greet(conn as net.Conn, opts as Options) {
 
 # authenticate runs SASL PLAIN when credentials are set.
 func authenticate(conn as net.Conn, opts as Options) {
-    if (len($opts.user) == 0) {
+    def mech as string init $opts.auth;
+    if (len($mech) == 0) {
+        if (len($opts.user) == 0) {
+            return;
+        }
+        $mech = "plain";
+    }
+    if ($mech == "plain") {
+        def resp as string init "AUTH PLAIN " + sasl.plain($opts.user, $opts.pass);
+        expect(command($conn, $resp), 235, 235, "AUTH PLAIN");
         return;
     }
-    expect(command($conn, "AUTH PLAIN " + authPlain($opts.user, $opts.pass)), 235, 235, "AUTH");
+    if ($mech == "login") {
+        expect(command($conn, "AUTH LOGIN"), 334, 334, "AUTH LOGIN");
+        expect(command($conn, sasl.loginUser($opts.user)), 334, 334, "AUTH LOGIN user");
+        expect(command($conn, sasl.loginPass($opts.pass)), 235, 235, "AUTH LOGIN pass");
+        return;
+    }
+    if ($mech == "xoauth2") {
+        def resp as string init "AUTH XOAUTH2 " + sasl.bearer($opts.user, $opts.pass);
+        expect(command($conn, $resp), 235, 235, "AUTH XOAUTH2");
+        return;
+    }
+    def msg as string init "unknown auth mechanism: " + $mech;
+    throw Error{kind: "smtp", message: $msg, file: "", line: 0, col: 0};
 }
 
 func dial(opts as Options) {

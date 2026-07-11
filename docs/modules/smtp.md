@@ -38,7 +38,8 @@ Runnable: [`examples/modules/smtp_demo.j`](https://github.com/mplx/jennifer-lang
 | `port`       | Server port (25 / 587 plaintext or STARTTLS, 465 implicit TLS).        |
 | `security`   | `"none"` (plaintext), `"starttls"` (upgrade after EHLO), `"tls"` (implicit TLS on connect). |
 | `clientName` | The `EHLO` identity; defaults to `"localhost"` when empty.             |
-| `user`       | SASL username; `""` skips authentication.                              |
+| `auth`       | SASL mechanism: `""` (auto - PLAIN when `user` is set, else none), `"plain"`, `"login"`, or `"xoauth2"`. |
+| `user`       | SASL username; `""` with `auth: ""` skips authentication.              |
 | `pass`       | SASL password.                                                         |
 
 ## What `send` does
@@ -49,7 +50,9 @@ One call runs the whole delivery, throwing a catchable `Error` (kind
 1. Connect per `security` (`net.connect`, or `net.connectTLS` for `"tls"`).
 2. Read the `220` greeting, send `EHLO`.
 3. For `"starttls"`: `STARTTLS`, then `net.startTLS` and a second `EHLO`.
-4. When `user` is set: `AUTH PLAIN` (base64 SASL).
+4. Authenticate per `auth` (via the [`sasl`](sasl.md) encoders): `AUTH PLAIN`,
+   the `AUTH LOGIN` two-step, or `AUTH XOAUTH2` (an OAuth2 bearer token in
+   `pass` - how Google / Microsoft 365 authenticate).
 5. `MAIL FROM:<from>`, one `RCPT TO:<r>` per recipient, `DATA`.
 6. Send the message (CRLF-normalised and dot-stuffed) ended by `<CRLF>.<CRLF>`.
 7. `QUIT` and close.
@@ -88,9 +91,8 @@ server); a live send against a real daemon is the demo's job.
 
 - **Send only.** Receiving is POP3 / IMAP (later sub-milestones); this module
   does not fetch mail.
-- **AUTH PLAIN only for now.** `LOGIN` and `XOAUTH2` follow; the
-  challenge-response mechanisms (`CRAM-MD5`, `SCRAM`) need the `crypto`
-  library and land with it.
+- **PLAIN / LOGIN / XOAUTH2** (via [`sasl`](sasl.md)). The challenge-response
+  mechanisms (`CRAM-MD5`, `SCRAM`) need the `crypto` library and land with it.
 - **No connection reuse / pipelining.** `send` opens, delivers, and closes one
   connection per call.
 - **ASCII addresses only (for now).** An internationalized domain

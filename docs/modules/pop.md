@@ -77,8 +77,9 @@ server.
 ## Out of scope
 
 - **Receive only** (retrieve / delete). Sending is [`smtp`](smtp.md).
-- **`USER` / `PASS` auth only.** `APOP` (MD5 challenge) and SASL land with the
-  `crypto` library.
+- **`USER` / `PASS`, or XOAUTH2** (`Options.auth = "xoauth2"`, via
+  [`sasl`](sasl.md), for Google / Microsoft 365). `APOP` (MD5 challenge) and
+  the SASL challenge-response mechanisms land with the `crypto` library.
 - **No `TOP` / `UIDL`.** Just `STAT` / `LIST` / `RETR` / `DELE`.
 - **ASCII host only (for now).** A non-ASCII (IDN) host throws rather than
   failing DNS silently; IDNA support is a planned follow-on (M18.4.5).

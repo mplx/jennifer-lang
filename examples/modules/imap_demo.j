@@ -15,7 +15,7 @@ import "../../modules/imap.j" as imap;
 import "../../modules/mime.j" as mime;
 
 def opts as imap.Options init imap.Options{host: "127.0.0.1", port: 2143,
-    security: "none", user: "demo", pass: "demo"};
+    security: "none", user: "demo", pass: "demo", auth: ""};
 
 try {
     def msgs as list of string init imap.fetchAll($opts, "INBOX");

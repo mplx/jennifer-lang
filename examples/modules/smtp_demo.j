@@ -26,7 +26,7 @@ io.printf("=== message ===\n%s\n\n", $wire);
 
 # Send it. security "none" | "starttls" | "tls"; set user / pass for AUTH.
 def opts as smtp.Options init smtp.Options{host: "127.0.0.1", port: 2525,
-    security: "none", clientName: "jennifer.demo", user: "", pass: ""};
+    security: "none", clientName: "jennifer.demo", user: "", pass: "", auth: ""};
 def rcpts as list of string init ["you@example.com"];
 
 try {

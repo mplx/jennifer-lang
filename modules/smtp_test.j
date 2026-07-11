@@ -36,11 +36,6 @@ func testReplyFinalCodeIncomplete() {
     testing.assertEqual(replyFinalCode("220 partial with no newline yet"), -1);
 }
 
-func testAuthPlain() {
-    # base64 of "\0user\0pass"
-    testing.assertEqual(authPlain("user", "pass"), "AHVzZXIAcGFzcw==");
-}
-
 func testDotStuff() {
     testing.assertEqual(dotStuff(".leading"), "..leading");
     testing.assertEqual(dotStuff("normal\r\n.dot line\r\nend"), "normal\r\n..dot line\r\nend");
@@ -66,9 +61,9 @@ func testRequireAsciiPassesAscii() {
 
 func testClientNameDefault() {
     def bare as Options init Options{host: "h", port: 25, security: "none",
-        clientName: "", user: "", pass: ""};
+        clientName: "", user: "", pass: "", auth: ""};
     testing.assertEqual(clientName($bare), "localhost");
     def named as Options init Options{host: "h", port: 25, security: "none",
-        clientName: "me.example", user: "", pass: ""};
+        clientName: "me.example", user: "", pass: "", auth: ""};
     testing.assertEqual(clientName($named), "me.example");
 }

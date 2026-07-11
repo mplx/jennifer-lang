@@ -69,7 +69,7 @@ func TestPop3Receive(t *testing.T) {
 	dir := t.TempDir()
 	prog := fmt.Sprintf(`use testing;
 import %q as pop;
-def o as pop.Options init pop.Options{host: "127.0.0.1", port: %d, security: "none", user: "u", pass: "p"};
+def o as pop.Options init pop.Options{host: "127.0.0.1", port: %d, security: "none", user: "u", pass: "p", auth: ""};
 def s as pop.Session init pop.connect($o);
 testing.assertEqual(pop.count($s), 2);
 def msgA as string init pop.retrieve($s, 1);

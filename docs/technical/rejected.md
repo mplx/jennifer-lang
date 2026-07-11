@@ -581,3 +581,33 @@ Rejected because:
 So there is no `any` keyword; heterogeneous JSON lives in `json.Value`,
 walked with explicit accessors. See M16.16 in
 [milestones.md](../milestones.md).
+
+## printf i18n / string translation in format strings (M20.4 `i18n`)
+
+The proposal: since stance 3 makes `printf` about *presentation*, and
+translating `"hello"` to `"hallo"` presents the same meaning in another form,
+extend `(s)printf` to look up translations - a format-string-level `i18n`.
+
+Rejected because it fails the stance's own test - "shape how a value is
+**rendered**" (kept) vs "transform the value itself" (a library call, like
+`upper` / markdown rendering):
+
+- **It is substitution, not rendering.** `%d|base=2` renders 255 as
+  `11111111` - the same value, a pure function of value + modifier, no state.
+  Translation *replaces* the string with a different one fetched from a
+  catalog keyed by the current locale; the output has no mechanical relation
+  to the input. That is transformation, sitting next to `upper` and markdown
+  rendering, which the stance already makes library calls.
+- **It smuggles in global state.** `printf` modifiers are pure; translation
+  needs an ambient locale + loaded catalogs, violating stance 2 (explicit)
+  and stance 7 (namespaced, no globals), and it couples `printf` to `i18n`,
+  killing the orthogonality stance 3 exists to protect.
+- **Even gettext keeps it out of printf.** The canonical `_()` design
+  translates the *format string* first, then formats the result:
+  `io.printf(i18n.tr("Hello, %s"), name)`. Translation and formatting already
+  compose cleanly, so there is no gap for a `printf` extension to fill.
+
+So translation stays `i18n.tr()` (M20.4), composing with `printf` as above.
+Locale-aware *value* formatting (a number with the locale's grouping /
+decimal, a date in the locale's order) genuinely is presentation and is *not*
+rejected - it is a separate, open `printf` question for later.

@@ -28,13 +28,17 @@ use strings;
 use convert;
 use encoding;
 use regex;
+import "./sasl.j" as sasl;
 
+# `auth` is "" (LOGIN) or "xoauth2" (SASL bearer via AUTHENTICATE, where `pass`
+# holds the OAuth2 access token).
 export def struct Options {
     host as string,
     port as int,
     security as string,
     user as string,
-    pass as string
+    pass as string,
+    auth as string
 };
 
 export def struct Session {
@@ -229,7 +233,11 @@ export func connect(opts as Options) {
         command($conn, "STARTTLS");
         $conn = net.startTLS($conn);
     }
-    command($conn, "LOGIN " + quoteArg($opts.user) + " " + quoteArg($opts.pass));
+    if ($opts.auth == "xoauth2") {
+        command($conn, "AUTHENTICATE XOAUTH2 " + sasl.bearer($opts.user, $opts.pass));
+    } else {
+        command($conn, "LOGIN " + quoteArg($opts.user) + " " + quoteArg($opts.pass));
+    }
     return Session{conn: $conn};
 }
 

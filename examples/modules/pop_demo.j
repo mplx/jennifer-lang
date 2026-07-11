@@ -15,7 +15,7 @@ import "../../modules/pop.j" as pop;
 import "../../modules/mime.j" as mime;
 
 def opts as pop.Options init pop.Options{host: "127.0.0.1", port: 2110,
-    security: "none", user: "demo", pass: "demo"};
+    security: "none", user: "demo", pass: "demo", auth: ""};
 
 try {
     def msgs as list of string init pop.fetchAll($opts);

@@ -73,8 +73,9 @@ This is a reading subset, not full IMAP4rev1:
 - **Commands.** `LOGIN` / `SELECT` / `SEARCH ALL` / `FETCH BODY.PEEK[]` /
   `LOGOUT`. No partial fetch, `STORE` (flag changes), `COPY`, `APPEND`,
   `EXPUNGE`, mailbox management, or `IDLE`.
-- **Auth.** `LOGIN` only; SASL `AUTHENTICATE` (and `CRAM-MD5` / `SCRAM`) land
-  with the `crypto` library.
+- **Auth.** `LOGIN`, or `AUTHENTICATE XOAUTH2` (`Options.auth = "xoauth2"`, via
+  [`sasl`](sasl.md), for Google / Microsoft 365). The SASL challenge-response
+  mechanisms (`CRAM-MD5` / `SCRAM`) land with the `crypto` library.
 - **Literals are read as 7-bit / ASCII.** MIME transfer encoding keeps mail
   bodies ASCII; raw 8-bit literals are not yet byte-exact.
 - **ASCII host only (for now).** A non-ASCII (IDN) host throws rather than

@@ -73,7 +73,7 @@ func TestImapReceive(t *testing.T) {
 	dir := t.TempDir()
 	prog := fmt.Sprintf(`use testing;
 import %q as imap;
-def o as imap.Options init imap.Options{host: "127.0.0.1", port: %d, security: "none", user: "u", pass: "p"};
+def o as imap.Options init imap.Options{host: "127.0.0.1", port: %d, security: "none", user: "u", pass: "p", auth: ""};
 def s as imap.Session init imap.connect($o);
 testing.assertEqual(imap.selectMailbox($s, "INBOX"), 2);
 def nums as list of int init imap.search($s);

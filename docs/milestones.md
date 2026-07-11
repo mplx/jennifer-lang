@@ -1323,7 +1323,7 @@ runs in CI without an external server); and a live send verified against a
 local SMTP daemon. `AUTH LOGIN` / `XOAUTH2` follow; the challenge-response
 mechanisms land with M20.1 `crypto`. A non-ASCII host or envelope address
 (an IDN domain, a non-ASCII local part) throws a clear error rather than
-sending a misrouted address, until IDNA lands (M18.4.5). Reference doc
+sending a misrouted address, until IDNA lands (M18.4.6). Reference doc
 [docs/modules/smtp.md](modules/smtp.md); demo
 `examples/modules/smtp_demo.j`.
 
@@ -1339,7 +1339,7 @@ throws a catchable `Error` (kind `"pop3"`). Named `pop`, not `pop3`: a
 Jennifer namespace is letters-only, so a digit can't be a call prefix (POP v3
 is the only one in use; Ruby's `net/pop` makes the same choice). Uses `net`,
 so default-binary-only, with the same IDN loud-fail guard as `smtp` (until
-M18.4.5). Tested: pure parsers (status, `STAT`, `LIST` sizes, dot-terminator /
+M18.4.6). Tested: pure parsers (status, `STAT`, `LIST` sizes, dot-terminator /
 un-stuffing) in the overlay (`modules/pop_test.j`, 100%); the full session end
 to end against an in-process fake POP3 server in the Go suite
 (`TestPop3Receive`). Reference doc [docs/modules/pop.md](modules/pop.md); demo
@@ -1367,9 +1367,33 @@ IMAP server in the Go suite (`TestImapReceive`). Out of scope: partial fetch,
 `examples/modules/imap_demo.j`.
 
 With this the mail suite's clients are complete (`mime` + `smtp` + `pop` +
-`imap`); only the shared `idna` piece (M18.4.5) remains.
+`imap`); the shared `sasl` piece is done, and only `idna` (M18.4.6) remains.
 
-### M18.4.5 - `idna` (internationalized domains)
+### M18.4.5 - `sasl` (auth mechanisms, incl. XOAUTH2)
+
+**Done.** A shared `sasl` module (`modules/sasl.j`) hosting the crypto-free
+SASL mechanisms as pure encoders (base64, no networking, TinyGo-clean):
+`sasl.plain(user, pass)`, the two `sasl.login*` steps, and `sasl.bearer(user,
+token)` - the `base64("user=" ... "\x01auth=Bearer " token "\x01\x01")` string
+that authenticates to Google / Microsoft 365 (both have retired password
+auth). Named `bearer`, not `xoauth2`, because a Jennifer method name is
+letters-only; the wire mechanism name "XOAUTH2" is a string the client sends.
+The `smtp` / `pop` / `imap` clients gained an explicit `Options.auth` mechanism
+(`""` auto / `"plain"` / `"login"` / `"xoauth2"`, token in `pass`) and run the
+mechanism-specific wire dialogue (SMTP `AUTH`, IMAP `AUTHENTICATE`, POP3
+`AUTH`) around these encoders, replacing their inline auth. This ships the
+**use-a-token** half of OAuth2: given an access token, mail works with the big
+providers today; the token itself comes from the generic `oauth` client
+(M18.7.3). The `\x01` byte a Jennifer string has no escape for is built from
+`bytes` (or `convert.fromCodepoint(1)` once M18.4.6 lands). Tested: encoders
+against independent references in the overlay (`modules/sasl_test.j`, 100%);
+each client's XOAUTH2 command captured and matched end to end against an
+in-process server in the Go suite (`TestSmtpXoauth2` / `TestPopXoauth2` /
+`TestImapXoauth2`). Challenge-response (`SCRAM-SHA-256`, `CRAM-MD5`) joins here
+once `crypto` (M20.1) lands; a later LDAP client reuses the module. Reference
+doc [docs/modules/sasl.md](modules/sasl.md).
+
+### M18.4.6 - `idna` (internationalized domains)
 
 Planned, after the protocol clients. An `idna` module - IDNA2008 ToASCII /
 ToUnicode over a Punycode (RFC 3492) core, pure Jennifer - so the mail
@@ -1488,6 +1512,37 @@ the verb functions; a full CRUD round-trip against a test server
 returns the expected statuses and decoded bodies; a 4xx / 5xx is reported
 as a `Response` value (status inspectable), not a crash; base-URL joining
 and query params compose without double slashes.
+
+### M18.7.3 - `oauth` module (generic OAuth2 client)
+
+The **get-a-token** half of OAuth2 (the *use-a-token* half is `sasl`
+XOAUTH2, M18.4.5). A generic OAuth2 client - not email-specific; any
+OAuth2-protected API - built on `http` + `json`, with `hash` for PKCE S256.
+Acquires and refreshes access tokens; provider presets for Google and
+Microsoft 365 (endpoints + scopes) make mail the headline consumer, its
+tokens feeding `sasl.xoauth2`. Flows tier by dependency, so they land in
+order:
+
+- **No extra deps (ship first):** Client Credentials, Refresh Token, and the
+  **Device Authorization Grant** - the last a natural fit for a CLI /
+  embeddable runtime (no local redirect server; show the user a URL + code,
+  poll the token endpoint). These need only `http` + `json`.
+- **Authorization Code + PKCE:** needs `httpd` (M18.8) to catch the redirect
+  and crypto-grade random for the PKCE verifier (its security rests on
+  verifier entropy, so `math.rand` will not do) - lands after `httpd` and
+  `crypto` (M20.1).
+- **Service-account JWT assertion (Google):** RSA-signed client assertion,
+  so it waits on `crypto` (M20.1) too.
+
+Token refresh / expiry handling and a small on-disk token store (via `fs`)
+round it out. Stateless / declarations-only like the other `http` consumers:
+the caller holds the token value and threads it.
+
+**Acceptance.** A device-flow + refresh round-trip against a mock OAuth2
+token endpoint yields an access token, refreshes it when expired, and the
+token drives `sasl.xoauth2` into a successful IMAP `AUTHENTICATE XOAUTH2`
+against a mock server; a token-endpoint error surfaces as a catchable
+`Error`, not a crash.
 
 ### M18.8 - `httpd` module
 
@@ -1774,6 +1829,36 @@ and has no Go stdlib. Unlike `xml`, that means a **Go dependency** (e.g.
 hand-rolled full YAML is a project of its own. Verify TinyGo-cleanliness
 of the dependency, and fall back to a documented subset if it won't build
 there.
+
+### M20.4 - `i18n`
+
+Message catalogs and locale-aware translation. A **system library**, not a
+`.j` module, for two independent reasons: it needs **global mutable state**
+(the current locale plus loaded catalogs), which a declarations-only module
+cannot hold; and it needs **performance** - Jennifer's `map` is a linear-scan
+`[]MapEntry`, so a large catalog looked up per call would be O(n), whereas the
+library holds catalogs in a Go `map[string]string` (O(1)). The
+`map of string to string` a caller passes is fine as the *load* interface (a
+one-time ingest); the per-lookup scan is what the library avoids.
+
+Surface: `i18n.load(lang, catalog)` (a `map of string to string`, built from
+`json` today or `yaml` here at M20.3, or a literal), `i18n.setLocale(lang)` /
+`i18n.locale()`, `i18n.tr(key)` (translate in the current locale; fallback
+locale -> default lang -> the key itself, so a missing key is visible), and
+`i18n.tr(key, params)` for named interpolation (`"Hello, {name}"`).
+Pluralization (CLDR per-language plural rules) and an `i18n.loadFile(path)`
+convenience are follow-ons.
+
+No gettext-style `_()`: `_` is not a valid Jennifer method name (letters-only;
+`_` is reserved for constant-name separators), and a bare `tr()` builtin does
+not clear the `len` promotion bar (translation is not useful to nearly every
+program). Ambient-global `_()` is also exactly what stances 2 (explicit) and 7
+(namespaced, no globals) rule out - so the call is `i18n.tr("key")` (or
+`use i18n as t; t.tr("key")`). Extending `printf` for translation is rejected
+(see [technical/rejected.md](technical/rejected.md)): translation is content
+substitution from stateful external data, not presentation of the value in
+hand. Locale-aware *value* formatting (number / date grouping) is a separate,
+open `printf` question.
 
 ---
 

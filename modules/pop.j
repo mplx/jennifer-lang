@@ -23,15 +23,18 @@ use net;
 use strings;
 use convert;
 use encoding;
+import "./sasl.j" as sasl;
 
 # Connection settings. `security` is "none", "tls" (implicit TLS on connect,
-# port 995), or "starttls" (STLS upgrade on port 110).
+# port 995), or "starttls" (STLS upgrade on port 110). `auth` is "" (USER /
+# PASS) or "xoauth2" (SASL bearer token, where `pass` holds the access token).
 export def struct Options {
     host as string,
     port as int,
     security as string,
     user as string,
-    pass as string
+    pass as string,
+    auth as string
 };
 
 # A live POP3 session over one connection.
@@ -198,8 +201,13 @@ export func connect(opts as Options) {
         expectOK(command($conn, "STLS"), "STLS");
         $conn = net.startTLS($conn);
     }
-    expectOK(command($conn, "USER " + $opts.user), "USER");
-    expectOK(command($conn, "PASS " + $opts.pass), "PASS");
+    if ($opts.auth == "xoauth2") {
+        def resp as string init "AUTH XOAUTH2 " + sasl.bearer($opts.user, $opts.pass);
+        expectOK(command($conn, $resp), "AUTH XOAUTH2");
+    } else {
+        expectOK(command($conn, "USER " + $opts.user), "USER");
+        expectOK(command($conn, "PASS " + $opts.pass), "PASS");
+    }
     return Session{conn: $conn};
 }
 

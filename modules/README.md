@@ -52,6 +52,12 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   `contentType` / `address` read it. Pure Jennifer over `strings` / `convert` /
   `encoding`; no networking, so it is the foundation the mail clients build on.
   See [`examples/modules/mime_demo.j`](../examples/modules/mime_demo.j).
+- **`sasl.j`** - the crypto-free SASL auth mechanisms as pure base64 encoders,
+  shared by the mail clients: `sasl.plain(user, pass)`, `sasl.loginUser` /
+  `sasl.loginPass`, and `sasl.bearer(user, token)` (SASL XOAUTH2 - the
+  "use a token" half of OAuth2, how Google / Microsoft 365 authenticate mail).
+  No networking, no crypto (SCRAM / CRAM-MD5 join it with the `crypto` library).
+  Consumed by `smtp` / `pop` / `imap` via `Options.auth = "xoauth2"`.
 - **`semver.j`** - strict Semantic Versioning 2.0.0: parse, compare, sort,
   and increment version numbers. `semver.parse(s)` / `isValid(s)` /
   `toString(v)`, `compare(a, b)` / `lt` / `eq` / `gt`, `isStable(v)` /

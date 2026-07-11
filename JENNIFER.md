@@ -292,6 +292,11 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   back, and `mime.headerValue` / `body` / `parts` / `contentType` / `address`
   read it. Bodies are text (UTF-8); no networking. The foundation the mail
   clients build on.
+- **`sasl`** - SASL auth encoders shared by the mail clients (pure base64, no
+  net, no crypto): `sasl.plain(user, pass)`, `sasl.loginUser` / `loginPass`,
+  `sasl.bearer(user, token)` (SASL XOAUTH2 - the "use a token" half of OAuth2,
+  for Google / Microsoft 365). The mail clients select it with
+  `Options.auth = "xoauth2"` (token in `pass`).
 - **`semver`** - strict SemVer 2.0.0 over a `Version` struct: `semver.parse(s)` /
   `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` /
   `isPrerelease`, `incMajor` / `incMinor` / `incPatch`, `sort`.
