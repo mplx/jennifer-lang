@@ -62,6 +62,15 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   cache, not a store of record). Uses `net` (via `memcache`), so the **default
   `jennifer` binary only**. See
   [`examples/modules/session_demo.j`](../examples/modules/session_demo.j).
+- **`ratelimit.j`** - a fixed-window rate limiter on the `memcache` module, the
+  sharpest use of memcached's atomic `incr` + per-key TTL:
+  `ratelimit.allow(mc, key, limit, window)` -> bool records a hit and reports
+  whether it is within `limit` for the current `window` (seconds);
+  `ratelimit.remaining(mc, key, limit)` reports the budget left. The counter is
+  created with the window TTL on the first hit and expires on its own; the
+  incr-then-add pair closes the create race. Uses `net` (via `memcache`), so the
+  **default `jennifer` binary only**. See
+  [`examples/modules/ratelimit_demo.j`](../examples/modules/ratelimit_demo.j).
 - **`mime.j`** - build and parse MIME messages (RFC 5322 headers, multipart,
   quoted-printable / base64 transfer encodings). `mime.text` / `attachment` /
   `multipart` / `withHeader` build a `Part` tree, `mime.encode` serializes it,

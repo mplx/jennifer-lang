@@ -59,6 +59,7 @@
 - [`memcache`](modules/memcache.md)
 - [`mime`](modules/mime.md)
 - [`pop`](modules/pop.md)
+- [`ratelimit`](modules/ratelimit.md)
 - [`redis`](modules/redis.md)
 - [`resque`](modules/resque.md)
 - [`sasl`](modules/sasl.md)

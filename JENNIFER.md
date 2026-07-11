@@ -300,6 +300,12 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `memcache` + `uuid` + `json`; data is stored base64-wrapped JSON so any UTF-8
   value round-trips. Volatile (a cache, not a store of record). **Default
   `jennifer` binary only** (`net`).
+- **`ratelimit`** - a fixed-window rate limiter on the `memcache` module
+  (atomic `incr` + per-key TTL): `ratelimit.allow(mc, key, limit, window)` ->
+  bool records a hit and reports whether it is within `limit` for the current
+  `window` seconds; `ratelimit.remaining(mc, key, limit)` -> int is the budget
+  left. The counter is created with the window TTL on the first hit and expires
+  on its own. **Default `jennifer` binary only** (`net`).
 - **`mime`** - build and parse MIME messages (RFC 5322 headers, multipart,
   quoted-printable / base64 transfer encodings): `mime.text(contentType, body)` /
   `attachment` / `multipart(subtype, boundary, parts)` / `withHeader` build a

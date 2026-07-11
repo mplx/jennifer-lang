@@ -1609,6 +1609,22 @@ catalog + `SUMMARY` + `README` + `JENNIFER.md` entries, and
 
 #### M18.6.2 - `ratelimit` module (on `memcache`)
 
+**Done.** A `ratelimit` module (`modules/ratelimit.j`) on `memcache`:
+`allow(mc, key, limit, window)` records a hit with atomic `incr` and reports
+whether it is within `limit` for the current window; `remaining(mc, key,
+limit)` reports the budget left. The window starts at the first hit - an absent
+counter is created via `add` carrying the window's TTL, and since a later
+`incr` does not re-arm the expiry, the counter dies exactly `window` seconds
+later, a clean fixed window with nothing to reap. The `incr`-then-`add` pair
+closes the create race (only one `add` wins; the loser re-`incr`s, so no hit is
+lost). Tested: the budget arithmetic (`withinLimit`, `remainingFrom` incl. the
+clamp-at-0) in the overlay (`modules/ratelimit_test.j`, 100%); the full
+allow / deny / remaining path over the window, and per-key independence, against
+an in-process memcached server in the Go suite (`TestRatelimit`). Fixed window
+only (sliding window / token bucket deferred). Reference doc
+[docs/modules/ratelimit.md](modules/ratelimit.md); demo
+`examples/modules/ratelimit_demo.j`.
+
 A fixed-window rate limiter on `memcache` - the sharpest demonstration of
 memcached's distinctive strength, **atomic `incr` + TTL**. `allow` does
 `INCR key`; when the counter is newly 1 it arms the window expiry
