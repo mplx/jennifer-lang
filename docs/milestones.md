@@ -1567,6 +1567,24 @@ it talks to a `memcached` daemon. Two reference modules build on it -
 
 #### M18.6.1 - `session` module (on `memcache`)
 
+**Done.** A `session` module (`modules/session.j`) on `memcache` + `uuid` +
+`json`: `create(mc, ttl)` mints a UUID v4 ID and stores an empty session,
+`load(mc, id)` returns the `map of string to string` (empty when absent /
+expired), `save(mc, id, data, ttl)` writes it and slides the expiry,
+`touch(mc, id, ttl)` re-arms the TTL, `destroy(mc, id)` removes it - all under a
+`sess:ID` key. The data map is stored **base64-wrapped JSON**: `json.encode`
+keeps raw UTF-8, and memcached's value read is only byte-exact for ASCII, so the
+base64 wrap makes every value ASCII on the wire and any UTF-8 session value
+(`"José"`) round-trips exactly - proven in both test tiers. Volatile by nature
+(a cache of soft state, not a store of record); IDs are non-crypto UUID v4 (fine
+for a cache key, documented). Tested: the base64 + JSON encode / decode round
+trip (incl. non-ASCII and the ASCII-blob property), key building, and JSON
+Pointer escaping in the overlay (`modules/session_test.j`, 100%); the full
+create / load / save / touch / destroy lifecycle against an in-process memcached
+server in the Go suite (`TestSessionLifecycle`). A PHP-session-compatible layout
+stays a follow-on. Reference doc [docs/modules/session.md](modules/session.md);
+demo `examples/modules/session_demo.j`.
+
 A server-side session store on `memcache`, the canonical memcached use (it
 is what PHP's memcached session handler does). A session is a `map of string
 to string` held under a `sess:ID` key with a sliding TTL, so it expires on

@@ -293,6 +293,13 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   seconds). A volatile cache for sessions / counters / locks. Throws `Error`
   (kind `"memcache"`) on a protocol error. **Default `jennifer` binary only**
   (`net`).
+- **`session`** - server-side sessions on the `memcache` module: a `map of
+  string to string` under `sess:ID` with a sliding TTL. `session.create(mc,
+  ttl)` -> id (UUID v4), `load(mc, id)` (empty map when absent / expired),
+  `save(mc, id, data, ttl)`, `touch(mc, id, ttl)`, `destroy(mc, id)`. Threads
+  `memcache` + `uuid` + `json`; data is stored base64-wrapped JSON so any UTF-8
+  value round-trips. Volatile (a cache, not a store of record). **Default
+  `jennifer` binary only** (`net`).
 - **`mime`** - build and parse MIME messages (RFC 5322 headers, multipart,
   quoted-printable / base64 transfer encodings): `mime.text(contentType, body)` /
   `attachment` / `multipart(subtype, boundary, parts)` / `withHeader` build a

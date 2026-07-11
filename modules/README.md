@@ -53,6 +53,15 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   protocol error throws `Error` (kind `"memcache"`). Uses `net`, so the
   **default `jennifer` binary only**. See
   [`examples/modules/memcache_demo.j`](../examples/modules/memcache_demo.j).
+- **`session.j`** - server-side sessions on the `memcache` module, the
+  canonical memcached use: a `map of string to string` held under `sess:ID`
+  with a sliding TTL. `session.create(mc, ttl)` -> id (UUID v4), `load(mc, id)`
+  (empty map when absent / expired), `save(mc, id, data, ttl)`, `touch(mc, id,
+  ttl)`, `destroy(mc, id)`. Threads `memcache` + `uuid` + `json`; the data map
+  is stored base64-wrapped JSON, so any UTF-8 value round-trips. Volatile (a
+  cache, not a store of record). Uses `net` (via `memcache`), so the **default
+  `jennifer` binary only**. See
+  [`examples/modules/session_demo.j`](../examples/modules/session_demo.j).
 - **`mime.j`** - build and parse MIME messages (RFC 5322 headers, multipart,
   quoted-printable / base64 transfer encodings). `mime.text` / `attachment` /
   `multipart` / `withHeader` build a `Part` tree, `mime.encode` serializes it,

@@ -63,6 +63,7 @@
 - [`resque`](modules/resque.md)
 - [`sasl`](modules/sasl.md)
 - [`semver`](modules/semver.md)
+- [`session`](modules/session.md)
 - [`smtp`](modules/smtp.md)
 
 # Technical reference
