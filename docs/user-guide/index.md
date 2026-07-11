@@ -44,7 +44,10 @@ seven-stance table.
 ## Related
 
 - [docs/libraries/](../libraries/index.md) - one reference page per
-  standard library (`io`, `convert`, `math`, `strings`, `core`).
+  standard library (`io`, `convert`, `math`, `strings`, ...).
+- [docs/modules/](../modules/index.md) - the Jennifer-coded modules that
+  ship with the interpreter, brought in with `import` (`ansi`, `csv`,
+  `mime`, `redis`, ...).
 - [docs/technical/](../technical/index.md) - interpreter internals for
   contributors.
 - [docs/glossary.md](../glossary.md) - canonical project terminology.

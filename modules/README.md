@@ -49,9 +49,12 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   quoted-printable / base64 transfer encodings). `mime.text` / `attachment` /
   `multipart` / `withHeader` build a `Part` tree, `mime.encode` serializes it,
   `mime.parse` reads it back, and `mime.headerValue` / `body` / `parts` /
-  `contentType` / `address` read it. Pure Jennifer over `strings` / `convert` /
-  `encoding`; no networking, so it is the foundation the mail clients build on.
-  See [`examples/modules/mime_demo.j`](../examples/modules/mime_demo.j).
+  `contentType` / `address` read it. A non-ASCII `Subject` / display name is
+  auto-encoded as an RFC 2047 encoded-word on `encode` and decoded on `parse`
+  (`mime.encodeWord` / `decodeWord` exposed for manual use). Pure Jennifer over
+  `strings` / `convert` / `encoding` / `regex`; no networking, so it is the
+  foundation the mail clients build on. See
+  [`examples/modules/mime_demo.j`](../examples/modules/mime_demo.j).
 - **`sasl.j`** - the crypto-free SASL auth mechanisms as pure base64 encoders,
   shared by the mail clients: `sasl.plain(user, pass)`, `sasl.loginUser` /
   `sasl.loginPass`, and `sasl.bearer(user, token)` (SASL XOAUTH2 - the

@@ -1300,8 +1300,8 @@ lines; 7bit when ASCII, quoted-printable for non-ASCII text, base64 wrapped
 at 76 columns for attachments), parse back with `parse` (header unfolding,
 recursive boundary split, transfer-decode), and read with `headerValue` /
 `body` / `parts` / `contentType`; `address` formats an RFC 5322 mailbox.
-Bodies are held decoded as text: binary (`bytes`) bodies and RFC 2047
-encoded-words for non-ASCII headers are deferred. Reference doc
+Bodies are held decoded as text; binary (`bytes`) bodies are deferred
+(RFC 2047 encoded-words for non-ASCII headers followed in M18.4.7). Reference doc
 [docs/modules/mime.md](modules/mime.md); overlay `modules/mime_test.j`
 (100%); demo `examples/modules/mime_demo.j`.
 
@@ -1411,6 +1411,32 @@ known vectors and round-trips in the overlay (`modules/idna_test.j`, 100%);
 the mail clients' `asciiEnvelope` domain-encode / local-part-reject in their
 overlays. Reference doc [docs/modules/idna.md](modules/idna.md); demo
 `examples/modules/idna_demo.j`.
+
+### M18.4.7 - `mime` RFC 2047 encoded-words
+
+**Done.** Non-ASCII header values now cross the wire as RFC 2047
+encoded-words instead of raw 8-bit bytes. Added to the `mime` module
+(`modules/mime.j`): `encodeWord(text)` renders one or more UTF-8 base64
+encoded-words (`=?UTF-8?B?...?=`), split on rune boundaries under the
+75-character limit and folded with CRLF + space; `decodeWord(value)` decodes
+every encoded-word in a header value (both B and Q, dropping the whitespace
+that separates adjacent words as a reader should, and leaving a word that
+fails to decode verbatim so `parse` never crashes). The two are applied
+**automatically and symmetrically**: `encode` encodes a non-ASCII `Subject` /
+`Comments` and the display-name half of an address header (`From` / `To` /
+`Cc` / `Bcc` / `Reply-To` / `Sender`), leaving the `<addr>` alone, and
+`mime.address` encodes a non-ASCII name; `parse` decodes those same headers
+back to text. So a `Bericht aus München` subject goes out conformant and a
+fetched `=?UTF-8?B?...?=` reads back as text through `imap` / `pop`. Charset
+decode routes UTF-8 through `convert` and `us-ascii` / `iso-8859-*` /
+`windows-*` through `encoding`. Pure text, no new host dependency (adds
+`use regex` for token scanning); TinyGo-clean. Tested in the overlay
+(`modules/mime_test.j`): encode/decode round-trips, B and Q decode, adjacent-
+word whitespace collapse, surrounding-text preservation, folding, the
+auto-encode-on-`encode` / auto-decode-on-`parse` path, and address-name
+encoding. Reference doc [docs/modules/mime.md](modules/mime.md). Out of scope
+still: binary bodies, and per-mailbox name encoding in a multi-address line
+(encode each name with `mime.address` when building it).
 
 ### M18.5 - `redis` module
 

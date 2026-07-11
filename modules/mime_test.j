@@ -144,3 +144,73 @@ func testAddress() {
     testing.assertEqual(address("Ada", "a@b.com"), "Ada <a@b.com>");
     testing.assertEqual(address("Ada, Countess", "a@b.com"), "\"Ada, Countess\" <a@b.com>");
 }
+
+# --- RFC 2047 encoded-words (public) ---
+
+func testEncodeDecodeRoundTrip() {
+    testing.assertEqual(decodeWord(encodeWord("café")), "café");
+    testing.assertEqual(decodeWord(encodeWord("Grüße aus München")), "Grüße aus München");
+    testing.assertEqual(decodeWord(encodeWord("ascii only")), "ascii only");
+}
+
+func testEncodeWordShape() {
+    testing.assertTrue(strings.startsWith(encodeWord("ö"), "=?UTF-8?B?"));
+    testing.assertTrue(strings.endsWith(encodeWord("ö"), "?="));
+}
+
+func testDecodeBWord() {
+    testing.assertEqual(decodeWord("=?utf-8?B?V2lsbGtvbW1lbiBpbiBJbnN0YnJ1Y2s=?="),
+        "Willkommen in Instbruck");
+}
+
+func testDecodeQWord() {
+    testing.assertEqual(decodeWord("=?UTF-8?Q?caf=C3=A9?="), "café");
+    testing.assertEqual(decodeWord("=?UTF-8?Q?a_b?="), "a b");   # "_" is a space
+}
+
+func testDecodeAdjacentWordsCollapseSpace() {
+    def two as string init encodeWord("Hello") + " " + encodeWord("World");
+    testing.assertEqual(decodeWord($two), "HelloWorld");
+}
+
+func testDecodeKeepsSurroundingText() {
+    testing.assertEqual(decodeWord("Re: " + encodeWord("café") + " today"),
+        "Re: café today");
+}
+
+func testDecodeNoEncodedWord() {
+    testing.assertEqual(decodeWord("plain subject"), "plain subject");
+}
+
+func testDecodeBadWordLeftVerbatim() {
+    # invalid base64 payload -> left as-is, parse never crashes
+    testing.assertEqual(decodeWord("=?UTF-8?B?!!!notb64!!!?="), "=?UTF-8?B?!!!notb64!!!?=");
+}
+
+func testEncodeAppliesToSubject() {
+    def m as Part init withHeader(text("text/plain", "hi"), "Subject", "Grüße");
+    def enc as string init encode($m);
+    testing.assertContains($enc, "Subject: =?UTF-8?B?");
+    testing.assertFalse(strings.contains($enc, "Grüße"));   # raw form must not leak
+}
+
+func testSubjectRoundTripThroughParse() {
+    def m as Part init withHeader(text("text/plain", "hi"), "Subject", "Grüße aus München");
+    testing.assertEqual(headerValue(parse(encode($m)), "Subject"), "Grüße aus München");
+}
+
+func testAddressNameEncoded() {
+    def v as string init address("Jörg Müller", "j@x.de");
+    testing.assertTrue(strings.startsWith($v, "=?UTF-8?B?"));
+    testing.assertTrue(strings.endsWith($v, " <j@x.de>"));
+    # and it decodes back through a parsed From header
+    def p as Part init parse("From: " + $v + "\r\n\r\n");
+    testing.assertEqual(headerValue($p, "From"), "Jörg Müller <j@x.de>");
+}
+
+func testEncodeWordFoldsLong() {
+    def long as string init strings.repeat("é", 60);   # 120 bytes -> multiple words
+    def e as string init encodeWord($long);
+    testing.assertContains($e, "\r\n ");        # folded
+    testing.assertEqual(decodeWord($e), $long); # and reversible
+}

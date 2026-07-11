@@ -17,12 +17,15 @@
 # A `Part` is a leaf (headers + a decoded-text `body` with a transfer
 # `encoding`) or a multipart container (headers + child `parts` + a
 # `boundary`). Bodies are held decoded as text; encode applies the transfer
-# encoding, parse removes it. Content is text (UTF-8): binary attachments (a
-# `bytes` body) and RFC 2047 encoded-words for non-ASCII headers are not yet
-# handled.
+# encoding, parse removes it. RFC 2047 encoded-words are applied automatically:
+# `encode` encodes a non-ASCII Subject / display name (`=?UTF-8?B?...?=`),
+# `parse` decodes them back to text, and `encodeWord` / `decodeWord` are exposed
+# for manual use. Content is text (UTF-8): binary attachments (a `bytes` body)
+# are not yet handled.
 use strings;
 use convert;
 use encoding;
+use regex;
 
 # A single header field.
 export def struct Header {
@@ -236,6 +239,206 @@ func parseMultipart(body as string, boundary as string) {
     return $parts;
 }
 
+# --- RFC 2047 encoded-words (exported + private) -------------------
+
+# isAsciiText reports whether `s` is pure ASCII (no encoded-word needed).
+func isAsciiText(s as string) {
+    return encoding.isAscii(convert.bytesFromString($s, "utf-8"));
+}
+
+# isBlank reports whether `s` is empty or only linear whitespace.
+func isBlank(s as string) {
+    for (def ch in strings.chars($s)) {
+        if (not ($ch == " " or $ch == "\t" or $ch == "\r" or $ch == "\n")) {
+            return false;
+        }
+    }
+    return true;
+}
+
+# encodeWordChunk wraps one rune-safe slice as a single UTF-8 B encoded-word.
+func encodeWordChunk(s as string) {
+    def b as bytes init convert.bytesFromString($s, "utf-8");
+    return "=?UTF-8?B?" + encoding.toText($b, "base64") + "?=";
+}
+
+# encodeWord renders `text` as one or more RFC 2047 UTF-8 base64 encoded-words,
+# each kept under the 75-character limit (split on rune boundaries, never
+# mid-character) and folded with CRLF + space when more than one is needed.
+export func encodeWord(text as string) {
+    def words as list of string init [];
+    def chunk as string init "";
+    def chunkBytes as int init 0;
+    for (def ch in strings.chars($text)) {
+        def w as int init len(convert.bytesFromString($ch, "utf-8"));
+        if ($chunkBytes + $w > 45 and $chunkBytes > 0) {
+            $words[] = encodeWordChunk($chunk);
+            $chunk = "";
+            $chunkBytes = 0;
+        }
+        $chunk = $chunk + $ch;
+        $chunkBytes = $chunkBytes + $w;
+    }
+    $words[] = encodeWordChunk($chunk);
+    return strings.join($words, "\r\n ");
+}
+
+# hexDigit maps one hex character to its value (0..15), or -1.
+func hexDigit(c as string) {
+    return strings.indexOf("0123456789abcdef", strings.lower($c));
+}
+
+# decodeQ decodes RFC 2047 "Q" text ("_"=space, "=XX"=byte) to bytes.
+func decodeQ(text as string) {
+    def out as bytes;
+    def cs as list of string init strings.chars($text);
+    def n as int init len($cs);
+    def i as int init 0;
+    while ($i < $n) {
+        def ch as string init $cs[$i];
+        if ($ch == "_") {
+            $out[] = 32;
+            $i = $i + 1;
+        } elseif ($ch == "=" and $i + 2 < $n) {
+            $out[] = hexDigit($cs[$i + 1]) * 16 + hexDigit($cs[$i + 2]);
+            $i = $i + 3;
+        } else {
+            $out[] = convert.toCodepoint($ch);
+            $i = $i + 1;
+        }
+    }
+    return $out;
+}
+
+# decodeCharset turns decoded bytes into a string per the encoded-word charset.
+func decodeCharset(raw as bytes, charset as string) {
+    if ($charset == "utf-8" or $charset == "utf8") {
+        return convert.stringFromBytes($raw, "utf-8");
+    }
+    if ($charset == "us-ascii" or $charset == "ascii") {
+        return encoding.decode($raw, "ascii");
+    }
+    return encoding.decode($raw, $charset);
+}
+
+# decodeOneWord decodes a single encoded-word's (charset, encoding, text) triple.
+func decodeOneWord(charset as string, enc as string, text as string) {
+    def up as string init strings.upper($enc);
+    def raw as bytes;
+    if ($up == "B") {
+        $raw = encoding.fromText(stripWS($text), "base64");
+    } else {
+        $raw = decodeQ($text);
+    }
+    return decodeCharset($raw, strings.lower($charset));
+}
+
+# decodeWord decodes every RFC 2047 encoded-word in `value`, dropping the
+# linear whitespace that separates two adjacent encoded-words (as a reader
+# should). A word that fails to decode is left verbatim so parse never crashes.
+export func decodeWord(value as string) {
+    def pat as string init "=\\?([^?]+)\\?([BbQq])\\?([^?]*)\\?=";
+    def ms as list of regex.Match init regex.findAll($pat, $value);
+    if (len($ms) == 0) {
+        return $value;
+    }
+    def out as string init "";
+    def prevEnd as int init 0;
+    def prevWord as bool init false;
+    for (def m in $ms) {
+        def between as string init strings.substring($value, $prevEnd, $m.start);
+        if (not ($prevWord and isBlank($between))) {
+            $out = $out + $between;
+        }
+        def decoded as string init strings.substring($value, $m.start, $m.end);
+        try {
+            $decoded = decodeOneWord($m.groups[0], $m.groups[1], $m.groups[2]);
+        } catch (e) {
+            $decoded = strings.substring($value, $m.start, $m.end);
+        }
+        $out = $out + $decoded;
+        $prevEnd = $m.end;
+        $prevWord = true;
+    }
+    return $out + strings.substring($value, $prevEnd, len($value));
+}
+
+# isEncodedWordHeader reports whether a header carries encoded-words (decode on
+# parse) - the unstructured fields and the display-name of address fields.
+func isEncodedWordHeader(name as string) {
+    def n as string init strings.lower($name);
+    if ($n == "subject" or $n == "comments") {
+        return true;
+    }
+    return isAddressHeader($n);
+}
+
+# isAddressHeader reports whether a header holds mailbox addresses.
+func isAddressHeader(name as string) {
+    def n as string init strings.lower($name);
+    if ($n == "from" or $n == "to" or $n == "cc") {
+        return true;
+    }
+    return $n == "bcc" or $n == "reply-to" or $n == "sender";
+}
+
+# autoDecodeHeaders decodes encoded-words in the header fields that may carry
+# them, leaving structured fields (Message-ID, Date, Content-*) untouched.
+func autoDecodeHeaders(headers as list of Header) {
+    def out as list of Header init [];
+    for (def h in $headers) {
+        if (isEncodedWordHeader($h.name)) {
+            $out[] = mkHeader($h.name, decodeWord($h.value));
+        } else {
+            $out[] = $h;
+        }
+    }
+    return $out;
+}
+
+# unquote strips a surrounding quoted-string and unescapes it.
+func unquote(s as string) {
+    if (len($s) >= 2 and strings.startsWith($s, "\"") and strings.endsWith($s, "\"")) {
+        def inner as string init strings.substring($s, 1, len($s) - 1);
+        return strings.replace($inner, "\\\"", "\"");
+    }
+    return $s;
+}
+
+# encodeAddressHeader encodes a non-ASCII display name in `Name <addr>`, leaving
+# the address alone. A multi-address value (a comma) is left raw.
+func encodeAddressHeader(value as string) {
+    if (strings.contains($value, ",")) {
+        return $value;
+    }
+    def lt as int init strings.indexOf($value, "<");
+    if ($lt < 0) {
+        return $value;
+    }
+    def phrase as string init strings.trim(strings.substring($value, 0, $lt));
+    if (isAsciiText($phrase)) {
+        return $value;
+    }
+    def addr as string init strings.substring($value, $lt, len($value));
+    return encodeWord(unquote($phrase)) + " " + $addr;
+}
+
+# encodeHeaderValue applies encoded-word encoding to a non-ASCII header value
+# that may carry one; ASCII values and structured fields pass through unchanged.
+func encodeHeaderValue(name as string, value as string) {
+    if (isAsciiText($value)) {
+        return $value;
+    }
+    def n as string init strings.lower($name);
+    if ($n == "subject" or $n == "comments") {
+        return encodeWord($value);
+    }
+    if (isAddressHeader($n)) {
+        return encodeAddressHeader($value);
+    }
+    return $value;
+}
+
 # --- building (exported) -------------------------------------------
 
 # text builds a leaf text part; the body is sent 7bit when ASCII, else
@@ -290,7 +493,7 @@ func encodeMultipart(p as Part) {
 export func encode(part as Part) {
     def out as string init "";
     for (def h in $part.headers) {
-        $out = $out + $h.name + ": " + $h.value + "\r\n";
+        $out = $out + $h.name + ": " + encodeHeaderValue($h.name, $h.value) + "\r\n";
     }
     $out = $out + "\r\n";
     if (len($part.boundary) > 0) {
@@ -313,7 +516,7 @@ export func parse(text as string) {
         $headerText = strings.substring($norm, 0, $idx);
         $bodyText = strings.substring($norm, $idx + 2, len($norm));
     }
-    def hs as list of Header init parseHeaders($headerText);
+    def hs as list of Header init autoDecodeHeaders(parseHeaders($headerText));
     def boundary as string init extractBoundary(findHeader($hs, "Content-Type"));
     if (len($boundary) > 0) {
         def kids as list of Part init parseMultipart($bodyText, $boundary);
@@ -362,6 +565,9 @@ func needsQuoting(s as string) {
 export func address(name as string, email as string) {
     if (len($name) == 0) {
         return $email;
+    }
+    if (not isAsciiText($name)) {
+        return encodeWord($name) + " <" + $email + ">";
     }
     def display as string init $name;
     if (needsQuoting($name)) {

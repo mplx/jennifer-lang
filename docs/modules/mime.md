@@ -52,7 +52,9 @@ and `parse` removes it, so you always read plain content.
 | `mime.body(part)`                       | `string` | A leaf's decoded text body.                                        |
 | `mime.parts(part)`                      | `list of Part` | A container's child parts.                                   |
 | `mime.contentType(part)`                | `string` | Media type without parameters (e.g. `text/plain`).                 |
-| `mime.address(name, email)`             | `string` | RFC 5322 mailbox: `email`, or `Name <email>` (name quoted if special). |
+| `mime.address(name, email)`             | `string` | RFC 5322 mailbox: `email`, or `Name <email>` (name quoted, or RFC 2047-encoded when non-ASCII). |
+| `mime.encodeWord(text)`                 | `string` | RFC 2047 UTF-8 base64 encoded-word(s), `=?UTF-8?B?...?=`, folded when long. |
+| `mime.decodeWord(value)`                | `string` | Decode every encoded-word in a header value back to text (B and Q). |
 
 ## Encoding
 
@@ -95,6 +97,34 @@ for (def part in mime.parts($back)) {
 }
 ```
 
+## Non-ASCII headers (RFC 2047 encoded-words)
+
+Header values must be ASCII on the wire, so a non-ASCII `Subject` or display
+name is carried as an RFC 2047 **encoded-word** (`=?UTF-8?B?...?=`). This is
+applied **automatically** and symmetrically:
+
+- `encode` encodes a non-ASCII `Subject` / `Comments` value, and the
+  display-name half of an address header (`From` / `To` / `Cc` / `Bcc` /
+  `Reply-To` / `Sender`), leaving the `<addr>` untouched. Long values fold
+  into several encoded-words split on rune boundaries.
+- `parse` decodes those same headers back to plain text - so a fetched
+  `Subject: =?UTF-8?B?QmVyaWNodCBhdXMgTcO8bmNoZW4=?=` reads back as
+  `Bericht aus München`. A word that fails to decode is left verbatim, so a
+  malformed header never crashes `parse`.
+- `mime.address("Jörg Müller", "j@x.de")` encodes the name for you.
+
+```jennifer
+def m as mime.Part init mime.withHeader(
+    mime.text("text/plain", "hi"), "Subject", "Grüße aus München");
+io.printf("%s", mime.encode($m));   # Subject: =?UTF-8?B?R3LDvMOfZSBhdXMgTcO8bmNoZW4=?=
+```
+
+The primitives `mime.encodeWord` / `mime.decodeWord` are exposed for the cases
+the auto-hooks don't cover (a custom header, a multi-address line). Both B
+(base64) and Q (quoted-printable) encoded-words decode; encoding always emits
+B. `us-ascii` / `iso-8859-*` / `windows-*` charsets decode through
+[`encoding`](../libraries/encoding.md); UTF-8 is the default.
+
 ## Out of scope
 
 Deliberately a foundation, not a full mail stack:
@@ -102,10 +132,8 @@ Deliberately a foundation, not a full mail stack:
 - **Binary bodies.** A `Part` body is text (UTF-8); an `attachment` takes text
   content. True binary attachments (a `bytes` body, e.g. an image) are not yet
   supported - that needs a `bytes`-typed body field.
-- **RFC 2047 encoded-words.** A non-ASCII header value (a `Subject` with
-  accents) is written literally, not encoded as `=?utf-8?...?=`. Keep header
-  values ASCII for now.
-- **Header folding on encode.** Long header lines are not wrapped.
+- **Multi-address name encoding.** A comma-separated address list is left raw
+  on `encode`; encode each mailbox's name with `mime.address` when building it.
 - **Networking.** This module only shapes messages; sending / fetching them is
   the `mail` SMTP / POP3 / IMAP clients (built on `mime`).
 

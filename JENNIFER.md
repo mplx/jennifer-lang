@@ -290,8 +290,10 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `attachment` / `multipart(subtype, boundary, parts)` / `withHeader` build a
   `Part` tree, `mime.encode(part)` serializes it, `mime.parse(text)` reads it
   back, and `mime.headerValue` / `body` / `parts` / `contentType` / `address`
-  read it. Bodies are text (UTF-8); no networking. The foundation the mail
-  clients build on.
+  read it. A non-ASCII `Subject` / display name is auto-encoded as an RFC 2047
+  encoded-word on `encode` and decoded on `parse` (primitives `mime.encodeWord`
+  / `decodeWord`). Bodies are text (UTF-8); no networking. The foundation the
+  mail clients build on.
 - **`sasl`** - SASL auth encoders shared by the mail clients (pure base64, no
   net, no crypto): `sasl.plain(user, pass)`, `sasl.loginUser` / `loginPass`,
   `sasl.bearer(user, token)` (SASL XOAUTH2 - the "use a token" half of OAuth2,
