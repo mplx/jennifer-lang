@@ -130,9 +130,11 @@ sudo update-mime-database /usr/local/share/mime || true
   shell completion off Linux - the archive holds the executable plus
   `JENNIFER.md`, `README.md`, and the licence.
 
-Windows XP and earlier are not possible: this project's Go toolchain
-produces binaries that require Windows 10 or newer. The 32-bit build
-targets 32-bit Windows 10 / 11.
+Windows 8.1 and earlier are not possible: this project's Go toolchain
+(Go 1.21+) produces binaries that require **Windows 10 or newer** (or
+Windows Server 2016+). Go discontinued support for older releases in Go
+1.21, so Windows 7, 8, and 8.1 - as well as Vista and XP - are all
+excluded, not just XP. The 32-bit build targets 32-bit Windows 10 / 11.
 
 ### Build from source
 

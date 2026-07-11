@@ -20,8 +20,7 @@ You should see `42`.
 
 ## What just happened
 
-1. `use io;` makes Jennifer's standard library functions (only `printf`
-   today) available.
+1. `use io;` makes Jennifer's standard library functions available.
 2. `def x as int init 21;` declares an integer variable named `x` and
    initializes it to `21`. Notice that **using** a variable requires the `$`
    prefix.

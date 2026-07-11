@@ -1777,6 +1777,26 @@ and query params compose without double slashes.
 
 ### M18.7.3 - `oauth` module (generic OAuth2 client)
 
+**Done (first tier).** An `oauth` module (`modules/oauth.j`): a generic OAuth2
+client over `http` + `json` + `time`, shipping the flows that need no extra
+dependency - **Client Credentials**, **Refresh Token**, and the **Device
+Authorization Grant** (`deviceStart` -> `deviceWait`, honouring `interval` /
+`slow_down`, no local redirect server). `Config` presets `google` /
+`microsoft` fill the endpoints; a `Token` carries `expiresAt` (from
+`expires_in`) with `isExpired` (30s skew) and `refresh` preserving the refresh
+token when the server omits it; `save` / `load` persist a token as JSON via
+`fs`. Tokens feed `sasl.bearer` (XOAUTH2) so `oauth` + `sasl` + the mail
+clients compose into Google / Microsoft 365 mail. A token-endpoint error
+throws a catchable `Error` (kind `"oauth"`). Tested: the form encoder, token
+parsing (with the clock injected), poll classification, and expiry check in
+the overlay (`modules/oauth_test.j`, 100%); the full client-credentials /
+device / refresh / error round-trip against a mock OAuth2 endpoint - and the
+token driving `sasl` - in the Go suite (`TestOauthFlows`). Still deferred (as
+planned, dependency-gated): **Authorization Code + PKCE** (needs `httpd` +
+crypto-grade random) and the **service-account JWT assertion** (needs
+`crypto`). Reference doc [docs/modules/oauth.md](modules/oauth.md); demo
+`examples/modules/oauth_demo.j`.
+
 The **get-a-token** half of OAuth2 (the *use-a-token* half is `sasl`
 XOAUTH2, M18.4.5). A generic OAuth2 client - not email-specific; any
 OAuth2-protected API - built on `http` + `json`, with `hash` for PKCE S256.

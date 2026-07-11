@@ -61,6 +61,16 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   A 4xx / 5xx is a `Response` value, not a crash. Pure composition; uses `net`
   (via `http`), so the **default `jennifer` binary only**. See
   [`examples/modules/rest_demo.j`](../examples/modules/rest_demo.j).
+- **`oauth.j`** - a generic OAuth2 client (the *get-a-token* half; `sasl` is the
+  *use-a-token* half) over `http` + `json`. Ships the no-extra-deps grants:
+  `oauth.clientCredentials(cfg)`, `oauth.refresh(cfg, refreshToken)`, and the
+  Device Authorization flow `oauth.deviceStart(cfg)` -> `oauth.deviceWait(cfg,
+  dev)`. `google` / `microsoft` `Config` presets, `isExpired` + `save` / `load`
+  (token store via `fs`); tokens feed `sasl.bearer` for mail XOAUTH2. A
+  token-endpoint error throws `Error` (kind `"oauth"`). Auth-Code+PKCE and JWT
+  assertion are gated on `httpd` / `crypto`. Uses `net` (via `http`), so the
+  **default `jennifer` binary only**. See
+  [`examples/modules/oauth_demo.j`](../examples/modules/oauth_demo.j).
 - **`markdown.j`** - render a small CommonMark subset (headings, bold /
   italic, inline code, links, fenced code blocks, ordered / unordered lists)
   to HTML and to styled terminal text. `markdown.toHtml(md)` renders through

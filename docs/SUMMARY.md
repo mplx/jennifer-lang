@@ -60,6 +60,7 @@
 - [`markdown`](modules/markdown.md)
 - [`memcache`](modules/memcache.md)
 - [`mime`](modules/mime.md)
+- [`oauth`](modules/oauth.md)
 - [`pop`](modules/pop.md)
 - [`ratelimit`](modules/ratelimit.md)
 - [`redis`](modules/redis.md)

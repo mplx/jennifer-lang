@@ -301,6 +301,14 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   / `putJson` / `patchJson`. Base-URL joining, percent-encoded query strings,
   `rest.bearer` / `rest.basic` / `rest.withHeader` for auth. A 4xx/5xx is a
   `Response` value, not a crash. **Default `jennifer` binary only** (`net`).
+- **`oauth`** - a generic OAuth2 client (the *get-a-token* half; `sasl` is the
+  *use-a-token* half) over `http` + `json`: `oauth.clientCredentials(cfg)` /
+  `refresh(cfg, refreshToken)` / device flow `deviceStart(cfg)` -> `deviceWait(cfg,
+  dev)` -> `oauth.Token`. `google` / `microsoft` `Config` presets, `isExpired` +
+  `save` / `load` token store; tokens feed `sasl.bearer` for mail XOAUTH2.
+  Throws `Error` (kind `"oauth"`) on a token-endpoint error. Auth-Code+PKCE / JWT
+  assertion gated on `httpd` / `crypto`. **Default `jennifer` binary only**
+  (`net`).
 - **`markdown`** - render a small CommonMark subset (headings, emphasis, links,
   lists, code, GFM tables) to HTML (`markdown.toHtml`, through `htmlwriter`) and
   styled terminal text (`toAnsi`, through `ansi`); author Markdown with
