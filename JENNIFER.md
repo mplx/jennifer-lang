@@ -295,6 +295,12 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
 - **`semver`** - strict SemVer 2.0.0 over a `Version` struct: `semver.parse(s)` /
   `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` /
   `isPrerelease`, `incMajor` / `incMinor` / `incPatch`, `sort`.
+- **`pop`** - receive mail (POP3, RFC 1939) over `net`: `pop.connect(opts)` ->
+  `pop.Session`, then `stat` / `count` / `sizes` / `retrieve(session, n)` /
+  `deleteMessage(session, n)` / `quit`, plus `pop.fetchAll(opts)` (every
+  message, no delete). Retrieved messages are strings for `mime.parse`. Named
+  `pop` because a namespace is letters-only (no digit). **Default `jennifer`
+  binary only** (`net`).
 - **`smtp`** - send mail (SMTP client) over `net`: `smtp.send(opts, from,
   recipients, message)` runs the dialogue (EHLO, optional STARTTLS / implicit
   TLS via `smtp.Options.security`, `AUTH PLAIN`, `MAIL FROM` / `RCPT TO` /

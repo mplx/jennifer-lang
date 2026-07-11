@@ -55,6 +55,7 @@
 - [`htmlwriter`](modules/htmlwriter.md)
 - [`markdown`](modules/markdown.md)
 - [`mime`](modules/mime.md)
+- [`pop`](modules/pop.md)
 - [`semver`](modules/semver.md)
 - [`smtp`](modules/smtp.md)
 

@@ -68,6 +68,14 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   (`jennifer-tiny` has no network stack). See
   [`examples/modules/smtp_demo.j`](../examples/modules/smtp_demo.j).
 
+- **`pop.j`** - receive mail (POP3, RFC 1939) over `net`: `pop.connect(opts)`
+  opens a session, then `stat` / `count` / `sizes` / `retrieve(n)` /
+  `deleteMessage(n)` / `quit`, with `fetchAll(opts)` for the common "get every
+  message" case. Retrieved messages are strings for `mime.parse`. Named `pop`
+  (a namespace can't hold a digit); throws `Error` (kind `"pop3"`) on `-ERR`.
+  Uses `net`, so the **default `jennifer` binary only**. See
+  [`examples/modules/pop_demo.j`](../examples/modules/pop_demo.j).
+
 Reference docs for each module live under
 [`docs/modules/`](../docs/modules/index.md). A new module also earns a bullet
 in the **Module library** section of [`JENNIFER.md`](../JENNIFER.md) so an AI

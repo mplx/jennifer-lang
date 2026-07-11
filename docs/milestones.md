@@ -1327,10 +1327,23 @@ sending a misrouted address, until IDNA lands (M18.4.5). Reference doc
 [docs/modules/smtp.md](modules/smtp.md); demo
 `examples/modules/smtp_demo.j`.
 
-### M18.4.3 - `pop3` (receive)
+### M18.4.3 - `pop` (POP3 receive)
 
-Planned. POP3 client (`USER` / `PASS`, `STAT` / `LIST` / `RETR` / `DELE`)
-over `net` + TLS; retrieved messages parsed with `mime`.
+**Done.** POP3 receive client (`modules/pop.j`) over `net`: a stateful
+session - `pop.connect(opts)` (greet, optional STLS, `USER` / `PASS`), then
+`stat` / `count` / `sizes` / `retrieve(n)` / `deleteMessage(n)` / `quit`, with
+`fetchAll(opts)` for the common case - reading the `+OK` / `-ERR` status
+dialogue and dot-terminated multi-line responses (un-stuffing a doubled
+leading dot). Retrieved messages are raw strings for `mime.parse`; a `-ERR`
+throws a catchable `Error` (kind `"pop3"`). Named `pop`, not `pop3`: a
+Jennifer namespace is letters-only, so a digit can't be a call prefix (POP v3
+is the only one in use; Ruby's `net/pop` makes the same choice). Uses `net`,
+so default-binary-only, with the same IDN loud-fail guard as `smtp` (until
+M18.4.5). Tested: pure parsers (status, `STAT`, `LIST` sizes, dot-terminator /
+un-stuffing) in the overlay (`modules/pop_test.j`, 100%); the full session end
+to end against an in-process fake POP3 server in the Go suite
+(`TestPop3Receive`). Reference doc [docs/modules/pop.md](modules/pop.md); demo
+`examples/modules/pop_demo.j`.
 
 ### M18.4.4 - `imap` (receive)
 
@@ -1351,7 +1364,7 @@ non-ASCII **local part** without SMTPUTF8 stays a hard error (it cannot be
 represented). Enabler: a `convert.toCodepoint(char)` / `convert.fromCodepoint(n)`
 pair (rune to / from its integer code point), which Punycode's bootstring
 arithmetic needs and Jennifer does not yet expose. Until this ships, `smtp`
-(and later `pop3` / `imap`) fail loudly on a non-ASCII host or address rather
+and `pop` (and later `imap`) fail loudly on a non-ASCII host or address rather
 than misrouting. Reusable beyond mail: URL hosts, DNS tools, any IDN.
 
 ### M18.5 - `redis` module
