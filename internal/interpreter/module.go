@@ -256,6 +256,82 @@ func (i *Interpreter) stampModuleStructType(t *parser.Type, mod *loadedModule, a
 	return nil
 }
 
+// resolveDeclaredStructNS resolves every struct type reachable through a
+// declared type - the type itself plus any list / map / task element types -
+// rewriting an importer's module alias to the module's stem and a library
+// alias to its canonical namespace, and verifying each named struct exists. It
+// is the recursive form of the per-struct resolution, so a `list of
+// alias.Struct` (or `map of K to alias.Struct`) element type is stamped just
+// like a bare `alias.Struct` and matches the identity a value carries once it
+// crosses the boundary. Non-struct types (scalars, list-of-int, ...) simply
+// recurse into their nil sub-types and are left untouched.
+func (i *Interpreter) resolveDeclaredStructNS(t *parser.Type, at parser.Node) error {
+	if t == nil {
+		return nil
+	}
+	if t.Kind == parser.TypeStruct {
+		// A module struct is named either by the importer's alias (first pass)
+		// or, once stamped, by the module's own stem. Recognising the stem
+		// keeps re-resolution idempotent: this same DefineStmt type is
+		// re-resolved every time the `def` runs (e.g. once per loop
+		// iteration), and after the first pass its namespace is the stem, not
+		// the alias. moduleByNS also lets a value's canonical stem name the
+		// type directly.
+		mod, ok := i.moduleAliases[t.StructNS]
+		if !ok {
+			if byStem := i.moduleByNS(t.StructNS); byStem != nil && byStem.isOwnStruct(t.StructName) {
+				mod, ok = byStem, true
+			}
+		}
+		if ok {
+			// `alias.Struct` (or already-stamped `stem.Struct`) naming a module
+			// struct: verify it is exported and stamp the module's namespace.
+			if err := i.stampModuleStructType(t, mod, at); err != nil {
+				return err
+			}
+		} else if t.StructNS != "" {
+			canonical, err := i.resolveNamespacePrefix(t.StructNS)
+			if err != nil {
+				file, line, col := posFor(at)
+				return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+			}
+			if _, ok := i.NSStructs[nsKey{NS: canonical, Name: t.StructName}]; !ok {
+				file, line, col := posFor(at)
+				return &runtimeError{Msg: fmt.Sprintf("unknown struct type %s.%s", t.StructNS, t.StructName), File: file, Line: line, Col: col}
+			}
+			t.StructNS = canonical
+		} else {
+			if _, ok := i.structs[t.StructName]; !ok {
+				file, line, col := posFor(at)
+				return &runtimeError{Msg: fmt.Sprintf("unknown struct type %q", t.StructName), File: file, Line: line, Col: col}
+			}
+		}
+	}
+	if err := i.resolveDeclaredStructNS(t.Element, at); err != nil {
+		return err
+	}
+	if err := i.resolveDeclaredStructNS(t.KeyType, at); err != nil {
+		return err
+	}
+	return i.resolveDeclaredStructNS(t.ValType, at)
+}
+
+// moduleByNS returns a loaded module whose namespace (file stem) is ns, or
+// nil. It recognises an already-stamped module struct type, whose StructNS is
+// the stem rather than an importer alias, so resolveDeclaredStructNS is
+// idempotent across repeated executions of the same declaration.
+func (i *Interpreter) moduleByNS(ns string) *loadedModule {
+	if ns == "" {
+		return nil
+	}
+	for _, m := range i.moduleAliases {
+		if m.ns == ns {
+			return m
+		}
+	}
+	return nil
+}
+
 // moduleConst reads `alias.NAME`, a constant declared at the module's top
 // level, from the loaded module's global scope.
 func (i *Interpreter) moduleConst(m *loadedModule, c *parser.QualifiedConstRefExpr) (Value, error) {

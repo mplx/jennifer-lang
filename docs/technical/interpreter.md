@@ -513,12 +513,18 @@ importer (a `callModuleMethod` return, a `moduleConst` read) and back to
 bare on the way *in* (a `callModuleMethod` argument), recursing through
 struct fields, list elements, and map values; library / other-module
 structs (a different namespace) are untouched. So the consumer can type a
-module struct (`def p as points.Point`, the `def`-check stamps the type's
-namespace to the module stem), construct one (`points.Point{...}` in
-`evalStructLit`), read its fields, and pass it back - all type-checking -
-while `a.Point` and `b.Point` stay distinct `(namespace, name)` pairs
-(M15.2). The retag copies only compound values at the boundary (module
-calls are not a hot path).
+module struct (`def p as points.Point`, or `def ps as list of points.Point`;
+the `def`-check's `resolveDeclaredStructNS` stamps the type's namespace to
+the module stem, recursing into list / map / task element types so a
+collection element type matches the identity `retagStructs` gives the
+values), construct one (`points.Point{...}` in `evalStructLit`), read its
+fields, and pass it back - all type-checking - while `a.Point` and `b.Point`
+stay distinct `(namespace, name)` pairs. The retag copies only compound
+values at the boundary (module calls are not a hot path). Declared-type
+stamping is idempotent: a `def` inside a loop re-resolves each pass, and
+because stamping rewrites an importer alias to the module stem,
+`resolveDeclaredStructNS` recognises the already-stamped stem (via
+`moduleByNS`) rather than re-treating it as an unknown namespace.
 
 ## Builtins and libraries
 

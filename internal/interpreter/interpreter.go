@@ -1180,37 +1180,14 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 	// as "unknown struct type" rather than a misleading type-mismatch.
 	// Bare names look up in i.structs (user-defined); namespaced names
 	// resolve the alias prefix first, then look up in i.NSStructs.
-	if st.VarType.Kind == parser.TypeStruct {
-		if mod, ok := i.moduleAliases[st.VarType.StructNS]; ok {
-			// `def x as alias.Struct` - a module struct type. Verify it is an
-			// exported struct of the module, then stamp the module's namespace
-			// so the value (which crosses the boundary tagged the same way)
-			// matches.
-			if err := i.stampModuleStructType(&st.VarType, mod, st); err != nil {
-				return err
-			}
-		} else if st.VarType.StructNS != "" {
-			canonical, err := i.resolveNamespacePrefix(st.VarType.StructNS)
-			if err != nil {
-				file, line, col := posFor(st)
-				return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
-			}
-			if _, ok := i.NSStructs[nsKey{NS: canonical, Name: st.VarType.StructName}]; !ok {
-				file, line, col := posFor(st)
-				return &runtimeError{Msg: fmt.Sprintf("unknown struct type %s.%s", st.VarType.StructNS, st.VarType.StructName), File: file, Line: line, Col: col}
-			}
-			// Stamp the canonical namespace onto the type so subsequent
-			// MatchesDeclared / Equal checks compare against the resolved
-			// form. Without this, `use os as o; def x as o.Result;` would
-			// produce a value tagged ns=os but a declared type tagged
-			// ns=o, and they'd mismatch.
-			st.VarType.StructNS = canonical
-		} else {
-			if _, ok := i.structs[st.VarType.StructName]; !ok {
-				file, line, col := posFor(st)
-				return &runtimeError{Msg: fmt.Sprintf("unknown struct type %q", st.VarType.StructName), File: file, Line: line, Col: col}
-			}
-		}
+	// Resolve every struct type the declared type names - the type itself and
+	// any list / map / task element types - so an aliased module or library
+	// struct is stamped with the identity its values carry (bare `alias.Struct`
+	// and `list of alias.Struct` alike). Without recursing into element types,
+	// `def xs as list of alias.Struct` would leave the element tagged with the
+	// alias and mismatch the stem-tagged values it is filled with.
+	if err := i.resolveDeclaredStructNS(&st.VarType, st); err != nil {
+		return err
 	}
 	var val Value
 	if st.InitExpr != nil {

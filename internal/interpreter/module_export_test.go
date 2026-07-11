@@ -123,6 +123,56 @@ io.printf("%d\n", points.totalX($ps));`,
 	}
 }
 
+func TestModuleListOfStructUnderMismatchedAlias(t *testing.T) {
+	// When the alias differs from the file stem (`as p`, stem `points`), a
+	// consumer `list of p.Point` must still accept `p.make(...)` values: the
+	// declared element type has to be stamped from the alias to the module
+	// stem, recursing into the list element type, so it matches the identity
+	// values carry across the boundary. A top-level `def x as p.Point` alone
+	// worked before; the list element type did not.
+	out, err := runScopedModuleMain(t, map[string]string{
+		"points.j": pointsModule,
+		"main.j": `use io;
+import "./points.j" as p;
+def ps as list of p.Point init [];
+$ps[] = p.make(3, 4);
+$ps[] = p.make(10, 20);
+io.printf("%d\n", p.totalX($ps));`,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := strings.TrimSpace(out); got != "13" {
+		t.Errorf("output = %q, want 13", got)
+	}
+}
+
+func TestModuleAliasedStructTypeInLoopIsIdempotent(t *testing.T) {
+	// A `def as list of p.Point` inside a loop re-resolves its declared type on
+	// every iteration. Stamping the alias (`p`) to the module stem (`points`)
+	// must be idempotent: after the first pass the type names the stem, which
+	// is no longer an importer alias, so re-resolution has to recognise it
+	// rather than fail with "unknown namespace".
+	out, err := runScopedModuleMain(t, map[string]string{
+		"points.j": pointsModule,
+		"main.j": `use io;
+import "./points.j" as p;
+def total as int init 0;
+for (def i as int init 0; $i < 3; $i = $i + 1) {
+	def ps as list of p.Point init [];
+	$ps[] = p.make($i, 0);
+	$total = $total + p.totalX($ps);
+}
+io.printf("%d\n", $total);`,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if got := strings.TrimSpace(out); got != "3" {
+		t.Errorf("output = %q, want 3", got)
+	}
+}
+
 func TestModuleStructIdentitiesAreDistinct(t *testing.T) {
 	// A struct from module `a` must not satisfy module `b`'s same-named type.
 	_, err := runScopedModuleMain(t, map[string]string{
