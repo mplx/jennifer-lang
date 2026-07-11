@@ -1187,7 +1187,18 @@ order.
 
 ### M18.1 - `csv` module
 
-Simple, useful early.
+**Done.** RFC 4180 comma-separated values as a pure-Jennifer module
+(`modules/csv.j`) over `strings` and `maps`. A quoting-aware hand-written
+scanner: `parse` / `format` for standard comma-delimited text and
+`parseWith` / `formatWith` for any single-character delimiter (TSV and
+friends), quoting a field only when it carries the delimiter, a quote, or a
+line break and doubling embedded quotes; records split on `LF` / `CRLF` /
+bare `CR` and re-emit with `LF`. `toRecords` / `fromRecords` pair a header
+row with data rows as header-keyed `map of string to string` records. Type
+inference and streaming are out of scope (every field is a `string`; the
+caller converts and slurps). Reference doc
+[docs/modules/csv.md](modules/csv.md); overlay `modules/csv_test.j` (100%);
+demo `examples/modules/csv_demo.j`.
 
 ### M18.2 - `htmlwriter` module
 

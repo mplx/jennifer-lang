@@ -41,12 +41,13 @@ optional - without it the module is addressed by its file stem
 
 The **TinyGo** column reports whether the module runs on the constrained
 `jennifer-tiny` binary. A module is only as portable as the libraries it
-`use`s; both reference modules below are pure Jennifer over TinyGo-clean
-libraries, so both run on either binary.
+`use`s; every reference module below is pure Jennifer over TinyGo-clean
+libraries, so all run on either binary.
 
 | Module                | Import with            | TinyGo | Contents                                                                                                                                    |
 | --------------------- | ---------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`ansi`](ansi.md)     | `import "ansi.j";`     | full   | terminal styling as string wrappers. `color` / `bgColor` / `style` / `rgb` / `strip` plus per-colour and per-style shortcuts; TTY-aware.    |
+| [`csv`](csv.md)       | `import "csv.j";`      | full   | RFC 4180 comma-separated values. `parse` / `format` (`*With` for any delimiter), `toRecords` / `fromRecords` for header-keyed maps; quoting-aware. |
 | [`semver`](semver.md) | `import "semver.j";`   | full   | strict Semantic Versioning 2.0.0. `parse` / `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` / `isPrerelease`, `inc*`, `sort`; struct `Version`. |
 
 ## Writing your own

@@ -20,6 +20,13 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   styling suppresses itself when stdout is not a terminal or `NO_COLOR` is
   set, and is forced on by `FORCE_COLOR`. See
   [`examples/modules/ansi_demo.j`](../examples/modules/ansi_demo.j).
+- **`csv.j`** - RFC 4180 comma-separated values: parse text into rows of
+  string fields and format rows back to text, with a quoting-aware scanner.
+  `csv.parse(s)` / `csv.format(rows)` (and `parseWith` / `formatWith` for any
+  single-character delimiter, so TSV too), plus `csv.toRecords(rows)` /
+  `csv.fromRecords(header, records)` for header-keyed `map of string to
+  string` records. Pure Jennifer over `strings` and `maps`. See
+  [`examples/modules/csv_demo.j`](../examples/modules/csv_demo.j).
 - **`semver.j`** - strict Semantic Versioning 2.0.0: parse, compare, sort,
   and increment version numbers. `semver.parse(s)` / `isValid(s)` /
   `toString(v)`, `compare(a, b)` / `lt` / `eq` / `gt`, `isStable(v)` /

@@ -17,7 +17,11 @@ It is also a natural fit for teaching and learning: an interactive
 and [token and AST dumps](technical/cli_inspect.md) that make it ideal for
 mastering language design, plus a built-in [linter](technical/cli_lint.md) and
 [profiler](technical/cli_profile.md) and full
-[test support](technical/cli_test.md).
+[test support](technical/cli_test.md). Its
+[strict, explicit design](design-stances.md) - conditions must be `bool`,
+conversions are spelled out, names never shadow, and errors are positioned -
+surfaces a mistake as a clear message instead of a silent surprise, so a
+learner sees exactly what went wrong.
 
 Source files use the `.j` extension. Whitespace is not significant
 anywhere; statements end with `;`.

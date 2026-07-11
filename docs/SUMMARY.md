@@ -51,6 +51,7 @@
 
 - [Catalog](modules/index.md)
 - [`ansi`](modules/ansi.md)
+- [`csv`](modules/csv.md)
 - [`semver`](modules/semver.md)
 
 # Technical reference
