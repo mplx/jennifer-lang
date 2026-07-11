@@ -106,7 +106,7 @@ Basics first - these are deferred to a later pass:
 - **Full Resque failure records.** `fail` writes a simplified entry, not the
   complete `failed_at` / `exception` / `backtrace` / `worker` shape.
 - **Scheduled / delayed jobs and retries.**
-- **A configurable namespace** (fixed to `resque:` today).
+- **A configurable namespace** (fixed to `resque:`).
 
 ## See also
 

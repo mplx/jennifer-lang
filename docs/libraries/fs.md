@@ -264,7 +264,7 @@ Recorded so the design decisions stay visible; ships if a
 concrete workload forces it.
 
 - **Streaming line iterator** (`for (def line in fs.lines(path))`).
-  Compose with `fs.open` + `while (not fs.eof)` today.
+  Compose with `fs.open` + `while (not fs.eof)`.
 - **`fs.copy(src, dst)`** and **`fs.chmod(path, mode)`**.
 - **Symlink ops** (`fs.readlink`, `fs.symlink`).
 - **`fs.stat($f)` on an open handle**. Only path-based `fs.stat`

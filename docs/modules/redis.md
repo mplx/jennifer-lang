@@ -117,7 +117,7 @@ in CI without a Redis install.
 
 - **A working subset**, not the full command set: strings, counters, keys,
   and the generic `command` for the rest. Lists / hashes / sets are reachable
-  today through `command`; typed helpers for them can follow.
+  through `command`; typed helpers for them can follow.
 - **No pipelining, pub/sub, or RESP3.** One request, one reply.
 - **No connection pool.** One `Session` is one connection.
 - **`rediss` TLS** rides `net`'s default certificate verification.

@@ -14,6 +14,31 @@ jennifer version [-v]      print the build version (-v adds module-path layers)
 jennifer help              show usage
 ```
 
+## Subcommand reference
+
+The `jennifer` command-line tool bundles the Jennifer interpreter and its
+full development toolchain into a single binary. Beyond running `.j` programs,
+it provides an interactive REPL, a source-code formatter, a linter, a
+profiler, a test runner, and lexer-token and AST inspection - so a whole
+Jennifer workflow (write, run, format, lint, profile, test) needs no extra
+tools. Each subcommand is summarised below and documented in depth on its own
+page. The development subcommands (`tokens`, `ast`, `fmt`, `lint`, `profile`,
+`test`) live in the default `jennifer` binary only; `run`, `repl`, and
+`version` work on both `jennifer` and `jennifer-tiny`.
+
+| Subcommand         | What it does                                             | Details                                                   |
+| ------------------ | ------------------------------------------------------- | --------------------------------------------------------- |
+| `run <file.j>`     | Run a Jennifer program (`-` reads source from stdin).   | [Module resolution flags](#module-resolution-flags-run)   |
+| `repl`             | Interactive read-eval-print loop, with a line editor and history. | [REPL](cli_repl.md)                             |
+| `tokens <file.j>`  | Dump the lexer's token stream.                          | [Inspection](cli_inspect.md)                              |
+| `ast <file.j>`     | Dump the preprocessed AST as JSON.                      | [Inspection](cli_inspect.md)                              |
+| `fmt <file.j>`     | Format source per the style guide (stdout only).        | [Formatter](cli_fmt.md)                                   |
+| `lint <file.j>`    | Report compile-legal but suspect patterns.              | [Linter](cli_lint.md)                                     |
+| `profile <file.j>` | Per-position hit counts and wall-clock timings.         | [Profiler](cli_profile.md)                                |
+| `test <file.j>`    | Discover and run the file's test methods.               | [Test runner](cli_test.md)                                |
+| `version [-v]`     | Print the build version (`-v` adds module-path layers). | [Version injection](#version-injection)                   |
+| `help`             | Show usage.                                             | -                                                         |
+
 ## Module resolution flags (`run`)
 
 `jennifer run` accepts interpreter flags before the source file; anything
@@ -98,17 +123,6 @@ The same shape extends to any decode / re-encode pair: swap `json` for
 `xml` once that library lands ([M20.2](../milestones.md#m202---xml)) and the
 file becomes a `pretty-xml`.
 
-
-## Subcommand reference
-
-Each subcommand has its own page:
-
-- [REPL](cli_repl.md) - the interactive `repl`, its line editor, and history.
-- [Inspection](cli_inspect.md) - `tokens` and `ast` dumps.
-- [Formatter](cli_fmt.md) - `fmt`, token-level normalisation.
-- [Linter](cli_lint.md) - `lint`, the check catalog, suppression, config.
-- [Profiler](cli_profile.md) - `profile`, hit counts and timings.
-- [Test runner](cli_test.md) - `test`, discovery and reporting.
 
 ## Version injection
 

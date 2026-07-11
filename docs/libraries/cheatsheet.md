@@ -5,7 +5,7 @@ it when you know the *name* and want to know *which library* and *how to
 call it*; use each library's own page when you want to read about a
 topic. Each row's library prefix links to the per-library doc.
 
-The table covers what ships with the interpreter today. New
+The table covers what ships with the interpreter. New
 entries land here at the same time as the per-library doc - it's a
 flat lookup view, not authoritative.
 

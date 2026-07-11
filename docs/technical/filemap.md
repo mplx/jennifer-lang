@@ -1,141 +1,174 @@
 # File map
 
-```
-cmd/jennifer/main.go                       CLI + source-context error formatting; argv forwarding to user program
-cmd/jennifer/repl.go                       Interactive REPL loop (TTY + bufio fallback)
-cmd/jennifer/lineedit.go                   Raw-mode line editor (cursor keys, word ops)
-cmd/jennifer/history.go                    In-memory REPL history ring buffer
-cmd/jennifer/dump.go                       `tokens` and `ast` subcommands
-cmd/jennifer/astjson.go                    Hand-rolled AST -> JSON emitter
-cmd/jennifer/fmt.go                        Token-level source formatter; comment + blank-line preservation
-cmd/jennifer/lint.go                       `lint` subcommand: pipeline + config + suppression + JSON/human/github rendering (format-honest L0nn source errors, single JSON array across files)
-cmd/jennifer/profile.go                    `profile` subcommand: table / pprof / trace output
-cmd/jennifer/test.go                       `test` subcommand: test* discovery, setUp/tearDown, --isolated subprocess mode, text/TAP/JUnit reports
-cmd/jennifer/devtools_tinygo.go            tinygo build: run-only stubs for tokens/ast/fmt/lint/profile/test
-cmd/jennifer/examples_test.go              Golden-file integration test (skips files without expected/)
-cmd/jennifer/repl_test.go                  REPL inputComplete unit tests
-cmd/jennifer/lineedit_test.go              Line-editor state-machine tests
-cmd/jennifer/dump_test.go                  AST-JSON validity and token-name tests
-cmd/jennifer/fmt_test.go                   Formatter idempotence + behaviour + comment-preservation tests
-cmd/jennifer/cross_file_error_test.go      Cross-file error reporting tests
+Where each piece of the codebase lives, grouped by area. The 6-stage pipeline
+(lexer -> preproc -> parser -> resolver -> interpreter -> libraries) is described
+in [interpreter.md](interpreter.md); this page is the file-level index.
 
-internal/lexer/token.go                    Token type definitions (incl. trivia tokens)
-internal/lexer/lexer.go                    Scanner with optional file tagging; nested block comments
-internal/lexer/lexer_test.go               Lexer tests
+## CLI (`cmd/jennifer/`)
 
-internal/preproc/preproc.go                File-import preprocessor; trivia stripping
-internal/preproc/preproc_test.go           Preprocessor tests
+| File | Description |
+| ---- | ----------- |
+| `main.go` | CLI + source-context error formatting; argv forwarding to the user program. |
+| `repl.go` | Interactive REPL loop (TTY + bufio fallback). |
+| `lineedit.go` | Raw-mode line editor (cursor keys, word ops). |
+| `history.go` | In-memory REPL history ring buffer. |
+| `dump.go` | `tokens` and `ast` subcommands. |
+| `astjson.go` | Hand-rolled AST -> JSON emitter. |
+| `fmt.go` | Token-level source formatter; comment + blank-line preservation. |
+| `lint.go` | `lint` subcommand: pipeline + config + suppression + JSON / human / GitHub rendering. |
+| `profile.go` | `profile` subcommand: table / pprof / trace output. |
+| `test.go` | `test` subcommand: `test*` discovery, `setUp` / `tearDown`, `--isolated` subprocess mode, text / TAP / JUnit reports. |
+| `devtools_tinygo.go` | TinyGo build: run-only stubs for `tokens` / `ast` / `fmt` / `lint` / `profile` / `test`. |
 
-internal/module/resolve.go                 Module path classification + resolution
-internal/module/sysmoddir.go               System module dir: cli/env/compile precedence + validation
-internal/module/resolve_test.go            Resolver + sysmoddir tests
+### CLI tests
 
-internal/parser/ast.go                     AST node types + Sprint (incl. namespaced struct types)
-internal/parser/parser.go                  Recursive-descent parser; namespaced struct literals
-internal/parser/resolver.go                parse-time scope/slot resolution; undefined-variable + shadowing errors
-internal/parser/fold.go                    parse-time constant folding of literal-only subtrees
-internal/parser/parser_test.go             Parser tests
-internal/parser/fold_test.go               constant-folding tests (incl. runtime-error-stays-runtime)
+| File | Description |
+| ---- | ----------- |
+| `examples_test.go` | Golden-file integration test over top-level `examples/*.j` (skips files without an `expected/`). |
+| `module_overlay_test.go` | Runs every `modules/*_test.j` overlay under `jennifer test`. |
+| `repl_test.go` | REPL `inputComplete` unit tests. |
+| `lineedit_test.go` | Line-editor state-machine tests. |
+| `dump_test.go` | AST-JSON validity and token-name tests. |
+| `fmt_test.go` | Formatter idempotence + behaviour + comment-preservation tests. |
+| `cross_file_error_test.go` | Cross-file error reporting tests. |
+| `highlight_test.go` | Docs-site highlight-def generation test. |
+| `smtp_send_test.go` / `pop_recv_test.go` / `imap_recv_test.go` / `mail_xoauth2_test.go` | Mail-module integration tests: `smtp` / `pop` / `imap` / XOAUTH2 against in-process fake servers. |
+| `redis_test.go` / `resque_test.go` | `redis` / `resque` integration tests against an in-process RESP server. |
+| `memcache_test.go` / `session_test.go` / `ratelimit_test.go` | `memcache` and its reference modules against an in-process memcached fake. |
+| `http_test.go` / `gotify_test.go` / `rest_test.go` / `oauth_test.go` | `http` client + `gotify` / `rest` / `oauth` against an in-process `net/http` server. |
 
-internal/interpreter/value.go              Runtime Value tagged union (incl. struct + namespaced-struct tag)
-internal/interpreter/environment.go        Scoped symbol table
-internal/interpreter/interpreter.go        Tree-walking evaluator; namespaced-struct registration + resolution
-internal/interpreter/interpreter_test.go   End-to-end interpreter tests
-internal/interpreter/interactive_test.go   REPL EvalInteractive tests
-internal/interpreter/namespace_test.go     Namespaced builtins + constants tests
-internal/interpreter/namespaced_struct_test.go  namespaced struct tests (synthetic `widgets` lib)
-internal/interpreter/structs_test.go       user-defined struct tests
-internal/interpreter/trycatch_test.go      try/catch/throw tests
-internal/interpreter/spawn_test.go         spawn / task-of-T runtime + registry tests
-internal/interpreter/control_flow_test.go  break/continue/repeat/exit tests
-internal/interpreter/collections_test.go   Lists, maps, iteration tests
-internal/interpreter/compound_test.go      Nested list-of-list / map-of-list / chained-index tests
-internal/interpreter/bytes_test.go         Bytes type + non-decimal literals + bit-op tests
-internal/interpreter/callbyname_test.go    CallByName / CallByNameWith dispatch + RaiseError classification tests
-internal/interpreter/value_alias_test.go   shared-marker COW alias-stress tests
-internal/interpreter/collection_typing_test.gogeneric-collection (literal / decode) validated entry-by-entry against declared element type at def-init + assign
+## Lexer, preprocessor, module resolution (`internal/`)
 
-internal/lib/io/iolib.go                   `io` library entrypoint
-internal/lib/io/format.go                  printf / sprintf + verb-modifier mini-language
-internal/lib/io/input.go                   io.readLine / readBytes / readChars / eof
-internal/lib/io/iolib_test.go              io library unit tests
-internal/lib/io/input_test.go              stdin-input tests
-internal/lib/convert/convert.go            `convert` library: toInt/toFloat/toString/toBool/typeOf + UTF-8 codecs
-internal/lib/math/mathlib.go               `math` library: abs/min/max/sqrt/pow/floor/ceil/round/rand*; PI/E
-internal/lib/strings/stringslib.go         `strings` library: case, predicates, slicing, split/chars/join
-internal/lib/lists/listslib.go             `lists` library: push/pop/first/last/head/tail/reverse/sort/contains/concat/slice/shuffle/range
-internal/lib/lists/listslib_test.go        lists library unit tests
-internal/lib/maps/mapslib.go               `maps` library: keys/values/has/delete/merge
-internal/lib/maps/mapslib_test.go          maps library unit tests
-internal/lib/os/oslib.go                   `os` library: PLATFORM/ARCH/EOL/DIRSEP/PATHSEP/ARGS + getEnv/hasFlag/flag
-internal/lib/os/oslib_test.go              os library unit tests
-internal/lib/os/exec.go                    external-program execution (run/spawn/wait/poll/kill)
-internal/lib/os/exec_test.go               exec tests (skip on non-Linux; TinyGo-gated at runtime)
-internal/lib/meta/metalib.go               `meta` library: VERSION / BUILD (interpreter-self-identity)
-internal/lib/meta/metalib_test.go          meta library unit tests
-internal/lib/time/timelib.go               `time` library entrypoint + base surface (Time/Duration, Unix, calendar, arithmetic)
-internal/lib/time/zone.go                  fixed-offset Zone struct, time.UTC, time.local, time.inZone
-internal/lib/time/format.go                strftime format / parse + ISO round-trip
-internal/lib/time/timelib_test.go          base surface unit tests
-internal/lib/time/format_test.go           unit tests (format/parse/zone/UTC/local)
-internal/lib/hash/hashlib.go               `hash` library: md5/sha1/sha256 one-shot + streaming via codec-table
-internal/lib/hash/hashlib_test.go          hash library unit tests (canonical vectors + stream/one-shot equality)
-internal/lib/crc/crclib.go                 `crc` library: crc32/crc64 (big-endian) one-shot + streaming
-internal/lib/crc/crclib_test.go            crc library unit tests
-internal/lib/compress/compresslib.go       `compress` library: pack/unpack (gzip/zlib/deflate) + streaming (compress.Stream handle); optional fast/default/best level
-internal/lib/compress/compresslib_test.go  compress unit tests (round-trips, gzip magic + shrink, levels, streaming matches one-shot, errors)
-internal/lib/archive/archivelib.go         `archive` library: tar/zip/tar.gz pack/unpack over bytes (archive.Entry struct); no fs dependency
-internal/lib/archive/archivelib_test.go    archive unit tests (round-trips tar/zip/tar.gz, mode/mtime, default mode, gzip magic, empty, errors)
-internal/lib/encoding/encodinglib.go       `encoding` library: introspection + toText/fromText + encode/decode dispatch
-internal/lib/encoding/codecs.go            hand-written codecs (ascii, ebcdic) + table infra (makeTableEncoder/Decoder, registerTableCodec)
-internal/lib/encoding/codecs_gen.go        generated ISO-8859-N / Windows-125N tables (from Unicode mapping files; DO NOT EDIT)
-internal/lib/encoding/gen_codecs.go        codegen for codecs_gen.go (go:build ignore; fetches unicode.org, run via go generate)
-internal/lib/encoding/encodinglib_test.go  encoding library unit tests
-internal/lib/json/jsonlib.go               `json` library: RFC 8259 encode/encodePretty + Value->JSON emitter (structs/maps->object, bytes->base64)
-internal/lib/json/jsondecode.go            `json` library: recursive-descent decoder -> generic Values (int/float split, positioned line/col errors)
-internal/lib/json/jsonlib_test.go          json library unit tests (encode/decode, int/float split, escapes/surrogates, positioned errors, round-trips)
-internal/lib/task/tasklib.go               `task` library: wait/poll/discard/waitAll/waitAny over `task of T` handles
-internal/lib/task/tasklib_test.go          task library unit tests (wait/discard/loud-fail/waitAll/waitAny + boundary checks)
-internal/lib/fs/fslib.go                   `fs` library: one-shot ops (read/write/append), metadata (exists/isFile/isDir/stat), dir ops (mkdir/mkdirAll/remove/removeAll/rename/list/walk), fs.Stat struct
-internal/lib/fs/handles.go                 `fs` library: fs.File handle registry, open/close/readLine/readChars/readBytes/writeString/writeBytes/eof
-internal/lib/fs/fslib_test.go              fs library unit tests (t.TempDir()-based; one-shot ops, metadata, dir ops, handles, spawn+fs composition)
-internal/lib/net/netlib.go                 `net` library: shared - Install, struct registration, polymorphic close/address dispatch, arg-boundary helpers
-internal/lib/net/netlib_std.go             `net` library: !tinygo build - full TCP/TLS/UDP/DNS implementation
-internal/lib/net/netlib_tinygo.go          `net` library: tinygo build - friendly-error stubs pointing at the default `jennifer` binary
-internal/lib/net/netlib_test.go            net library unit tests (!tinygo; loopback with :0 ephemeral ports; TCP round-trip, UDP round-trip, DNS, polymorphic close, use-after-close)
-internal/lib/net/netlib_tls_test.go        net TLS tests (!tinygo; loopback self-signed cert; connectTLS round-trip, bad-cert reject, skipVerify, startTLS upgrade)
-internal/lib/regex/regexlib.go             `regex` library: matches/find/findAll/replace/split/escape + regex.Match struct + 128-entry LRU pattern cache
-internal/lib/regex/regexlib_test.go        regex library unit tests (predicate, positional + named groups, rune-index offsets, LRU behaviour under load, invalid pattern boundary)
-internal/lib/testing/testinglib.go         `testing` library: run/runWith/results/reset/report + testing.Result struct + three renderers (text / TAP / JUnit XML) + exit interception
-internal/lib/testing/testinglib_test.go    testing library unit tests (pass/fail/runtime/exit paths, accumulator, each of the three report formats, boundary errors)
-internal/lib/testing/assertions.go         `testing` assertions: assertEqual/assertNotEqual/assertTrue/assertFalse/assertContains/assertThrows (throw Error{kind:"assertion"} at the call site)
-internal/lib/testing/assertions_test.go    assertion + runWith unit tests
-internal/lib/uuid/uuidlib.go               `uuid` library: generate("v4"/"v7") + parse/isValid/version + NIL; RFC 9562, hand-formatted hex, math shared RNG
-internal/lib/uuid/uuidlib_test.go          uuid library unit tests (v4/v7 version+variant bits, v7 time-ordering via nowFunc, parse round-trip + invalids, dispatch)
+| File | Description |
+| ---- | ----------- |
+| `lexer/token.go` | Token type definitions (incl. trivia tokens). |
+| `lexer/lexer.go` | Scanner with optional file tagging; nested block comments. |
+| `lexer/lexer_test.go` | Lexer tests. |
+| `preproc/preproc.go` | File-import preprocessor; trivia stripping. |
+| `preproc/preproc_test.go` | Preprocessor tests. |
+| `module/resolve.go` | Module path classification + resolution. |
+| `module/sysmoddir.go` | System module dir: CLI / env / compile precedence + validation. |
+| `module/resolve_test.go` | Resolver + sysmoddir tests. |
 
-internal/stdlib/stdlib.go                  InstallAll: single registration point for every system library; run/repl/profile/test all call it (seam for build-time selection)
+## Parser (`internal/parser/`)
 
-internal/lint/lint.go                      `lint` checks: Diagnostic + grouped-ID registry (L0nn source / L1nn correctness / L2nn style / L3nn lifecycle) + KnownIDs/selectable/Catalog
-internal/lint/run.go                       Check driver + threshold Config + source-error diagnostic builder
-internal/lint/checks.go                    the individual check implementations
-internal/lint/scope.go                     scope-aware traversal for binding-visibility checks (L101 unused-local, L104 throw-non-error)
-internal/lint/walk.go                      flat AST walker for node-shape checks (L102/L103/L105/L201/L202)
-internal/lint/config.go                    --checks / .jennifer-lint selection parsing (selectable IDs only)
-internal/lint/suppress.go                  # lint-disable directive parsing + application; malformed/unknown-ID directive -> L004 finding
-internal/lint/lint_test.go                 lint unit tests
-internal/profile/profile.go                `profile` collector: per-position hit counts + wall-clock (+ optional alloc counting)
-internal/profile/render.go                 table + Chrome-trace renderers
-internal/profile/pprof.go                  pprof.gz output
-internal/profile/profile_test.go           profile unit tests
+| File | Description |
+| ---- | ----------- |
+| `ast.go` | AST node types + `Sprint` (incl. namespaced struct types). |
+| `parser.go` | Recursive-descent parser; namespaced struct literals. |
+| `resolver.go` | Parse-time scope / slot resolution; undefined-variable + shadowing errors. |
+| `fold.go` | Parse-time constant folding of literal-only subtrees. |
+| `parser_test.go` / `fold_test.go` | Parser and constant-folding tests (incl. "runtime error stays runtime"). |
 
-internal/version/version.go                Default Version = "dev"
-internal/version/version_gen.go            GENERATED by scripts/gen-version.sh (gitignored)
-scripts/version.sh                         Computes the version string from git
-scripts/gen-version.sh                     Writes version_gen.go before each build
-Makefile                                   build (both binaries) / build-tinygo / build-go / test / clean / version
+## Interpreter (`internal/interpreter/`)
 
-examples/*.j                               Example programs
-examples/expected/*.txt                    Expected stdout per example (no entry == not in golden suite)
-examples/with_import/                      Subdirectory demonstrating file imports
-examples/showcase/                         Helpers spliced by showcase.j
-```
+| File | Description |
+| ---- | ----------- |
+| `value.go` | Runtime `Value` tagged union (incl. struct + namespaced-struct + `KindObject` tags). |
+| `environment.go` | Scoped symbol table (name map + slot slice). |
+| `interpreter.go` | Tree-walking evaluator; namespaced-struct + object registration and resolution. |
+| `interpreter_test.go` | End-to-end interpreter tests. |
+| `interactive_test.go` | REPL `EvalInteractive` tests. |
+| `namespace_test.go` | Namespaced builtins + constants tests. |
+| `namespaced_struct_test.go` | Namespaced struct tests (synthetic `widgets` lib). |
+| `structs_test.go` | User-defined struct tests. |
+| `trycatch_test.go` | `try` / `catch` / `throw` tests. |
+| `spawn_test.go` | `spawn` / `task of T` runtime + registry tests. |
+| `control_flow_test.go` | `break` / `continue` / `repeat` / `exit` tests. |
+| `collections_test.go` | Lists, maps, iteration tests. |
+| `compound_test.go` | Nested list-of-list / map-of-list / chained-index tests. |
+| `bytes_test.go` | Bytes type + non-decimal literals + bit-op tests. |
+| `callbyname_test.go` | `CallByName` / `CallByNameWith` dispatch + `RaiseError` classification tests. |
+| `value_alias_test.go` | Shared-marker COW alias-stress tests. |
+| `collection_typing_test.go` | Generic collection validated entry-by-entry against the declared element type at def-init + assign. |
+
+## Standard libraries (`internal/lib/`)
+
+| File | Description |
+| ---- | ----------- |
+| `io/iolib.go`, `io/format.go`, `io/input.go` | `io`: entrypoint; `printf` / `sprintf` + verb-modifier mini-language; `readLine` / `readBytes` / `readChars` / `eof`. |
+| `convert/convert.go` | `convert`: `toInt` / `toFloat` / `toString` / `toBool` / `typeOf` / `objectType` + UTF-8 codecs + codepoint bridges. |
+| `math/mathlib.go` | `math`: `abs` / `min` / `max` / `sqrt` / `pow` / `floor` / `ceil` / `round` / `rand*`; `PI` / `E`. |
+| `strings/stringslib.go` | `strings`: case, predicates, slicing, `split` / `chars` / `join`. |
+| `lists/listslib.go` | `lists`: `push` / `pop` / `first` / `last` / `head` / `tail` / `reverse` / `sort` / `contains` / `concat` / `slice` / `shuffle` / `range`. |
+| `maps/mapslib.go` | `maps`: `keys` / `values` / `has` / `delete` / `merge`. |
+| `os/oslib.go`, `os/exec.go` | `os`: `PLATFORM` / `ARCH` / `EOL` / `DIRSEP` / `PATHSEP` / `ARGS` + `getEnv` / `hasFlag` / `flag` / `isTerminal`; external-program execution (`run` / `spawn` / `wait` / `poll` / `kill`). |
+| `meta/metalib.go` | `meta`: `VERSION` / `BUILD` / `SYSMODDIR` (interpreter self-identity). |
+| `time/timelib.go`, `time/zone.go`, `time/format.go` | `time`: `Time` / `Duration`, Unix + calendar + arithmetic; fixed-offset `Zone`, `UTC` / `local` / `inZone`; strftime `format` / `parse` + ISO round-trip. |
+| `hash/hashlib.go` | `hash`: MD5 / SHA-1 / SHA-256 one-shot + streaming via a codec table. |
+| `crc/crclib.go` | `crc`: CRC-32 / CRC-64 (big-endian) one-shot + streaming. |
+| `compress/compresslib.go` | `compress`: `pack` / `unpack` (gzip / zlib / deflate) + streaming (`compress.Stream`); optional level. |
+| `archive/archivelib.go` | `archive`: tar / zip / tar.gz `pack` / `unpack` over `bytes` (`archive.Entry`); no `fs` dependency. |
+| `encoding/encodinglib.go`, `encoding/codecs.go`, `encoding/codecs_gen.go`, `encoding/gen_codecs.go` | `encoding`: introspection + `toText` / `fromText` + `encode` / `decode`; hand-written `ascii` / `ebcdic` + generated ISO-8859-N / Windows-125N tables (`codecs_gen.go` is generated, do not edit; `gen_codecs.go` is the `go:build ignore` codegen). |
+| `json/jsonlib.go`, `json/jsondecode.go` | `json`: RFC 8259 `encode` / `encodePretty` + `Value` emitter; recursive-descent decoder -> opaque `json.Value` (`KindObject`), positioned errors. |
+| `task/tasklib.go` | `task`: `wait` / `poll` / `discard` / `waitAll` / `waitAny` over `task of T` handles. |
+| `fs/fslib.go`, `fs/handles.go` | `fs`: one-shot read / write / append + metadata + dir ops; buffered `fs.File` handles. |
+| `net/netlib.go`, `net/netlib_std.go`, `net/netlib_tinygo.go` | `net`: shared install / dispatch; `!tinygo` full TCP / TLS / UDP / DNS; `tinygo` friendly-error stubs. |
+| `regex/regexlib.go` | `regex`: `matches` / `find` / `findAll` / `replace` / `split` / `escape` + `regex.Match` + 128-entry LRU pattern cache. |
+| `testing/testinglib.go`, `testing/assertions.go` | `testing`: `run` / `runWith` / `results` / `reset` / `report` (text / TAP / JUnit) + exit interception; the six `assert*` builtins. |
+| `uuid/uuidlib.go` | `uuid`: `generate("v4"/"v7")` + `parse` / `isValid` / `version` + `NIL` (RFC 9562). |
+| `*/…_test.go` | Each library has a co-located `_test.go` with its unit tests (canonical vectors, round-trips, boundary errors). |
+
+## Tooling internals
+
+| File | Description |
+| ---- | ----------- |
+| `internal/stdlib/stdlib.go` | `InstallAll`: the single registration point for every system library; `run` / `repl` / `profile` / `test` all call it (the seam for build-time selection). |
+| `internal/lint/lint.go` | `lint` checks: `Diagnostic` + grouped-ID registry (L0nn source / L1nn correctness / L2nn style / L3nn lifecycle) + `KnownIDs` / selectable / `Catalog`. |
+| `internal/lint/run.go` | Check driver + threshold `Config` + source-error diagnostic builder. |
+| `internal/lint/checks.go` | The individual check implementations. |
+| `internal/lint/scope.go` | Scope-aware traversal for binding-visibility checks (L101 unused-local, L104 throw-non-error). |
+| `internal/lint/walk.go` | Flat AST walker for node-shape checks (L102 / L103 / L105 / L201 / L202). |
+| `internal/lint/config.go` | `--checks` / `.jennifer-lint` selection parsing (selectable IDs only). |
+| `internal/lint/suppress.go` | `# lint-disable` directive parsing + application; a malformed / unknown-ID directive becomes an L004 finding. |
+| `internal/profile/profile.go` | `profile` collector: per-position hit counts + wall-clock (+ optional alloc counting). |
+| `internal/profile/render.go` | Table + Chrome-trace renderers. |
+| `internal/profile/pprof.go` | Gzipped-pprof output (hand-encoded, zero-dependency). |
+
+## Version & build
+
+| File | Description |
+| ---- | ----------- |
+| `internal/version/version.go` | Default `Version = "dev"`. |
+| `internal/version/version_gen.go` | GENERATED by `scripts/gen-version.sh` (gitignored). |
+| `scripts/version.sh` | Computes the version string from git state. |
+| `scripts/gen-version.sh` | Writes `version_gen.go` before each build. |
+| `Makefile` | `build` (both binaries) / `build-tinygo` / `build-go` / `test` / `clean` / `version`. |
+
+## Jennifer-coded modules (`modules/`)
+
+Distributable `.j` modules brought in with `import`. Each `X.j` ships a
+co-located `X_test.j` white-box overlay (run under `jennifer test`) and a
+`examples/modules/X_demo.j` demo; a reference doc lives under
+[`docs/modules/`](../modules/index.md).
+
+| Module | Description |
+| ------ | ----------- |
+| `ansi.j` | Terminal styling as string wrappers (color / style / rgb / strip); TTY-aware. |
+| `csv.j` | RFC 4180 CSV parse / format (+ any delimiter) + header-keyed records. |
+| `semver.j` | Strict SemVer 2.0.0 parse / compare / sort / increment. |
+| `htmlwriter.j` | Build an HTML element tree and render escaped HTML5. |
+| `markdown.j` | CommonMark subset -> HTML / ANSI, plus Markdown authoring helpers. |
+| `mime.j` | Build + parse MIME messages (RFC 5322 / 2045, RFC 2047 encoded-words). |
+| `smtp.j` / `pop.j` / `imap.j` | Mail clients over `net`: send (SMTP), receive (POP3 / IMAP4rev1). |
+| `sasl.j` | SASL auth encoders (`plain` / `login` / `bearer` XOAUTH2), pure base64. |
+| `idna.j` | Internationalized domain names (Punycode `toAscii` / `toUnicode`). |
+| `redis.j` | Redis RESP2 client over `net`. |
+| `resque.j` | Resque-wire-compatible background jobs (on `redis`). |
+| `memcache.j` | memcached text-protocol client over `net`. |
+| `session.j` | Server-side sessions (on `memcache` + `uuid` + `json`). |
+| `ratelimit.j` | Fixed-window rate limiter (on `memcache`). |
+| `http.j` | HTTP/1.1 client over `net` (`https` via TLS). |
+| `gotify.j` | Gotify push notifications (on `http`). |
+| `rest.j` | Ergonomic REST layer (on `http` + `json`). |
+| `oauth.j` | OAuth2 client - get-a-token grants (on `http` + `json`; feeds `sasl`). |
+
+## Examples
+
+| Path | Description |
+| ---- | ----------- |
+| `examples/*.j` | Example programs. |
+| `examples/expected/*.txt` | Expected stdout per example (no entry == not in the golden suite). |
+| `examples/with_import/` | Subdirectory demonstrating file imports. |
+| `examples/showcase/` | Helpers spliced by `showcase.j`. |
+| `examples/modules/*_demo.j` | Runnable demo per shipped module (smoke-run in CI; not golden-checked). |

@@ -313,7 +313,7 @@ won't be able to read `.kind` / `.message` off it. Use
   boundary).
 - **Runtime errors** - out-of-bounds reads / writes, missing map
   keys, type mismatches, division by zero, undefined names,
-  bytes-element range violations, and the rest of today's positioned
+  bytes-element range violations, and the rest of the positioned
   runtime errors. The runtime wraps them into the canonical `Error`
   struct with `kind = "runtime"` (more specific tags will land per
   site over time) and the original file / line / col preserved.

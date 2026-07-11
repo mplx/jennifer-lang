@@ -2,7 +2,7 @@
 
 Jennifer's standard library is split into topic-based libraries. Each
 is enabled explicitly with `use NAME;`; nothing is auto-loaded. This
-page catalogs every library that ships with the interpreter today and
+page catalogs every library that ships with the interpreter and
 links to the reference doc for each.
 
 > **Looking for one specific function?** See the
@@ -138,7 +138,7 @@ large ones. The organizing principle, captured for future extensions:
   library.
 - Genuinely polymorphic structural primitives that every program
   needs (`len`) -> language built-in keyword, not a library. The
-  bar is intentionally high; `len` is the only one today.
+  bar is intentionally high; `len` is the only one.
 
 ## Naming convention
 

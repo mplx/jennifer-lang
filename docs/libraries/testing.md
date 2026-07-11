@@ -24,11 +24,39 @@ Under `jennifer test`, the `testing.run` / `report` boilerplate is
 handled for you; a test file just defines `test*` methods with
 assertions in the body.
 
+## Quick start
+
+The everyday path is the `jennifer test` subcommand: write `func test*`
+methods with assertions, and the runner discovers and runs them - no
+`testing.run` / `report` boilerplate.
+
+```jennifer
+use testing;
+
+func testMath() {
+    testing.assertEqual(2 + 3, 5);
+    testing.assertTrue(len("abc") == 3);
+}
+```
+
+```text
+$ jennifer test math_test.j
+PASS testMath (0 ms)
+
+1 passed, 0 failed, 1 total
+```
+
+`setUp` / `tearDown` methods (run before / after each test) and the flags
+(`--filter`, `--format=text|tap|junit`, `--isolated`) are documented in
+[technical/cli_test.md](../technical/cli_test.md). The rest of this page
+documents the `testing` **primitives** the runner is built from - reach for
+them directly only when building your own harness.
+
 ## Why this is a system library
 
 A pure `.j` test runner would have to take *the test body* as
 a value. Jennifer has no function references / first-class
-methods today - you can't say `testing.run(myTest)` because
+methods - you can't say `testing.run(myTest)` because
 `myTest` is a name, not a value. The interpreter already does
 name-based method lookup at every call site; `testing.run`
 exposes that as a builtin so a Jennifer-coded module can
@@ -80,6 +108,32 @@ func testAdd() {
     testing.assertThrows("mustFail", "boom");
 }
 ```
+
+### Table-driven tests
+
+There is no `testing.subtest` primitive; drive a set of cases with a plain loop
+inside one test method - the idiomatic Jennifer shape:
+
+```jennifer
+use testing;
+
+def struct Case { input as int, want as int };
+
+func testDoubles() {
+    def cases as list of Case init [
+        Case{input: 0, want: 0},
+        Case{input: 3, want: 6},
+        Case{input: -2, want: -4}];
+    for (def c in $cases) {
+        testing.assertEqual($c.input * 2, $c.want);
+    }
+}
+```
+
+An assertion `throw`s, so the **first** failing case stops that test method
+(later iterations don't run) and the reported position points at the
+`assertEqual` line. Put a distinguishing value in the case (or a per-case
+`assertContains` message) when you need to tell which row failed.
 
 ## The `testing.Result` struct
 

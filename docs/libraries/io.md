@@ -1,7 +1,8 @@
 # `io` - input/output
 
-Enable with `use io;`. Today the library provides `printf` and `sprintf`. Both
-share a Go-style format-string mini-language.
+Enable with `use io;`. It provides formatted output - `printf` and `sprintf`,
+which share a Go-style format-string mini-language - and stdin input:
+`readLine` / `eof` for lines, `readBytes` / `readChars` for binary.
 
 ## `printf`
 

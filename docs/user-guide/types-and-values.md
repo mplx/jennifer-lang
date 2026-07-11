@@ -324,8 +324,8 @@ The byte you append must be an `int` in `[0, 255]`.
 
 - `convert.bytesFromString(s, codec)` and
   `convert.stringFromBytes(b, codec)` are the canonical bridges.
-  Only `"utf-8"` is supported today; a future `encoding` library
-  will add the rest.
+  These two handle `"utf-8"` only; every other character encoding
+  lives in the `encoding` library.
 - `stringFromBytes` is **strict at boundaries**: invalid UTF-8 input
   is a runtime error, not a silent replacement character.
 - `len($b)` returns the **byte count**; `len($s)` on a string returns
