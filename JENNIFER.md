@@ -285,6 +285,14 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   styled terminal text (`toAnsi`, through `ansi`); author Markdown with
   `header` / `style` / `link` / `bullets` / `numbered` / `codeBlock` / `table`;
   align handcrafted table source with `tablePretty`.
+- **`memcache`** - a memcached client over `net` (classic text protocol):
+  `memcache.connect(opts)` -> `memcache.Session`, then `set(session, key, value,
+  exptime)` / `add` (store-if-absent, `-> bool`) / `get(session, key)` (`""`
+  when absent) / `delete` / `incr(session, key, delta)` (new value, `-1` when
+  absent) / `decr` / `touch` / `quit`. Every store carries a TTL (`exptime`
+  seconds). A volatile cache for sessions / counters / locks. Throws `Error`
+  (kind `"memcache"`) on a protocol error. **Default `jennifer` binary only**
+  (`net`).
 - **`mime`** - build and parse MIME messages (RFC 5322 headers, multipart,
   quoted-printable / base64 transfer encodings): `mime.text(contentType, body)` /
   `attachment` / `multipart(subtype, boundary, parts)` / `withHeader` build a

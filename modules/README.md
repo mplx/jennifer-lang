@@ -45,6 +45,14 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   `markdown.tablePretty(md)` to align handcrafted table columns.
   Pure Jennifer; the first module that imports sibling modules. See
   [`examples/modules/markdown_demo.j`](../examples/modules/markdown_demo.j).
+- **`memcache.j`** - a memcached client over `net` speaking the classic text
+  protocol: `memcache.set` / `add` (store-if-absent) / `get` / `delete` /
+  `incr` / `decr` / `touch`, every store with a TTL (`exptime` seconds). A
+  volatile cache (keys expire and the server evicts under pressure), so it
+  suits caches, sessions, counters, and locks, not a system of record. A
+  protocol error throws `Error` (kind `"memcache"`). Uses `net`, so the
+  **default `jennifer` binary only**. See
+  [`examples/modules/memcache_demo.j`](../examples/modules/memcache_demo.j).
 - **`mime.j`** - build and parse MIME messages (RFC 5322 headers, multipart,
   quoted-printable / base64 transfer encodings). `mime.text` / `attachment` /
   `multipart` / `withHeader` build a `Part` tree, `mime.encode` serializes it,

@@ -56,6 +56,7 @@
 - [`idna`](modules/idna.md)
 - [`imap`](modules/imap.md)
 - [`markdown`](modules/markdown.md)
+- [`memcache`](modules/memcache.md)
 - [`mime`](modules/mime.md)
 - [`pop`](modules/pop.md)
 - [`redis`](modules/redis.md)

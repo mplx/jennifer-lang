@@ -1534,6 +1534,26 @@ in a Go test), `docs/modules/resque.md`, catalog + `SUMMARY` + `README` +
 
 ### M18.6 - `memcache` module
 
+**Done.** A `memcache` module (`modules/memcache.j`): a client for memcached's
+classic text protocol over `net`. `connect` opens a session; `set` / `add`
+(store-if-absent, `-> bool`) store a value with an `exptime`-second TTL;
+`get` returns the string value (`""` when absent / expired); `delete` /
+`touch` return whether the key existed; `incr` / `decr` are atomic counters
+returning the new value (`-1` when the key is absent, since memcached will not
+create it); `quit` closes. A protocol-error reply (`ERROR` / `CLIENT_ERROR` /
+`SERVER_ERROR`) throws a catchable `Error` (kind `"memcache"`). The reader
+handles the line replies plus `get`'s length-prefixed `VALUE ... END` block;
+values are read as UTF-8 text (byte-exact for ASCII / UTF-8, the common case;
+the same documented limitation as `redis`). `add` + a TTL and the
+`incr`-then-`add` shape are exactly the primitives the two reference modules
+([M18.6.1](#m1861---session-module-on-memcache) /
+[M18.6.2](#m1862---ratelimit-module-on-memcache)) build on. Tested: the
+storage-header byte-length framing in the overlay (`modules/memcache_test.j`,
+100%) and the full command surface against an in-process memcached server in
+the Go suite (`TestMemcacheCommands`), so CI needs no memcached install.
+Reference doc [docs/modules/memcache.md](modules/memcache.md); demo
+`examples/modules/memcache_demo.j`.
+
 A client for the `memcached` server's text protocol (`set` / `get` /
 `delete` / `incr` / `decr`, plus `add` (store only if absent) and `touch`
 (re-arm expiry); replies `STORED` / `VALUE ... END`) over `net`. Every
