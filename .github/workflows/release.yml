@@ -348,6 +348,10 @@ jobs:
             echo
             echo "Install \`jennifer\` unless you have a specific reason to use the constrained variant; see \`docs/user-guide/installing.md\` for guidance."
             echo
+            echo "### What's new"
+            echo
+            echo "There is no per-release changelog yet; see the [milestones](https://github.com/mplx/jennifer-lang/blob/main/docs/milestones.md) for what has shipped and what is planned."
+            echo
             if [ -f artifacts/test-reports/coverage-total.txt ]; then
               echo "### Test results"
               echo
@@ -362,10 +366,7 @@ jobs:
               echo "- \`$(basename "$f")\`"
             done
             echo
-            echo "Artifacts named \`-UNSUPPORTED\` are best-effort macOS / Windows"
-            echo "builds (standard \`jennifer\` only, no TinyGo, unsigned, no support);"
-            echo "see \`docs/user-guide/installing.md\`. They may be missing if that"
-            echo "build failed - it does not block the Linux release."
+            echo "Artifacts named \`-UNSUPPORTED\` are best-effort macOS / Windows builds (standard \`jennifer\` only, no TinyGo, unsigned, no support); see \`docs/user-guide/installing.md\`. They may be missing if that build failed - it does not block the Linux release."
           } > release_notes.md
           cat release_notes.md
 

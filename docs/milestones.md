@@ -1253,7 +1253,7 @@ out. Reference doc [docs/modules/markdown.md](modules/markdown.md);
 overlay `modules/markdown_test.j` (100%); demo
 `examples/modules/markdown_demo.j`.
 
-### M18.4 - `mail` module
+### M18.4 - mail suite (SMTP / POP3 / IMAP + MIME)
 
 SMTP / IMAP / POP3 clients plus MIME (RFC 5322 headers, multipart, 7bit /
 8bit / quoted-printable / base64 transfer encodings). **Pure Jennifer**:
@@ -1270,19 +1270,59 @@ Two system prerequisites, because neither can be pure Jennifer:
   ([M16.15](#m1615---encoding-completion), system).** The MIME transfer
   codec, alongside the base64 the module also leans on.
 
-With those in place the `mail` module stays pure Jennifer: connection
-dialogue, header parse/build, MIME-tree assembly and walk, and address /
-date formatting.
+Split into sub-milestones, MIME first: it is the reusable message-structure
+foundation the protocol clients build on, and unlike them it is pure text,
+so it is 100% overlay-testable. The network clients depend on `net` (so
+they are default-binary-only; `jennifer-tiny` stubs `net`), and their
+round-trips cannot run in the offline CI overlay - they are verified by a
+demo / manual send-and-fetch against a real server, with the protocol logic
+(command build, response parse) unit-tested offline.
 
 - **SASL auth, ordering-aware.** SMTP AUTH / IMAP / POP3 login is SASL,
   which is pure message orchestration (a good `.j` fit, not a crypto
   primitive). The crypto-free mechanisms - `PLAIN`, `LOGIN`, `XOAUTH2`
-  (base64 only, already in `encoding`) - ship here and cover most
-  real-world mail. The challenge-response mechanisms (`SCRAM-SHA-256`,
+  (base64 only, already in `encoding`) - ship with the clients and cover
+  most real-world mail. The challenge-response mechanisms (`SCRAM-SHA-256`,
   `CRAM-MD5`) need HMAC / PBKDF2 from **M20.1 `crypto`**, so they land with
   / after M20.1, factored into a small shared `sasl` `.j` module a later
   LDAP client (M24+) reuses. SASL / SCRAM is a *consumer* of crypto
   primitives, never part of M20.1 itself.
+
+### M18.4.1 - `mime` module
+
+**Done.** Build and parse MIME messages as a pure-Jennifer module
+(`modules/mime.j`) over `strings` / `convert` / `encoding` - no networking,
+TinyGo-clean, so it runs on both binaries. A `Part` is a leaf (headers plus
+a decoded-text `body` with a transfer `encoding`) or a multipart container
+(headers plus child `parts` under a `boundary`). Build with `text` /
+`attachment` / `multipart` / `withHeader`, serialize with `encode` (CRLF
+lines; 7bit when ASCII, quoted-printable for non-ASCII text, base64 wrapped
+at 76 columns for attachments), parse back with `parse` (header unfolding,
+recursive boundary split, transfer-decode), and read with `headerValue` /
+`body` / `parts` / `contentType`; `address` formats an RFC 5322 mailbox.
+Bodies are held decoded as text: binary (`bytes`) bodies and RFC 2047
+encoded-words for non-ASCII headers are deferred. Reference doc
+[docs/modules/mime.md](modules/mime.md); overlay `modules/mime_test.j`
+(100%); demo `examples/modules/mime_demo.j`.
+
+### M18.4.2 - `smtp` (send)
+
+Planned. SMTP send client over `net` + STARTTLS / implicit TLS, AUTH
+`PLAIN` / `LOGIN` / `XOAUTH2`, `MAIL FROM` / `RCPT TO` / `DATA` with the
+message built by `mime`. The common "send an email" path. Command building
+and response parsing unit-tested offline; a live send verified end to end by
+fetching the delivered message back from a receive-only test server.
+
+### M18.4.3 - `pop3` (receive)
+
+Planned. POP3 client (`USER` / `PASS`, `STAT` / `LIST` / `RETR` / `DELE`)
+over `net` + TLS; retrieved messages parsed with `mime`.
+
+### M18.4.4 - `imap` (receive)
+
+Planned. IMAP client (`LOGIN` / `SELECT` / `FETCH` / `SEARCH`) over `net` +
+TLS - the largest of the three protocols; retrieved messages parsed with
+`mime`.
 
 ### M18.5 - `redis` module
 

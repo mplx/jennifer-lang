@@ -1,0 +1,118 @@
+# `mime` - build and parse MIME messages
+
+Import with `import "mime.j" as mime;`. Builds and parses MIME messages (RFC
+5322 headers plus RFC 2045/2046 bodies) - the header-and-boundary structure
+behind email. Pure Jennifer over `strings`, `convert`, and `encoding`; it
+does **no networking**, so it runs on either binary and is the
+message-structure foundation the `mail` protocol clients (SMTP / POP3 /
+IMAP) build on.
+
+```jennifer
+use io;
+import "mime.j" as mime;
+
+def msg as mime.Part init mime.text("text/plain", "Hello, café.");
+$msg = mime.withHeader($msg, "Subject", "Hi");
+io.printf("%s", mime.encode($msg));
+
+def back as mime.Part init mime.parse(mime.encode($msg));
+io.printf("%s\n", mime.body($back));      # Hello, café.
+```
+
+Runnable: [`examples/modules/mime_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/mime_demo.j).
+
+## The `Part` model
+
+A message is a `Part` tree. A part is either a **leaf** (headers plus a
+decoded-text `body` with a transfer `encoding`) or a **multipart container**
+(headers plus child `parts` under a `boundary`):
+
+```jennifer
+export def struct Part {
+    headers as list of Header, body as string, encoding as string,
+    parts as list of Part, boundary as string
+};
+export def struct Header { name as string, value as string };
+```
+
+Bodies are held **decoded, as text**: `encode` applies the transfer encoding
+and `parse` removes it, so you always read plain content.
+
+## Surface
+
+| Call                                    | Returns  | Notes                                                              |
+| --------------------------------------- | -------- | ------------------------------------------------------------------ |
+| `mime.text(contentType, body)`          | `Part`   | Leaf text part; 7bit if ASCII, else quoted-printable. Adds `charset=utf-8`. |
+| `mime.attachment(filename, contentType, body)` | `Part` | Base64 leaf with a `Content-Disposition` filename.               |
+| `mime.multipart(subtype, boundary, parts)` | `Part` | Container (`multipart/subtype`) over one boundary.                 |
+| `mime.withHeader(part, name, value)`    | `Part`   | Copy with a header set (case-insensitive replace, else append).    |
+| `mime.encode(part)`                     | `string` | Serialize to a CRLF MIME message with transfer encodings applied.  |
+| `mime.parse(text)`                      | `Part`   | Parse a message: unfold headers, split multipart, transfer-decode. |
+| `mime.headerValue(part, name)`          | `string` | Header value (case-insensitive) or `""`.                           |
+| `mime.body(part)`                       | `string` | A leaf's decoded text body.                                        |
+| `mime.parts(part)`                      | `list of Part` | A container's child parts.                                   |
+| `mime.contentType(part)`                | `string` | Media type without parameters (e.g. `text/plain`).                 |
+| `mime.address(name, email)`             | `string` | RFC 5322 mailbox: `email`, or `Name <email>` (name quoted if special). |
+
+## Encoding
+
+`encode` produces a canonical message with **CRLF** line endings and picks the
+transfer encoding automatically:
+
+- **7bit** - `text` bodies that are pure ASCII pass through unencoded.
+- **quoted-printable** - `text` bodies with non-ASCII are QP-encoded (e.g.
+  `café` to `caf=C3=A9`).
+- **base64** - `attachment` bodies are base64-encoded and folded at 76
+  columns.
+
+A multipart container writes its child parts between `--boundary` delimiters
+and closes with `--boundary--`; nesting works (a part can itself be a
+multipart).
+
+```jennifer
+def parts as list of mime.Part init [];
+$parts[] = mime.text("text/plain", "plain");
+$parts[] = mime.text("text/html", "<b>rich</b>");
+def msg as mime.Part init mime.multipart("alternative", "b0", $parts);
+io.printf("%s", mime.encode($msg));
+```
+
+The boundary is **yours to pass** (not auto-generated), so output is
+deterministic and testable; pick a string that cannot appear in the content.
+
+## Parsing
+
+`parse` is the inverse: it splits the header block from the body at the first
+blank line, unfolds continuation lines (a header value wrapped onto an
+indented next line), reads `Content-Type` / `Content-Transfer-Encoding`, and
+either splits a multipart body on its boundary (recursively) or
+transfer-decodes a leaf. `encode` and `parse` round-trip:
+
+```jennifer
+def back as mime.Part init mime.parse(wire);
+for (def part in mime.parts($back)) {
+    io.printf("%s: %s\n", mime.contentType($part), mime.body($part));
+}
+```
+
+## Out of scope
+
+Deliberately a foundation, not a full mail stack:
+
+- **Binary bodies.** A `Part` body is text (UTF-8); an `attachment` takes text
+  content. True binary attachments (a `bytes` body, e.g. an image) are not yet
+  supported - that needs a `bytes`-typed body field.
+- **RFC 2047 encoded-words.** A non-ASCII header value (a `Subject` with
+  accents) is written literally, not encoded as `=?utf-8?...?=`. Keep header
+  values ASCII for now.
+- **Header folding on encode.** Long header lines are not wrapped.
+- **Networking.** This module only shapes messages; sending / fetching them is
+  the `mail` SMTP / POP3 / IMAP clients (built on `mime`).
+
+## See also
+
+- [encoding.md](../libraries/encoding.md) - `toText` / `fromText`
+  (base64, quoted-printable), the transfer codecs `mime` delegates to.
+- [strings.md](../libraries/strings.md) - the text operations the header and
+  boundary handling build on.
+- [modules/index.md](index.md) - the module catalog and import rules.

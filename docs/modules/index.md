@@ -50,6 +50,7 @@ libraries, so all run on either binary.
 | [`csv`](csv.md)       | `import "csv.j";`      | full   | RFC 4180 comma-separated values. `parse` / `format` (`*With` for any delimiter), `toRecords` / `fromRecords` for header-keyed maps; quoting-aware. |
 | [`htmlwriter`](htmlwriter.md) | `import "htmlwriter.j";` | full | build an HTML element tree and render escaped HTML5. `element` / `text` / `raw` / `attr` constructors, `render` / `renderAll`, `escape`; void-element aware. A writer, not a parser. |
 | [`markdown`](markdown.md) | `import "markdown.j";` | full | render a small CommonMark subset (headings, emphasis, links, lists, code, GFM tables) to HTML (through `htmlwriter`) and styled terminal text (through `ansi`) with `toHtml` / `toAnsi`, plus authoring helpers (`header` / `style` / `link` / `bullets` / `numbered` / `codeBlock` / `table`) that build Markdown, and `tablePretty` to align table source. |
+| [`mime`](mime.md)     | `import "mime.j";`     | full   | build and parse MIME messages (RFC 5322 headers, multipart, quoted-printable / base64 transfer encodings). `text` / `attachment` / `multipart` / `encode` / `parse`; the foundation the mail clients build on. |
 | [`semver`](semver.md) | `import "semver.j";`   | full   | strict Semantic Versioning 2.0.0. `parse` / `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` / `isPrerelease`, `inc*`, `sort`; struct `Version`. |
 
 ## Writing your own

@@ -45,6 +45,13 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   `markdown.tablePretty(md)` to align handcrafted table columns.
   Pure Jennifer; the first module that imports sibling modules. See
   [`examples/modules/markdown_demo.j`](../examples/modules/markdown_demo.j).
+- **`mime.j`** - build and parse MIME messages (RFC 5322 headers, multipart,
+  quoted-printable / base64 transfer encodings). `mime.text` / `attachment` /
+  `multipart` / `withHeader` build a `Part` tree, `mime.encode` serializes it,
+  `mime.parse` reads it back, and `mime.headerValue` / `body` / `parts` /
+  `contentType` / `address` read it. Pure Jennifer over `strings` / `convert` /
+  `encoding`; no networking, so it is the foundation the mail clients build on.
+  See [`examples/modules/mime_demo.j`](../examples/modules/mime_demo.j).
 - **`semver.j`** - strict Semantic Versioning 2.0.0: parse, compare, sort,
   and increment version numbers. `semver.parse(s)` / `isValid(s)` /
   `toString(v)`, `compare(a, b)` / `lt` / `eq` / `gt`, `isStable(v)` /

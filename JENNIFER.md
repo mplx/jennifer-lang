@@ -285,6 +285,13 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   styled terminal text (`toAnsi`, through `ansi`); author Markdown with
   `header` / `style` / `link` / `bullets` / `numbered` / `codeBlock` / `table`;
   align handcrafted table source with `tablePretty`.
+- **`mime`** - build and parse MIME messages (RFC 5322 headers, multipart,
+  quoted-printable / base64 transfer encodings): `mime.text(contentType, body)` /
+  `attachment` / `multipart(subtype, boundary, parts)` / `withHeader` build a
+  `Part` tree, `mime.encode(part)` serializes it, `mime.parse(text)` reads it
+  back, and `mime.headerValue` / `body` / `parts` / `contentType` / `address`
+  read it. Bodies are text (UTF-8); no networking. The foundation the mail
+  clients build on.
 - **`semver`** - strict SemVer 2.0.0 over a `Version` struct: `semver.parse(s)` /
   `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` /
   `isPrerelease`, `incMajor` / `incMinor` / `incPatch`, `sort`.

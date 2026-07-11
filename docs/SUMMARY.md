@@ -54,6 +54,7 @@
 - [`csv`](modules/csv.md)
 - [`htmlwriter`](modules/htmlwriter.md)
 - [`markdown`](modules/markdown.md)
+- [`mime`](modules/mime.md)
 - [`semver`](modules/semver.md)
 
 # Technical reference
