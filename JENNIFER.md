@@ -288,6 +288,12 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `http.header(resp, name)` reads a response header case-insensitively. Handles
   Content-Length and chunked framing; text (UTF-8) bodies. Redirects returned,
   not followed. **Default `jennifer` binary only** (`net`).
+- **`gotify`** - push a notification to a [Gotify](https://gotify.net) server,
+  on top of `http`: `gotify.push(cfg, title, message, priority)` POSTs the
+  message form (`X-Gotify-Key` header) to `cfg.url + "/message"` and returns the
+  `http.Response` (a bad token is a `4xx` value, not a crash). Value-semantic
+  `gotify.Config{url, token}`, caller-supplied. **Default `jennifer` binary
+  only** (`net`).
 - **`markdown`** - render a small CommonMark subset (headings, emphasis, links,
   lists, code, GFM tables) to HTML (`markdown.toHtml`, through `htmlwriter`) and
   styled terminal text (`toAnsi`, through `ansi`); author Markdown with

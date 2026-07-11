@@ -52,6 +52,7 @@
 - [Catalog](modules/index.md)
 - [`ansi`](modules/ansi.md)
 - [`csv`](modules/csv.md)
+- [`gotify`](modules/gotify.md)
 - [`htmlwriter`](modules/htmlwriter.md)
 - [`http`](modules/http.md)
 - [`idna`](modules/idna.md)

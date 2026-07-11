@@ -1665,6 +1665,21 @@ parsing. Reference doc [docs/modules/http.md](modules/http.md); demo
 
 ### M18.7.1 - `gotify` module on top of `http` module
 
+**Done.** A `gotify` module (`modules/gotify.j`) on top of `http`: a
+value-semantic `Config{url, token}` and `push(cfg, title, message, priority)`
+that POSTs the message form (`application/x-www-form-urlencoded`) to
+`cfg.url + "/message"` with an `X-Gotify-Key` header and returns the raw
+`http.Response` - a 200 on success, a bad token surfaced as a 4xx value rather
+than a crash. Stateless / declarations-only (the caller holds the `Config`, no
+module state). Includes a per-byte `application/x-www-form-urlencoded` encoder
+(unreserved literal, space -> `+`, else `%XX` over UTF-8). Tested: the URL /
+form encoding (incl. reserved characters and UTF-8) in the overlay
+(`modules/gotify_test.j`, 100%); the full push against a fake Gotify server in
+the Go suite (`TestGotifyPush`) - header, form round-trip, 200, and 401 on a bad
+token. The demo reads `GOTIFY_URL` / `GOTIFY_TOKEN` from the environment (never
+committed). Reference doc [docs/modules/gotify.md](modules/gotify.md); demo
+`examples/modules/gotify_demo.j`.
+
 A tiny real-world module built on the M18.7 `http` client: push a
 notification to a [Gotify](https://gotify.net) server. It is the second
 reference module (after M17.5 `ansi`), and the first that crosses the

@@ -44,6 +44,14 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   (UTF-8) bodies. Redirects are returned (3xx), not followed. Uses `net`, so the
   **default `jennifer` binary only**. See
   [`examples/modules/http_demo.j`](../examples/modules/http_demo.j).
+- **`gotify.j`** - push a notification to a [Gotify](https://gotify.net) server,
+  a tiny module on top of `http`: `gotify.push(cfg, title, message, priority)`
+  POSTs the message form to `cfg.url + "/message"` with the `X-Gotify-Key`
+  header and returns the `http.Response` (a bad token comes back as a `4xx`
+  value). Value-semantic `gotify.Config` (url + token); the caller supplies
+  those (never committed). Uses `net` (via `http`), so the **default `jennifer`
+  binary only**. See
+  [`examples/modules/gotify_demo.j`](../examples/modules/gotify_demo.j).
 - **`markdown.j`** - render a small CommonMark subset (headings, bold /
   italic, inline code, links, fenced code blocks, ordered / unordered lists)
   to HTML and to styled terminal text. `markdown.toHtml(md)` renders through
