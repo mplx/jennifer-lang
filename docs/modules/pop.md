@@ -7,6 +7,12 @@ auth. Retrieved messages come back as strings, ready for the
 [`mime`](mime.md) module to parse. Because it uses `net`, this module needs
 the default **`jennifer`** binary.
 
+> **On `jennifer-tiny`:** "needs the default `jennifer` binary" refers to the
+> **stock** tiny build, which ships without a network driver - not a TinyGo
+> limitation. A `jennifer-tiny` rebuilt with a network stack runs this module
+> too; see the
+> [note on `net` and TinyGo](../technical/tinygo.md#net-on-tinygo-is-a-build-choice-not-a-hard-limit).
+
 > The module is named `pop` (not `pop3`): a Jennifer namespace is
 > letters-only, so a digit in the name can't be a call prefix. It is POP
 > version 3 - the only one in use - the same choice Ruby's `net/pop` makes.

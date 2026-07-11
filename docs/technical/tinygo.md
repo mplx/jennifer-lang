@@ -6,7 +6,8 @@ Jennifer ships as two binaries built from the same source:
   Full host-feature surface: file I/O, `os/exec`, network stack,
   everything.
 - `jennifer-tiny` - constrained variant, built with TinyGo. Smaller
-  binary, embeddable; missing `os/exec` and the network stack (see
+  binary, embeddable; the stock build ships without `os/exec` or a
+  network stack (a build choice, not a hard TinyGo limit - see
   [TinyGo restrictions](#tinygo-restrictions) below).
 
 `make build` produces both. Use `make build-go` or `make
@@ -61,8 +62,62 @@ full surface.
 
 | Library | Affected names                                        | What happens on `jennifer-tiny`                                                                       |
 | ------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `os`    | `os.run`, `os.spawn`, `os.wait`, `os.poll`, `os.kill` | Runtime error pointing at the default `jennifer` binary. TinyGo's `os/exec` syscalls aren't implemented yet. |
-| `net`   | Every entry point (TCP, UDP, DNS)                     | Runtime error pointing at the default `jennifer` binary. TinyGo 0.41 needs a netdev driver at runtime (not registered) and has no `net.ListenPacket` for UDP. Build-tag split: `netlib_tinygo.go` returns friendly errors. |
+| `os`    | `os.run`, `os.spawn`, `os.wait`, `os.poll`, `os.kill` | Runtime error pointing at the default `jennifer` binary. The `os/exec` subprocess surface: unimplemented in TinyGo on host targets, and absent by nature on embedded / WASM. Not the same "recompile" story as `net` - see the note below. |
+| `net`   | Every entry point (TCP, UDP, DNS)                     | Runtime error pointing at the default `jennifer` binary. Our stock `jennifer-tiny` registers no netdev driver, so `net` is stubbed. Build-tag split: `netlib_tinygo.go` returns friendly errors. Not a hard TinyGo limit - see the note below. |
+
+### `net` on TinyGo is a build choice, not a hard limit
+
+The "no network" state is a property of the **stock `jennifer-tiny`
+build**, not of TinyGo itself. TinyGo compiles most of `net.Dial` /
+`net.Listen`; what it does not do on a default target is register a
+**netdev driver** at runtime (the pluggable network device interface its
+`net` package dials through), and our stock build ships none - so we
+compile the `tinygo`-tagged `netlib_tinygo.go` stub that returns a
+friendly error instead of failing cryptically deep in Go's `net`.
+
+Anyone who needs networking on the tiny binary can restore it by
+**rebuilding with a network stack**: target (or link in) a registered
+netdev driver - or a net-capable target such as one exposing a host
+socket layer - and drop the `tinygo` build tag on `net` so the real
+implementation compiles in. With a network stack present, `net` and
+**every net-backed module** (`smtp`, `pop`, `imap`, `redis`, `resque`,
+`memcache`, `session`, `ratelimit`, ...) run on `jennifer-tiny` too. So
+read "needs the default `jennifer` binary" as "needs a build that
+includes a network stack" - the stock `jennifer` has one, the stock
+`jennifer-tiny` does not. (UDP is the one genuinely thinner spot:
+`net.ListenPacket` is not part of TinyGo's surface today, so a rebuild
+covers TCP / DNS more readily than UDP.)
+
+### `os/exec` on TinyGo is a platform limit, not a switch
+
+The `os` restriction is narrower than it looks: it is only the **`os/exec`
+subprocess surface** - `os.run` / `os.spawn` / `os.wait` / `os.poll` /
+`os.kill`. Everything else in `os` (env, args, flags, the `PLATFORM` /
+`ARCH` / `EOL` / `DIRSEP` / `PATHSEP` / `ARGS` values) works fully on both
+binaries.
+
+Do **not** read the `net` note above as applying here. `net` needs a
+pluggable *driver* you can supply; `os/exec` needs a whole **host operating
+system with a process model** - fork/exec, a process table, executables on a
+filesystem. There is no component to link in. Two cases:
+
+- **Host-OS TinyGo target (Linux / macOS / Windows):** a TinyGo
+  **standard-library maturity gap** - the `os/exec` fork/exec path is not
+  implemented yet. If TinyGo upstream adds it, a host-targeted
+  `jennifer-tiny` could gain `os.run` / `os.spawn`; that is upstream work,
+  not a rebuild switch on our side.
+- **Embedded / bare-metal / WASM / WASI targets** (what `jennifer-tiny`
+  exists for): there is **no process model at all** - nothing to fork, no
+  other programs, no `exec` syscall. So the subprocess surface is
+  *fundamentally inapplicable*, a hard platform limit rather than a missing
+  piece. It stays unavailable there, permanently.
+
+This also fits the deployment target: minimal containers and embedded
+scripting hosts generally should *not* shell out to external processes (no
+shell, no other executables), so the restriction aligns with where
+`jennifer-tiny` runs rather than fighting it. In short: `net` = a driver you
+can supply and rebuild around; `os/exec` = a host capability that is a TinyGo
+gap on host targets and simply absent on embedded / WASM.
 
 The constants and the env / argv / flag helpers in `os`
 (`os.PLATFORM`, `os.ARCH`, `os.EOL`, `os.DIRSEP`, `os.PATHSEP`,

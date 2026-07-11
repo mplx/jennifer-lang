@@ -1563,7 +1563,7 @@ values are `bytes` / `string`. Named `memcache` for the client / protocol;
 it talks to a `memcached` daemon. Two reference modules build on it -
 [M18.6.1 `session`](#m1861---session-module-on-memcache) and
 [M18.6.2 `ratelimit`](#m1862---ratelimit-module-on-memcache) - and the
-`httpd` server ([M18.8](#m188---httpd-module)) uses both.
+`httpd` server ([M18.9](#m189---httpd-module)) uses both.
 
 #### M18.6.1 - `session` module (on `memcache`)
 
@@ -1738,7 +1738,7 @@ order:
   **Device Authorization Grant** - the last a natural fit for a CLI /
   embeddable runtime (no local redirect server; show the user a URL + code,
   poll the token endpoint). These need only `http` + `json`.
-- **Authorization Code + PKCE:** needs `httpd` (M18.8) to catch the redirect
+- **Authorization Code + PKCE:** needs `httpd` (M18.9) to catch the redirect
   and crypto-grade random for the PKCE verifier (its security rests on
   verifier entropy, so `math.rand` will not do) - lands after `httpd` and
   `crypto` (M20.1).
@@ -1755,7 +1755,28 @@ token drives `sasl.xoauth2` into a successful IMAP `AUTHENTICATE XOAUTH2`
 against a mock server; a token-endpoint error surfaces as a catchable
 `Error`, not a crash.
 
-### M18.8 - `httpd` module
+### M18.8 - `toml` module
+
+A `.j` module: TOML's regular, line / section-oriented grammar
+(`[table]`, `key = value`) maps cleanly to `map` / `list` / `time.Time` -
+the `.j`-friendliest of the config formats (unlike `yaml` / `xml`, which
+go to M20 as system libraries). Covers the grammar corners: multiline
+strings, inline tables, arrays of tables. Ordered **before** `httpd`
+([M18.9](#m189---httpd-module)) so the server can read its configuration
+from TOML.
+
+The reference doc (`docs/modules/toml.md`) must include a section
+**contrasting INI with TOML** and stating plainly why `.ini` is not a
+supported format: INI has **no real standard** (every parser disagrees on
+comments, quoting, nesting), is **flat** (only one level of `[section]`,
+no arrays of tables or nested tables), and is **untyped** (every value is a
+bare string - no clear `int` / `float` / `bool` / datetime, so the reader
+guesses). TOML was designed to fix exactly those (a formal spec, typed
+values, nested and array-of-table structure), so it is the one config
+format Jennifer ships; `.ini` stays out (documented, not silently missing),
+a deferred tiny cousin only if real demand surfaces.
+
+### M18.9 - `httpd` module
 
 A pure-Jennifer HTTP server atop `net`, shipped as a module (same shape
 as the other M18 modules), not baked into the interpreter - the point
@@ -1764,24 +1785,19 @@ handlers run in `spawn` blocks (depends on **M16.0** concurrency) over the
 `net` TCP listener (**M16.2**); it can share HTTP request / response
 parsing with the M18.7 client. (Formerly the standalone M20.)
 
-It **uses both memcache-backed reference modules** to round out a real
+It reads its **configuration from `toml`** ([M18.8](#m188---toml-module),
+ordered just before it): listen address, routes / static roots, and the
+session / rate-limit knobs below come from a TOML config file rather than
+hard-coded constants - the first real consumer of the `toml` module.
+
+It also **uses both memcache-backed reference modules** to round out a real
 serving stack: [`session`](#m1861---session-module-on-memcache) for
 cookie-keyed server-side sessions (a `Set-Cookie` session ID whose data
 lives in `memcache`), and [`ratelimit`](#m1862---ratelimit-module-on-memcache)
 as request throttling (per-client-IP `allow` check, `429` on deny) - so the
-server demonstrates sessions and rate limiting end to end rather than
-leaving them as unused library shelfware. Both are optional wiring the
+server demonstrates config, sessions, and rate limiting end to end rather
+than leaving them as unused library shelfware. Both are optional wiring the
 handler opts into, not a hard `httpd` dependency.
-
-### M18.9 - `toml` module
-
-A `.j` module: TOML's regular, line / section-oriented grammar
-(`[table]`, `key = value`) maps cleanly to `map` / `list` / `time.Time` -
-the `.j`-friendliest of the config formats (unlike `yaml` / `xml`, which
-go to M20 as system libraries). Covers the grammar corners: multiline
-strings, inline tables, arrays of tables. (`.ini` is a deferred tiny
-cousin only if demand surfaces - no real standard, ambiguous quoting /
-typing.)
 
 ### M18.10 - `flatdb` module
 
@@ -2026,7 +2042,7 @@ caller's choice, and two of the three routes need nothing new:
 - **Pushgateway** - POST the rendered text (needs the `http` client,
   M18.7).
 - **A `/metrics` scrape endpoint** - serve the rendered text from an HTTP
-  handler (needs `httpd`, M18.8). The module stays server-agnostic.
+  handler (needs `httpd`, M18.9). The module stays server-agnostic.
 
 Surface: a `Metric { name, help, type, samples }` and a
 `Sample { labels as map of string to string, value as float }`; builders

@@ -41,8 +41,15 @@ optional - without it the module is addressed by its file stem
 
 The **TinyGo** column reports whether the module runs on the constrained
 `jennifer-tiny` binary. A module is only as portable as the libraries it
-`use`s: the pure-text modules run on either binary, while `smtp` `use`s `net`
-(no TinyGo network stack), so it needs the default `jennifer`.
+`use`s: the pure-text modules run on either binary, while `smtp` `use`s `net`,
+so it needs a build with a network stack.
+
+A **`no (net)`** entry means the module needs `net`, which the **stock**
+`jennifer-tiny` build ships without - not a TinyGo limitation. A `jennifer-tiny`
+rebuilt with a network stack runs the net-backed modules too; see the
+[note on `net` and TinyGo](../technical/tinygo.md#net-on-tinygo-is-a-build-choice-not-a-hard-limit).
+Read "needs the default `jennifer` binary" throughout these docs as "needs a
+build that includes a network stack" (the stock `jennifer` has one).
 
 | Module                | Import with            | TinyGo | Contents                                                                                                                                    |
 | --------------------- | ---------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |

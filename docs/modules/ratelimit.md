@@ -8,6 +8,12 @@ armed with the window's expiry when it is first created, so it resets on its own
 when the window ends - there is nothing to reap. Because it builds on `memcache`
 (which uses `net`), this module needs the default **`jennifer`** binary.
 
+> **On `jennifer-tiny`:** "needs the default `jennifer` binary" refers to the
+> **stock** tiny build, which ships without a network driver - not a TinyGo
+> limitation. A `jennifer-tiny` rebuilt with a network stack runs this module
+> too; see the
+> [note on `net` and TinyGo](../technical/tinygo.md#net-on-tinygo-is-a-build-choice-not-a-hard-limit).
+
 ```jennifer
 import "ratelimit.j" as ratelimit;
 import "memcache.j" as memcache;

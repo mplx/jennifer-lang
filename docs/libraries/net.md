@@ -303,23 +303,32 @@ try {
 
 ## TinyGo compatibility
 
-The `jennifer-tiny` binary (TinyGo build) **does not include a
-network stack**. TinyGo 0.41 compiles most of `net.Dial` /
-`net.Listen` but requires a netdev driver to be registered at
-runtime; UDP (`net.ListenPacket`) isn't part of TinyGo's surface
-at all. Rather than let each call fail with cryptic runtime
-errors from deep inside Go's `net` package, every `net` entry
-point on `jennifer-tiny` returns a friendly Jennifer-level
-error:
+The **stock** `jennifer-tiny` binary ships **without a network
+stack**, so every `net` entry point on it returns a friendly
+Jennifer-level error rather than failing cryptically deep inside
+Go's `net` package:
 
 ```
 net.connect: `jennifer-tiny` (TinyGo build) does not include a
 network stack; use the default `jennifer` binary for network I/O
 ```
 
-Same pattern as `os.run` / `os.spawn` on TinyGo. If
-you're writing network code, use the default `jennifer`. See
-[../technical/tinygo.md](../technical/tinygo.md).
+This is a property of our **stock tiny build**, not a hard TinyGo
+limitation. TinyGo compiles most of `net.Dial` / `net.Listen`; what
+a default target lacks is a **netdev driver** registered at runtime
+(the network device the `net` package dials through), and our stock
+build registers none - so we compile the `tinygo`-tagged stub. A
+`jennifer-tiny` **rebuilt with a network stack** - a registered
+netdev driver / a net-capable target, with the `tinygo` build tag
+dropped on `net` - restores `net` and every net-backed module. So
+read "use the default `jennifer` binary" as "use a build that
+includes a network stack"; the stock `jennifer` has one, the stock
+`jennifer-tiny` does not. (UDP is the thinner spot:
+`net.ListenPacket` isn't part of TinyGo's surface today, so a
+rebuild covers TCP / DNS more readily than UDP.)
+
+Same pattern as `os.run` / `os.spawn` on TinyGo. See
+[../technical/tinygo.md](../technical/tinygo.md#net-on-tinygo-is-a-build-choice-not-a-hard-limit).
 
 ## What's not in v1
 

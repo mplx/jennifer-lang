@@ -9,6 +9,12 @@ is the de-facto Resque standard, a job Jennifer enqueues can be processed by a
 Ruby-resque / php-resque worker and vice versa. Built on `redis` (which uses
 `net`), so this module needs the default **`jennifer`** binary.
 
+> **On `jennifer-tiny`:** "needs the default `jennifer` binary" refers to the
+> **stock** tiny build, which ships without a network driver - not a TinyGo
+> limitation. A `jennifer-tiny` rebuilt with a network stack runs this module
+> too; see the
+> [note on `net` and TinyGo](../technical/tinygo.md#net-on-tinygo-is-a-build-choice-not-a-hard-limit).
+
 ```jennifer
 import "resque.j" as resque;
 import "redis.j" as redis;

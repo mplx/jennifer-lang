@@ -19,6 +19,11 @@ entry links to [../technical/tinygo.md](../technical/tinygo.md) for
 the restriction list; the default `jennifer` binary (standard Go)
 always supports the full surface.
 
+`net`'s "stubs only" is about the **stock** `jennifer-tiny` build,
+which ships no network driver - not a TinyGo limitation. A tiny build
+rebuilt with a network stack runs `net` too; see the
+[note on `net` and TinyGo](../technical/tinygo.md#net-on-tinygo-is-a-build-choice-not-a-hard-limit).
+
 | Library                   | Enable with     | TinyGo                                                  | Contents                                                                                                                                                                       |
 | ------------------------- | --------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [`convert`](convert.md)   | `use convert;`  | full                                                    | `convert.toInt`, `convert.toFloat`, `convert.toString`, `convert.toBool`, `convert.typeOf` - explicit casts; canonical-only `toBool` conversion                                |
@@ -111,9 +116,10 @@ large ones. The organizing principle, captured for future extensions:
   purpose; non-blocking use composes with `spawn`.
 - Network I/O (TCP + UDP sockets, DNS lookups) -> `net`.
   Blocking calls, same spawn-composition story as `fs`. The
-  constrained `jennifer-tiny` binary returns friendly "use the
-  default `jennifer`" errors; the network stack lives only in
-  the standard-Go binary.
+  **stock** `jennifer-tiny` binary returns friendly "use the
+  default `jennifer`" errors because it ships no network driver -
+  a build choice, not a TinyGo limitation; a tiny build with a
+  network stack runs `net` too.
 - Regular expressions over `string` -> `regex`. RE2
   syntax (Go's `regexp` engine); implicit LRU cache. Pure
   string processing, no other library dependencies.

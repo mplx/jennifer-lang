@@ -8,6 +8,12 @@ messages - not the full protocol. Retrieved messages come back as strings for
 the [`mime`](mime.md) module to parse. Because it uses `net`, this module needs
 the default **`jennifer`** binary.
 
+> **On `jennifer-tiny`:** "needs the default `jennifer` binary" refers to the
+> **stock** tiny build, which ships without a network driver - not a TinyGo
+> limitation. A `jennifer-tiny` rebuilt with a network stack runs this module
+> too; see the
+> [note on `net` and TinyGo](../technical/tinygo.md#net-on-tinygo-is-a-build-choice-not-a-hard-limit).
+
 ```jennifer
 import "imap.j" as imap;
 import "mime.j" as mime;

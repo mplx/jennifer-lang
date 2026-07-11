@@ -5,8 +5,14 @@ line-oriented command/response dialogue of RFC 5321 over the `net` system
 library, with plaintext / implicit-TLS / STARTTLS transport and SASL `AUTH
 PLAIN`. The message body is any string, typically built by the
 [`mime`](mime.md) module. Because it uses `net`, this module needs the
-default **`jennifer`** binary - `jennifer-tiny` has no network stack, and a
-send there raises a friendly error.
+default **`jennifer`** binary; on the stock `jennifer-tiny` a send raises a
+friendly error.
+
+> **On `jennifer-tiny`:** "needs the default `jennifer` binary" refers to the
+> **stock** tiny build, which ships without a network driver - not a TinyGo
+> limitation. A `jennifer-tiny` rebuilt with a network stack runs this module
+> too; see the
+> [note on `net` and TinyGo](../technical/tinygo.md#net-on-tinygo-is-a-build-choice-not-a-hard-limit).
 
 ```jennifer
 import "smtp.j" as smtp;

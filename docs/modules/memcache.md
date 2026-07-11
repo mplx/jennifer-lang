@@ -9,6 +9,12 @@ server evicts under memory pressure - so it suits sessions, rate limits, and
 derived data, not a system of record. Because it uses `net`, this module needs
 the default **`jennifer`** binary.
 
+> **On `jennifer-tiny`:** "needs the default `jennifer` binary" refers to the
+> **stock** tiny build, which ships without a network driver - not a TinyGo
+> limitation. A `jennifer-tiny` rebuilt with a network stack runs this module
+> too; see the
+> [note on `net` and TinyGo](../technical/tinygo.md#net-on-tinygo-is-a-build-choice-not-a-hard-limit).
+
 ```jennifer
 import "memcache.j" as memcache;
 
