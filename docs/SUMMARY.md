@@ -56,6 +56,7 @@
 - [`markdown`](modules/markdown.md)
 - [`mime`](modules/mime.md)
 - [`semver`](modules/semver.md)
+- [`smtp`](modules/smtp.md)
 
 # Technical reference
 

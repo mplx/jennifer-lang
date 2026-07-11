@@ -41,8 +41,8 @@ optional - without it the module is addressed by its file stem
 
 The **TinyGo** column reports whether the module runs on the constrained
 `jennifer-tiny` binary. A module is only as portable as the libraries it
-`use`s; every reference module below is pure Jennifer over TinyGo-clean
-libraries, so all run on either binary.
+`use`s: the pure-text modules run on either binary, while `smtp` `use`s `net`
+(no TinyGo network stack), so it needs the default `jennifer`.
 
 | Module                | Import with            | TinyGo | Contents                                                                                                                                    |
 | --------------------- | ---------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -52,6 +52,7 @@ libraries, so all run on either binary.
 | [`markdown`](markdown.md) | `import "markdown.j";` | full | render a small CommonMark subset (headings, emphasis, links, lists, code, GFM tables) to HTML (through `htmlwriter`) and styled terminal text (through `ansi`) with `toHtml` / `toAnsi`, plus authoring helpers (`header` / `style` / `link` / `bullets` / `numbered` / `codeBlock` / `table`) that build Markdown, and `tablePretty` to align table source. |
 | [`mime`](mime.md)     | `import "mime.j";`     | full   | build and parse MIME messages (RFC 5322 headers, multipart, quoted-printable / base64 transfer encodings). `text` / `attachment` / `multipart` / `encode` / `parse`; the foundation the mail clients build on. |
 | [`semver`](semver.md) | `import "semver.j";`   | full   | strict Semantic Versioning 2.0.0. `parse` / `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` / `isPrerelease`, `inc*`, `sort`; struct `Version`. |
+| [`smtp`](smtp.md)     | `import "smtp.j";`     | no (net) | send mail (SMTP client) over `net`: plaintext / STARTTLS / implicit TLS, `AUTH PLAIN`, `MAIL FROM` / `RCPT TO` / `DATA`. `smtp.send(opts, from, recipients, message)`; message built by `mime`. |
 
 ## Writing your own
 

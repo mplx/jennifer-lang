@@ -60,6 +60,14 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   uses the canonical SemVer regex, precedence and sort are hand-written.
   See [`examples/modules/semver_demo.j`](../examples/modules/semver_demo.j).
 
+- **`smtp.j`** - send mail (SMTP client) over `net`: `smtp.send(opts, from,
+  recipients, message)` runs the RFC 5321 dialogue (EHLO, optional STARTTLS /
+  implicit TLS, `AUTH PLAIN`, `MAIL FROM` / `RCPT TO` / `DATA`), with the
+  message built by `mime`. Throws a catchable `Error` (kind `"smtp"`) on
+  rejection. Uses `net`, so the **default `jennifer` binary only**
+  (`jennifer-tiny` has no network stack). See
+  [`examples/modules/smtp_demo.j`](../examples/modules/smtp_demo.j).
+
 Reference docs for each module live under
 [`docs/modules/`](../docs/modules/index.md). A new module also earns a bullet
 in the **Module library** section of [`JENNIFER.md`](../JENNIFER.md) so an AI

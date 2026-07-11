@@ -295,6 +295,11 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
 - **`semver`** - strict SemVer 2.0.0 over a `Version` struct: `semver.parse(s)` /
   `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` /
   `isPrerelease`, `incMajor` / `incMinor` / `incPatch`, `sort`.
+- **`smtp`** - send mail (SMTP client) over `net`: `smtp.send(opts, from,
+  recipients, message)` runs the dialogue (EHLO, optional STARTTLS / implicit
+  TLS via `smtp.Options.security`, `AUTH PLAIN`, `MAIL FROM` / `RCPT TO` /
+  `DATA`), with `message` built by `mime`. Throws `Error` (kind `"smtp"`) on
+  rejection. Uses `net`, so **default `jennifer` binary only**.
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).

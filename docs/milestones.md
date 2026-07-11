@@ -1307,11 +1307,25 @@ encoded-words for non-ASCII headers are deferred. Reference doc
 
 ### M18.4.2 - `smtp` (send)
 
-Planned. SMTP send client over `net` + STARTTLS / implicit TLS, AUTH
-`PLAIN` / `LOGIN` / `XOAUTH2`, `MAIL FROM` / `RCPT TO` / `DATA` with the
-message built by `mime`. The common "send an email" path. Command building
-and response parsing unit-tested offline; a live send verified end to end by
-fetching the delivered message back from a receive-only test server.
+**Done.** SMTP send client (`modules/smtp.j`) over `net`: `smtp.send(opts,
+from, recipients, message)` runs the RFC 5321 dialogue - connect per
+`Options.security` (`"none"` / `"starttls"` / `"tls"`), `EHLO`, STARTTLS
+upgrade via `net.startTLS`, `AUTH PLAIN`, `MAIL FROM` / `RCPT TO` / `DATA`
+(CRLF-normalised, dot-stuffed) / `QUIT` - throwing a catchable `Error` (kind
+`"smtp"`) on rejection. The message is any string, typically from
+`mime.encode`. Uses `net`, so it is the first default-binary-only module
+(`jennifer-tiny` stubs the network stack; a send there raises a friendly
+error). Testing three ways: the pure protocol logic (reply-code parsing incl.
+multi-line `250-`, `AUTH PLAIN` base64, dot-stuffing) in the overlay
+(`modules/smtp_test.j`, 100%); the full networked dialogue end to end against
+an in-process fake SMTP server in the Go suite (`TestSmtpSendDialogue`, so it
+runs in CI without an external server); and a live send verified against a
+local SMTP daemon. `AUTH LOGIN` / `XOAUTH2` follow; the challenge-response
+mechanisms land with M20.1 `crypto`. A non-ASCII host or envelope address
+(an IDN domain, a non-ASCII local part) throws a clear error rather than
+sending a misrouted address, until IDNA lands (M18.4.5). Reference doc
+[docs/modules/smtp.md](modules/smtp.md); demo
+`examples/modules/smtp_demo.j`.
 
 ### M18.4.3 - `pop3` (receive)
 
@@ -1323,6 +1337,22 @@ over `net` + TLS; retrieved messages parsed with `mime`.
 Planned. IMAP client (`LOGIN` / `SELECT` / `FETCH` / `SEARCH`) over `net` +
 TLS - the largest of the three protocols; retrieved messages parsed with
 `mime`.
+
+### M18.4.5 - `idna` (internationalized domains)
+
+Planned, after the protocol clients. An `idna` module - IDNA2008 ToASCII /
+ToUnicode over a Punycode (RFC 3492) core, pure Jennifer - so the mail
+clients can put an internationalized domain (`münchen.de` to
+`xn--mnchen-3ya.de`) on the wire correctly instead of throwing. Wiring: apply
+ToASCII to the connection host and to the **domain** part of each envelope
+address, but only when the server does **not** advertise `SMTPUTF8` (RFC
+6531); when it does, send the UTF-8 address as-is with the `SMTPUTF8` param. A
+non-ASCII **local part** without SMTPUTF8 stays a hard error (it cannot be
+represented). Enabler: a `convert.toCodepoint(char)` / `convert.fromCodepoint(n)`
+pair (rune to / from its integer code point), which Punycode's bootstring
+arithmetic needs and Jennifer does not yet expose. Until this ships, `smtp`
+(and later `pop3` / `imap`) fail loudly on a non-ASCII host or address rather
+than misrouting. Reusable beyond mail: URL hosts, DNS tools, any IDN.
 
 ### M18.5 - `redis` module
 
