@@ -327,6 +327,16 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   (`kind` / `str` / `num` / `items`, walked like a `json.Value`) for any other
   command. `connect` does optional `AUTH` / `SELECT`; a `-ERR` reply throws
   `Error` (kind `"redis"`). **Default `jennifer` binary only** (`net`).
+- **`resque`** - background jobs on Redis, wire-compatible with Resque:
+  `resque.enqueue(session, queue, class, args)` schedules a job (JSON envelope
+  `{"class","args"}` onto `resque:queue:NAME`, queue registered in the
+  `resque:queues` set); `resque.reserve(session, queues)` -> `resque.Job`
+  (`queue` / `class` / `args`) pops the next job from the first non-empty queue
+  in priority order (empty `Job` when drained); plus `queueLength` / `queues` /
+  `size` / `fail`. A Ruby-resque / php-resque worker can process the jobs and
+  vice versa; the worker's `class`-dispatch loop is user code. `args` is a
+  `list of string` (Ruby positional). Built on `redis` + `json`. **Default
+  `jennifer` binary only** (`net`).
 - **`smtp`** - send mail (SMTP client) over `net`: `smtp.send(opts, from,
   recipients, message)` runs the dialogue (EHLO, optional STARTTLS / implicit
   TLS via `smtp.Options.security`, `AUTH PLAIN`, `MAIL FROM` / `RCPT TO` /

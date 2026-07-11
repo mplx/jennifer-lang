@@ -1470,13 +1470,122 @@ an opaque `redis.Reply` walked with accessors, the same pattern as
 `json.Value` ([M16.16](#m1616---jsonvalue)). No hard prerequisites (just
 `net`), so it can land ahead of `mail`.
 
+### M18.5.1 - `resque` module (background jobs)
+
+**Done.** A `resque` module (`modules/resque.j`) on top of `redis` + `json`:
+schedule background jobs onto named queues and process them from a worker later,
+Resque wire-compatible (queues are Redis lists at `resque:queue:NAME`, the
+registry a set at `resque:queues`, a job the JSON envelope
+`{"class":"WorkerName","args":[...]}`), so a Ruby-resque / php-resque worker can
+process Jennifer's jobs and vice versa. Surface over an existing `redis.Session`
+(no new transport): `enqueue(session, queue, class, args)` (SADD registry +
+RPUSH envelope), `reserve(session, queues)` -> `Job{queue, class, args}` (LPOP
+the first non-empty queue in the caller's priority order; empty `Job` when
+drained), `queueLength` / `queues` / `size`, `fail(session, job, message)`.
+`args` is a `list of string` (Ruby-resque positional; a non-string arg from
+another producer still reserves as its string form). The worker's `class`
+dispatch stays user code (a `.j` module can't call a method by dynamic name).
+Tested: the JSON envelope encode / decode and key builders in the overlay
+(`modules/resque_test.j`, 100%) and the full enqueue / reserve / introspect /
+fail path against an in-process RESP server in the Go suite (`TestResqueJobs`).
+Reference doc [docs/modules/resque.md](modules/resque.md); demo
+`examples/modules/resque_demo.j`. Deferred (kept out of the basics): blocking
+`BLPOP` reserve, a fully Resque-compatible failure record, delayed jobs,
+retries, and a configurable namespace.
+
+A `resque` module on top of `redis` ([M18.5](#m185---redis-module)) + `json`:
+schedule background jobs onto named queues now, process them from a worker
+later. Deliberately Resque **wire-compatible**, so a job Jennifer enqueues can
+be processed by a Ruby-resque / php-resque worker and vice versa - the layout
+is a small, stable de-facto standard:
+
+- **Enqueue** - `SADD resque:queues NAME` then `RPUSH resque:queue:NAME <json>`,
+  the JSON envelope `{"class":"WorkerName","args":[...]}`.
+- **Reserve** - `LPOP resque:queue:NAME` across the caller's queue list in
+  priority order (FIFO within a queue), returning a `Job{queue, class, args}`
+  (an empty `Job` when every queue is drained).
+- **Introspect** - `queueLength` / `queues` / `size`.
+- **Fail** - push a simplified failure record to the `failed` list.
+
+Surface (over an existing `redis.Session`, no new transport): `enqueue(session,
+queue, class, args)`, `reserve(session, queues)` -> `Job`, `queueLength` /
+`queues` / `size`, `fail(session, job, message)`. **args is a `list of
+string`** - it maps exactly to Ruby-resque's *positional* args
+(`perform(a, b)`); the php-resque single-hash convention (`args:[{...}]`, plus
+its `id` / `queue_time` envelope fields) is documented for that ecosystem.
+
+The **worker loop is user code**: `reserve`, then dispatch on `job.class`
+(a Jennifer module can't call a method by dynamic name - that is the
+interpreter's `testing.run` primitive, not exposed to `.j` - and keeping
+dispatch in user code keeps the module small). Two caveats are inherent to
+Resque, not added here: the `class` string is resolved on the *worker's* side
+(the runtime that pops the job must have a class by that name), and the default
+`resque:` key namespace must match on both ends.
+
+No new host dependency (pure `.j` over `redis` + `json`), so it fits right
+after `redis`. Deferred to a later pass (kept out of the basics): blocking
+`reserve` (`BLPOP` with a timeout, so a worker sleeps instead of poll-looping),
+a fully Resque-compatible `failed`-queue record (`failed_at` / `exception` /
+`backtrace` / `worker`), scheduled / delayed jobs, and retries. Discipline as
+usual: `modules/resque_test.j` overlay (JSON-envelope shape as pure helpers;
+the networked enqueue / reserve round-trip against the in-process RESP server
+in a Go test), `docs/modules/resque.md`, catalog + `SUMMARY` + `README` +
+`JENNIFER.md` entries, and `examples/modules/resque_demo.j`.
+
 ### M18.6 - `memcache` module
 
 A client for the `memcached` server's text protocol (`set` / `get` /
-`delete` / `incr` / `decr`; replies `STORED` / `VALUE ... END`) over
-`net`. Pure Jennifer, plaintext (memcached rarely uses TLS); values are
-`bytes` / `string`. Named `memcache` for the client / protocol; it talks
-to a `memcached` daemon.
+`delete` / `incr` / `decr`, plus `add` (store only if absent) and `touch`
+(re-arm expiry); replies `STORED` / `VALUE ... END`) over `net`. Every
+store carries an **expiration** (`exptime`, the per-key TTL memcached is
+built around). Pure Jennifer, plaintext (memcached rarely uses TLS);
+values are `bytes` / `string`. Named `memcache` for the client / protocol;
+it talks to a `memcached` daemon. Two reference modules build on it -
+[M18.6.1 `session`](#m1861---session-module-on-memcache) and
+[M18.6.2 `ratelimit`](#m1862---ratelimit-module-on-memcache) - and the
+`httpd` server ([M18.8](#m188---httpd-module)) uses both.
+
+#### M18.6.1 - `session` module (on `memcache`)
+
+A server-side session store on `memcache`, the canonical memcached use (it
+is what PHP's memcached session handler does). A session is a `map of string
+to string` held under a `sess:ID` key with a sliding TTL, so it expires on
+its own when idle - exactly what memcached's per-key `exptime` gives for
+free. Threads three existing pieces together the way `resque` threads
+`redis` + `json`: `memcache` (store + TTL), `uuid` (`generate("v4")` for the
+session ID), and `json` (encode the map as the stored value). Surface over
+an existing `memcache` connection: `create(mc, ttl) -> id` (mint an ID,
+store an empty session), `load(mc, id) -> map of string to string` (empty
+map when absent / expired), `save(mc, id, data, ttl)`, `touch(mc, id, ttl)`
+(re-arm the expiry without rewriting, via `memcache.touch`), and
+`destroy(mc, id)`. Volatile by nature (memcached evicts under pressure);
+that trade-off is documented. A PHP-session-compatible key / serialization
+layout - so a Jennifer app and a PHP app could share a session - is noted as
+a follow-on, not built here (PHP uses its own serialize format, not JSON).
+Prereq: M18.6 `memcache` (+ `uuid`, `json`, both shipped). Full discipline:
+`modules/session_test.j` overlay (the JSON round-trip and key building as
+pure helpers; the networked create / load / save / destroy round-trip
+against an in-process memcached fake in a Go test), `docs/modules/session.md`,
+catalog + `SUMMARY` + `README` + `JENNIFER.md` entries, and
+`examples/modules/session_demo.j`.
+
+#### M18.6.2 - `ratelimit` module (on `memcache`)
+
+A fixed-window rate limiter on `memcache` - the sharpest demonstration of
+memcached's distinctive strength, **atomic `incr` + TTL**. `allow` does
+`INCR key`; when the counter is newly 1 it arms the window expiry
+(`exptime` = the window), and the call denies once the count passes the
+limit; the key expires on its own at the window's end, so there is nothing
+to reap. Surface over an existing `memcache` connection: `allow(mc, key,
+limit, window) -> bool` and `remaining(mc, key, limit) -> int`. Small by
+design (its value is showing *why* one reaches for memcached over a plain
+map), entirely real (API throttling, login-attempt caps). A fixed window is
+the honest scope; sliding-window / token-bucket variants are a later add.
+Prereq: M18.6 `memcache`. Full discipline: `modules/ratelimit_test.j`
+overlay (the incr / window / deny logic against an in-process memcached fake
+in a Go test; pure helpers for the arithmetic), `docs/modules/ratelimit.md`,
+catalog + `SUMMARY` + `README` + `JENNIFER.md` entries, and
+`examples/modules/ratelimit_demo.j`.
 
 ### M18.7 - `http` module
 
@@ -1600,6 +1709,15 @@ where Jennifer becomes useful for serving content. Per-connection
 handlers run in `spawn` blocks (depends on **M16.0** concurrency) over the
 `net` TCP listener (**M16.2**); it can share HTTP request / response
 parsing with the M18.7 client. (Formerly the standalone M20.)
+
+It **uses both memcache-backed reference modules** to round out a real
+serving stack: [`session`](#m1861---session-module-on-memcache) for
+cookie-keyed server-side sessions (a `Set-Cookie` session ID whose data
+lives in `memcache`), and [`ratelimit`](#m1862---ratelimit-module-on-memcache)
+as request throttling (per-client-IP `allow` check, `429` on deny) - so the
+server demonstrates sessions and rate limiting end to end rather than
+leaving them as unused library shelfware. Both are optional wiring the
+handler opts into, not a hard `httpd` dependency.
 
 ### M18.9 - `toml` module
 
@@ -1787,6 +1905,173 @@ orphaned rather than silently dropped; nested `/* */` inside a body and a
 `docblock_test.j` overlay (100%), `docs/modules/docblock.md`, a
 `docs/modules/index.md` row, a `SUMMARY.md` entry, a runnable
 `examples/modules/docblock_demo.j`, and a `modules/README.md` entry.
+
+### M18.13 - `mqtt` module (+ `net.setDeadline`)
+
+An MQTT client (pub/sub messaging over TCP / TLS), as a `.j` module over
+`net` - the same "protocol clients are modules, `net` is the transport"
+line the other network clients (`redis`, `smtp`, `imap`, `resque`) already
+follow. MQTT is the most **binary** and most **asynchronous** protocol
+attempted in `.j`, but it stays expressible: packets are a 1-byte type, a
+varint remaining-length, then a length-prefixed payload, all built and
+parsed with Jennifer's bitwise operators (`& | ^ ~ << >>`, int-only) and
+`bytes` (`$b[] =` append, int-returning `$b[i]` reads) over
+`net.readBytes` / `net.writeBytes` - the same bit-arithmetic `idna`
+already does for Punycode. Two deliverables:
+
+**`net.setDeadline($conn, ms)` (the `net` enabler, ships first).** A read
+/ write deadline on a `net.Conn` (Go `SetDeadline`), already on the `net`
+roadmap. It is what makes MQTT's asynchronous **subscribe** path clean: a
+single-threaded poll-with-timeout loop (read a packet, or time out and
+send a keepalive PINGREQ when idle) instead of leaning on a `spawn`ed
+reader / pinger. Part of `net`'s `!tinygo` build (a friendly stub on
+`jennifer-tiny`, like the rest of `net`); a positioned error on a closed
+conn; a timed-out read is a distinguishable, catchable outcome, not a
+crash. Documented in [net.md](libraries/net.md) (retiring the "Timeouts /
+deadlines: compose with `spawn` for a first cut" deferral note).
+
+**`mqtt.j` (the module).** Basics-first, MQTT 3.1.1: `connect` (CONNECT /
+CONNACK, keepalive, optional `mqtts` via `net.connectTLS`), `publish`
+(QoS 0 - a synchronous build-and-write), `subscribe` + `poll` / `receive`
+(QoS 0, dispatch on topic in user code), `ping`, `disconnect`. A received
+message is a `Message { topic, payload }`; publish payloads are `bytes` /
+`string`. Deferred to a later pass (kept out of the basics): QoS 1/2
+handshakes (PUBACK / PUBREC / PUBREL / PUBCOMP with persistent packet-ID
+state), retained messages and the will, auto-reconnect / session
+resumption, and MQTT 5 properties. If full QoS 1/2 + high-throughput
+processing ever makes the tree-walker the bottleneck, a hand-rolled Go
+library (build-tag split like `net`, since there is no stdlib MQTT and the
+project avoids third-party deps) is the fallback - but the pub/sub basics
+belong in a module. Prereq: `net.setDeadline` (above). Discipline as
+usual: `modules/mqtt_test.j` overlay (packet encode / decode - the varint
+remaining-length, CONNECT / PUBLISH / SUBSCRIBE framing - as pure helpers;
+the networked connect / publish / subscribe round-trip against an
+in-process MQTT-broker fake in a Go test), `docs/modules/mqtt.md`, a
+catalog row, a `SUMMARY.md` entry, a `modules/README.md` entry, a
+`JENNIFER.md` bullet, and `examples/modules/mqtt_demo.j`.
+
+### M18.14 - `prometheus` module (metrics)
+
+A `prometheus` module in two halves with different prerequisites, so the
+first can land well before the second. Both are text / HTTP orchestration
+over existing capabilities - a module, like the other format and client
+modules.
+
+#### M18.14.1 - exposition (produce metrics)
+
+**No blockers - buildable now.** The Prometheus text exposition format is
+pure text (`# HELP name text`, `# TYPE name counter`, then
+`name{label="value"} value [timestamp]` sample lines), which a `.j` module
+renders directly. Deliberately **transport-agnostic**: the module builds a
+metric set and renders the string; how it reaches Prometheus is the
+caller's choice, and two of the three routes need nothing new:
+
+- **node_exporter textfile collector** - render and write `*.prom` files to
+  a directory (via `fs`) for node_exporter to pick up. The "provide data
+  for nodes" path, buildable today.
+- **Pushgateway** - POST the rendered text (needs the `http` client,
+  M18.7).
+- **A `/metrics` scrape endpoint** - serve the rendered text from an HTTP
+  handler (needs `httpd`, M18.8). The module stays server-agnostic.
+
+Surface: a `Metric { name, help, type, samples }` and a
+`Sample { labels as map of string to string, value as float }`; builders
+`counter(name, help)` / `gauge(name, help)`, `observe(metric, labels,
+value)` (returns a new metric, value-semantic), and `render(metrics ->
+list of Metric) -> string`. Strict where the format is strict: a metric
+name must match `[a-zA-Z_:][a-zA-Z0-9_:]*`, label values escape `\`, `"`,
+and newline, and `# HELP` text escapes `\` and newline. Scope: `counter`
+and `gauge` first (the two that cover most custom metrics); `histogram`
+and `summary` (buckets / quantiles, the `_bucket` / `_sum` / `_count`
+child series) are a documented follow-on. Pure `.j` over `strings` /
+`maps` / `convert`; TinyGo-clean. Prereq: none.
+
+#### M18.14.2 - retrieval (query metrics)
+
+A read client for Prometheus's HTTP query API: `query(base, promql)`
+(instant, `/api/v1/query`) and `queryRange(base, promql, start, end, step)`
+(`/api/v1/query_range`), returning the parsed result set (`resultType` plus
+`metric` label maps and `value` / `values` samples). HTTP GET + JSON parse,
+so it is built on the `http` module (M18.7) + `json` - it cannot land
+before `http`. Prereq: M18.7 `http`.
+
+Each sub-milestone ships the usual discipline: a `*_test.j` overlay (the
+exposition renderer's format / escaping as pure helpers; the query client's
+JSON-result parsing against a canned response, with the networked path in a
+Go test once `http` exists), `docs/modules/prometheus.md`, a catalog row, a
+`SUMMARY.md` entry, a `modules/README.md` entry, a `JENNIFER.md` bullet, and
+a runnable `examples/modules/prometheus_demo.j` (textfile-collector output
+for .1).
+
+### M18.15 - `label` module (label printing)
+
+Print to industrial label printers. **One** module - one way to describe and
+print a label (design stance 1) - with the printer **language as a
+selectable backend**, not a module per language. A device-independent
+`Label` is built once, then rendered / printed in a chosen dialect; adding a
+dialect is a new encoder plus a selector string, with no change to the build
+API, so the module extends to further printer languages later without
+fragmenting the surface.
+
+A deliberate **three-stage pipeline** - build, render, emit - each stage a
+plain value handed to the next, so any stage can be swapped independently:
+
+**Stage 1 - build (device-independent).** A `Label` is a physical
+description in **millimetres** (printer-independent), not device dots:
+`label.new(width, height)` then value-semantic field builders `text(label,
+x, y, opts, content)`, `barcode(label, x, y, type, data)` (Code 128 / EAN /
+QR - the main reason these printers exist), `box(label, x, y, w, h,
+thickness)`, and `quantity(label, n)`. Each returns a new `Label` (value
+semantics, like the other builders).
+
+**Stage 2 - render (to the target language).** `render(label, device) ->
+string` turns the label into the command stream for a chosen dialect,
+returning it as a plain value. A `Device { dialect, dpi }` names the dialect
+(`"zpl"` / `"cab"`) and, for raster languages, the printer `dpi` used to
+convert millimetres to dots (cab JScript is millimetre-native and ignores
+it); `dpi` and any future device settings (darkness, speed) live here, not
+mixed with a destination. Render is pure text - TinyGo-clean, no `net`.
+
+**Stage 3 - emit (transport-agnostic).** The rendered string is yours to
+send anywhere: over `net` to the raw print port (`:9100`, JetDirect / RAW),
+written to a file or a USB device node via `fs`, stored in a database, or
+dumped to stdout for inspection. The module ships only the thin common-case
+convenience `send(host, port, rendered)` (the `net` `:9100` path, so it is
+the sole part that needs `net`); every other destination is just the caller
+using the string. Keeping emit out of render is what makes the same label
+printable, saveable, and testable without a printer attached.
+
+**Dialects.**
+
+- **`"zpl"` (Zebra Programming Language) - the first backend, buildable
+  now.** ZPL II is a public, stable, widely-used standard (the dominant
+  label language), and cab Squix printers support it too - so this one
+  dialect already drives cab hardware as well as Zebra and the rest.
+  Encodes the caret / tilde stream - `^XA` start, `^FO` origin, `^A0` font,
+  `^FD`/`^FS` data, `^BY`/`^BC` (and `^BQ` for QR) barcodes, `^GB` box,
+  `^PQ` quantity, `^XZ` end - converting millimetres to dots via the
+  target dpi. From the public ZPL II reference.
+- **`"cab"` (cab JScript) - the second backend (M18.15.1).** The native
+  language of cab printers (cab is a German industrial-printer maker; the
+  user runs cab Squix). The dialect string is `"cab"`, not `"jscript"`
+  (which reads as JavaScript); it emits cab's JScript. From cab's *JScript
+  Programming Manual*: millimetre units, `J` new label, `S` size, `T` text,
+  `B` barcode, `G` graphics, `A` print (quantity). Lands as a second encoder
+  once the build API and dialect dispatch are proven on ZPL - no build-API
+  change.
+
+Out of scope: Brother's ESC/P is raster / bitmap rather than a field
+command language, so it does not fit this vector-field model and is not a
+planned dialect.
+
+Discipline: a `modules/label_test.j` overlay (each dialect's exact command
+output and the mm-to-dots conversion / escaping as pure helpers; the `:9100`
+send captured by an in-process fake printer in a Go test),
+`docs/modules/label.md`, a catalog row, a `SUMMARY.md` entry, a
+`modules/README.md` entry, a `JENNIFER.md` bullet, and a runnable
+`examples/modules/label_demo.j` (rendering the same label in both dialects).
+Prereq: none for the module + ZPL dialect (pure `.j`; `print` uses `net`);
+the cab dialect (M18.15.1) is a follow-on encoder.
 
 ## M19 - cross-cutting tooling
 

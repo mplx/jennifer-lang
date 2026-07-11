@@ -108,6 +108,17 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   `SELECT`; a `-ERR` reply throws `Error` (kind `"redis"`). Uses `net`, so the
   **default `jennifer` binary only**. See
   [`examples/modules/redis_demo.j`](../examples/modules/redis_demo.j).
+- **`resque.j`** - background jobs on Redis, wire-compatible with Resque:
+  schedule work onto named queues and process it from a worker later, over the
+  `redis` module. `resque.enqueue(session, queue, class, args)` registers the
+  queue and pushes the JSON envelope `{"class","args"}` onto `resque:queue:NAME`;
+  `resque.reserve(session, queues)` pops the next `Job` (`queue` / `class` /
+  `args`) from the first non-empty queue in priority order; plus `queueLength` /
+  `queues` / `size` / `fail`. The Redis layout is the de-facto Resque standard,
+  so a Ruby-resque / php-resque worker can process Jennifer's jobs and vice
+  versa; the worker's class dispatch is your code. Built on `redis` + `json`, so
+  the **default `jennifer` binary only**. See
+  [`examples/modules/resque_demo.j`](../examples/modules/resque_demo.j).
 
 Reference docs for each module live under
 [`docs/modules/`](../docs/modules/index.md). A new module also earns a bullet
