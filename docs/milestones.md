@@ -1715,6 +1715,25 @@ docs use placeholders.
 
 ### M18.7.2 - `rest` module
 
+**Done.** A `rest` module (`modules/rest.j`): an ergonomic REST layer over
+`http` + `json`, pure `.j` composition (no host capability of its own). A
+value-semantic `Client{baseUrl, headers}` plus verbs `get` / `delete`
+(with a query map) and `post` / `put` / `patch` (raw body), each returning a
+`rest.Response{status, headers, body}`; JSON wrappers `getJson` (-> `json.Value`)
+/ `postJson` / `putJson` / `patchJson` encode / decode through `json` and set
+`Content-Type`. Base-URL joining collapses to one slash (no double slashes),
+query strings are percent-encoded from a map, and auth is a header -
+`bearer(token)` / `basic(user, pass)` (base64 via `encoding`) / `withHeader`.
+Stateless / declarations-only: the caller threads the `Client`, auth in its
+headers; a stateful cookie-jar session stays deferred to `http` (a module holds
+no mutable handle). A 4xx / 5xx is a `Response` value, not a crash (`getJson`
+does throw on a non-JSON body). Tested: URL joining, query building / encoding,
+and Bearer / Basic auth in the overlay (`modules/rest_test.j`, 100%); a full
+CRUD round-trip (`postJson` create -> `getJson` read -> `putJson` / `patchJson`
+update -> `delete` -> 404, a query-string GET, and 401 on a bad token) against
+an in-process REST server in the Go suite (`TestRestCrud`). Reference doc
+[docs/modules/rest.md](modules/rest.md); demo `examples/modules/rest_demo.j`.
+
 The ergonomic REST layer over the M18.7 `http` client - a genuine
 library-sized `.j` module (a step up from `gotify`'s one endpoint), and the
 proof that the module system carries a real utility written in the language

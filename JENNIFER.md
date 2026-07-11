@@ -294,6 +294,13 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `http.Response` (a bad token is a `4xx` value, not a crash). Value-semantic
   `gotify.Config{url, token}`, caller-supplied. **Default `jennifer` binary
   only** (`net`).
+- **`rest`** - an ergonomic REST layer over `http` + `json`: a value-semantic
+  `rest.Client{baseUrl, headers}` and `rest.get(c, path, query)` / `post(c,
+  path, contentType, body)` / `put` / `patch` / `delete` -> `rest.Response`
+  (`status` / `headers` / `body`), plus `getJson` (-> `json.Value`) / `postJson`
+  / `putJson` / `patchJson`. Base-URL joining, percent-encoded query strings,
+  `rest.bearer` / `rest.basic` / `rest.withHeader` for auth. A 4xx/5xx is a
+  `Response` value, not a crash. **Default `jennifer` binary only** (`net`).
 - **`markdown`** - render a small CommonMark subset (headings, emphasis, links,
   lists, code, GFM tables) to HTML (`markdown.toHtml`, through `htmlwriter`) and
   styled terminal text (`toAnsi`, through `ansi`); author Markdown with

@@ -52,6 +52,15 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   those (never committed). Uses `net` (via `http`), so the **default `jennifer`
   binary only**. See
   [`examples/modules/gotify_demo.j`](../examples/modules/gotify_demo.j).
+- **`rest.j`** - an ergonomic REST layer over `http` + `json`. A value-semantic
+  `rest.Client` (base URL + default headers) and verbs `rest.get` / `post` /
+  `put` / `patch` / `delete` returning a `rest.Response` (`status`, `headers`,
+  `body`), plus JSON wrappers `rest.getJson` (-> `json.Value`) / `postJson` /
+  `putJson` / `patchJson`. Base-URL joining (no double slashes), percent-encoded
+  query strings, and `rest.bearer` / `rest.basic` / `rest.withHeader` for auth.
+  A 4xx / 5xx is a `Response` value, not a crash. Pure composition; uses `net`
+  (via `http`), so the **default `jennifer` binary only**. See
+  [`examples/modules/rest_demo.j`](../examples/modules/rest_demo.j).
 - **`markdown.j`** - render a small CommonMark subset (headings, bold /
   italic, inline code, links, fenced code blocks, ordered / unordered lists)
   to HTML and to styled terminal text. `markdown.toHtml(md)` renders through

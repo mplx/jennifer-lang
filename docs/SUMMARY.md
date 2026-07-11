@@ -64,6 +64,7 @@
 - [`ratelimit`](modules/ratelimit.md)
 - [`redis`](modules/redis.md)
 - [`resque`](modules/resque.md)
+- [`rest`](modules/rest.md)
 - [`sasl`](modules/sasl.md)
 - [`semver`](modules/semver.md)
 - [`session`](modules/session.md)
