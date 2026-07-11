@@ -45,6 +45,60 @@ layers (compile default, `JENNIFER_SYSMODDIR`) behind it.
   `jennifer-tiny` build stubs them); each has its own page below.
 
 
+## Shell pipelines and aliases
+
+Because `jennifer run -` reads a program from stdin (the `run -` form
+above), Jennifer drops into a shell pipeline like any other filter. One
+caveat sets the shape: stdin can carry *either* the program *or* the data,
+not both. So a one-liner alias pipes the program in and passes the data as
+an argument (read back through `os.ARGS`); a reusable filter keeps the
+program in a file and leaves stdin free for the data.
+
+**Inline, program piped via `run -`.** A `json-pretty` that reformats a
+single JSON argument. The program arrives on stdin, so the JSON is
+`os.ARGS[1]` (`ARGS[0]` is the `-`):
+
+```sh
+alias json-pretty="printf '%s' 'use json; use os; use io; io.printf(\"%s\\n\", json.encodePretty(json.decode(os.ARGS[1])));' | jennifer run -"
+
+json-pretty '{"b":2,"a":1}'
+# {
+#   "b": 2,
+#   "a": 1
+# }
+```
+
+Use `printf '%s'` rather than `echo` to pass the program verbatim, so the
+`\n` reaches Jennifer as a two-character escape instead of being expanded
+by the shell.
+
+**Reusable filter, data on stdin.** For a true pipe (`... | json-pretty`,
+`json-pretty < file.json`) keep the program in a file and let stdin carry
+the data. Save this as, say, `~/.local/share/jennifer/json-pretty.j`:
+
+```jennifer
+use json;
+use io;
+
+def src as string init "";
+while (not io.eof()) {
+    $src = $src + io.readLine() + "\n";
+}
+io.printf("%s\n", json.encodePretty(json.decode($src)));
+```
+
+```sh
+alias json-pretty='jennifer run ~/.local/share/jennifer/json-pretty.j'
+
+echo '{"b":2,"a":1}' | json-pretty
+curl -s https://api.example.com/thing | json-pretty
+```
+
+The same shape extends to any decode / re-encode pair: swap `json` for
+`xml` once that library lands ([M20.2](../milestones.md#m202---xml)) and the
+file becomes a `pretty-xml`.
+
+
 ## Subcommand reference
 
 Each subcommand has its own page:

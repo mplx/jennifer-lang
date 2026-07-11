@@ -36,6 +36,38 @@ One caveat: GitHub's Linguist assigns the `.j` extension to Objective-J, so
 GitHub's web UI will not highlight Jennifer source as Jennifer. That is a
 GitHub-side limitation; local editors and self-hosted sites are unaffected.
 
+## Jennifer as a shell filter
+
+`jennifer run -` reads a program from stdin, so Jennifer slots into a pipe
+like any other filter. A handy one is a `json-pretty` that reformats JSON
+flowing through it. Save the program to a file (say
+`~/.local/share/jennifer/json-pretty.j`):
+
+```jennifer
+use json;
+use io;
+
+def src as string init "";
+while (not io.eof()) {
+    $src = $src + io.readLine() + "\n";
+}
+io.printf("%s\n", json.encodePretty(json.decode($src)));
+```
+
+then alias it:
+
+```sh
+alias json-pretty='jennifer run ~/.local/share/jennifer/json-pretty.j'
+
+echo '{"b":2,"a":1}' | json-pretty
+curl -s https://api.example.com/thing | json-pretty
+```
+
+Swap `json` for any other decode / re-encode pair to get, for example, a
+`pretty-xml`. A no-file variant that pipes the program itself through
+`jennifer run -` is in the
+[CLI reference](../technical/cli.md#shell-pipelines-and-aliases).
+
 ## AI-assisted coding with `JENNIFER.md`
 
 Jennifer is new and small, so a general-purpose AI assistant has no built-in

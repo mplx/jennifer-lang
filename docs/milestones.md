@@ -1189,7 +1189,23 @@ order.
 
 Simple, useful early.
 
-### M18.2 - `markdown` module
+### M18.2 - `htmlwriter` module
+
+An HTML builder / serializer: assemble an element tree and render it to a
+correctly-escaped HTML5 string. Placed ahead of `markdown` because that
+module's Markdown-to-HTML path renders through it, and it is the shared
+output layer every HTML-emitting consumer reuses - a documentation
+generator over parsed docblocks, a future `httpd` view layer. Pure `.j`
+string orchestration: element construction, attribute quoting, the
+`&` / `<` / `>` / `"` entity escapes, and the void-element set (no closing
+tag for `br` / `img` / ...). A *writer*, not a parser: it has no dependency
+on the system `xml` library (M20.2, which parses) - serialization is a
+handful of string operations the interpreter handles comfortably at
+document scale. Named `htmlwriter` (not `html`) to keep the scope in the
+name and leave room for a separate HTML *parser* later, which would be the
+one to lean on `xml`.
+
+### M18.3 - `markdown` module
 
 A lightweight `.j` renderer: Markdown to HTML, and to ANSI for terminal
 output (reusing the `ansi` module from M17.5). Line-oriented text
@@ -1198,7 +1214,7 @@ CommonMark subset (headings, emphasis, links, lists, code spans / blocks)
 rather than the full spec. Documents are small, so per-line interpreter
 overhead is a non-issue.
 
-### M18.3 - `mail` module
+### M18.4 - `mail` module
 
 SMTP / IMAP / POP3 clients plus MIME (RFC 5322 headers, multipart, 7bit /
 8bit / quoted-printable / base64 transfer encodings). **Pure Jennifer**:
@@ -1229,7 +1245,7 @@ date formatting.
   LDAP client (M24+) reuses. SASL / SCRAM is a *consumer* of crypto
   primitives, never part of M20.1 itself.
 
-### M18.4 - `redis` module
+### M18.5 - `redis` module
 
 A Redis client over `net`. RESP2 framing (`+OK`, `$len`, `*count`,
 `:int`, `-ERR`) parses cleanly in `.j`; commands go out as RESP arrays.
@@ -1242,7 +1258,7 @@ an opaque `redis.Reply` walked with accessors, the same pattern as
 `json.Value` ([M16.16](#m1616---jsonvalue)). No hard prerequisites (just
 `net`), so it can land ahead of `mail`.
 
-### M18.5 - `memcache` module
+### M18.6 - `memcache` module
 
 A client for the `memcached` server's text protocol (`set` / `get` /
 `delete` / `incr` / `decr`; replies `STORED` / `VALUE ... END`) over
@@ -1250,15 +1266,15 @@ A client for the `memcached` server's text protocol (`set` / `get` /
 `bytes` / `string`. Named `memcache` for the client / protocol; it talks
 to a `memcached` daemon.
 
-### M18.6 - `http` module
+### M18.7 - `http` module
 
 A client over `net`. HTTPS needs net TLS ([M16.14](#m1614---net-tls)).
 Groups with the `httpd` server below; the two can share HTTP request /
 response parsing.
 
-### M18.6.1 - `gotify` module on top of `http` module
+### M18.7.1 - `gotify` module on top of `http` module
 
-A tiny real-world module built on the M18.6 `http` client: push a
+A tiny real-world module built on the M18.7 `http` client: push a
 notification to a [Gotify](https://gotify.net) server. It is the second
 reference module (after M17.5 `ansi`), and the first that crosses the
 module boundary into a *network* dependency - small enough to read in one
@@ -1278,9 +1294,9 @@ sitting, and the headline example that makes the http client tangible.
   structs. Usage: `def g as gotify.Config init gotify.Config{ url: $url,
   token: $tok }; gotify.push($g, "Title", "Body", 5);`.
 - **Built on `http.post`, not hand-rolled.** The module is ~15 lines
-  because M18.6 owns the HTTP framing, TLS (HTTPS via M16.14), and form
+  because M18.7 owns the HTTP framing, TLS (HTTPS via M16.14), and form
   encoding; a version predating the http client would hand-roll HTTP/1.1
-  over `net.connectTLS` and be thrown away when M18.6 landed, so it is
+  over `net.connectTLS` and be thrown away when M18.7 landed, so it is
   deliberately sequenced after it. Ships as `modules/gotify.j`, resolved
   through the module search path like any other module.
 
@@ -1291,9 +1307,9 @@ the message appears in the server's feed; a bad token surfaces the server's
 and never committed - the example reads them from the environment and the
 docs use placeholders.
 
-### M18.6.2 - `rest` module
+### M18.7.2 - `rest` module
 
-The ergonomic REST layer over the M18.6 `http` client - a genuine
+The ergonomic REST layer over the M18.7 `http` client - a genuine
 library-sized `.j` module (a step up from `gotify`'s one endpoint), and the
 proof that the module system carries a real utility written in the language
 itself. It is a **module, not a system library**, because it needs no host
@@ -1333,16 +1349,16 @@ returns the expected statuses and decoded bodies; a 4xx / 5xx is reported
 as a `Response` value (status inspectable), not a crash; base-URL joining
 and query params compose without double slashes.
 
-### M18.7 - `httpd` module
+### M18.8 - `httpd` module
 
 A pure-Jennifer HTTP server atop `net`, shipped as a module (same shape
 as the other M18 modules), not baked into the interpreter - the point
 where Jennifer becomes useful for serving content. Per-connection
 handlers run in `spawn` blocks (depends on **M16.0** concurrency) over the
 `net` TCP listener (**M16.2**); it can share HTTP request / response
-parsing with the M18.6 client. (Formerly the standalone M20.)
+parsing with the M18.7 client. (Formerly the standalone M20.)
 
-### M18.8 - `toml` module
+### M18.9 - `toml` module
 
 A `.j` module: TOML's regular, line / section-oriented grammar
 (`[table]`, `key = value`) maps cleanly to `map` / `list` / `time.Time` -
@@ -1352,7 +1368,7 @@ strings, inline tables, arrays of tables. (`.ini` is a deferred tiny
 cousin only if demand surfaces - no real standard, ambiguous quoting /
 typing.)
 
-### M18.9 - `flatdb` module
+### M18.10 - `flatdb` module
 
 A file-backed JSON document store as a `.j` module - the "embed a small
 store" need, built from parts that already exist: `json`
@@ -1382,7 +1398,7 @@ one mistakes it for OLTP.
   the rename is atomic, but flush-to-disk is OS-buffered unless `fs` later
   grows an `fsync` verb. So: crash-atomic snapshotting of small data, not a
   transactional engine. Real databases are a different milestone track -
-  *clients* over `net` (`redis` M18.4; `postgres` / `mysql` would be wire
+  *clients* over `net` (`redis` M18.5; `postgres` / `mysql` would be wire
   protocols, no CGo), never a homegrown ACID engine.
 - **First use case: a benchmark database.** `examples/benchmark.j
   --format json` emits one self-describing JSON record per run (schema,
@@ -1407,7 +1423,7 @@ overselling "database."
 rename) leaves the original intact; the docs state plainly it is not
 transactional.
 
-### M18.10 - `gpio` module
+### M18.11 - `gpio` module
 
 Raspberry-Pi (and any Linux SBC) GPIO as a **pure `.j` module** over
 sysfs - the physical-computing / IoT-teaching use case, with no core
@@ -1460,10 +1476,109 @@ the system library is the future-proofing, taken only when forced.
 `gpio.setup(17, "out")` + `gpio.write(17, 1)` script lights an LED, and the
 same script with an emulator `gpio.j` on the search path runs on a laptop.
 
-## M19 - reserved
+### M18.12 - `docblock` module
 
-A reserved slot.
-M19 is kept as a placeholder for a future milestone.
+A doc-comment parser: read Jennifer source and return the documentation
+embedded in it as structured values. Two deliverables - a **blessed
+doc-comment format** (documented under `docs/` as "Jennifer doc comments")
+and **`docblock.j`**, the pure-`.j` module that parses it. The module
+produces data; it does not render. Turning parsed docs into HTML is a
+separate consumer built later on `htmlwriter` (M18.2), so `docblock` stays
+a small, self-contained parser with no output dependency.
+
+**The format.** A doc comment opens with exactly `/**` (a plain `/*` block
+comment stays invisible); its body is a summary line, an optional
+description, and `@`-tags. It must immediately precede the construct it
+documents - `func`, `def struct`, `def const`, or, when it precedes none,
+the file preamble (module doc). `export` is read from the construct
+keyword, not a tag. Tags: `@param name {type} desc` and `@field name
+{type} desc` (one per parameter / field), `@return {type} desc`, `@throws
+{type} desc`, the universals `@since @deprecated @see @example @internal`,
+and the preamble set `@module @author @version @license`. Types are
+written **verbatim in Jennifer's own syntax** inside mandatory `{ }`
+(`{int}`, `{list of int}`, `{map of string to list of int}`,
+`{json.Value}`) - no invented notation, and the braces make RE2 extraction
+unambiguous. There is no `mixed` / `any` pseudo-type: Jennifer has no top
+type, so an opaque value documents as `json.Value` or a named struct.
+
+**The result is typed data, not a tag bag.** Jennifer has no sum types and
+no `any`, so heterogeneous collections are modelled as parallel typed lists
+plus fixed-field structs: a `FileDoc { module, funcs, structs, consts,
+diagnostics }`, a `FuncDoc { name, exported, summary, description, params,
+returns, throws, examples, since, deprecated, see, internal }`, and the
+leaves `ParamDoc` / `ReturnDoc` / `ThrowDoc` / `StructDoc` / `ConstDoc` /
+`ModuleDoc` / `Diagnostic { severity, line, message }`. The module
+**reports, never enforces**: mismatches surface as `Diagnostic` values and
+the caller decides what is fatal.
+
+**Implementation.** Pure `.j` over `regex` and `strings`. Doc-comment
+boundaries are found by a char-level `/*` / `*/` depth scan that skips
+string literals (mirroring the lexer, which already emits nesting-correct
+block-comment trivia) - not a fragile "delimiter alone on its line" rule.
+Association to a construct assumes conventionally-laid-out source; the
+reference layout is `jennifer fmt` output (fmt preserves doc comments and
+normalises layout deterministically), which the docs name as the canonical
+normaliser. The one validation that earns its keep is the
+signature cross-check: `@param` / `@field` names and count are matched
+against the real declaration (Jennifer types carry no commas or parens, so
+a parameter list splits cleanly), catching the commonest doc bug - docs
+drifting from the code. Whole-body analysis (for example "a `@return` on a
+function that never returns a value") is out of scope: it needs the AST,
+and the module has only the text.
+
+**Future-proofed, not future-built.** The format is designed so a later
+backend can discover constructs from a `jennifer tokens` / `ast` trivia
+feed instead of re-scanning text, with no change to the format itself; and
+because `@example` bodies are kept runnable, a `jennifer test` doctest hook
+that executes them is a natural follow-on. Neither is part of this
+milestone.
+
+**Acceptance.** `docblock.parse(source)` on a file mixing an exported
+function, an exported struct, a constant, and a module preamble returns a
+`FileDoc` with each construct's summary, description, and tags populated
+and `exported` set from the keyword; a `@param` whose name is not a real
+parameter (and a parameter with no `@param`) each produce a `Diagnostic`;
+a doc comment that precedes no construct and no preamble is reported
+orphaned rather than silently dropped; nested `/* */` inside a body and a
+`/**` inside a string literal are both handled correctly. Ships with the
+`docblock_test.j` overlay (100%), `docs/modules/docblock.md`, a
+`docs/modules/index.md` row, a `SUMMARY.md` entry, a runnable
+`examples/modules/docblock_demo.j`, and a `modules/README.md` entry.
+
+## M19 - cross-cutting tooling
+
+The catch-all bucket for milestones that improve the interpreter or its
+tooling but belong to neither the Jennifer-coded modules of M18 nor the Go
+system libraries of M20. Numbered sub-entries land here as needs arise.
+
+### M19.1 - `.j` code coverage
+
+Teach `jennifer test` to report which lines of the code under test actually
+ran. The profiler (`jennifer profile`) already records per-position hit
+counts, so the raw signal exists; this milestone surfaces it as coverage: a
+per-file and total percentage, the list of never-executed positions, and a
+machine-readable form a CI job or an editor can consume. It reuses the
+profiler's instrumentation rather than adding a second counting path, and is
+independent of any renderer: a plain-text summary is the baseline output.
+Educationally it closes the loop the REPL / linter / profiler / test-runner
+set opened - a learner sees not just that tests pass but what the tests
+miss.
+
+- **Surface.** `jennifer test --coverage[=FORMAT]` runs the suite with the
+  profiler's counters live over the tested file(s) and emits a coverage
+  report next to the test report. Default `text` (per-file and total
+  percent); plus a machine-readable form for tooling.
+- **Reuse, do not duplicate.** Coverage is a second consumer of the
+  profiler's per-position hit data, not a new instrumentation pass.
+- **No renderer dependency.** Text is the baseline; an HTML coverage view
+  would be a later consumer built on `htmlwriter` (M18.2), not part of this
+  milestone.
+
+**Acceptance.** The coverage report over a file whose tests exercise some
+but not all of its methods shows below 100 percent and names the unexecuted
+positions; a suite that touches every position shows 100 percent; the
+machine-readable form parses; the plain `jennifer test` path (no
+`--coverage`) is byte-for-byte unchanged.
 
 ## M20 - system libraries
 
@@ -1782,7 +1897,7 @@ willing to keep it green; they're not blocking anything.
   track of its own; the module system (M17) is the prerequisite,
   `semver` ([M17.6](#m176---semver-module)) supplies the version
   comparison and constraint core it resolves against, and `gotify`
-  ([M18.6.1](#m1861---gotify-reference-module)) is the first module worth
+  ([M18.7.1](#m1871---gotify-module-on-top-of-http-module)) is the first module worth
   publishing through it.
 - **FCGI.** `use FCGI as web;` library when `net` and `httpd`
   mature. Lets Jennifer host CGI / FastCGI workloads end-to-end.
@@ -1851,7 +1966,7 @@ willing to keep it green; they're not blocking anything.
   (M16.16) vs a typed struct via the deferred map-to-struct conversion.
   Values bind only
   through `?` placeholders (injection safety). Contrast the
-  text-protocol stores redis / memcache (M18.4 / M18.5), which are pure
+  text-protocol stores redis / memcache (M18.5 / M18.6), which are pure
   Jennifer over `net` and need none of this.
 - **Explicit map-to-struct conversion.** A spelled-out, validating way to
   turn a `json.Value` object (or a homogeneous `map of string to T`) into

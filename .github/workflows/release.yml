@@ -108,6 +108,32 @@ jobs:
           ./jennifer run examples/hello.j
           ./jennifer-tiny run examples/hello.j
 
+      - name: Test report and coverage (amd64 only)
+        # Run the full Go suite once, on the native amd64 row, to produce the
+        # JUnit report and coverage that ship with the release. A test failure
+        # fails this build row, and the release job gates on
+        # `needs.build.result == 'success'`, so failing code never publishes.
+        if: matrix.arch == 'amd64'
+        run: |
+          set -o pipefail
+          go install github.com/jstemmer/go-junit-report/v2@v2.1.0
+          mkdir -p reports
+          go test -v -covermode=atomic -coverprofile=reports/cover.out ./... 2>&1 \
+            | tee reports/test-output.log \
+            | "$(go env GOPATH)/bin/go-junit-report" -set-exit-code > reports/report.xml
+          go tool cover -func=reports/cover.out | tee reports/coverage-summary.txt
+          go tool cover -html=reports/cover.out -o reports/coverage.html
+          go tool cover -func=reports/cover.out | awk '/^total:/ {print $3}' > reports/coverage-total.txt
+          echo "total coverage: $(cat reports/coverage-total.txt)"
+
+      - name: Upload test reports (amd64 only)
+        if: matrix.arch == 'amd64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: reports/
+          retention-days: 7
+
       - name: Package artifacts
         run: |
           mkdir -p dist
@@ -260,6 +286,12 @@ jobs:
           find artifacts -type f \
               \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.deb' -o -name '*.sha256' \) \
               -exec cp {} release/ \;
+          # Test + coverage reports (produced by the amd64 build row).
+          if [ -d artifacts/test-reports ]; then
+            cp artifacts/test-reports/report.xml \
+               artifacts/test-reports/coverage.html \
+               artifacts/test-reports/coverage-summary.txt release/ 2>/dev/null || true
+          fi
           ls -la release/
 
       - name: Generate release-ready PKGBUILD-bin
@@ -316,6 +348,13 @@ jobs:
             echo
             echo "Install \`jennifer\` unless you have a specific reason to use the constrained variant; see \`docs/user-guide/installing.md\` for guidance."
             echo
+            if [ -f artifacts/test-reports/coverage-total.txt ]; then
+              echo "### Test results"
+              echo
+              echo "- Full Go test suite: passing (JUnit \`report.xml\` attached)."
+              echo "- Interpreter code coverage: **$(cat artifacts/test-reports/coverage-total.txt)** (\`coverage.html\` attached)."
+              echo
+            fi
             echo "### Artifacts"
             echo
             for f in release/*.tar.gz release/*.zip; do
@@ -357,3 +396,6 @@ jobs:
             release/*.sha256
             release/PKGBUILD-bin
             release/PKGBUILD-git
+            release/report.xml
+            release/coverage.html
+            release/coverage-summary.txt

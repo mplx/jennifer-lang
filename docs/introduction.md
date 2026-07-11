@@ -12,6 +12,13 @@ written in (Tiny)Go and ships as two binaries:
   or embeddability matters (embedded systems, minimal containers,
   small-footprint scripting hosts).
 
+It is also a natural fit for teaching and learning: an interactive
+[REPL](technical/cli_repl.md), an [easy-to-read grammar](technical/grammar.md),
+and [token and AST dumps](technical/cli_inspect.md) that make it ideal for
+mastering language design, plus a built-in [linter](technical/cli_lint.md) and
+[profiler](technical/cli_profile.md) and full
+[test support](technical/cli_test.md).
+
 Source files use the `.j` extension. Whitespace is not significant
 anywhere; statements end with `;`.
 

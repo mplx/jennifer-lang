@@ -2,6 +2,15 @@
 
 Jennifer is a small, experimental, interpreted programming language.
 
+It is also a natural fit for teaching and learning: an interactive
+[REPL](docs/technical/cli_repl.md), an
+[easy-to-read grammar](docs/technical/grammar.md), and
+[token and AST dumps](docs/technical/cli_inspect.md) that make it ideal for
+mastering language design, plus a built-in
+[linter](docs/technical/cli_lint.md) and
+[profiler](docs/technical/cli_profile.md) and full
+[test support](docs/technical/cli_test.md).
+
 The interpreter is written in Go and ships as two binaries:
 **`jennifer`** (built with the standard Go toolchain, full
 host-feature surface - the default you install and reach for) and
