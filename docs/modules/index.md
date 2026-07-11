@@ -48,6 +48,7 @@ libraries, so all run on either binary.
 | --------------------- | ---------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`ansi`](ansi.md)     | `import "ansi.j";`     | full   | terminal styling as string wrappers. `color` / `bgColor` / `style` / `rgb` / `strip` plus per-colour and per-style shortcuts; TTY-aware.    |
 | [`csv`](csv.md)       | `import "csv.j";`      | full   | RFC 4180 comma-separated values. `parse` / `format` (`*With` for any delimiter), `toRecords` / `fromRecords` for header-keyed maps; quoting-aware. |
+| [`htmlwriter`](htmlwriter.md) | `import "htmlwriter.j";` | full | build an HTML element tree and render escaped HTML5. `element` / `text` / `raw` / `attr` constructors, `render` / `renderAll`, `escape`; void-element aware. A writer, not a parser. |
 | [`semver`](semver.md) | `import "semver.j";`   | full   | strict Semantic Versioning 2.0.0. `parse` / `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` / `isPrerelease`, `inc*`, `sort`; struct `Version`. |
 
 ## Writing your own

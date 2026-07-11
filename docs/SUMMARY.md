@@ -52,6 +52,7 @@
 - [Catalog](modules/index.md)
 - [`ansi`](modules/ansi.md)
 - [`csv`](modules/csv.md)
+- [`htmlwriter`](modules/htmlwriter.md)
 - [`semver`](modules/semver.md)
 
 # Technical reference

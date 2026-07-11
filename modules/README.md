@@ -27,6 +27,14 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   `csv.fromRecords(header, records)` for header-keyed `map of string to
   string` records. Pure Jennifer over `strings` and `maps`. See
   [`examples/modules/csv_demo.j`](../examples/modules/csv_demo.j).
+- **`htmlwriter.j`** - build an HTML element tree and render it to escaped
+  HTML5. `html.element(tag, attrs, children)` / `html.text(s)` / `html.raw(s)`
+  / `html.attr(name, value)` constructors, `html.render(node)` /
+  `html.renderAll(nodes)`, and `html.escape(s)`; text and attribute values are
+  escaped automatically, void elements (`br`, `img`, ...) render without a
+  closing tag. A writer, not a parser; pure Jennifer over `strings` and
+  `lists`. See
+  [`examples/modules/htmlwriter_demo.j`](../examples/modules/htmlwriter_demo.j).
 - **`semver.j`** - strict Semantic Versioning 2.0.0: parse, compare, sort,
   and increment version numbers. `semver.parse(s)` / `isValid(s)` /
   `toString(v)`, `compare(a, b)` / `lt` / `eq` / `gt`, `isStable(v)` /

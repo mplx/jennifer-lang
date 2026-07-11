@@ -1202,19 +1202,30 @@ demo `examples/modules/csv_demo.j`.
 
 ### M18.2 - `htmlwriter` module
 
-An HTML builder / serializer: assemble an element tree and render it to a
-correctly-escaped HTML5 string. Placed ahead of `markdown` because that
-module's Markdown-to-HTML path renders through it, and it is the shared
-output layer every HTML-emitting consumer reuses - a documentation
-generator over parsed docblocks, a future `httpd` view layer. Pure `.j`
-string orchestration: element construction, attribute quoting, the
-`&` / `<` / `>` / `"` entity escapes, and the void-element set (no closing
-tag for `br` / `img` / ...). A *writer*, not a parser: it has no dependency
-on the system `xml` library (M20.2, which parses) - serialization is a
-handful of string operations the interpreter handles comfortably at
-document scale. Named `htmlwriter` (not `html`) to keep the scope in the
-name and leave room for a separate HTML *parser* later, which would be the
-one to lean on `xml`.
+**Done.** An HTML builder / serializer as a pure-Jennifer module
+(`modules/htmlwriter.j`) over `strings` and `lists`, imported `as html`.
+An element tree of `Node` values - `element(tag, attrs, children)` /
+`text(s)` / `raw(s)` constructors plus `attr(name, value)` - renders through
+`render` / `renderAll` to correctly-escaped HTML5: text nodes escape
+`&` / `<` / `>`, attribute values also escape `"`, `raw` passes verbatim,
+and the void elements (`br` / `img` / ...) emit no closing tag and drop
+children. The public `escape` exposes the text-context escaper. A *writer*,
+not a parser: no dependency on the system `xml` library (M20.2) -
+serialization is string orchestration - and named `htmlwriter` (not `html`)
+to leave room for a separate HTML parser later. Reference doc
+[docs/modules/htmlwriter.md](modules/htmlwriter.md); overlay
+`modules/htmlwriter_test.j` (100%); demo
+`examples/modules/htmlwriter_demo.j`.
+
+Building it surfaced and fixed a module-boundary bug: a declared
+`list of alias.Struct` (or `map of K to alias.Struct`) whose importer alias
+differs from the module file stem left the element type tagged with the
+alias while values crossed the boundary tagged with the stem, so appending a
+module value into the list failed the element-type check. Declared-type
+namespace resolution now recurses into list / map / task element types and
+is idempotent across re-execution (a `def` inside a loop). The same fix
+covers aliased library structs in collections (`use os as o; def xs as list
+of o.Result`).
 
 ### M18.3 - `markdown` module
 
