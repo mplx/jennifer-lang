@@ -692,6 +692,14 @@ func (i *Interpreter) MethodNames() []string {
 	return out
 }
 
+// HasMethod reports whether a top-level user method with the given name is
+// defined. The companion to CallByName / CallByNameWith, so a dispatcher can
+// validate a handler name before invoking it (meta.defined builds on this).
+func (i *Interpreter) HasMethod(name string) bool {
+	_, ok := i.methods[name]
+	return ok
+}
+
 // SetModuleContext marks this interpreter as running a module (rather than a
 // script), which permits `export`. The `jennifer test` white-box overlay path
 // uses it: a `MODULE_test.j` spliced onto its `MODULE.j` is run as the module
