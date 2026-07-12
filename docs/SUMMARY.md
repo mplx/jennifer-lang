@@ -72,6 +72,7 @@
 - [`semver`](modules/semver.md)
 - [`session`](modules/session.md)
 - [`smtp`](modules/smtp.md)
+- [`web`](modules/web.md)
 
 # Technical reference
 

@@ -92,6 +92,8 @@ func main() {
 		os.Exit(runProfile(os.Args[2:]))
 	case "test":
 		os.Exit(runTest(os.Args[2:]))
+	case "serve":
+		os.Exit(runServe(os.Args[2:]))
 	case "version", "--version", "-v":
 		if len(os.Args) > 2 && (os.Args[2] == "-v" || os.Args[2] == "--verbose") {
 			printVersionVerbose()
@@ -217,6 +219,14 @@ func loadModuleProgram(path string) (*parser.Program, error) {
 }
 
 func runFile(path string, searchDirs []string) int {
+	return runFileHook(path, searchDirs, nil)
+}
+
+// runFileHook is runFile with an optional callback invoked once the source has
+// parsed cleanly, just before execution begins. `jennifer serve` uses it to
+// print its "running" banner only after a clean parse, so the banner never
+// precedes a syntax error.
+func runFileHook(path string, searchDirs []string, afterParse func()) int {
 	var (
 		src     string
 		label   string // path used in error messages
@@ -274,6 +284,9 @@ func runFile(path string, searchDirs []string) int {
 		fmt.Fprintf(os.Stderr, "%s: %s\n", label, err.Error())
 		printErrorContext(src, absPath, err)
 		return 1
+	}
+	if afterParse != nil {
+		afterParse()
 	}
 	in := interpreter.New()
 	installLibraries(in)

@@ -71,6 +71,18 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   assertion are gated on `httpd` / `crypto`. Uses `net` (via `http`), so the
   **default `jennifer` binary only**. See
   [`examples/modules/oauth_demo.j`](../examples/modules/oauth_demo.j).
+- **`web.j`** - a small HTTP framework over the `httpd` server engine. Register
+  routes against handler methods by name (`web.get($app, "/users/:id",
+  "showUser")`, `post` / `put` / `patch` / `delete` / `route`), with `:param`
+  capture, `web.before` middleware, and a custom `web.notFound`. A handler is
+  `func name(ctx as web.Context)`, dispatched across the module boundary by
+  `meta.callMain`; `web.Context` carries request accessors (`param` / `query` /
+  `method` / `path` / `header` / `body`) and response helpers (`text` /
+  `sendJson` / `respond` / `setHeader` / `serveFile`). `web.run($app, addr)`
+  owns the accept loop; `web.serveOn($app, srv)` serves on a handle you hold.
+  Run it with `jennifer serve app.j [--watch]`. Uses `net` (via `httpd`), so
+  the **default `jennifer` binary only**. See
+  [`examples/modules/web_demo.j`](../examples/modules/web_demo.j).
 - **`markdown.j`** - render a small CommonMark subset (headings, bold /
   italic, inline code, links, fenced code blocks, ordered / unordered lists)
   to HTML and to styled terminal text. `markdown.toHtml(md)` renders through

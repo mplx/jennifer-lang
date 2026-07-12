@@ -23,8 +23,8 @@ profiler, a test runner, and lexer-token and AST inspection - so a whole
 Jennifer workflow (write, run, format, lint, profile, test) needs no extra
 tools. Each subcommand is summarised below and documented in depth on its own
 page. The development subcommands (`tokens`, `ast`, `fmt`, `lint`, `profile`,
-`test`) live in the default `jennifer` binary only; `run`, `repl`, and
-`version` work on both `jennifer` and `jennifer-tiny`.
+`test`) and `serve` live in the default `jennifer` binary only; `run`,
+`repl`, and `version` work on both `jennifer` and `jennifer-tiny`.
 
 | Subcommand         | What it does                                             | Details                                                   |
 | ------------------ | ------------------------------------------------------- | --------------------------------------------------------- |
@@ -36,6 +36,7 @@ page. The development subcommands (`tokens`, `ast`, `fmt`, `lint`, `profile`,
 | `lint <file.j>`    | Report compile-legal but suspect patterns.              | [Linter](cli_lint.md)                                     |
 | `profile <file.j>` | Per-position hit counts and wall-clock timings.         | [Profiler](cli_profile.md)                                |
 | `test <file.j>`    | Discover and run the file's test methods.               | [Test runner](cli_test.md)                                |
+| `serve <file.j>`  | Run a program; `--watch` re-runs it on change (a web-app reloader, or an autorun loop for any script). | [The `serve` command](#the-serve-command)                 |
 | `version [-v]`     | Print the build version (`-v` adds module-path layers). | [Version injection](#version-injection)                   |
 | `help`             | Show usage.                                             | -                                                         |
 
@@ -65,9 +66,45 @@ layers (compile default, `JENNIFER_SYSMODDIR`) behind it.
 - On error: prints the message and a source-context caret on stderr, exits `1`
 - Bad usage exits `2`
 - `jennifer help` includes a `Version:` line so the build is identifiable at a glance
-- `tokens`, `ast`, `fmt`, `lint`, `profile`, and `test` are development
-  subcommands, present only in the default `jennifer` binary (the run-only
-  `jennifer-tiny` build stubs them); each has its own page below.
+- `tokens`, `ast`, `fmt`, `lint`, `profile`, `test`, and `serve` are
+  present only in the default `jennifer` binary (the run-only `jennifer-tiny`
+  build stubs them); the first six are development subcommands with their own
+  pages below, and `serve` runs a net-backed `web` app so it, too, is
+  default-only.
+
+## The `serve` command
+
+`jennifer serve <file.j>` runs a program the same way `run` does - there is
+no entry point, so the file's top-level executes in order and serving happens
+only because the program itself calls `web.run(...)`. On its own, `serve` adds
+just a banner (printed after a clean parse). Its reason to exist is `--watch`:
+
+```sh
+jennifer serve app.j            # run the app
+jennifer serve app.j --watch    # re-run on every change to the entry file
+```
+
+With `--watch`, `serve` runs the program in a **child process** and restarts
+it whenever the entry file changes: it polls the file's modification time and,
+on a change, kills the child and starts a fresh one. Ctrl-C stops the loop.
+
+Two uses fall out of the same mechanism:
+
+- **A web-app reloader.** A long-running `web.run` server never exits on its
+  own; save a handler and `--watch` restarts it against the new code - the
+  Hugo-style edit / reload loop.
+- **A general autorun loop.** For a program that *finishes* (any script, not
+  just a server), the child exits, `serve` prints `app exited; waiting for a
+  change to reload...`, and parks until the next edit - so
+  `jennifer serve --watch script.j` is an edit-and-rerun harness for anything:
+  save, see the output, save again. The watcher deliberately stays alive after
+  a clean exit (a loop that quit the moment a server died on a syntax error
+  would defeat the point).
+
+Only the **entry file** is watched today - changes to `include`d files or
+imported modules do not trigger a reload. `serve` is default-binary-only (the
+`httpd` engine is net-backed, and `--watch` uses `os/exec`); see
+[the `web` module](../modules/web.md).
 
 
 ## Shell pipelines and aliases

@@ -1,10 +1,12 @@
-# `meta` - interpreter-self-identity constants
+# `meta` - interpreter identity and reflection
 
 Enable with `use meta;`. Holds facts about the running Jennifer
 interpreter itself - the build version, which Go toolchain compiled
 it, and similar information that programs typically log for bug
 reports, embed in error messages, or branch on for build-specific
-behaviour.
+behaviour - plus a small **reflection** surface for invoking a
+top-level method by a runtime string name (`meta.call` / `meta.defined`
+and their entry-program siblings `meta.callMain` / `meta.definedMain`).
 
 This is distinct from `os` (which is about the *host environment* -
 operating system, CPU architecture, environment variables) and from
@@ -62,6 +64,50 @@ each. `go run` against the source also reports `"go"`. If a future
 alternative compiler shows up, its identifier passes through directly
 rather than being normalised - so the constant always reports honestly
 what built the binary.
+
+## Reflection - calling a method by name
+
+Jennifer has no first-class functions: a bare call `greet(...)` is
+resolved at compile time, so you cannot dispatch on a name computed at
+runtime. `meta.call` closes that gap - it invokes a top-level user
+method by a runtime string, the general form of what `testing.run` does
+for tests.
+
+| Call | Returns | |
+| ---- | ------- | - |
+| `meta.call(name, args...)` | the method's return value | Invoke the method `name` with the given arguments (arity + declared types checked, as at a normal call site). |
+| `meta.defined(name)` | bool | Whether a method `name` exists - validate a name before calling it. |
+| `meta.callMain(name, args...)` | the method's return value | Like `call`, but resolves against the **entry program's** methods. |
+| `meta.definedMain(name)` | bool | Like `defined`, against the entry program. |
+
+```jennifer
+use io;
+use meta;
+
+func greet(name as string) { return "hi " + $name; }
+
+io.printf("%s\n", meta.call("greet", "ada"));   # hi ada
+io.printf("%t\n", meta.defined("nope"));         # false
+```
+
+Unlike `testing.run`, `meta.call` is transparent: it does not catch
+`exit`, and every sentinel a normal call can raise - a runtime error, a
+thrown `Error`, `exit` - propagates to the caller, catchable with
+`try` / `catch`.
+
+### `callMain` / `definedMain` - reaching the entry program
+
+Modules run on isolated sub-interpreters, so a `meta.call` *inside a
+module* reaches that module's own methods, not the program that imported
+it. The `*Main` variants cross that boundary: they resolve against the
+**entry program's** top-level methods. This is what lets a framework
+module dispatch to handlers the application defined - the
+[`web`](../modules/web.md) module registers routes against handler names
+and calls them with `meta.callMain`. Called from the entry program
+itself, `callMain` / `definedMain` coincide with the plain forms (the
+entry program is its own host). Struct arguments are re-tagged across the
+boundary automatically, so a module can pass one of its own struct values
+(e.g. a `web.Context`) to an entry-program handler that declares it.
 
 ## Build flow
 

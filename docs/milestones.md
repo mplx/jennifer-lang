@@ -1939,7 +1939,15 @@ header/streaming form; `httpd.serveFile` / `httpd.serveDir` over `fs`;
 max-body knobs. Handles use the integer-into-a-registry pattern (shared
 state across copies) like `fs` / `net` / `os.Process`.
 
-#### M18.9.2 - `web` framework module + `jennifer server`
+#### M18.9.2 - `web` framework module + `jennifer serve`
+
+**Done.** The dispatch-by-name that module isolation otherwise blocks is
+granted by a new, explicit reflection capability: `meta.callMain` /
+`meta.definedMain` resolve against the **entry program's** methods (backed by
+an `Interpreter.host` reference set in `loadModule` and `CallHostWith`, which
+retags a module's own struct args across the boundary). So `web.run($app,
+addr)` owns the accept loop and dispatches a matched route to a handler the
+application defined, passing it a `web.Context`.
 
 The ergonomic "fun-to-have" layer: a `.j` module (`import "web.j";`) built
 on the `httpd` engine, dogfooding the libraries we have shipped. Because it
@@ -1971,7 +1979,7 @@ per-client-IP throttling (`allow` check, `429` on deny) - so a real serving
 stack demonstrates config, sessions, and rate limiting end to end instead
 of leaving them as shelfware. Both are opt-in wiring, not hard dependencies.
 
-**`jennifer server app.j`** is the Hugo-style convenience: it boots a `web`
+**`jennifer serve app.j`** is the Hugo-style convenience: it boots a `web`
 app from a file (with reload), the closest analog to `hugo server`. It
 lives in the default binary alongside `run` (net-backed, so absent from
 `jennifer-tiny`), and is the CLI face of the framework module.

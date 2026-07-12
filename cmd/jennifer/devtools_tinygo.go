@@ -15,7 +15,7 @@ import (
 // with the real listing in dump.go; the run-only TinyGo build points at the
 // default binary rather than advertising commands it only rejects.
 func printDevUsage(w io.Writer) {
-	fmt.Fprintln(w, "  (tokens, ast, fmt, lint, profile, test: development subcommands - use the default `jennifer` binary)")
+	fmt.Fprintln(w, "  (tokens, ast, fmt, lint, profile, test, serve: use the default `jennifer` binary)")
 }
 
 // The constrained TinyGo build is a run-only interpreter: it executes
@@ -40,3 +40,11 @@ func runFmt(string) int            { return devToolUnavailable("fmt") }
 func runLint(args []string) int    { return devToolUnavailable("lint") }
 func runProfile(args []string) int { return devToolUnavailable("profile") }
 func runTest(args []string) int    { return devToolUnavailable("test") }
+
+// runServe needs the network stack (the httpd engine) and, for --watch,
+// os/exec - neither present in the constrained TinyGo build.
+func runServe(args []string) int {
+	fmt.Fprintln(os.Stderr,
+		"jennifer serve needs the network stack; not available in the constrained (TinyGo) build; use the default `jennifer` binary")
+	return 2
+}

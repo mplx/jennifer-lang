@@ -502,7 +502,9 @@ func (i *Interpreter) loadModule(importPath string, at parser.Node) (*loadedModu
 	reg.setup(sub)
 	sub.modReg = reg
 	sub.baseDir = filepath.Dir(canonical)
-	sub.isModule = true // enables `export`; a script (CLI Run) rejects it
+	sub.isModule = true                  // enables `export`; a script (CLI Run) rejects it
+	sub.host = i.Host()                  // entry program, so meta.callMain reaches its handlers
+	sub.moduleNS = moduleStem(canonical) // stem, for meta.callMain struct retagging
 
 	reg.stack = append(reg.stack, canonical)
 	runErr := sub.Run(modProg) // loads sub's imports (post-order), then runs its body

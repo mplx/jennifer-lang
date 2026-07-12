@@ -80,3 +80,36 @@ func TestBareVersionNoLongerAvailable(t *testing.T) {
 		t.Errorf("error doesn't mention the missing constant: %v", err)
 	}
 }
+
+// TestMetaCallDispatches confirms meta.call invokes a user method by a runtime
+// string name and returns its value.
+func TestMetaCallDispatches(t *testing.T) {
+	got := runOne(t, `use io; use meta;
+		func greet(name as string) { return "hi " + $name; }
+		io.printf("%s", meta.call("greet", "ada"));`)
+	if got != "hi ada" {
+		t.Errorf("meta.call = %q, want %q", got, "hi ada")
+	}
+}
+
+// TestMetaDefined confirms meta.defined reports method existence.
+func TestMetaDefined(t *testing.T) {
+	got := runOne(t, `use io; use meta;
+		func f() { return 1; }
+		io.printf("%t %t", meta.defined("f"), meta.defined("g"));`)
+	if got != "true false" {
+		t.Errorf("meta.defined = %q, want %q", got, "true false")
+	}
+}
+
+// TestMetaCallMainOnEntryProgram confirms that on the entry program (where the
+// host is the interpreter itself) callMain / definedMain coincide with the
+// plain forms. Cross-module dispatch is covered by the web integration test.
+func TestMetaCallMainOnEntryProgram(t *testing.T) {
+	got := runOne(t, `use io; use meta;
+		func answer() { return 7; }
+		io.printf("%d %t", meta.callMain("answer"), meta.definedMain("answer"));`)
+	if got != "7 true" {
+		t.Errorf("meta.callMain/definedMain = %q, want %q", got, "7 true")
+	}
+}

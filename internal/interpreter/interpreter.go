@@ -112,6 +112,19 @@ type Interpreter struct {
 	// REPL. It gates `export`: a module publishes names, a script may not.
 	isModule bool
 
+	// host is the entry-program interpreter for a module sub-interpreter, or
+	// nil on the entry program itself. meta.callMain / meta.definedMain resolve
+	// against it, so a framework module (e.g. `web`) can dispatch by name to
+	// handler methods defined in the program that imported it. Set in
+	// loadModule via Host(), so nested module loads still point at the ultimate
+	// entry program, not an intermediate module.
+	host *Interpreter
+	// moduleNS is this sub-interpreter's module stem (e.g. "web"), used to
+	// retag its own struct values between the internal bare identity and the
+	// (stem, name) identity the entry program sees when meta.callMain crosses
+	// the boundary. Empty on the entry program.
+	moduleNS string
+
 	// spawned task registry. Every `spawn { ... }` appends its
 	// TaskState here; the CLI scans the slice on shutdown to surface
 	// unobserved error tasks (the "loud-fail" stance). The mutex
@@ -697,6 +710,48 @@ func (i *Interpreter) MethodNames() []string {
 // validate a handler name before invoking it (meta.defined builds on this).
 func (i *Interpreter) HasMethod(name string) bool {
 	_, ok := i.methods[name]
+	return ok
+}
+
+// Host returns the entry-program interpreter: this interpreter itself when it
+// is the entry program (or the REPL), or the program that transitively
+// imported this module. meta.callMain / meta.definedMain use it so a framework
+// module can reach the entry program's top-level methods (its request
+// handlers) - a capability module isolation otherwise denies, granted only
+// through this explicit primitive.
+func (i *Interpreter) Host() *Interpreter {
+	if i.host != nil {
+		return i.host
+	}
+	return i
+}
+
+// CallHostWith invokes an entry-program method by name from a module, binding
+// args to its parameters. It retags any of the module's own struct arguments
+// from their internal bare identity to the (stem, name) identity the entry
+// program sees - the same crossing a module's return values make outward - and
+// retags a returned module struct back inward. On the entry program itself
+// (Host() == i) it is just CallByNameWith. Backs meta.callMain.
+func (i *Interpreter) CallHostWith(name string, args ...Value) (Value, error) {
+	host := i.Host()
+	if host == i {
+		return i.CallByNameWith(name, args...)
+	}
+	retagged := make([]Value, len(args))
+	for idx, a := range args {
+		retagged[idx] = retagStructs(a, "", i.moduleNS, i.isOwnStructName)
+	}
+	res, err := host.CallByNameWith(name, retagged...)
+	if err != nil {
+		return res, err
+	}
+	return retagStructs(res, i.moduleNS, "", i.isOwnStructName), nil
+}
+
+// isOwnStructName reports whether name is a struct declared in this
+// interpreter (used by CallHostWith's retagging).
+func (i *Interpreter) isOwnStructName(name string) bool {
+	_, ok := i.structs[name]
 	return ok
 }
 

@@ -319,6 +319,16 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   Throws `Error` (kind `"oauth"`) on a token-endpoint error. Auth-Code+PKCE / JWT
   assertion gated on `httpd` / `crypto`. **Default `jennifer` binary only**
   (`net`).
+- **`web`** - a small HTTP framework over the `httpd` engine. Register routes
+  against handler methods **by name** (`web.get($app, "/users/:id",
+  "showUser")` / `post` / `put` / `patch` / `delete` / `route`), plus
+  `web.before` middleware and `web.notFound`; a handler is `func name(ctx as
+  web.Context)`, dispatched by `meta.callMain`. `web.Context` helpers:
+  `param` / `query` / `method` / `path` / `header` / `body`, and `text` /
+  `sendJson` / `respond` / `setHeader` / `serveFile`. `web.run($app, addr)`
+  owns the accept loop (`web.serveOn($app, srv)` to hold the server handle).
+  Run with `jennifer serve app.j [--watch]`. **Default `jennifer` binary
+  only** (`net`).
 - **`markdown`** - render a small CommonMark subset (headings, emphasis, links,
   lists, code, GFM tables) to HTML (`markdown.toHtml`, through `htmlwriter`) and
   styled terminal text (`toAnsi`, through `ansi`); author Markdown with

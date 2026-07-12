@@ -80,6 +80,34 @@ func Install(in *interpreter.Interpreter) {
 		}
 		return interpreter.BoolVal(in.HasMethod(args[0].Str)), nil
 	})
+
+	// meta.callMain / meta.definedMain are the module-to-entry-program siblings
+	// of call / defined: they resolve against the *entry program's* top-level
+	// methods rather than the caller's. Modules run on isolated
+	// sub-interpreters, so a framework module (like `web`) that dispatches to
+	// handler methods defined in the program that imported it must reach across
+	// that boundary - this is the one explicit way to do so. Called from the
+	// entry program itself, `main` and the plain forms coincide (the entry
+	// program is its own host).
+	in.RegisterNamespaced(LibraryName, "callMain", func(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+		if len(args) < 1 {
+			return interpreter.Null(), fmt.Errorf("meta.callMain expects at least 1 argument (name[, args...]), got 0")
+		}
+		if args[0].Kind != interpreter.KindString {
+			return interpreter.Null(), fmt.Errorf("meta.callMain: name must be string, got %s", args[0].Kind)
+		}
+		return in.CallHostWith(args[0].Str, args[1:]...)
+	})
+
+	in.RegisterNamespaced(LibraryName, "definedMain", func(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+		if len(args) != 1 {
+			return interpreter.Null(), fmt.Errorf("meta.definedMain expects 1 argument (name), got %d", len(args))
+		}
+		if args[0].Kind != interpreter.KindString {
+			return interpreter.Null(), fmt.Errorf("meta.definedMain: name must be string, got %s", args[0].Kind)
+		}
+		return interpreter.BoolVal(in.Host().HasMethod(args[0].Str)), nil
+	})
 }
 
 // buildTag distinguishes which Go variant compiled the interpreter.
