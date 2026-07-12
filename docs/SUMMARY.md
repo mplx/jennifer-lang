@@ -32,6 +32,7 @@
 - [`encoding`](libraries/encoding.md)
 - [`fs`](libraries/fs.md)
 - [`hash`](libraries/hash.md)
+- [`httpd`](libraries/httpd.md)
 - [`io`](libraries/io.md)
 - [`json`](libraries/json.md)
 - [`lists`](libraries/lists.md)
@@ -45,6 +46,7 @@
 - [`task`](libraries/task.md)
 - [`testing`](libraries/testing.md)
 - [`time`](libraries/time.md)
+- [`toml`](libraries/toml.md)
 - [`uuid`](libraries/uuid.md)
 
 # Modules

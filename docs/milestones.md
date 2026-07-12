@@ -1903,7 +1903,7 @@ server multiplexes many concurrent requests and wants the Go engine.)
 
 #### M18.9.1 - `httpd` system library (engine)
 
-A Go-backed HTTP/1.1 server library (`use httpd;`) wrapping `net/http`.
+**Done.** A Go-backed HTTP/1.1 server library (`use httpd;`) wrapping `net/http`.
 Build-tag split like `net`: the full engine on the default `jennifer`, a
 friendly-error stub on `jennifer-tiny` (no netdev in TinyGo's runtime).
 HTTP/2 comes for free over TLS from `net/http`; plaintext stays HTTP/1.1.

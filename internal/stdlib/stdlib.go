@@ -20,6 +20,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/lib/encoding"
 	"github.com/mplx/jennifer-lang/internal/lib/fs"
 	"github.com/mplx/jennifer-lang/internal/lib/hash"
+	"github.com/mplx/jennifer-lang/internal/lib/httpd"
 	"github.com/mplx/jennifer-lang/internal/lib/io"
 	"github.com/mplx/jennifer-lang/internal/lib/json"
 	"github.com/mplx/jennifer-lang/internal/lib/lists"
@@ -60,6 +61,7 @@ func InstallAll(in *interpreter.Interpreter) {
 	tasklib.Install(in)
 	fslib.Install(in)
 	netlib.Install(in)
+	httpdlib.Install(in)
 	regexlib.Install(in)
 	testinglib.Install(in)
 	uuidlib.Install(in)
