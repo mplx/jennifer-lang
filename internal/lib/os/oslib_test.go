@@ -209,3 +209,32 @@ func TestDirFunctionsRejectArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestSetEnvRoundTrip(t *testing.T) {
+	key := "JENNIFER_TEST_SETENV"
+	if _, err := setEnvFn(interpreter.BuiltinCtx{}, []interpreter.Value{
+		interpreter.StringVal(key), interpreter.StringVal("world")}); err != nil {
+		t.Fatalf("setEnv: %v", err)
+	}
+	if got := stdos.Getenv(key); got != "world" {
+		t.Errorf("after setEnv, Getenv = %q, want %q", got, "world")
+	}
+	v, _ := getEnvFn(interpreter.BuiltinCtx{}, []interpreter.Value{interpreter.StringVal(key)})
+	if v.Str != "world" {
+		t.Errorf("getEnv after setEnv = %q", v.Str)
+	}
+}
+
+func TestSetEnvBadArgs(t *testing.T) {
+	cases := [][]interpreter.Value{
+		{interpreter.StringVal("k")},                               // too few
+		{interpreter.StringVal("k"), interpreter.IntVal(1)},        // non-string value
+		{interpreter.IntVal(1), interpreter.StringVal("v")},        // non-string name
+		{interpreter.StringVal("a=b"), interpreter.StringVal("v")}, // invalid name
+	}
+	for i, args := range cases {
+		if _, err := setEnvFn(interpreter.BuiltinCtx{}, args); err == nil {
+			t.Errorf("case %d: expected an error", i)
+		}
+	}
+}

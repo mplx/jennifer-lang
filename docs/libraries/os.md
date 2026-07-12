@@ -28,6 +28,7 @@ function - see
 | Call               | Returns      | Notes                                                                               |
 | ------------------ | ------------ | ----------------------------------------------------------------------------------- |
 | `os.getEnv(name)`  | string       | Reads an environment variable. Unset variables return `""`, no error.               |
+| `os.setEnv(name, value)` | null   | Sets an environment variable for this process (and any child it later spawns). An invalid name (empty, or containing `=` / NUL) is a positioned error. |
 | `os.hasFlag(name)` | bool         | True if `name` is an exact-match element of `os.ARGS`. See "Flag inspection" below. |
 | `os.flag(name)`    | string       | The element immediately after `name` in `os.ARGS`, or `""` if absent or at end.     |
 | `os.run(argv)`     | `os.Result`  | **Blocking.** Run `argv` to completion; capture stdout/stderr. See "External programs" below. |

@@ -145,6 +145,7 @@ flat lookup view, not authoritative.
 | [`math`](math.md)`.sqrt(x)`                           | Square root; always float. Errors on negative input.                                                                                |
 | [`os`](os.md)`.flag(name)`                            | Value following `name` in `os.ARGS`, or `""` if absent / at end. Exact-match (no `--foo=bar` parsing).                              |
 | [`os`](os.md)`.getEnv(name)`                          | Read environment variable `name`. Unset → empty string, no error.                                                                   |
+| [`os`](os.md)`.setEnv(name, value)`                   | Set environment variable `name` for this process (and children it spawns). Invalid name errors.                                     |
 | [`os`](os.md)`.hasFlag(name)`                         | True if `name` appears as an exact element of `os.ARGS`.                                                                            |
 | [`os`](os.md)`.isTerminal(stream)`                    | Is `stream` (`"stdout"`/`"stderr"`/`"stdin"`) an interactive terminal? Pipe/file -> false.                                         |
 | [`os`](os.md)`.cwd()`                                 | Absolute path of the current working directory.                                                                                     |

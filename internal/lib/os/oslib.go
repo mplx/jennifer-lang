@@ -4,7 +4,7 @@
 // Package oslib implements Jennifer's `os` library: host-environment
 // glue. Holds constants describing the host (platform, architecture,
 // line ending, argv) and a handful of functions for environment-variable
-// lookup and command-line flag inspection.
+// lookup and mutation and command-line flag inspection.
 //
 // External-program execution (`os.run`, `os.spawn`, `os.wait`, etc.)
 // is deferred to a later sub-milestone since it needs a
@@ -52,6 +52,7 @@ func SetUserArgs(args []string) {
 // take arguments.
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "getEnv", getEnvFn)
+	in.RegisterNamespaced(LibraryName, "setEnv", setEnvFn)
 	in.RegisterNamespaced(LibraryName, "hasFlag", hasFlagFn)
 	in.RegisterNamespaced(LibraryName, "flag", flagFn)
 	in.RegisterNamespaced(LibraryName, "run", runFn)
@@ -111,6 +112,26 @@ func getEnvFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 		return interpreter.Null(), fmt.Errorf("os.getEnv: variable name must be string, got %s", args[0].Kind)
 	}
 	return interpreter.StringVal(stdos.Getenv(args[0].Str)), nil
+}
+
+// setEnvFn sets an environment variable for the current process (and any
+// child process it later spawns via `os.run` / `os.spawn`). Mirrors Go's
+// `os.Setenv`; an invalid name (empty, or containing '=' or a NUL byte) is a
+// positioned error. Returns null.
+func setEnvFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 2 {
+		return interpreter.Null(), fmt.Errorf("os.setEnv expects 2 arguments (name, value), got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("os.setEnv: variable name must be string, got %s", args[0].Kind)
+	}
+	if args[1].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("os.setEnv: value must be string, got %s", args[1].Kind)
+	}
+	if err := stdos.Setenv(args[0].Str, args[1].Str); err != nil {
+		return interpreter.Null(), fmt.Errorf("os.setEnv: %v", err)
+	}
+	return interpreter.Null(), nil
 }
 
 // hasFlagFn returns true if `name` appears anywhere in `os.ARGS` as an
