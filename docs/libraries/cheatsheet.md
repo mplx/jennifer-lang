@@ -129,6 +129,7 @@ flat lookup view, not authoritative.
 | [`net`](net.md)`.recvFrom($sock, n)`                  | Block for one UDP datagram, up to `n` bytes. Returns `net.Datagram{data, peer}`.                                                    |
 | [`net`](net.md)`.reverseLookup(ip)`                   | Reverse DNS: IP address to a `list of string` of hostnames.                                                                         |
 | [`net`](net.md)`.sendTo($sock, peer, bytes)`          | Send one UDP datagram to `peer` (`"host:port"`).                                                                                    |
+| [`net`](net.md)`.setDeadline($conn, ms)`              | Arm a read/write deadline `ms` ms out (`0` clears). A read past it fails with a catchable `read timed out`.                          |
 | [`net`](net.md)`.writeBytes($conn, bytes)`            | Blocking write of every byte to a `net.Conn`.                                                                                       |
 | [`regex`](regex.md)`.escape(s)`                       | Escape RE2 metacharacters so `s` matches literally when used as a pattern.                                                          |
 | [`regex`](regex.md)`.find(pattern, s)`                | First match as `regex.Match`; sentinel with `start=-1` if no match.                                                                 |

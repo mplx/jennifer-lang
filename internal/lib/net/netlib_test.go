@@ -16,6 +16,7 @@ import (
 	stdnet "net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 	"github.com/mplx/jennifer-lang/internal/lib/convert"
@@ -339,5 +340,78 @@ func TestUseAfterClose(t *testing.T) {
 	}
 	if !strings.Contains(runErr.Error(), "not open") {
 		t.Errorf("error should mention 'not open': %v", runErr)
+	}
+}
+
+// TestSetDeadlineTimesOut - a server that accepts but stays silent, so a
+// short read deadline elapses and readBytes fails with the distinguishable
+// "timed out" message (catchable in .j), not a crash.
+func TestSetDeadlineTimesOut(t *testing.T) {
+	addr := pickListenerAddr(t)
+	l, err := stdnet.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	done := make(chan struct{})
+	go func() {
+		c, aErr := l.Accept()
+		if aErr != nil {
+			return
+		}
+		<-done // hold the connection open, sending nothing
+		_ = c.Close()
+	}()
+	defer close(done)
+
+	_, runErr := runProg(t, fmt.Sprintf(`
+		use net;
+		def c as net.Conn init net.connect(%q);
+		net.setDeadline($c, 50);
+		def x as bytes init net.readBytes($c, 1);
+	`, addr))
+	if runErr == nil {
+		t.Fatal("expected a timeout error")
+	}
+	if !strings.Contains(runErr.Error(), "timed out") {
+		t.Errorf("error should be a distinguishable timeout: %v", runErr)
+	}
+}
+
+// TestSetDeadlineClearRestoresRead - arm a deadline, clear it with ms 0,
+// then a read that arrives after the original deadline still succeeds.
+func TestSetDeadlineClearRestoresRead(t *testing.T) {
+	addr := pickListenerAddr(t)
+	l, err := stdnet.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go func() {
+		c, aErr := l.Accept()
+		if aErr != nil {
+			return
+		}
+		defer c.Close()
+		time.Sleep(120 * time.Millisecond) // send only after the original 50ms deadline would fire
+		_, _ = c.Write([]byte("z"))
+	}()
+
+	out, runErr := runProg(t, fmt.Sprintf(`
+		use io;
+		use net;
+		use convert;
+		def c as net.Conn init net.connect(%q);
+		net.setDeadline($c, 50);
+		net.setDeadline($c, 0);
+		def x as bytes init net.readBytes($c, 1);
+		net.close($c);
+		io.printf("%%s", convert.stringFromBytes($x, "utf-8"));
+	`, addr))
+	if runErr != nil {
+		t.Fatalf("run: %v", runErr)
+	}
+	if out != "z" {
+		t.Errorf("got %q, want %q", out, "z")
 	}
 }

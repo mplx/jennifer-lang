@@ -19,6 +19,7 @@ import (
 	"io"
 	stdnet "net"
 	"sync"
+	"time"
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 )
@@ -366,9 +367,51 @@ func readBytesFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 			s.sticky = true
 			return interpreter.BytesVal(buf[:read]), nil
 		}
+		// A deadline set by net.setDeadline surfaces as a timeout error.
+		// Report it with a distinct, catchable message (not a crash) so a
+		// poll-with-timeout loop can tell "no data yet, send a keepalive"
+		// apart from a real connection failure. The deadline is not cleared;
+		// the caller re-arms it (or clears it with ms 0) before the next read.
+		var ne stdnet.Error
+		if errors.As(rerr, &ne) && ne.Timeout() {
+			return interpreter.Null(), fmt.Errorf("net.readBytes: read timed out")
+		}
 		return interpreter.Null(), fmt.Errorf("net.readBytes: %v", rerr)
 	}
 	return interpreter.BytesVal(buf[:read]), nil
+}
+
+// setDeadlineFn arms or clears a read/write deadline on a net.Conn. A
+// positive `ms` sets an absolute deadline that many milliseconds from now;
+// once it passes, a pending or subsequent readBytes / writeBytes fails with
+// a distinguishable "read timed out" error until the deadline is reset.
+// `ms == 0` clears the deadline (reads block indefinitely again). This is
+// what lets a single-threaded client poll for a packet with a timeout
+// instead of dedicating a spawned reader / pinger.
+func setDeadlineFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
+	if len(args) != 2 {
+		return interpreter.Null(), fmt.Errorf("net.setDeadline expects 2 arguments (net.Conn, ms), got %d", len(args))
+	}
+	id, err := extractID("net.setDeadline", "Conn", args[0])
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	ms, err := takeIntArg("net.setDeadline", args, 1, "ms")
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	s, err := resolveConn("net.setDeadline", id)
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	var when time.Time // the zero Time clears any existing deadline
+	if ms > 0 {
+		when = time.Now().Add(time.Duration(ms) * time.Millisecond)
+	}
+	if derr := s.c.SetDeadline(when); derr != nil {
+		return interpreter.Null(), fmt.Errorf("net.setDeadline: %v", derr)
+	}
+	return interpreter.Null(), nil
 }
 
 func writeBytesFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {

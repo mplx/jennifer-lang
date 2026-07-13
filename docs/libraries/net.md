@@ -31,6 +31,7 @@ arrived.
 | `net.accept($listener)`          | `net.Conn`      | Blocking accept. Non-blocking use pairs with `spawn`.                                     |
 | `net.readBytes($conn, n)`        | `bytes`         | Blocks for at least one byte; returns whatever's available, capped at `n`. Sticky-EOF on close. |
 | `net.writeBytes($conn, b)`       | `null`          | Blocking write of every byte.                                                             |
+| `net.setDeadline($conn, ms)`     | `null`          | Arm a read/write deadline `ms` milliseconds out; `0` clears it. A read past the deadline fails with a distinguishable `read timed out` error. |
 | `net.eof($conn)`                 | `bool`          | Looks ahead: true iff the next read would return partial or fail.                        |
 | `net.address($conn)`             | `string`        | Peer's `"host:port"` (for logs). Polymorphic - see [Address helpers](#address-helpers).  |
 
@@ -62,6 +63,41 @@ net.close($c);
 
 `net.eof` peeks one byte through the buffered reader so the
 loop terminates on the exact byte after the last real read.
+
+### Deadlines: single-threaded poll with timeout
+
+`net.setDeadline($conn, ms)` arms a read/write deadline `ms`
+milliseconds in the future; a read that reaches the deadline before
+data arrives fails with a distinguishable `net.readBytes: read timed
+out` error you can `catch`, rather than blocking forever or crashing.
+`net.setDeadline($conn, 0)` clears the deadline again. This turns a
+blocking read into a poll-with-timeout, so a protocol client can wait
+for a packet and, on a timeout, do idle work (send a keepalive) - all
+on one flow, without dedicating a `spawn`ed reader.
+
+```jennifer
+use net;
+
+# Wait up to 1s for a packet; on timeout, send a keepalive and retry.
+def running as bool init true;
+while ($running) {
+    net.setDeadline($c, 1000);
+    try {
+        def head as bytes init net.readBytes($c, 1);
+        net.setDeadline($c, 0);     # clear while we read the rest of the packet
+        # ... read and dispatch the rest of the message ...
+    } catch (err) {
+        if (strings.contains($err.message, "timed out")) {
+            # idle - send a keepalive and loop
+        } else {
+            $running = false;       # a real failure (closed conn, etc.)
+        }
+    }
+}
+```
+
+The deadline is absolute and is **not** rearmed automatically: reset it
+(or clear it with `0`) before the next read. It applies to writes too.
 
 ### Server pattern
 
@@ -341,9 +377,6 @@ concrete workload forces it.
   protocol negotiation and session-ticket resumption are the remaining
   pieces, deferred until a workload needs them.
 - **Unix domain sockets.**
-- **Timeouts / deadlines.** Compose with `time.sleep`,
-  `spawn`, `task.waitAny` for a first cut. A proper
-  `net.setDeadline($conn, ms)` verb ships later.
 - **Socket options** (SO_REUSEADDR, KEEPALIVE, NODELAY).
 - **DNS record-type helpers** (`net.lookupMX`,
   `net.lookupTXT`, `net.lookupSRV`). The current pair covers
