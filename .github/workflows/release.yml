@@ -294,6 +294,23 @@ jobs:
           fi
           ls -la release/
 
+      - name: Build documentation PDF
+        # Build the mdBook site and render it to a single PDF (the same
+        # jennifer-manual.pdf the docs site links), then drop it into the release
+        # directory so it ships as a release asset. Keep MDBOOK_VERSION in sync
+        # with .github/workflows/docs.yml.
+        env:
+          MDBOOK_VERSION: '0.5.3'
+        run: |
+          set -eu
+          mkdir -p "$HOME/.local/bin"
+          url="https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          curl -sSL "$url" | tar -xz -C "$HOME/.local/bin"
+          "$HOME/.local/bin/mdbook" build
+          # ubuntu-latest ships Google Chrome, which scripts/gen-pdf.sh finds.
+          sh scripts/gen-pdf.sh release/jennifer-manual.pdf
+          ls -la release/jennifer-manual.pdf
+
       - name: Generate release-ready PKGBUILD-bin
         run: |
           # Take the committed packaging/arch/PKGBUILD-bin template
@@ -365,6 +382,7 @@ jobs:
               [ -e "$f" ] || continue
               echo "- \`$(basename "$f")\`"
             done
+            [ -e release/jennifer-manual.pdf ] && echo "- \`jennifer-manual.pdf\` - the full documentation as a single PDF."
             echo
             echo "Artifacts named \`-UNSUPPORTED\` are best-effort macOS / Windows builds (standard \`jennifer\` only, no TinyGo, unsigned, no support); see \`docs/user-guide/installing.md\`. They may be missing if that build failed - it does not block the Linux release."
           } > release_notes.md
@@ -400,3 +418,4 @@ jobs:
             release/report.xml
             release/coverage.html
             release/coverage-summary.txt
+            release/jennifer-manual.pdf

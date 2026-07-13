@@ -11,6 +11,7 @@ use io;
 use json;
 use fs;
 use os;
+use convert;
 import "../../modules/flatdb.j" as flatdb;
 
 def path as string init os.tempDir() + "/flatdb_demo.json";
@@ -45,6 +46,18 @@ io.printf("first:   %s (%d ms)\n",
 io.printf("second:  %s (%d ms)\n",
     json.asString(flatdb.get($store, "/runs/1/cpu")),
     json.asInt(flatdb.get($store, "/runs/1/ms")));
+
+# Loop over every record by index (length + JSON Pointer per element).
+io.printf("all records:\n");
+def n as int init flatdb.length($store, "/runs");
+def i as int init 0;
+while ($i < $n) {
+    def base as string init "/runs/" + convert.toString($i);
+    io.printf("  #%d: %s (%d ms)\n", $i,
+        json.asString(flatdb.get($store, $base + "/cpu")),
+        json.asInt(flatdb.get($store, $base + "/ms")));
+    $i = $i + 1;
+}
 
 fs.remove($path);
 io.printf("done\n");

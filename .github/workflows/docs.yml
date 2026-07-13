@@ -59,6 +59,14 @@ jobs:
       - name: Build the book
         run: mdbook build
 
+      - name: Render the PDF
+        # Print the whole book (book-output/print.html) to a single PDF via
+        # headless Chrome. GitHub's ubuntu-latest image ships Google Chrome
+        # preinstalled, which scripts/gen-pdf.sh discovers. The PDF is written
+        # into book-output/, so it deploys to the site alongside the HTML and
+        # the introduction page links to it (jennifer-manual.pdf).
+        run: sh scripts/gen-pdf.sh book-output/jennifer-manual.pdf
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:
