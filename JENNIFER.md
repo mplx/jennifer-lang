@@ -360,7 +360,10 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `Authorization: Basic` into `web.BasicCredentials` (`user` / `password` /
   `present`) and `web.bearerToken($ctx)` extracts a bearer token; the credential
   check + `401` challenge stay app code (client-side auth is in `rest`; Digest is
-  unsupported). `web.run($app, addr)`
+  unsupported). **CSRF:** `web.csrfToken($ctx, secret)` mints an HMAC-signed
+  double-submit token (into the `csrf` cookie) and `web.csrfCheck($ctx, secret)`
+  validates it (the app owns the secret, opts in via middleware; stateless, no
+  session store). `web.run($app, addr)`
   owns the accept loop (`web.serveOn($app, srv)` to hold the server handle).
   Run with `jennifer serve app.j [--watch]`. **Default `jennifer` binary
   only** (`net`).

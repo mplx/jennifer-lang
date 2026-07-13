@@ -410,3 +410,71 @@ task.wait($server);`, webMod, httpMod)
 		t.Fatalf("web form/response program failed with code %d", code)
 	}
 }
+
+// TestWebCsrf drives the CSRF flow: a GET mints a token (returned in the body,
+// set in the csrf cookie); a guarded POST replaying the token in X-CSRF-Token
+// plus the cookie is accepted, and a POST with neither is rejected 403.
+func TestWebCsrf(t *testing.T) {
+	webMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "web.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "http.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+use httpd;
+use task;
+use strings;
+import %q as web;
+import %q as http;
+
+def const SECRET as string init "topsecret";
+
+func mint(ctx as web.Context) { web.text($ctx, 200, web.csrfToken($ctx, SECRET)); }
+func submit(ctx as web.Context) {
+    if (web.csrfCheck($ctx, SECRET)) {
+        web.text($ctx, 200, "ok");
+        return;
+    }
+    web.text($ctx, 403, "forbidden");
+}
+
+def app as web.App init web.new();
+$app = web.get($app, "/form", "mint");
+$app = web.post($app, "/submit", "submit");
+def srv as httpd.Server init httpd.listen("127.0.0.1:0");
+def addr as string init httpd.address($srv);
+def server as task of null init spawn { web.serveOn($app, $srv); };
+def base as string init "http://" + $addr;
+def none as map of string to string init {};
+
+def minted as http.Response init http.get($base + "/form", $none);
+testing.assertEqual($minted.status, 200);
+def token as string init $minted.body;
+def sc as string init http.header($minted, "Set-Cookie");
+def pair as string init strings.substring($sc, 0, strings.indexOf($sc, ";"));
+
+def h as map of string to string init {};
+$h["X-CSRF-Token"] = $token;
+$h["Cookie"] = $pair;
+def okResp as http.Response init http.post($base + "/submit", "text/plain", "", $h);
+testing.assertEqual($okResp.status, 200);
+testing.assertEqual($okResp.body, "ok");
+
+def denied as http.Response init http.post($base + "/submit", "text/plain", "", $none);
+testing.assertEqual($denied.status, 403);
+
+httpd.shutdown($srv);
+task.wait($server);`, webMod, httpMod)
+
+	progPath := filepath.Join(dir, "csrf.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("web csrf program failed with code %d", code)
+	}
+}

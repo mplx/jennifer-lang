@@ -130,6 +130,17 @@ func testFormatSetCookieExpire() {
     testing.assertEqual(formatSetCookie("sid", "", $o), "sid=; Max-Age=-1; Secure");
 }
 
+func testCsrfValid() {
+    def secret as string init "topsecret";
+    def rand as string init "sometoken";
+    def good as string init $rand + "." + csrfSign($secret, $rand);
+    testing.assertTrue(csrfValid($secret, $good));
+    testing.assertFalse(csrfValid($secret, $rand + ".deadbeef"));   # bad signature
+    testing.assertFalse(csrfValid("othersecret", $good));           # wrong secret
+    testing.assertFalse(csrfValid($secret, "nodot"));               # malformed
+    testing.assertFalse(csrfValid($secret, ""));
+}
+
 func testPercentDecode() {
     testing.assertEqual(percentDecode("hello"), "hello");
     testing.assertEqual(percentDecode("a+b"), "a b");

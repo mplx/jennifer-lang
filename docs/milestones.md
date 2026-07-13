@@ -2370,7 +2370,11 @@ unsupported (legacy). A fourth rounded out the request / response surface:
 `web.bodyJson` (decode a JSON body), `web.remoteAddr`, `web.html`,
 `web.redirect`, and `web.serveDir` - filling the obvious gaps against the
 `text` / `sendJson` / `serveFile` helpers already present (and correcting
-`web.body` to its true `bytes` return).
+`web.body` to its true `bytes` return). A fifth added **CSRF**:
+`web.csrfToken($ctx, secret)` / `web.csrfCheck($ctx, secret)` - stateless
+HMAC-signed double-submit tokens over `hash.hmac`, the app owning the secret and
+opting in via a middleware (no session store, matching the dependency-light
+design).
 
 #### M18.16.1 - Cookies
 

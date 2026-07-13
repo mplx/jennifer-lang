@@ -174,6 +174,48 @@ yourself (an opaque lookup, or `jwt.verify` once the `jwt` module lands). Client
 (`rest.basic` / `rest.bearer`). **Digest** auth is not supported (a legacy,
 challenge/nonce scheme; use Basic over TLS or a bearer token).
 
+## CSRF
+
+Stateless, HMAC-signed double-submit tokens. `web` holds no secret or session
+state - the **app supplies a secret** (a stable per-deployment string) and opts
+in with a middleware. A token is `<random>.<hmac(secret, random)>`, minted into
+the `csrf` cookie and echoed by the client; a request is accepted only when the
+submitted token equals the cookie *and* its signature verifies, so a forger
+without the secret cannot mint one.
+
+| Call | Returns | |
+| ---- | ------- | - |
+| `web.csrfToken($ctx, secret)` | `string` | Mint a token, set the `csrf` cookie, return it for the form / an `X-CSRF-Token` header. |
+| `web.csrfCheck($ctx, secret)` | `bool` | True when the request carries a valid token. |
+
+Mint the token in the GET handler that renders a form; guard the unsafe methods
+with a middleware:
+
+```jennifer
+def const CSRF as string init os.getEnv("CSRF_SECRET");   # a stable secret
+
+func showForm(ctx as web.Context) {
+    def token as string init web.csrfToken($ctx, CSRF);
+    web.html($ctx, 200, "<form method=post><input type=hidden name=csrf value=" + $token + ">...</form>");
+}
+
+func guardCsrf(ctx as web.Context) {
+    def m as string init web.method($ctx);
+    if ($m == "GET" or $m == "HEAD") {
+        return true;                       # safe methods
+    }
+    if (web.csrfCheck($ctx, CSRF)) {
+        return true;
+    }
+    web.text($ctx, 403, "CSRF check failed\n");
+    return false;
+}
+$app = web.before($app, "guardCsrf");
+```
+
+The submitted token is read from the `X-CSRF-Token` header (for JSON / fetch
+clients) or the `csrf` form field (for HTML forms).
+
 ## CORS
 
 `web.cors($app, opts) -> App` sets a cross-origin policy for the whole app.

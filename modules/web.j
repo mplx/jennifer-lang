@@ -28,6 +28,7 @@ use strings;
 use convert;
 use uuid;
 use encoding;
+use hash;
 
 /**
  * One registered (method, pattern, handler-name) triple. Exported only to
@@ -721,6 +722,74 @@ export func basicAuth(ctx as Context) {
  */
 export func bearerToken(ctx as Context) {
     return parseBearer(httpd.header($ctx.req, "Authorization"));
+}
+
+# --- CSRF -------------------------------------------------------------------
+#
+# Stateless, HMAC-signed double-submit tokens. `web` holds no secret or session
+# state: the app supplies the secret (a stable per-deployment string) and opts in
+# with a middleware. A token is `<random>.<hmac(secret, random)>`; it is minted
+# into a cookie and echoed in the form (or the `X-CSRF-Token` header), and a
+# request is accepted only when the submitted token equals the cookie and its
+# signature verifies - so a forger without the secret cannot mint a valid one.
+
+# csrfSign returns the hex HMAC-SHA256 of `rand` under `secret`.
+func csrfSign(secret as string, rand as string) {
+    def mac as bytes init hash.hmac(convert.bytesFromString($secret, "utf-8"), convert.bytesFromString($rand, "utf-8"), "sha256");
+    return encoding.toText($mac, "hex");
+}
+
+# csrfValid reports whether a "<rand>.<sig>" token's signature verifies.
+func csrfValid(secret as string, token as string) {
+    def dot as int init strings.indexOf($token, ".");
+    if ($dot < 0) {
+        return false;
+    }
+    def rand as string init strings.substring($token, 0, $dot);
+    def sig as string init strings.substring($token, $dot + 1, len($token));
+    return $sig == csrfSign($secret, $rand);
+}
+
+/**
+ * Mint a CSRF token, set it in the `csrf` cookie, and return it for embedding in
+ * a form (a hidden `csrf` field) or handing to the client for an `X-CSRF-Token`
+ * header. Call from the GET handler that renders the form.
+ * @param ctx {Context} the request context
+ * @param secret {string} the app's CSRF secret (stable per deployment)
+ * @return {string} the token to embed in the form / send as a header
+ */
+export func csrfToken(ctx as Context, secret as string) {
+    def rand as string init uuid.generate("v4");
+    def token as string init $rand + "." + csrfSign($secret, $rand);
+    def opts as CookieOptions;
+    $opts.path = "/";
+    $opts.httpOnly = true;
+    $opts.sameSite = "Lax";
+    setCookie($ctx, "csrf", $token, $opts);
+    return $token;
+}
+
+/**
+ * Validate the request's CSRF token: the submitted token (the `X-CSRF-Token`
+ * header, else the `csrf` form field) must equal the `csrf` cookie and its
+ * signature must verify. Guard unsafe methods (POST / PUT / PATCH / DELETE) with
+ * a `web.before` middleware that calls this and rejects on false.
+ * @param ctx {Context} the request context
+ * @param secret {string} the app's CSRF secret
+ * @return {bool} true when the request carries a valid token
+ */
+export func csrfCheck(ctx as Context, secret as string) {
+    def submitted as string init header($ctx, "X-CSRF-Token");
+    if ($submitted == "") {
+        $submitted = formValue($ctx, "csrf");
+    }
+    if ($submitted == "") {
+        return false;
+    }
+    if (not ($submitted == cookie($ctx, "csrf"))) {
+        return false;
+    }
+    return csrfValid($secret, $submitted);
 }
 
 # --- caching ----------------------------------------------------------------
