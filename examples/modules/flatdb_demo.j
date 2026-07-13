@@ -1,15 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# flatdb_demo.j - a file-backed JSON store with the flatdb module.
-#
-# Models the "benchmark history" use case: append a self-describing record per
-# run to a store, save it with a crash-atomic replace, then reopen and query.
-# Self-contained (writes to a temp file it cleans up), so it needs no external
-# service and runs on either binary.
-#
-#     jennifer run examples/modules/flatdb_demo.j
+
+/**
+ * A file-backed JSON store with the flatdb module.
+ * Models the "benchmark history" use case: append a self-describing record per run to a store, save it with a crash-atomic replace, then reopen and query. Self-contained (writes to a temp file it cleans up), so it needs no external service and runs on either binary.
+ * @module flatdb_demo
+ */
 use io;
 use json;
 use fs;

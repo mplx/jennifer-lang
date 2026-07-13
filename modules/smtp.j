@@ -1,38 +1,43 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# smtp.j - an SMTP send client: the line-oriented command/response dialogue of
-# RFC 5321, over the `net` system library (plaintext, implicit TLS, or
-# STARTTLS) with SASL AUTH PLAIN (LOGIN / XOAUTH2 to follow). The message body is any
-# string, typically built by the `mime` module. Because it uses `net`, this
-# module runs on the default `jennifer` binary only (`jennifer-tiny` stubs the
-# network stack).
-#
-#     import "smtp.j" as smtp;
-#     import "mime.j" as mime;
-#     def opts as smtp.Options init smtp.Options{host: "mail.example.com",
-#         port: 587, security: "starttls", clientName: "me.example.com",
-#         user: "me@example.com", pass: "secret"};
-#     def msg as mime.Part init mime.text("text/plain", "Hello!");
-#     $msg = mime.withHeader($msg, "Subject", "Hi");
-#     def rcpts as list of string init ["you@example.com"];
-#     smtp.send($opts, "me@example.com", $rcpts, mime.encode($msg));
-#
-# `send` throws a catchable `Error` (kind "smtp") when the server rejects a
-# command. TLS certificate verification is the `net` default. An IDN host or
-# envelope domain is IDNA-encoded to its `xn--` form (via the `idna` module); a
-# non-ASCII address local part still throws (it needs SMTPUTF8).
+
+/**
+ * An SMTP send client: the line-oriented command/response dialogue of RFC 5321,
+ * over the `net` system library (plaintext, implicit TLS, or STARTTLS) with
+ * SASL AUTH PLAIN (LOGIN / XOAUTH2 to follow). The message body is any string,
+ * typically built by the `mime` module. Because it uses `net`, this module runs
+ * on the default `jennifer` binary only (`jennifer-tiny` stubs the network
+ * stack). `send` throws a catchable `Error` (kind "smtp") when the server
+ * rejects a command. TLS certificate verification is the `net` default. An IDN
+ * host or envelope domain is IDNA-encoded to its `xn--` form (via the `idna`
+ * module); a non-ASCII address local part still throws (it needs SMTPUTF8).
+ * @module smtp
+ * @example
+ * def opts as smtp.Options init smtp.Options{host: "mail.example.com",
+ *     port: 587, security: "starttls", clientName: "me.example.com",
+ *     user: "me@example.com", pass: "secret"};
+ * def msg as mime.Part init mime.text("text/plain", "Hello!");
+ * $msg = mime.withHeader($msg, "Subject", "Hi");
+ * def rcpts as list of string init ["you@example.com"];
+ * smtp.send($opts, "me@example.com", $rcpts, mime.encode($msg));
+ */
+
 use net;
 use strings;
 use convert;
 import "./sasl.j" as sasl;
 import "./idna.j" as idna;
 
-# Connection settings. `security` is "none" (plaintext), "tls" (implicit TLS
-# on connect), or "starttls" (upgrade after EHLO). `clientName` is the EHLO
-# identity (defaults to "localhost" when empty). `auth` selects the SASL
-# mechanism: "" (auto - PLAIN when `user` is set, else no auth), "plain",
-# "login", or "xoauth2" (where `pass` holds the OAuth2 access token).
+/**
+ * Connection settings for an SMTP session.
+ * @field host {string} the mail server hostname (IDNA-encoded when non-ASCII)
+ * @field port {int} the server port (e.g. 25, 465, 587)
+ * @field security {string} "none" (plaintext), "tls" (implicit TLS on connect), or "starttls" (upgrade after EHLO)
+ * @field clientName {string} the EHLO identity (defaults to "localhost" when empty)
+ * @field user {string} the SASL username (empty means no auth)
+ * @field pass {string} the SASL password, or the OAuth2 access token for xoauth2
+ * @field auth {string} the SASL mechanism: "" (auto - PLAIN when `user` is set, else no auth), "plain", "login", or "xoauth2"
+ */
 export def struct Options {
     host as string,
     port as int,
@@ -223,11 +228,17 @@ func dial(opts as Options) {
 
 # --- send (exported) -----------------------------------------------
 
-# send delivers `message` (a full RFC 5322 message, e.g. from mime.encode) to
-# every recipient, with `from` as the envelope sender. It opens the connection
-# per `opts.security`, greets, upgrades with STARTTLS when asked, authenticates
-# when credentials are present, then runs MAIL FROM / RCPT TO / DATA / QUIT. A
-# server rejection throws a catchable `Error` (kind "smtp").
+/**
+ * Deliver `message` (a full RFC 5322 message, e.g. from mime.encode) to every
+ * recipient, with `from` as the envelope sender. Opens the connection per
+ * `opts.security`, greets, upgrades with STARTTLS when asked, authenticates when
+ * credentials are present, then runs MAIL FROM / RCPT TO / DATA / QUIT.
+ * @param opts {Options} the connection and auth settings
+ * @param from {string} the envelope sender address
+ * @param recipients {list of string} the envelope recipient addresses
+ * @param message {string} the full RFC 5322 message body
+ * @throws {Error} kind "smtp" when the server rejects a command or an address is not ASCII-safe
+ */
 export func send(opts as Options, from as string, recipients as list of string,
         message as string) {
     # IDNA-encode envelope domains (and reject a non-ASCII local part) before

@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 
-# examples/uuid.j - generate and inspect UUIDs. The UUID values themselves are
-# random / time-based, so this prints only the deterministic facts about them
-# (version, validity, byte count) plus the fixed NIL constant.
+/**
+ * Generate and inspect UUIDs. The UUID values themselves are
+ * random / time-based, so this prints only the deterministic facts about them
+ * (version, validity, byte count) plus the fixed NIL constant.
+ * @module uuid
+ */
 
 use io;
 use uuid;

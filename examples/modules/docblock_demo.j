@@ -1,14 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# docblock_demo.j - extract structured docs from Jennifer source.
-#
-# Parses an embedded sample module and prints the documentation docblock found
-# in it: the module preamble, each documented construct, and any diagnostics
-# (here, a deliberately drifted @param). Self-contained; runs on either binary.
-#
-#     jennifer run examples/modules/docblock_demo.j
+
+/**
+ * Extract structured docs from Jennifer source.
+ * Parses an embedded sample module and prints the documentation docblock found in it: the module preamble, each documented construct, and any diagnostics (here, a deliberately drifted @param). Self-contained; runs on either binary.
+ * @module docblock_demo
+ */
 use io;
 import "../../modules/docblock.j" as docblock;
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# sasl_demo.j - the SASL authentication encoders (pure base64) that the mail
-# clients (smtp / pop / imap) use to send credentials. No networking; each call
-# just renders the base64 token a server expects.
-#
-#     jennifer run examples/modules/sasl_demo.j
+
+/**
+ * The SASL authentication encoders (pure base64) that the mail clients (smtp / pop / imap) use to send credentials.
+ * No networking; each call just renders the base64 token a server expects.
+ * @module sasl_demo
+ */
 use io;
 import "../../modules/sasl.j" as sasl;
 

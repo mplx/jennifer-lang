@@ -1,19 +1,28 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# trycatch.j - the try / catch / throw walkthrough.
-#
-# `try { body } catch (NAME) { handler }` runs the body; if anything
-# inside it throws (user-issued `throw EXPR;` or a runtime error like
-# out-of-bounds), the handler runs with NAME bound to the thrown
-# value. Convention is to throw an `Error` struct - the runtime
-# auto-defines that struct shape so user code can rely on it.
+
+/**
+ * The try / catch / throw walkthrough.
+ * `try { body } catch (NAME) { handler }` runs the body; if anything
+ * inside it throws (user-issued `throw EXPR;` or a runtime error like
+ * out-of-bounds), the handler runs with NAME bound to the thrown
+ * value. Convention is to throw an `Error` struct - the runtime
+ * auto-defines that struct shape so user code can rely on it.
+ * @module trycatch
+ */
 
 use io;
 use convert;
 
 # --- user-issued throw, caught and dispatched on `kind` ---
 io.printf("=== user throw ===\n");
+
+/**
+ * Validate a `key=value` config line.
+ * @param src {string} the config line to check
+ * @return {string} src unchanged, when it is valid
+ * @throws {Error} kind "parse_error" when src has no `=`
+ */
 func parseConfig(src as string) {
     if (not strings.contains($src, "=")) {
         throw Error{

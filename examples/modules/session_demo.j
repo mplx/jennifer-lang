@@ -1,17 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# session_demo.j - server-side sessions on memcached with the session module.
-#
-# Needs a memcached server on 127.0.0.1:11211 and the default `jennifer` binary
-# (session builds on the memcache module, which uses `net`). Start one with
-# `memcached` (or `docker run -p 11211:11211 memcached`), then:
-#
-#     jennifer run examples/modules/session_demo.j
-#
-# With no server running it prints the connection error rather than failing.
-# Not a golden test (it needs a live server); it demonstrates the surface.
+
+/**
+ * Server-side sessions on memcached with the session module.
+ * Needs a memcached server on 127.0.0.1:11211 and the default jennifer binary (session builds on the memcache module, which uses net). With no server running it prints the connection error rather than failing.
+ * @module session_demo
+ */
 use io;
 import "../../modules/session.j" as session;
 import "../../modules/memcache.j" as memcache;

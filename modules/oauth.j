@@ -1,33 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# oauth.j - a generic OAuth2 client: the *get-a-token* half of OAuth2 (the
-# *use-a-token* half is `sasl` XOAUTH2). Acquires and refreshes access tokens
-# against any OAuth2 token endpoint, over `http` + `json`. Ships the flows that
-# need no extra dependencies:
-#
-#   - **Client Credentials** - a service authenticating as itself.
-#   - **Refresh Token** - trade a refresh token for a fresh access token.
-#   - **Device Authorization Grant** - the CLI-friendly flow: show the user a
-#     URL + code, poll the token endpoint until they approve.
-#
-# (Authorization Code + PKCE and the service-account JWT assertion need a local
-# redirect server and crypto-grade signing, so they land later.) Provider
-# presets for Google and Microsoft 365 fill in the endpoints. Because it builds
-# on `http` (which uses `net`), this module needs the default `jennifer` binary.
-#
-#     import "oauth.j" as oauth;
-#     import "sasl.j" as sasl;
-#
-#     def cfg as oauth.Config init oauth.google("id", "secret",
-#         "https://mail.google.com/");
-#     def dev as oauth.DeviceAuth init oauth.deviceStart($cfg);
-#     io.printf("visit %s and enter %s\n", $dev.verificationUri, $dev.userCode);
-#     def tok as oauth.Token init oauth.deviceWait($cfg, $dev);
-#     # feed the access token into mail auth:
-#     # sasl.bearer("me@gmail.com", $tok.accessToken)
-#
-# A token-endpoint error surfaces as a catchable `Error` (kind "oauth").
+
+/**
+ * A generic OAuth2 client: the get-a-token half of OAuth2 (the use-a-token half
+ * is `sasl` XOAUTH2). Acquires and refreshes access tokens against any OAuth2
+ * token endpoint, over `http` + `json`. Ships the flows that need no extra
+ * dependencies: Client Credentials (a service authenticating as itself),
+ * Refresh Token (trade a refresh token for a fresh access token), and the
+ * Device Authorization Grant (the CLI-friendly flow: show the user a URL +
+ * code, poll the token endpoint until they approve). Authorization Code + PKCE
+ * and the service-account JWT assertion need a local redirect server and
+ * crypto-grade signing, so they land later. Provider presets for Google and
+ * Microsoft 365 fill in the endpoints. Because it builds on `http` (which uses
+ * `net`), this module needs the default `jennifer` binary. A token-endpoint
+ * error surfaces as a catchable `Error` (kind "oauth").
+ * @module oauth
+ * @example
+ * def cfg as oauth.Config init oauth.google("id", "secret",
+ *     "https://mail.google.com/");
+ * def dev as oauth.DeviceAuth init oauth.deviceStart($cfg);
+ * io.printf("visit %s and enter %s\n", $dev.verificationUri, $dev.userCode);
+ * def tok as oauth.Token init oauth.deviceWait($cfg, $dev);
+ */
 use strings;
 use convert;
 use time;
@@ -35,7 +29,14 @@ use json;
 use fs;
 import "./http.j" as http;
 
-# The OAuth2 client settings for one provider / application.
+/**
+ * The OAuth2 client settings for one provider / application.
+ * @field tokenUrl {string} the token endpoint URL
+ * @field deviceUrl {string} the device-authorization endpoint URL
+ * @field clientId {string} the OAuth2 client identifier
+ * @field clientSecret {string} the OAuth2 client secret
+ * @field scope {string} the space-separated requested scopes
+ */
 export def struct Config {
     tokenUrl as string,
     deviceUrl as string,
@@ -44,8 +45,15 @@ export def struct Config {
     scope as string
 };
 
-# An issued token. `expiresAt` is a Unix timestamp (seconds; 0 = no known
-# expiry).
+/**
+ * An issued token. `expiresAt` is a Unix timestamp (seconds; 0 = no known
+ * expiry).
+ * @field accessToken {string} the bearer access token
+ * @field tokenType {string} the token type (e.g. "Bearer")
+ * @field refreshToken {string} the refresh token ("" if none)
+ * @field scope {string} the scopes granted with this token
+ * @field expiresAt {int} Unix expiry timestamp in seconds (0 = unknown)
+ */
 export def struct Token {
     accessToken as string,
     tokenType as string,
@@ -54,8 +62,15 @@ export def struct Token {
     expiresAt as int
 };
 
-# A device-authorization handle: show the user `verificationUri` + `userCode`,
-# then `deviceWait` polls with `deviceCode` every `interval` seconds.
+/**
+ * A device-authorization handle: show the user `verificationUri` + `userCode`,
+ * then `deviceWait` polls with `deviceCode` every `interval` seconds.
+ * @field deviceCode {string} the code polled at the token endpoint
+ * @field userCode {string} the code the user types at the verification URL
+ * @field verificationUri {string} the URL to show the user
+ * @field interval {int} seconds to wait between polls
+ * @field expiresAt {int} Unix timestamp when the device code expires
+ */
 export def struct DeviceAuth {
     deviceCode as string,
     userCode as string,
@@ -192,7 +207,12 @@ func nowUnix() {
 
 # --- grants (exported) ---------------------------------------------
 
-# clientCredentials acquires a token for the client itself (no user).
+/**
+ * Acquire a token for the client itself (no user).
+ * @param config {Config} the client settings
+ * @return {Token} the issued access token
+ * @throws {Error} kind "oauth" on a token-endpoint error
+ */
 export func clientCredentials(config as Config) {
     def params as map of string to string init {"grant_type": "client_credentials",
         "client_id": $config.clientId, "client_secret": $config.clientSecret,
@@ -200,8 +220,14 @@ export func clientCredentials(config as Config) {
     return parseTokenBody(postForm($config.tokenUrl, $params).body, nowUnix());
 }
 
-# refresh trades a refresh token for a new access token, preserving the refresh
-# token when the server omits it from the reply.
+/**
+ * Trade a refresh token for a new access token, preserving the refresh token
+ * when the server omits it from the reply.
+ * @param config {Config} the client settings
+ * @param refreshToken {string} the refresh token to redeem
+ * @return {Token} the new access token
+ * @throws {Error} kind "oauth" on a token-endpoint error
+ */
 export func refresh(config as Config, refreshToken as string) {
     def params as map of string to string init {"grant_type": "refresh_token",
         "refresh_token": $refreshToken, "client_id": $config.clientId,
@@ -213,7 +239,12 @@ export func refresh(config as Config, refreshToken as string) {
     return $t;
 }
 
-# deviceStart begins the device flow: returns the code + URL to show the user.
+/**
+ * Begin the device flow: return the code + URL to show the user.
+ * @param config {Config} the client settings
+ * @return {DeviceAuth} the device-authorization handle
+ * @throws {Error} kind "oauth" on a device-endpoint error
+ */
 export func deviceStart(config as Config) {
     def params as map of string to string init {"client_id": $config.clientId,
         "scope": $config.scope};
@@ -240,9 +271,15 @@ export func deviceStart(config as Config) {
         interval: $interval, expiresAt: $expiresAt};
 }
 
-# deviceWait polls the token endpoint until the user approves (or a terminal
-# error), returning the token. Sleeps `interval` seconds between polls, backing
-# off on `slow_down`.
+/**
+ * Poll the token endpoint until the user approves (or a terminal error),
+ * returning the token. Sleeps `interval` seconds between polls, backing off on
+ * `slow_down`.
+ * @param config {Config} the client settings
+ * @param deviceAuth {DeviceAuth} the handle from `deviceStart`
+ * @return {Token} the issued access token
+ * @throws {Error} kind "oauth" if device authorization fails
+ */
 export func deviceWait(config as Config, deviceAuth as DeviceAuth) {
     def interval as int init $deviceAuth.interval;
     while (true) {
@@ -264,21 +301,38 @@ export func deviceWait(config as Config, deviceAuth as DeviceAuth) {
     return Token{accessToken: "", tokenType: "", refreshToken: "", scope: "", expiresAt: 0};
 }
 
-# isExpired reports whether a token has expired (30s skew buffer).
+/**
+ * Report whether a token has expired (30s skew buffer).
+ * @param token {Token} the token to check
+ * @return {bool} true if the token is at or past its expiry
+ */
 export func isExpired(token as Token) {
     return tokenExpired($token.expiresAt, nowUnix());
 }
 
 # --- provider presets (exported) -----------------------------------
 
-# google returns a Config for Google's OAuth2 endpoints.
+/**
+ * Return a Config for Google's OAuth2 endpoints.
+ * @param clientId {string} the OAuth2 client identifier
+ * @param clientSecret {string} the OAuth2 client secret
+ * @param scope {string} the space-separated requested scopes
+ * @return {Config} a Config wired to Google's endpoints
+ */
 export func google(clientId as string, clientSecret as string, scope as string) {
     return Config{tokenUrl: "https://oauth2.googleapis.com/token",
         deviceUrl: "https://oauth2.googleapis.com/device/code",
         clientId: $clientId, clientSecret: $clientSecret, scope: $scope};
 }
 
-# microsoft returns a Config for a Microsoft 365 / Entra tenant's endpoints.
+/**
+ * Return a Config for a Microsoft 365 / Entra tenant's endpoints.
+ * @param tenant {string} the tenant identifier (or "common")
+ * @param clientId {string} the OAuth2 client identifier
+ * @param clientSecret {string} the OAuth2 client secret
+ * @param scope {string} the space-separated requested scopes
+ * @return {Config} a Config wired to the tenant's endpoints
+ */
 export func microsoft(tenant as string, clientId as string, clientSecret as string,
     scope as string) {
     def base as string init "https://login.microsoftonline.com/" + $tenant + "/oauth2/v2.0";
@@ -288,13 +342,21 @@ export func microsoft(tenant as string, clientId as string, clientSecret as stri
 
 # --- token store (exported) ----------------------------------------
 
-# save writes a token to a file as JSON (its own field shape, round-trips with
-# load; absolute `expiresAt` is preserved).
+/**
+ * Write a token to a file as JSON (its own field shape, round-trips with load;
+ * absolute `expiresAt` is preserved).
+ * @param path {string} the file path to write
+ * @param token {Token} the token to persist
+ */
 export func save(path as string, token as Token) {
     fs.writeString($path, json.encode($token));
 }
 
-# load reads a token previously written by save.
+/**
+ * Read a token previously written by save.
+ * @param path {string} the file path to read
+ * @return {Token} the loaded token
+ */
 export func load(path as string) {
     def node as json.Value init json.decode(fs.readString($path));
     return Token{accessToken: json.asString($node, "/accessToken"),

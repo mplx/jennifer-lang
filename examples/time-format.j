@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# time-format.j - formatting / parsing / zones. Uses
-# time.fromUnix and an explicit Zone so the golden file is
-# deterministic.
+
+/**
+ * Formatting / parsing / zones. Uses
+ * time.fromUnix and an explicit Zone so the golden file is
+ * deterministic.
+ * @module time-format
+ */
 
 use io;
 use time;

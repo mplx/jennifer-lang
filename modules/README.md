@@ -12,214 +12,37 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
 
 ## Available modules
 
-- **`ansi.j`** - terminal styling as explicit string wrappers.
-  `ansi.color(s, name)` / `ansi.bgColor(s, name)` / `ansi.style(s, name)`
-  (bold / dim / italic / underline / reverse) / `ansi.rgb(s, r, g, b)`,
-  `ansi.strip(s)` to remove escapes, plus per-colour and per-style
-  shortcuts (`ansi.red(s)`, `ansi.bold(s)`, ...). Stateless and TTY-aware:
-  styling suppresses itself when stdout is not a terminal or `NO_COLOR` is
-  set, and is forced on by `FORCE_COLOR`. See
-  [`examples/modules/ansi_demo.j`](../examples/modules/ansi_demo.j).
-- **`csv.j`** - RFC 4180 comma-separated values: parse text into rows of
-  string fields and format rows back to text, with a quoting-aware scanner.
-  `csv.parse(s)` / `csv.format(rows)` (and `parseWith` / `formatWith` for any
-  single-character delimiter, so TSV too), plus `csv.toRecords(rows)` /
-  `csv.fromRecords(header, records)` for header-keyed `map of string to
-  string` records. Pure Jennifer over `strings` and `maps`. See
-  [`examples/modules/csv_demo.j`](../examples/modules/csv_demo.j).
-- **`docblock.j`** - the Jennifer doc-comment format and its parser. A doc
-  comment opens with `/**`, immediately precedes a `func` / `def struct` /
-  `def const` (or, with `@module`, is the file preamble), and carries a
-  summary, description, and `@`-tags (`@param` / `@field name {type} desc`,
-  `@return` / `@throws`, `@since @deprecated @see @example @internal`).
-  `docblock.parse(source)` returns a typed `FileDoc` tree; it reports doc drift
-  (a `@param` naming no real parameter, a parameter with no `@param`) and
-  orphaned comments as `Diagnostic`s rather than enforcing them. The scanner is
-  string-literal- and nesting-correct. Pure Jennifer over `regex` / `strings`.
-  See [`examples/modules/docblock_demo.j`](../examples/modules/docblock_demo.j).
-- **`flatdb.j`** - a file-backed JSON document store over `json` + `fs`.
-  `flatdb.open(path)` loads a file into a value-semantic `DB` (empty if
-  absent); query and edit by JSON Pointer (`get` / `has` / `keys` / `length`,
-  and the fresh-`DB`-returning `set` / `append` / `remove`); `flatdb.save(db)`
-  writes it back with a crash-atomic temp-file + `rename`. Deliberately not a
-  database engine - crash-atomic snapshotting of small data (config, saved
-  state, a benchmark history). Runs on both binaries. See
-  [`examples/modules/flatdb_demo.j`](../examples/modules/flatdb_demo.j).
-- **`htmlwriter.j`** - build an HTML element tree and render it to escaped
-  HTML5. `html.element(tag, attrs, children)` / `html.text(s)` / `html.raw(s)`
-  / `html.attr(name, value)` constructors, `html.render(node)` /
-  `html.renderAll(nodes)`, and `html.escape(s)`; text and attribute values are
-  escaped automatically, void elements (`br`, `img`, ...) render without a
-  closing tag. A writer, not a parser; pure Jennifer over `strings` and
-  `lists`. See
-  [`examples/modules/htmlwriter_demo.j`](../examples/modules/htmlwriter_demo.j).
-- **`http.j`** - an HTTP/1.1 client over `net` (`https://` via TLS):
-  `http.request(method, url, headers, body)` (method-agnostic) and the
-  `http.get` / `post` / `put` / `patch` / `delete` / `head` / `options`
-  shortcuts return a `Response` (`status`, `statusText`,
-  lowercased `headers`, `body`), with `http.header(resp, name)` for a
-  case-insensitive read. Handles Content-Length and chunked framing; text
-  (UTF-8) bodies. Redirects are returned (3xx), not followed. Uses `net`, so the
-  **default `jennifer` binary only**. See
-  [`examples/modules/http_demo.j`](../examples/modules/http_demo.j).
-- **`gotify.j`** - push a notification to a [Gotify](https://gotify.net) server,
-  a tiny module on top of `http`: `gotify.push(cfg, title, message, priority)`
-  POSTs the message form to `cfg.url + "/message"` with the `X-Gotify-Key`
-  header and returns the `http.Response` (a bad token comes back as a `4xx`
-  value). Value-semantic `gotify.Config` (url + token); the caller supplies
-  those (never committed). Uses `net` (via `http`), so the **default `jennifer`
-  binary only**. See
-  [`examples/modules/gotify_demo.j`](../examples/modules/gotify_demo.j).
-- **`gpio.j`** - Raspberry-Pi (and any Linux SBC) GPIO over sysfs, with `fs` as
-  the whole backend. Stateless, pin-keyed: `gpio.setup(pin, "in"/"out")`,
-  `gpio.write(pin, 0/1)`, `gpio.read(pin)`, `gpio.release(pin)`. The sysfs root
-  is `/sys/class/gpio`, overridable with the `JENNIFER_GPIO_BASE` env var (for
-  a non-standard mount or a mock tree under test). Off a GPIO-capable host every
-  call throws a clear `Error{kind: "gpio"}` rather than crashing. Runs on both
-  binaries. See [`examples/modules/gpio_demo.j`](../examples/modules/gpio_demo.j).
-- **`rest.j`** - an ergonomic REST layer over `http` + `json`. A value-semantic
-  `rest.Client` (base URL + default headers) and verbs `rest.get` / `post` /
-  `put` / `patch` / `delete` returning a `rest.Response` (`status`, `headers`,
-  `body`), plus JSON wrappers `rest.getJson` (-> `json.Value`) / `postJson` /
-  `putJson` / `patchJson`. Base-URL joining (no double slashes), percent-encoded
-  query strings, and `rest.bearer` / `rest.basic` / `rest.withHeader` for auth.
-  A 4xx / 5xx is a `Response` value, not a crash. Pure composition; uses `net`
-  (via `http`), so the **default `jennifer` binary only**. See
-  [`examples/modules/rest_demo.j`](../examples/modules/rest_demo.j).
-- **`oauth.j`** - a generic OAuth2 client (the *get-a-token* half; `sasl` is the
-  *use-a-token* half) over `http` + `json`. Ships the no-extra-deps grants:
-  `oauth.clientCredentials(cfg)`, `oauth.refresh(cfg, refreshToken)`, and the
-  Device Authorization flow `oauth.deviceStart(cfg)` -> `oauth.deviceWait(cfg,
-  dev)`. `google` / `microsoft` `Config` presets, `isExpired` + `save` / `load`
-  (token store via `fs`); tokens feed `sasl.bearer` for mail XOAUTH2. A
-  token-endpoint error throws `Error` (kind `"oauth"`). Auth-Code+PKCE and JWT
-  assertion are gated on `httpd` / `crypto`. Uses `net` (via `http`), so the
-  **default `jennifer` binary only**. See
-  [`examples/modules/oauth_demo.j`](../examples/modules/oauth_demo.j).
-- **`web.j`** - a small HTTP framework over the `httpd` server engine. Register
-  routes against handler methods by name (`web.get($app, "/users/:id",
-  "showUser")`, `post` / `put` / `patch` / `delete` / `route`), with `:param`
-  capture, `web.before` middleware, and a custom `web.notFound`. A handler is
-  `func name(ctx as web.Context)`, dispatched across the module boundary by
-  `meta.callMain`; `web.Context` carries request accessors (`param` / `query` /
-  `method` / `path` / `header` / `body`) and response helpers (`text` /
-  `sendJson` / `respond` / `setHeader` / `serveFile`). `web.run($app, addr)`
-  owns the accept loop; `web.serveOn($app, srv)` serves on a handle you hold.
-  Run it with `jennifer serve app.j [--watch]`. Uses `net` (via `httpd`), so
-  the **default `jennifer` binary only**. See
-  [`examples/modules/web_demo.j`](../examples/modules/web_demo.j).
-- **`markdown.j`** - render a small CommonMark subset (headings, bold /
-  italic, inline code, links, fenced code blocks, ordered / unordered lists)
-  to HTML and to styled terminal text. `markdown.toHtml(md)` renders through
-  the `htmlwriter` module (so escaping is automatic); `markdown.toAnsi(md)`
-  renders through the `ansi` module. Also authors Markdown text with
-  `markdown.header` / `style` / `link` / `bullets` / `numbered` / `codeBlock`,
-  and `markdown.table(headings, aligns, rows)` for GFM tables, plus
-  `markdown.tablePretty(md)` to align handcrafted table columns.
-  Pure Jennifer; the first module that imports sibling modules. See
-  [`examples/modules/markdown_demo.j`](../examples/modules/markdown_demo.j).
-- **`memcache.j`** - a memcached client over `net` speaking the classic text
-  protocol: `memcache.set` / `add` (store-if-absent) / `get` / `delete` /
-  `incr` / `decr` / `touch`, every store with a TTL (`exptime` seconds). A
-  volatile cache (keys expire and the server evicts under pressure), so it
-  suits caches, sessions, counters, and locks, not a system of record. A
-  protocol error throws `Error` (kind `"memcache"`). Uses `net`, so the
-  **default `jennifer` binary only**. See
-  [`examples/modules/memcache_demo.j`](../examples/modules/memcache_demo.j).
-- **`session.j`** - server-side sessions on the `memcache` module, the
-  canonical memcached use: a `map of string to string` held under `sess:ID`
-  with a sliding TTL. `session.create(mc, ttl)` -> id (UUID v4), `load(mc, id)`
-  (empty map when absent / expired), `save(mc, id, data, ttl)`, `touch(mc, id,
-  ttl)`, `destroy(mc, id)`. Threads `memcache` + `uuid` + `json`; the data map
-  is stored base64-wrapped JSON, so any UTF-8 value round-trips. Volatile (a
-  cache, not a store of record). Uses `net` (via `memcache`), so the **default
-  `jennifer` binary only**. See
-  [`examples/modules/session_demo.j`](../examples/modules/session_demo.j).
-- **`ratelimit.j`** - a fixed-window rate limiter on the `memcache` module, the
-  sharpest use of memcached's atomic `incr` + per-key TTL:
-  `ratelimit.allow(mc, key, limit, window)` -> bool records a hit and reports
-  whether it is within `limit` for the current `window` (seconds);
-  `ratelimit.remaining(mc, key, limit)` reports the budget left. The counter is
-  created with the window TTL on the first hit and expires on its own; the
-  incr-then-add pair closes the create race. Uses `net` (via `memcache`), so the
-  **default `jennifer` binary only**. See
-  [`examples/modules/ratelimit_demo.j`](../examples/modules/ratelimit_demo.j).
-- **`mime.j`** - build and parse MIME messages (RFC 5322 headers, multipart,
-  quoted-printable / base64 transfer encodings). `mime.text` / `attachment` /
-  `multipart` / `withHeader` build a `Part` tree, `mime.encode` serializes it,
-  `mime.parse` reads it back, and `mime.headerValue` / `body` / `parts` /
-  `contentType` / `address` read it. A non-ASCII `Subject` / display name is
-  auto-encoded as an RFC 2047 encoded-word on `encode` and decoded on `parse`
-  (`mime.encodeWord` / `decodeWord` exposed for manual use). Pure Jennifer over
-  `strings` / `convert` / `encoding` / `regex`; no networking, so it is the
-  foundation the mail clients build on. See
-  [`examples/modules/mime_demo.j`](../examples/modules/mime_demo.j).
-- **`sasl.j`** - the crypto-free SASL auth mechanisms as pure base64 encoders,
-  shared by the mail clients: `sasl.plain(user, pass)`, `sasl.loginUser` /
-  `sasl.loginPass`, and `sasl.bearer(user, token)` (SASL XOAUTH2 - the
-  "use a token" half of OAuth2, how Google / Microsoft 365 authenticate mail).
-  No networking, no crypto (SCRAM / CRAM-MD5 join it with the `crypto` library).
-  Consumed by `smtp` / `pop` / `imap` via `Options.auth = "xoauth2"`.
-- **`semver.j`** - strict Semantic Versioning 2.0.0: parse, compare, sort,
-  and increment version numbers. `semver.parse(s)` / `isValid(s)` /
-  `toString(v)`, `compare(a, b)` / `lt` / `eq` / `gt`, `isStable(v)` /
-  `isPrerelease(v)`, `incMajor` / `incMinor` / `incPatch(v)`, and
-  `sort(vs)`, over an exported `Version` struct. Pure Jennifer; parsing
-  uses the canonical SemVer regex, precedence and sort are hand-written.
-  See [`examples/modules/semver_demo.j`](../examples/modules/semver_demo.j).
+A **net** tag marks a module that needs the default `jennifer` binary (it
+uses `net`; the stock `jennifer-tiny` ships no network stack). Every module
+name links to its reference doc under [`docs/modules/`](../docs/modules/index.md);
+a runnable demo for each lives in [`examples/modules/`](../examples/modules/).
 
-- **`smtp.j`** - send mail (SMTP client) over `net`: `smtp.send(opts, from,
-  recipients, message)` runs the RFC 5321 dialogue (EHLO, optional STARTTLS /
-  implicit TLS, `AUTH PLAIN`, `MAIL FROM` / `RCPT TO` / `DATA`), with the
-  message built by `mime`. Throws a catchable `Error` (kind `"smtp"`) on
-  rejection. Uses `net`, so the **default `jennifer` binary only**
-  (`jennifer-tiny` has no network stack). See
-  [`examples/modules/smtp_demo.j`](../examples/modules/smtp_demo.j).
+| Module | Description |
+| ------ | ----------- |
+| [`ansi.j`](../docs/modules/ansi.md) | Terminal styling as explicit string wrappers: `color` / `bgColor` / `style` / `rgb` / `strip` plus per-colour and per-style shortcuts (`ansi.red`, `ansi.bold`, ...). TTY-aware: suppresses itself off a terminal or under `NO_COLOR`, forced on by `FORCE_COLOR`. |
+| [`csv.j`](../docs/modules/csv.md) | RFC 4180 comma-separated values: `parse` / `format` (`parseWith` / `formatWith` for any delimiter, TSV too), and `toRecords` / `fromRecords` for header-keyed `map of string to string`. Quoting-aware. |
+| [`docblock.j`](../docs/modules/docblock.md) | The Jennifer doc-comment format and its parser. `docblock.parse(source)` returns a typed `FileDoc` tree (module preamble, per-construct docs); reports doc drift (a `@param` / `@field` naming nothing real, a parameter with no `@param`) and orphaned comments as `Diagnostic`s. Over `regex` / `strings`. |
+| [`flatdb.j`](../docs/modules/flatdb.md) | A file-backed JSON document store over `json` + `fs`: `open` a file into a value-semantic `DB`, query / edit by JSON Pointer (`get` / `has` / `keys` / `length`; fresh-`DB` `set` / `append` / `remove`), `save` with a crash-atomic temp + `rename`. Not a database engine - snapshotting of small data. |
+| [`htmlwriter.j`](../docs/modules/htmlwriter.md) | Build an HTML element tree and render escaped HTML5: `element` / `text` / `raw` / `attr` constructors, `render` / `renderAll`, `escape`. Void-element aware. A writer, not a parser. |
+| [`http.j`](../docs/modules/http.md) | **net.** An HTTP/1.1 client over `net` (`https://` via TLS): `request` plus `get` / `post` / `put` / `patch` / `delete` / `head` / `options` -> `Response` (`status`, `headers`, `body`), with `header` case-insensitive read. Content-Length + chunked; redirects returned, not followed. |
+| [`gotify.j`](../docs/modules/gotify.md) | **net.** Push a notification to a [Gotify](https://gotify.net) server, on top of `http`: `push(cfg, title, message, priority)` POSTs the message form with the `X-Gotify-Key` header. Value-semantic `Config` (url + token), caller-supplied. |
+| [`gpio.j`](../docs/modules/gpio.md) | Raspberry-Pi (and any Linux SBC) GPIO over sysfs, with `fs` as the backend. Stateless, pin-keyed: `setup(pin, "in"/"out")`, `write(pin, 0/1)`, `read(pin)`, `release(pin)`. Root `/sys/class/gpio`, overridable via `JENNIFER_GPIO_BASE`. Off a GPIO host, calls throw `Error{kind: "gpio"}` cleanly. |
+| [`rest.j`](../docs/modules/rest.md) | **net.** An ergonomic REST layer over `http` + `json`: a value-semantic `Client` (base URL + headers) and `get` / `post` / `put` / `patch` / `delete` -> `Response`, plus `getJson` / `postJson` / `putJson` / `patchJson`. Base-URL joining, query strings, `bearer` / `basic` / `withHeader` auth. |
+| [`oauth.j`](../docs/modules/oauth.md) | **net.** A generic OAuth2 client (the get-a-token half) over `http` + `json`: client-credentials, refresh-token, and device-authorization grants; `google` / `microsoft` presets; `isExpired` + on-disk token store. Tokens feed `sasl` XOAUTH2. |
+| [`web.j`](../docs/modules/web.md) | **net.** A small HTTP framework over the `httpd` engine: register routes against handler methods by name (`get` / `post` / ...), `:param` capture, `before` middleware, `notFound`; a handler takes a `web.Context` (request accessors + response helpers), dispatched via `meta.callMain`. `web.run($app, addr)`; run with `jennifer serve app.j [--watch]`. |
+| [`markdown.j`](../docs/modules/markdown.md) | Render a CommonMark subset to HTML (through `htmlwriter`) and to styled terminal text (through `ansi`) with `toHtml` / `toAnsi`; plus Markdown authoring helpers (`header` / `style` / `link` / `bullets` / `numbered` / `codeBlock` / `table`) and `tablePretty` to align table source. |
+| [`memcache.j`](../docs/modules/memcache.md) | **net.** A memcached client (classic text protocol) over `net`: `set` / `add` / `get` / `delete` / `incr` / `decr` / `touch`, every store with a TTL. A volatile cache (for caches, sessions, counters, locks), not a system of record. |
+| [`session.j`](../docs/modules/session.md) | **net.** Server-side sessions on `memcache`: a `map of string to string` under `sess:ID` with a sliding TTL. `create` / `load` / `save` / `touch` / `destroy`; UUID v4 ids, base64-wrapped JSON values so any UTF-8 round-trips. Volatile. |
+| [`ratelimit.j`](../docs/modules/ratelimit.md) | **net.** A fixed-window rate limiter on `memcache` (atomic `incr` + per-key TTL): `allow(mc, key, limit, window)` -> bool, `remaining(mc, key, limit)`. The window resets on its own when it expires. |
+| [`mime.j`](../docs/modules/mime.md) | Build and parse MIME messages (RFC 5322 headers, multipart, quoted-printable / base64, RFC 2047 encoded-words for non-ASCII headers): `text` / `attachment` / `multipart` / `encode` / `parse` (+ `headerValue` / `body` / `parts` / `contentType`). No networking; the foundation the mail clients build on. |
+| [`sasl.j`](../docs/modules/sasl.md) | Crypto-free SASL auth mechanisms as base64 encoders, shared by the mail clients: `plain` / `loginUser` / `loginPass` / `bearer` (SASL XOAUTH2 - the use-a-token half of OAuth2). No networking, no crypto. |
+| [`semver.j`](../docs/modules/semver.md) | Strict Semantic Versioning 2.0.0: `parse` / `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` / `isPrerelease`, `incMajor` / `incMinor` / `incPatch`, `sort`; an exported `Version` struct. |
+| [`smtp.j`](../docs/modules/smtp.md) | **net.** Send mail (SMTP client) over `net`: `send(opts, from, recipients, message)` runs the RFC 5321 dialogue (EHLO, optional STARTTLS / implicit TLS, `AUTH PLAIN`, `MAIL FROM` / `RCPT TO` / `DATA`); message built by `mime`. Throws `Error{kind: "smtp"}` on rejection. |
+| [`imap.j`](../docs/modules/imap.md) | **net.** Receive mail (IMAP4rev1, RFC 3501) over `net`, a reading subset: `connect` -> `Session`, then `selectMailbox` / `search` / `fetch` / `logout`, plus `fetchAll`. Handles tagged responses and `{N}` literals; messages are strings for `mime.parse`. |
+| [`idna.j`](../docs/modules/idna.md) | Internationalized domain names: `toAscii` / `toUnicode` over a Punycode (RFC 3492) core (`münchen.de` <-> `xn--mnchen-3ya.de`), plus `isAscii`. No networking; the mail clients IDNA-encode hosts and envelope domains through it. |
+| [`pop.j`](../docs/modules/pop.md) | **net.** Receive mail (POP3, RFC 1939) over `net`: `connect` opens a session, then `stat` / `count` / `sizes` / `retrieve` / `deleteMessage` / `quit`, plus `fetchAll`. Messages are strings for `mime.parse`; throws `Error{kind: "pop3"}` on `-ERR`. |
+| [`redis.j`](../docs/modules/redis.md) | **net.** A Redis client speaking RESP2 over `net`: typed helpers `get` / `set` / `del` / `exists` / `incr` / `decr` / `keys` / `ping`, plus a generic `command(session, args)` -> `Reply` for anything else. `connect` does optional `AUTH` / `SELECT`; a `-ERR` throws `Error{kind: "redis"}`. |
+| [`resque.j`](../docs/modules/resque.md) | **net.** Background jobs on Redis, wire-compatible with Resque: `enqueue` onto named queues, `reserve` the next `Job` in priority order, plus `queueLength` / `queues` / `size` / `fail`. Interops with Ruby-resque / php-resque workers. Built on `redis` + `json`. |
 
-- **`imap.j`** - receive mail (IMAP4rev1, RFC 3501) over `net`, a reading
-  subset: `imap.connect(opts)` -> `Session`, then `selectMailbox(name)` (message
-  count), `search()` (sequence numbers), `fetch(n)` (a whole message), `logout`,
-  with `fetchAll(opts, mailbox)` for the common case. Handles tagged responses
-  and `{N}` literals; retrieved messages are strings for `mime.parse`. Throws
-  `Error` (kind `"imap"`) on `NO` / `BAD`. Uses `net`, so the **default
-  `jennifer` binary only**. See
-  [`examples/modules/imap_demo.j`](../examples/modules/imap_demo.j).
-- **`idna.j`** - internationalized domain names: `idna.toAscii(domain)` /
-  `idna.toUnicode(domain)` over a Punycode (RFC 3492) core
-  (`münchen.de` <-> `xn--mnchen-3ya.de`), plus `idna.isAscii`. Pure Jennifer
-  over `strings` / `convert` / `encoding` (uses `convert.toCodepoint` /
-  `fromCodepoint`); no networking. The mail clients IDNA-encode hosts and SMTP
-  envelope domains through it. See
-  [`examples/modules/idna_demo.j`](../examples/modules/idna_demo.j).
-- **`pop.j`** - receive mail (POP3, RFC 1939) over `net`: `pop.connect(opts)`
-  opens a session, then `stat` / `count` / `sizes` / `retrieve(n)` /
-  `deleteMessage(n)` / `quit`, with `fetchAll(opts)` for the common "get every
-  message" case. Retrieved messages are strings for `mime.parse`. Named `pop`
-  (a namespace can't hold a digit); throws `Error` (kind `"pop3"`) on `-ERR`.
-  Uses `net`, so the **default `jennifer` binary only**. See
-  [`examples/modules/pop_demo.j`](../examples/modules/pop_demo.j).
-- **`redis.j`** - a Redis client speaking RESP2 over `net`: commands go out as
-  RESP arrays of bulk strings, replies (`+OK` / `-ERR` / `:int` / `$bulk` /
-  `*array`) parse into a `Reply`. Typed helpers `redis.get` / `set` / `del` /
-  `exists` / `incr` / `decr` / `keys` / `ping`, plus a generic
-  `redis.command(session, args)` returning the raw `Reply` (walked like a
-  `json.Value`) for anything without a helper. `connect` does optional `AUTH` /
-  `SELECT`; a `-ERR` reply throws `Error` (kind `"redis"`). Uses `net`, so the
-  **default `jennifer` binary only**. See
-  [`examples/modules/redis_demo.j`](../examples/modules/redis_demo.j).
-- **`resque.j`** - background jobs on Redis, wire-compatible with Resque:
-  schedule work onto named queues and process it from a worker later, over the
-  `redis` module. `resque.enqueue(session, queue, class, args)` registers the
-  queue and pushes the JSON envelope `{"class","args"}` onto `resque:queue:NAME`;
-  `resque.reserve(session, queues)` pops the next `Job` (`queue` / `class` /
-  `args`) from the first non-empty queue in priority order; plus `queueLength` /
-  `queues` / `size` / `fail`. The Redis layout is the de-facto Resque standard,
-  so a Ruby-resque / php-resque worker can process Jennifer's jobs and vice
-  versa; the worker's class dispatch is your code. Built on `redis` + `json`, so
-  the **default `jennifer` binary only**. See
-  [`examples/modules/resque_demo.j`](../examples/modules/resque_demo.j).
-
-Reference docs for each module live under
-[`docs/modules/`](../docs/modules/index.md). A new module also earns a bullet
-in the **Module library** section of [`JENNIFER.md`](../JENNIFER.md) so an AI
-assistant writing Jennifer discovers it.
+A new module also earns a bullet in the **Module library** section of
+[`JENNIFER.md`](../JENNIFER.md) so an AI assistant writing Jennifer discovers it.

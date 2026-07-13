@@ -1,22 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# exec.j - demonstrate the external-program execution API
-# (os.run, os.spawn, os.wait, os.poll, os.kill) and the
-# library-provided namespaced structs that underpin it
-# (os.Result, os.Process).
-#
-# Run with: jennifer run examples/exec.j
-#
-# Not part of the golden-file test suite because the file is meant
-# to be edited and extended freely. The semantics are covered by
-# internal/lib/os/exec_test.go. The example expects /bin/echo,
-# /bin/sh, and /bin/sleep on the host - any POSIX system has them.
-#
-# TinyGo note: this example does NOT run under `jennifer-tiny`
-# because TinyGo's runtime does not implement os/exec. Use the
-# default `jennifer` binary (built by `make build` or `make build-go`)
-# or `go run ./cmd/jennifer run examples/exec.j`.
+
+/**
+ * Demonstrate the external-program execution API.
+ * Covers `os.run`, `os.spawn`, `os.wait`, `os.poll`, `os.kill` and the
+ * library-provided namespaced structs that underpin them (`os.Result`,
+ * `os.Process`). Not part of the golden-file test suite; does NOT run under
+ * `jennifer-tiny` (TinyGo has no os/exec) - use the default `jennifer` binary.
+ * @module exec
+ */
 
 use io;
 use os;

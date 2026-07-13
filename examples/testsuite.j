@@ -1,17 +1,18 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# testsuite.j - a `jennifer test` target showing the assertion
-# vocabulary. Unlike testing.j (which self-drives testing.run and
-# renders reports), this file only defines test methods and lets the
-# runner orchestrate them. Run it with:
-#
-#   jennifer test examples/testsuite.j
-#   jennifer test --format=tap examples/testsuite.j
-#   jennifer test --isolated examples/testsuite.j
-#
-# The runner discovers every zero-arg method named test*, calls setUp
-# before each and tearDown after (both optional), and reports pass/fail.
+
+/**
+ * A `jennifer test` target showing the assertion
+ * vocabulary. Unlike testing.j (which self-drives testing.run and
+ * renders reports), this file only defines test methods and lets the
+ * runner orchestrate them. Run it with:
+ *   jennifer test examples/testsuite.j
+ *   jennifer test --format=tap examples/testsuite.j
+ *   jennifer test --isolated examples/testsuite.j
+ * The runner discovers every zero-arg method named test*, calls setUp
+ * before each and tearDown after (both optional), and reports pass/fail.
+ * @module testsuite
+ */
 
 use testing;
 use lists;

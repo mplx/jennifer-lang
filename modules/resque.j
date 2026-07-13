@@ -1,32 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# resque.j - background jobs on Redis, wire-compatible with Resque. Schedule a
-# job onto a named queue now (`enqueue`), reserve and run it from a worker later
-# (`reserve`). The Redis layout is the de-facto Resque standard - queues are
-# lists at `resque:queue:NAME`, the queue registry is a set at `resque:queues`,
-# and a job is the JSON envelope `{"class":"WorkerName","args":[...]}` - so a job
-# Jennifer enqueues can be processed by a Ruby-resque / php-resque worker and
-# vice versa. Built on the `redis` module, so it needs the default `jennifer`
-# binary.
-#
-#     import "resque.j" as resque;
-#     import "redis.j" as redis;
-#
-#     def db as redis.Session init redis.connect(redis.Options{host: "127.0.0.1",
-#         port: 6379, security: "none", user: "", password: "", db: 0});
-#     resque.enqueue($db, "email", "SendWelcome", ["user@example.com", "en"]);
-#
-#     # a worker: reserve, then dispatch on the class string (your code)
-#     def job as resque.Job init resque.reserve($db, ["high", "email"]);
-#     if (len($job.class) > 0) {
-#         # if ($job.class == "SendWelcome") { sendWelcome($job.args); } ...
-#     }
-#
-# `args` is a `list of string` - it maps to Ruby-resque's positional arguments
-# (`perform(a, b)`). The class string is resolved on the *worker's* side (the
-# runtime that pops the job must define a job by that name); the `resque:`
-# namespace must match on both ends.
+
+/**
+ * Background jobs on Redis, wire-compatible with Resque. Schedule a job onto a
+ * named queue now (`enqueue`), reserve and run it from a worker later
+ * (`reserve`). The Redis layout is the de-facto Resque standard - queues are
+ * lists at `resque:queue:NAME`, the queue registry is a set at `resque:queues`,
+ * and a job is the JSON envelope `{"class":"WorkerName","args":[...]}` - so a
+ * job Jennifer enqueues can be processed by a Ruby-resque / php-resque worker
+ * and vice versa. `args` is a `list of string` mapping to Ruby-resque's
+ * positional arguments; the class string is resolved on the worker's side.
+ * Built on the `redis` module, so it needs the default `jennifer` binary.
+ * @module resque
+ * @example
+ * import "resque.j" as resque;
+ * import "redis.j" as redis;
+ * def db as redis.Session init redis.connect(redis.Options{host: "127.0.0.1", port: 6379, security: "none", user: "", password: "", db: 0});
+ * resque.enqueue($db, "email", "SendWelcome", ["user@example.com", "en"]);
+ * def job as resque.Job init resque.reserve($db, ["high", "email"]);
+ */
 use strings;
 use convert;
 use json;
@@ -35,8 +27,12 @@ import "./redis.j" as redis;
 # The Redis key namespace (`resque` is the Resque default; both ends must agree).
 def const NAMESPACE as string init "resque";
 
-# A reserved job: its origin `queue`, the worker `class` to run, and its string
-# `args`. A drained `reserve` returns an empty `Job` (`class` is "").
+/**
+ * A reserved job. A drained `reserve` returns an empty `Job` (`class` is "").
+ * @field queue {string} the origin queue the job came from
+ * @field class {string} the worker class to run
+ * @field args {list of string} the job's positional string arguments
+ */
 export def struct Job {
     queue as string,
     class as string,
@@ -113,7 +109,13 @@ func decodeJob(queue as string, raw as string) {
 
 # --- producer (exported) -------------------------------------------
 
-# enqueue schedules a job: register the queue, then push the envelope onto it.
+/**
+ * Schedule a job: register the queue, then push the envelope onto it.
+ * @param session {redis.Session} the open Redis session
+ * @param queue {string} the queue name to push onto
+ * @param class {string} the worker class the job names
+ * @param args {list of string} the job's positional arguments
+ */
 export func enqueue(session as redis.Session, queue as string, class as string,
     args as list of string) {
     redis.command($session, ["SADD", queuesKey(), $queue]);
@@ -122,9 +124,13 @@ export func enqueue(session as redis.Session, queue as string, class as string,
 
 # --- consumer (exported) -------------------------------------------
 
-# reserve pops the next job from the first non-empty queue, checking `queues` in
-# the given priority order. When every queue is drained it returns an empty
-# `Job` (test with `len(job.class) == 0`).
+/**
+ * Pop the next job from the first non-empty queue, checking `queues` in the
+ * given priority order.
+ * @param session {redis.Session} the open Redis session
+ * @param queues {list of string} the queue names to check, in priority order
+ * @return {Job} the reserved job, or an empty `Job` (`class` "") when all drained
+ */
 export func reserve(session as redis.Session, queues as list of string) {
     for (def queue in $queues) {
         def r as redis.Reply init redis.command($session, ["LPOP", queueKey($queue)]);
@@ -135,7 +141,12 @@ export func reserve(session as redis.Session, queues as list of string) {
     return Job{queue: "", class: "", args: []};
 }
 
-# fail records a failed job on the failed list (a simplified failure entry).
+/**
+ * Record a failed job on the failed list (a simplified failure entry).
+ * @param session {redis.Session} the open Redis session
+ * @param job {Job} the job that failed
+ * @param message {string} the failure message
+ */
 export func fail(session as redis.Session, job as Job, message as string) {
     def rec as Failure init Failure{queue: $job.queue, class: $job.class,
         args: $job.args, error: $message};
@@ -144,12 +155,21 @@ export func fail(session as redis.Session, job as Job, message as string) {
 
 # --- introspection (exported) --------------------------------------
 
-# queueLength returns the number of pending jobs on one queue.
+/**
+ * Return the number of pending jobs on one queue.
+ * @param session {redis.Session} the open Redis session
+ * @param queue {string} the queue name
+ * @return {int} the number of pending jobs
+ */
 export func queueLength(session as redis.Session, queue as string) {
     return redis.command($session, ["LLEN", queueKey($queue)]).num;
 }
 
-# queues returns the registered queue names.
+/**
+ * Return the registered queue names.
+ * @param session {redis.Session} the open Redis session
+ * @return {list of string} the registered queue names
+ */
 export func queues(session as redis.Session) {
     def out as list of string init [];
     for (def item in redis.command($session, ["SMEMBERS", queuesKey()]).items) {
@@ -158,7 +178,11 @@ export func queues(session as redis.Session) {
     return $out;
 }
 
-# size returns the total number of pending jobs across every registered queue.
+/**
+ * Return the total number of pending jobs across every registered queue.
+ * @param session {redis.Session} the open Redis session
+ * @return {int} the total number of pending jobs
+ */
 export func size(session as redis.Session) {
     def total as int init 0;
     for (def queue in queues($session)) {

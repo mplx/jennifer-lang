@@ -111,6 +111,16 @@ jobs:
         # so this uses ./jennifer (built by `make build` above).
         run: ./jennifer lint --format=github examples/*.j
 
+      - name: Check doc comments (docblock)
+        # Gate on the docblock parser: a doc comment that drifts from its code
+        # (a @param / @field that names nothing real, an undocumented parameter)
+        # or an orphaned doc comment fails the build, so docs stay in step with
+        # the code across the examples and the shipped modules. Uses ./jennifer
+        # (built by `make build` above) via scripts/docblock-check.sh.
+        run: |
+          scripts/docblock-check.sh examples/
+          scripts/docblock-check.sh modules/
+
       - name: Run the Jennifer test suite
         # Exercises the `testing` assertion vocabulary and the `jennifer
         # test` runner end to end on a .j suite. Non-zero exit (a failing

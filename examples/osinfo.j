@@ -1,22 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# osinfo.j - exercise the namespaced `os` library in both its
-# bare-prefix and aliased-prefix forms. In real programs you pick
-# one form per program (the style guide and user-guide/imports.md
-# document why). This example deliberately uses both so the two
-# spellings sit side-by-side; the runtime accepts the combination
-# because each `use` activates one prefix without removing the
-# other.
-#
-# Golden output is pinned to "linux"/"amd64" because Jennifer is
-# Linux-only today and the test environment is amd64. When Windows /
-# macOS support lands, this example's golden file
-# (examples/expected/osinfo.txt) will need a per-OS strategy - until
-# then, this example is the deliberate home for printing the actual
-# host values; showcase.j only convert.typeOf()-s them so it stays
-# portable.
 
+/**
+ * Exercise the namespaced os library in both its bare-prefix and aliased-prefix forms.
+ * In real programs you pick one form per program; this example deliberately uses both so the two spellings sit side-by-side, because each use activates one prefix without removing the other. Golden output is pinned to "linux"/"amd64" because Jennifer is Linux-only today; when Windows / macOS support lands, this example's golden file will need a per-OS strategy.
+ * @module osinfo
+ */
 use io;
 use os;
 use os as o;

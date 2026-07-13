@@ -1,26 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# http.j - an HTTP/1.1 client over the `net` system library. Build a request
-# (method, URL, headers, body), send it, and read the response back into a
-# `Response` (status, headers, body). `http://` connects in the clear;
-# `https://` connects with TLS (`net.connectTLS`). One request per connection
-# (the client sends `Connection: close`). Because it uses `net`, this module
-# needs the default `jennifer` binary.
-#
-#     import "http.j" as http;
-#
-#     def r as http.Response init http.get("http://example.com/", {});
-#     io.printf("status %d\n%s\n", $r.status, $r.body);
-#
-#     def sent as http.Response init http.post("https://api.example.com/items",
-#         "application/json", "{\"name\":\"ada\"}", {"Authorization": "Bearer xyz"});
-#
-# The response body is decoded as text: a JSON / HTML / XML body (valid UTF-8)
-# round-trips exactly; a binary body (an image) is not decodable to a string and
-# raises an error - a `bytes` body accessor is a planned follow-on. Chunked and
-# Content-Length framing are both handled; redirects are returned (3xx), not
-# followed automatically.
+
+/**
+ * An HTTP/1.1 client over the `net` system library. Build a request (method,
+ * URL, headers, body), send it, and read the response back into a `Response`
+ * (status, headers, body). `http://` connects in the clear; `https://`
+ * connects with TLS (`net.connectTLS`). One request per connection (the client
+ * sends `Connection: close`). Because it uses `net`, this module needs the
+ * default `jennifer` binary. The response body is decoded as text: a JSON /
+ * HTML / XML body (valid UTF-8) round-trips exactly; a binary body (an image)
+ * is not decodable to a string and raises an error - a `bytes` body accessor is
+ * a planned follow-on. Chunked and Content-Length framing are both handled;
+ * redirects are returned (3xx), not followed automatically.
+ * @module http
+ * @example
+ * def r as http.Response init http.get("http://example.com/", {});
+ * io.printf("status %d\n%s\n", $r.status, $r.body);
+ * def sent as http.Response init http.post("https://api.example.com/items",
+ *     "application/json", "{\"name\":\"ada\"}", {"Authorization": "Bearer xyz"});
+ */
 use net;
 use strings;
 use convert;
@@ -34,8 +32,14 @@ def struct Url {
     path as string
 };
 
-# An HTTP response. `headers` keys are lowercased (HTTP header names are
-# case-insensitive); use `http.header` for a case-insensitive read.
+/**
+ * An HTTP response. `headers` keys are lowercased (HTTP header names are
+ * case-insensitive); use `http.header` for a case-insensitive read.
+ * @field status {int} the numeric status code (e.g. 200, 404)
+ * @field statusText {string} the reason phrase from the status line
+ * @field headers {map of string to string} response headers, keys lowercased
+ * @field body {string} the response body decoded as UTF-8 text
+ */
 export def struct Response {
     status as int,
     statusText as string,
@@ -281,8 +285,15 @@ func dial(u as Url) {
 
 # --- API (exported) ------------------------------------------------
 
-# request sends one HTTP request and returns the response. `headers` is a
-# `map of string to string` ({} for none); `body` is "" for no body.
+/**
+ * Send one HTTP request and return the response.
+ * @param method {string} the HTTP method (e.g. "GET", "POST")
+ * @param url {string} the absolute request URL
+ * @param headers {map of string to string} request headers ({} for none)
+ * @param body {string} the request body ("" for no body)
+ * @return {Response} the parsed response
+ * @throws {Error} kind "http" if the response is malformed
+ */
 export func request(method as string, url as string,
     headers as map of string to string, body as string) {
     def u as Url init parseUrl($url);
@@ -294,12 +305,24 @@ export func request(method as string, url as string,
     return $resp;
 }
 
-# get issues a GET request.
+/**
+ * Issue a GET request.
+ * @param url {string} the absolute request URL
+ * @param headers {map of string to string} request headers ({} for none)
+ * @return {Response} the parsed response
+ */
 export func get(url as string, headers as map of string to string) {
     return request("GET", $url, $headers, "");
 }
 
-# post issues a POST request with `contentType` and `body`.
+/**
+ * Issue a POST request with `contentType` and `body`.
+ * @param url {string} the absolute request URL
+ * @param contentType {string} the Content-Type header value
+ * @param body {string} the request body
+ * @param headers {map of string to string} extra request headers ({} for none)
+ * @return {Response} the parsed response
+ */
 export func post(url as string, contentType as string, body as string,
     headers as map of string to string) {
     def h as map of string to string init $headers;
@@ -307,7 +330,14 @@ export func post(url as string, contentType as string, body as string,
     return request("POST", $url, $h, $body);
 }
 
-# put issues a PUT request with `contentType` and `body`.
+/**
+ * Issue a PUT request with `contentType` and `body`.
+ * @param url {string} the absolute request URL
+ * @param contentType {string} the Content-Type header value
+ * @param body {string} the request body
+ * @param headers {map of string to string} extra request headers ({} for none)
+ * @return {Response} the parsed response
+ */
 export func put(url as string, contentType as string, body as string,
     headers as map of string to string) {
     def h as map of string to string init $headers;
@@ -315,7 +345,14 @@ export func put(url as string, contentType as string, body as string,
     return request("PUT", $url, $h, $body);
 }
 
-# patch issues a PATCH request (a partial update) with `contentType` and `body`.
+/**
+ * Issue a PATCH request (a partial update) with `contentType` and `body`.
+ * @param url {string} the absolute request URL
+ * @param contentType {string} the Content-Type header value
+ * @param body {string} the request body
+ * @param headers {map of string to string} extra request headers ({} for none)
+ * @return {Response} the parsed response
+ */
 export func patch(url as string, contentType as string, body as string,
     headers as map of string to string) {
     def h as map of string to string init $headers;
@@ -323,22 +360,42 @@ export func patch(url as string, contentType as string, body as string,
     return request("PATCH", $url, $h, $body);
 }
 
-# delete issues a DELETE request.
+/**
+ * Issue a DELETE request.
+ * @param url {string} the absolute request URL
+ * @param headers {map of string to string} request headers ({} for none)
+ * @return {Response} the parsed response
+ */
 export func delete(url as string, headers as map of string to string) {
     return request("DELETE", $url, $headers, "");
 }
 
-# head issues a HEAD request (status and headers, no body).
+/**
+ * Issue a HEAD request (status and headers, no body).
+ * @param url {string} the absolute request URL
+ * @param headers {map of string to string} request headers ({} for none)
+ * @return {Response} the parsed response (empty body)
+ */
 export func head(url as string, headers as map of string to string) {
     return request("HEAD", $url, $headers, "");
 }
 
-# options issues an OPTIONS request (capability probe; read the `Allow` header).
+/**
+ * Issue an OPTIONS request (capability probe; read the `Allow` header).
+ * @param url {string} the absolute request URL
+ * @param headers {map of string to string} request headers ({} for none)
+ * @return {Response} the parsed response
+ */
 export func options(url as string, headers as map of string to string) {
     return request("OPTIONS", $url, $headers, "");
 }
 
-# header reads a response header by name, case-insensitively, or "" if absent.
+/**
+ * Read a response header by name, case-insensitively.
+ * @param resp {Response} the response to read from
+ * @param name {string} the header name (case-insensitive)
+ * @return {string} the header value, or "" if absent
+ */
 export func header(resp as Response, name as string) {
     def key as string init strings.lower($name);
     if (maps.has($resp.headers, $key)) {

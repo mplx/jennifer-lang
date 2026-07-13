@@ -1,18 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# fs.j - exercises the `fs` library. Shows whole-file
-# read/write/append, metadata predicates + fs.stat, the two-verbs
-# pattern for directory create (mkdir vs mkdirAll) and delete
-# (remove vs removeAll), directory listing + walk, and buffered
-# file handles for a line-by-line read loop.
-#
-# Uses a fresh subdirectory next to the source file so re-runs
-# stay clean; wipes it on the way out with fs.removeAll.
+
+/**
+ * Exercises the `fs` library.
+ * Shows whole-file read/write/append, metadata predicates + fs.stat, the
+ * two-verbs pattern for directory create (mkdir vs mkdirAll) and delete
+ * (remove vs removeAll), directory listing + walk, and buffered file handles
+ * for a line-by-line read loop. Uses a fresh subdirectory next to the source
+ * file so re-runs stay clean; wipes it on the way out with fs.removeAll.
+ * @module fs
+ */
 
 use io;
 use fs;
 
+/** The scratch directory this example creates, writes into, and cleans up. */
 def const ROOT as string init "fs-example-tmp";
 
 # Fresh slate: if a prior run left the dir around, clear it. The

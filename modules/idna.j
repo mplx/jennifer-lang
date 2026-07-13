@@ -1,20 +1,21 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# idna.j - internationalized domain names: convert a Unicode domain to its
-# ASCII-compatible (`xn--`) form and back, over a Punycode (RFC 3492) core. So
-# `münchen.de` goes on the wire as `xn--mnchen-3ya.de` (DNS, SMTP envelopes,
-# URL hosts are ASCII-only). Pure Jennifer over `strings`, `convert`, and
-# `encoding` - no networking, TinyGo-clean.
-#
-#     import "idna.j" as idna;
-#     io.printf("%s\n", idna.toAscii("münchen.de"));      # xn--mnchen-3ya.de
-#     io.printf("%s\n", idna.toUnicode("xn--mnchen-3ya.de"));   # münchen.de
-#
-# This is the Punycode transformation plus lowercasing, not full IDNA2008
-# (which layers nameprep / mapping tables on top); it covers the common cases.
-# It needs `convert.toCodepoint` / `convert.fromCodepoint` for the bootstring
-# arithmetic on rune values.
+
+/**
+ * Internationalized domain names: convert a Unicode domain to its
+ * ASCII-compatible (`xn--`) form and back, over a Punycode (RFC 3492) core. So
+ * `münchen.de` goes on the wire as `xn--mnchen-3ya.de` (DNS, SMTP envelopes,
+ * URL hosts are ASCII-only). Pure Jennifer over `strings`, `convert`, and
+ * `encoding` - no networking, TinyGo-clean. This is the Punycode transformation
+ * plus lowercasing, not full IDNA2008 (which layers nameprep / mapping tables
+ * on top); it covers the common cases. It needs `convert.toCodepoint` /
+ * `convert.fromCodepoint` for the bootstring arithmetic on rune values.
+ * @module idna
+ * @example
+ * import "idna.j" as idna;
+ * io.printf("%s\n", idna.toAscii("münchen.de"));      # xn--mnchen-3ya.de
+ * io.printf("%s\n", idna.toUnicode("xn--mnchen-3ya.de"));   # münchen.de
+ */
 use strings;
 use convert;
 use encoding;
@@ -280,7 +281,11 @@ func labelToUnicode(label as string) {
     return $label;
 }
 
-# toAscii converts a domain to its ASCII-compatible form, label by label.
+/**
+ * Convert a domain to its ASCII-compatible form, label by label.
+ * @param domain {string} the (possibly Unicode) domain name
+ * @return {string} the ASCII-compatible domain (Unicode labels get an `xn--` prefix)
+ */
 export func toAscii(domain as string) {
     def out as list of string init [];
     for (def label in strings.split($domain, ".")) {
@@ -289,7 +294,11 @@ export func toAscii(domain as string) {
     return strings.join($out, ".");
 }
 
-# toUnicode converts an ASCII-compatible domain back to Unicode, label by label.
+/**
+ * Convert an ASCII-compatible domain back to Unicode, label by label.
+ * @param domain {string} the ASCII-compatible domain name
+ * @return {string} the Unicode domain (`xn--` labels get Punycode-decoded)
+ */
 export func toUnicode(domain as string) {
     def out as list of string init [];
     for (def label in strings.split($domain, ".")) {
@@ -298,7 +307,11 @@ export func toUnicode(domain as string) {
     return strings.join($out, ".");
 }
 
-# isAscii reports whether a domain is already all-ASCII (needs no conversion).
+/**
+ * Report whether a domain is already all-ASCII (needs no conversion).
+ * @param domain {string} the domain name to test
+ * @return {bool} true when every character is ASCII
+ */
 export func isAscii(domain as string) {
     return isAsciiStr($domain);
 }

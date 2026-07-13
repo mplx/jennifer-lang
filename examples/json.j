@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 
-# examples/json.j - encode and decode JSON with the `json` library.
+/**
+ * Encode and decode JSON with the `json` library.
+ * @module json
+ */
 
 use io;
 use json;
@@ -31,6 +34,11 @@ io.printf("built = %s\n", json.encode($cfg));
 io.printf("%s %s\n", json.typeOf(json.decode("42")), json.typeOf(json.decode("4.2")));
 
 # Rebuild a typed struct explicitly from the decoded value (no auto-coercion).
+/**
+ * A 2D point rebuilt from a decoded JSON object.
+ * @field x {int} the x coordinate
+ * @field y {int} the y coordinate
+ */
 def struct Point { x as int, y as int };
 def d as json.Value init json.decode("{\"x\": 1, \"y\": 2}");
 def p as Point init Point{ x: json.asInt($d, "/x"), y: json.asInt($d, "/y") };

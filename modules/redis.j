@@ -1,30 +1,36 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# redis.j - a Redis client speaking RESP2 (the REdis Serialization Protocol)
-# over the `net` system library. Commands go out as RESP arrays of bulk
-# strings; replies (`+OK`, `-ERR`, `:int`, `$bulk`, `*array`) parse back into a
-# `Reply`. Typed per-command helpers (`get` / `set` / `incr` / `keys` / ...)
-# keep the common path fully typed; `command` is the generic escape hatch for
-# anything else. Because it uses `net`, this module needs the default
-# `jennifer` binary.
-#
-#     import "redis.j" as redis;
-#     def db as redis.Session init redis.connect(redis.Options{host: "127.0.0.1",
-#         port: 6379, security: "none", user: "", password: "", db: 0});
-#     redis.set($db, "greeting", "hello");
-#     io.printf("%s\n", redis.get($db, "greeting"));      # hello
-#     redis.quit($db);
-#
-# A `-ERR` reply throws a catchable `Error` (kind "redis"). Bulk strings are
-# read as UTF-8 text: byte-exact for ASCII / UTF-8 values, but a binary value
-# whose byte length differs from its rune length is not yet byte-exact.
+
+/**
+ * A Redis client speaking RESP2 (the REdis Serialization Protocol) over the
+ * `net` system library. Commands go out as RESP arrays of bulk strings; replies
+ * (`+OK`, `-ERR`, `:int`, `$bulk`, `*array`) parse back into a `Reply`. Typed
+ * per-command helpers (`get` / `set` / `incr` / `keys` / ...) keep the common
+ * path fully typed; `command` is the generic escape hatch for anything else. A
+ * `-ERR` reply throws a catchable `Error` (kind "redis"). Bulk strings are read
+ * as UTF-8 text: byte-exact for ASCII / UTF-8 values, but a binary value whose
+ * byte length differs from its rune length is not yet byte-exact. Needs the
+ * default `jennifer` binary (uses `net`).
+ * @module redis
+ * @example
+ * def db as redis.Session init redis.connect(redis.Options{host: "127.0.0.1", port: 6379, security: "none", user: "", password: "", db: 0});
+ * redis.set($db, "greeting", "hello");
+ * io.printf("%s\n", redis.get($db, "greeting"));
+ * redis.quit($db);
+ */
 use net;
 use strings;
 use convert;
 
-# Connection settings. `security` is "none" (plaintext) or "tls" (rediss).
-# `password` "" skips AUTH; `db` selects a database (0 is the default).
+/**
+ * Connection settings.
+ * @field host {string} the server host
+ * @field port {int} the server port
+ * @field security {string} "none" (plaintext) or "tls" (rediss)
+ * @field user {string} the AUTH username ("" for password-only or no auth)
+ * @field password {string} the AUTH password; "" skips AUTH
+ * @field db {int} the database to SELECT (0 is the default)
+ */
 export def struct Options {
     host as string,
     port as int,
@@ -34,13 +40,21 @@ export def struct Options {
     db as int
 };
 
+/**
+ * An open Redis connection.
+ * @field conn {net.Conn} the underlying socket
+ */
 export def struct Session {
     conn as net.Conn
 };
 
-# A parsed RESP reply. `kind` is "string" (simple or bulk), "error", "int",
-# "nil", or "array"; `str` holds a string / error, `num` an integer, `items`
-# an array's elements.
+/**
+ * A parsed RESP reply.
+ * @field kind {string} "string" (simple or bulk), "error", "int", "nil", or "array"
+ * @field str {string} the string / error text
+ * @field num {int} the integer value
+ * @field items {list of Reply} an array reply's elements
+ */
 export def struct Reply {
     kind as string,
     str as string,
@@ -187,8 +201,13 @@ func dial(opts as Options) {
 
 # --- commands (exported) -------------------------------------------
 
-# command sends one command (its arguments) and returns the reply. A `-ERR`
-# reply throws a catchable `Error` (kind "redis").
+/**
+ * Send one command (its arguments) and return the reply.
+ * @param session {Session} the open session
+ * @param args {list of string} the command name and its arguments
+ * @return {Reply} the parsed reply
+ * @throws {Error} kind "redis" on a `-ERR` reply
+ */
 export func command(session as Session, args as list of string) {
     net.writeBytes($session.conn, convert.bytesFromString(encodeCommand($args), "utf-8"));
     def reply as Reply init readReply($session.conn);
@@ -198,7 +217,11 @@ export func command(session as Session, args as list of string) {
     return $reply;
 }
 
-# connect opens a session, authenticating and selecting a database when set.
+/**
+ * Open a session, authenticating and selecting a database when set.
+ * @param opts {Options} the connection settings
+ * @return {Session} the open session
+ */
 export func connect(opts as Options) {
     def session as Session init Session{conn: dial($opts)};
     if (len($opts.password) > 0) {
@@ -215,37 +238,72 @@ export func connect(opts as Options) {
     return $session;
 }
 
-# get returns the string value of `key`, or "" when the key is missing.
+/**
+ * Return the string value of `key`, or "" when the key is missing.
+ * @param session {Session} the open session
+ * @param key {string} the key to read
+ * @return {string} the value, or "" when missing
+ */
 export func get(session as Session, key as string) {
     return command($session, ["GET", $key]).str;
 }
 
-# set stores `value` at `key`.
+/**
+ * Store `value` at `key`.
+ * @param session {Session} the open session
+ * @param key {string} the key to write
+ * @param value {string} the value to store
+ */
 export func set(session as Session, key as string, value as string) {
     command($session, ["SET", $key, $value]);
 }
 
-# del deletes `key` and returns the number of keys removed (0 or 1).
+/**
+ * Delete `key` and return the number of keys removed (0 or 1).
+ * @param session {Session} the open session
+ * @param key {string} the key to delete
+ * @return {int} the number of keys removed (0 or 1)
+ */
 export func del(session as Session, key as string) {
     return command($session, ["DEL", $key]).num;
 }
 
-# exists reports whether `key` is present.
+/**
+ * Report whether `key` is present.
+ * @param session {Session} the open session
+ * @param key {string} the key to test
+ * @return {bool} whether the key exists
+ */
 export func exists(session as Session, key as string) {
     return command($session, ["EXISTS", $key]).num > 0;
 }
 
-# incr atomically increments `key` and returns the new value.
+/**
+ * Atomically increment `key` and return the new value.
+ * @param session {Session} the open session
+ * @param key {string} the counter key
+ * @return {int} the new value
+ */
 export func incr(session as Session, key as string) {
     return command($session, ["INCR", $key]).num;
 }
 
-# decr atomically decrements `key` and returns the new value.
+/**
+ * Atomically decrement `key` and return the new value.
+ * @param session {Session} the open session
+ * @param key {string} the counter key
+ * @return {int} the new value
+ */
 export func decr(session as Session, key as string) {
     return command($session, ["DECR", $key]).num;
 }
 
-# keys returns the keys matching a glob `pattern` (e.g. "*", "user:*").
+/**
+ * Return the keys matching a glob `pattern` (e.g. "*", "user:*").
+ * @param session {Session} the open session
+ * @param pattern {string} the glob pattern
+ * @return {list of string} the matching keys
+ */
 export func keys(session as Session, pattern as string) {
     def out as list of string init [];
     for (def item in command($session, ["KEYS", $pattern]).items) {
@@ -254,12 +312,19 @@ export func keys(session as Session, pattern as string) {
     return $out;
 }
 
-# ping returns the server's PONG (a liveness check).
+/**
+ * Return the server's PONG (a liveness check).
+ * @param session {Session} the open session
+ * @return {string} the server's reply ("PONG")
+ */
 export func ping(session as Session) {
     return command($session, ["PING"]).str;
 }
 
-# quit ends the session and closes the connection.
+/**
+ * End the session and close the connection.
+ * @param session {Session} the open session
+ */
 export func quit(session as Session) {
     command($session, ["QUIT"]);
     net.close($session.conn);

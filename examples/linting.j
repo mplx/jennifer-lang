@@ -1,16 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 
-# examples/linting.j - one triggered-then-suppressed case per lint check.
-#
-# `jennifer lint examples/linting.j` reports nothing: every finding below is
-# provoked on purpose and then silenced with a `# lint-disable: ID` comment.
-# The rule is that the directive sits on the line the finding ANCHORS to. For
-# most checks that is the offending statement. For the method- and block-level
-# checks the anchor is the `func` line (L201) or the block-introducer line
-# (L202), so the directive lives there. Delete any directive to watch that
-# check fire. A `# lint-disable-file: ID` near the top instead silences one ID
-# across the whole file (handy when a check is noise for a given file).
+/**
+ * One triggered-then-suppressed case per lint check.
+ * `jennifer lint examples/linting.j` reports nothing: every finding below is
+ * provoked on purpose and then silenced with a `# lint-disable: ID` comment.
+ * The directive sits on the line the finding anchors to. Delete any directive
+ * to watch that check fire.
+ * @module linting
+ */
 
 use io;
 

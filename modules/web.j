@@ -1,18 +1,23 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# web.j - an ergonomic HTTP framework over the `httpd` server engine. Register
-# routes against handler methods by name, then `web.run` owns the accept loop,
-# matches each request, and dispatches to the handler. Since Jennifer has no
-# first-class functions, dispatch is by method name via `meta.callMain` (which
-# reaches the entry program's handlers across the module boundary); a handler
-# is `func name(ctx as web.Context) { ... }`. Routing supports `:param`
-# segments, a middleware chain, and a custom not-found handler. Response and
-# request helpers hang off the `web.Context` so a handler rarely reaches for
-# `httpd` directly.
-#
-# Needs the default `jennifer` binary (the `httpd` engine is net-backed; the
-# constrained `jennifer-tiny` has no network stack).
+
+/**
+ * An ergonomic HTTP framework over the `httpd` server engine. Register routes
+ * against handler methods by name, then `web.run` owns the accept loop, matches
+ * each request, and dispatches to the handler. Since Jennifer has no
+ * first-class functions, dispatch is by method name via `meta.callMain` (which
+ * reaches the entry program's handlers across the module boundary); a handler
+ * is `func name(ctx as web.Context) { ... }`. Routing supports `:param`
+ * segments, a middleware chain, and a custom not-found handler. Response and
+ * request helpers hang off the `web.Context` so a handler rarely reaches for
+ * `httpd` directly. Needs the default `jennifer` binary (the `httpd` engine is
+ * net-backed; the constrained `jennifer-tiny` has no network stack).
+ * @module web
+ * @example
+ * def app as web.App init web.new();
+ * $app = web.get($app, "/hello/:name", "hello");
+ * web.run($app, ":8080");
+ */
 
 use httpd;
 use meta;
@@ -21,26 +26,40 @@ use lists;
 use maps;
 use strings;
 
-# A Route is one registered (method, pattern, handler-name) triple. Exported
-# only to satisfy the referential-closure rule (App exposes a list of Route);
-# programs never build one directly - they call web.get / web.route.
+/**
+ * One registered (method, pattern, handler-name) triple. Exported only to
+ * satisfy the referential-closure rule (App exposes a list of Route); programs
+ * never build one directly - they call web.get / web.route.
+ * @field method {string} the HTTP method (e.g. "GET")
+ * @field pattern {string} the route pattern, with optional `:param` segments
+ * @field handler {string} the name of the handler method to dispatch to
+ */
 export def struct Route {
     method as string,
     pattern as string,
     handler as string
 };
 
-# App is the value-semantic router state: the routes, the middleware chain
-# (handler names run before each route), and an optional not-found handler
-# name (empty = the built-in 404). Every registrar returns a fresh App.
+/**
+ * The value-semantic router state: the routes, the middleware chain (handler
+ * names run before each route), and an optional not-found handler name (empty =
+ * the built-in 404). Every registrar returns a fresh App.
+ * @field routes {list of Route} the registered routes
+ * @field middleware {list of string} handler names run before each route
+ * @field notFound {string} the not-found handler name (empty = built-in 404)
+ */
 export def struct App {
     routes as list of Route,
     middleware as list of string,
     notFound as string
 };
 
-# Context is what a handler receives: the underlying request handle plus the
-# path parameters captured from the matched route (`:id` -> params["id"]).
+/**
+ * What a handler receives: the underlying request handle plus the path
+ * parameters captured from the matched route (`:id` -> params["id"]).
+ * @field req {httpd.Request} the underlying request handle
+ * @field params {map of string to string} the captured path parameters
+ */
 export def struct Context {
     req as httpd.Request,
     params as map of string to string
@@ -56,15 +75,25 @@ def struct Match {
 
 # --- registration ----------------------------------------------------------
 
-# new returns an empty App.
+/**
+ * Return an empty App with no routes or middleware.
+ * @return {App} a fresh, empty router
+ */
 export func new() {
     def routes as list of Route init [];
     def mw as list of string init [];
     return App{ routes: $routes, middleware: $mw, notFound: "" };
 }
 
-# route registers a handler for a method + pattern, returning a new App. It
-# errors early if the handler method is not defined.
+/**
+ * Register a handler for a method + pattern, returning a new App.
+ * @param app {App} the router to extend
+ * @param method {string} the HTTP method to match
+ * @param pattern {string} the route pattern, with optional `:param` segments
+ * @param handler {string} the name of the handler method
+ * @return {App} a new App with the route added
+ * @throws {Error} kind "web" when the handler method is not defined
+ */
 export func route(app as App, method as string, pattern as string, handler as string) {
     if (not meta.definedMain($handler)) {
         throw Error{ kind: "web", message: "web.route: handler not defined: " + $handler, file: "", line: 0, col: 0 };
@@ -75,29 +104,70 @@ export func route(app as App, method as string, pattern as string, handler as st
     return $out;
 }
 
+/**
+ * Register a GET handler for a pattern, returning a new App.
+ * @param app {App} the router to extend
+ * @param pattern {string} the route pattern, with optional `:param` segments
+ * @param handler {string} the name of the handler method
+ * @return {App} a new App with the route added
+ */
 export func get(app as App, pattern as string, handler as string) {
     return route($app, "GET", $pattern, $handler);
 }
 
+/**
+ * Register a POST handler for a pattern, returning a new App.
+ * @param app {App} the router to extend
+ * @param pattern {string} the route pattern, with optional `:param` segments
+ * @param handler {string} the name of the handler method
+ * @return {App} a new App with the route added
+ */
 export func post(app as App, pattern as string, handler as string) {
     return route($app, "POST", $pattern, $handler);
 }
 
+/**
+ * Register a PUT handler for a pattern, returning a new App.
+ * @param app {App} the router to extend
+ * @param pattern {string} the route pattern, with optional `:param` segments
+ * @param handler {string} the name of the handler method
+ * @return {App} a new App with the route added
+ */
 export func put(app as App, pattern as string, handler as string) {
     return route($app, "PUT", $pattern, $handler);
 }
 
+/**
+ * Register a PATCH handler for a pattern, returning a new App.
+ * @param app {App} the router to extend
+ * @param pattern {string} the route pattern, with optional `:param` segments
+ * @param handler {string} the name of the handler method
+ * @return {App} a new App with the route added
+ */
 export func patch(app as App, pattern as string, handler as string) {
     return route($app, "PATCH", $pattern, $handler);
 }
 
+/**
+ * Register a DELETE handler for a pattern, returning a new App.
+ * @param app {App} the router to extend
+ * @param pattern {string} the route pattern, with optional `:param` segments
+ * @param handler {string} the name of the handler method
+ * @return {App} a new App with the route added
+ */
 export func delete(app as App, pattern as string, handler as string) {
     return route($app, "DELETE", $pattern, $handler);
 }
 
-# before registers a middleware handler, run before each route handler. A
-# middleware is `func name(ctx as web.Context) { ...; return true; }`: return
-# true to continue to the route handler, or respond and return false to halt.
+/**
+ * Register a middleware handler, run before each route handler. A middleware is
+ * `func name(ctx as web.Context) { ...; return true; }`: return true to continue
+ * to the route handler, or respond and return false to halt.
+ * @param app {App} the router to extend
+ * @param handler {string} the name of the middleware method
+ * @return {App} a new App with the middleware appended to the chain
+ * @throws {Error} kind "web" when the middleware method is not defined
+ */
 export func before(app as App, handler as string) {
     if (not meta.definedMain($handler)) {
         throw Error{ kind: "web", message: "web.before: middleware not defined: " + $handler, file: "", line: 0, col: 0 };
@@ -107,7 +177,13 @@ export func before(app as App, handler as string) {
     return $out;
 }
 
-# notFound sets a custom handler for unmatched requests (default: a plain 404).
+/**
+ * Set a custom handler for unmatched requests (default: a plain 404).
+ * @param app {App} the router to extend
+ * @param handler {string} the name of the not-found handler method
+ * @return {App} a new App with the not-found handler set
+ * @throws {Error} kind "web" when the handler method is not defined
+ */
 export func notFound(app as App, handler as string) {
     if (not meta.definedMain($handler)) {
         throw Error{ kind: "web", message: "web.notFound: handler not defined: " + $handler, file: "", line: 0, col: 0 };
@@ -119,18 +195,49 @@ export func notFound(app as App, handler as string) {
 
 # --- request / response helpers (on a Context) ------------------------------
 
+/**
+ * Return the request's HTTP method.
+ * @param ctx {Context} the request context
+ * @return {string} the HTTP method (e.g. "GET")
+ */
 export func method(ctx as Context) { return httpd.method($ctx.req); }
 
+/**
+ * Return the request's URL path.
+ * @param ctx {Context} the request context
+ * @return {string} the request path
+ */
 export func path(ctx as Context) { return httpd.path($ctx.req); }
 
+/**
+ * Return a query-string parameter value.
+ * @param ctx {Context} the request context
+ * @param name {string} the query parameter name
+ * @return {string} the parameter value, or "" if absent
+ */
 export func query(ctx as Context, name as string) { return httpd.query($ctx.req, $name); }
 
+/**
+ * Return a request header value.
+ * @param ctx {Context} the request context
+ * @param name {string} the header name
+ * @return {string} the header value, or "" if absent
+ */
 export func header(ctx as Context, name as string) { return httpd.header($ctx.req, $name); }
 
+/**
+ * Return the request body.
+ * @param ctx {Context} the request context
+ * @return {string} the request body
+ */
 export func body(ctx as Context) { return httpd.body($ctx.req); }
 
-# param returns a captured path parameter, or "" if the route had none by that
-# name.
+/**
+ * Return a captured path parameter, or "" if the route had none by that name.
+ * @param ctx {Context} the request context
+ * @param name {string} the path parameter name
+ * @return {string} the captured value, or "" if absent
+ */
 export func param(ctx as Context, name as string) {
     if (maps.has($ctx.params, $name)) {
         return $ctx.params[$name];
@@ -138,29 +245,55 @@ export func param(ctx as Context, name as string) {
     return "";
 }
 
+/**
+ * Set a response header.
+ * @param ctx {Context} the request context
+ * @param name {string} the header name
+ * @param value {string} the header value
+ */
 export func setHeader(ctx as Context, name as string, value as string) {
     httpd.setHeader($ctx.req, $name, $value);
 }
 
+/**
+ * Answer the request with a status code and body.
+ * @param ctx {Context} the request context
+ * @param status {int} the HTTP status code
+ * @param body {string} the response body
+ */
 export func respond(ctx as Context, status as int, body as string) {
     httpd.respond($ctx.req, $status, $body);
 }
 
-# text answers with a text/plain body.
+/**
+ * Answer with a text/plain body.
+ * @param ctx {Context} the request context
+ * @param status {int} the HTTP status code
+ * @param body {string} the response body
+ */
 export func text(ctx as Context, status as int, body as string) {
     httpd.setHeader($ctx.req, "Content-Type", "text/plain; charset=utf-8");
     httpd.respond($ctx.req, $status, $body);
 }
 
-# sendJson answers with an application/json body encoded from a json.Value.
-# (Named sendJson, not json, because a method may not shadow the `json`
-# namespace this module imports.)
+/**
+ * Answer with an application/json body encoded from a json.Value. (Named
+ * sendJson, not json, because a method may not shadow the `json` namespace this
+ * module imports.)
+ * @param ctx {Context} the request context
+ * @param status {int} the HTTP status code
+ * @param doc {json.Value} the JSON document to encode
+ */
 export func sendJson(ctx as Context, status as int, doc as json.Value) {
     httpd.setHeader($ctx.req, "Content-Type", "application/json");
     httpd.respond($ctx.req, $status, json.encode($doc));
 }
 
-# serveFile answers with a file from disk.
+/**
+ * Answer with a file from disk.
+ * @param ctx {Context} the request context
+ * @param path {string} the filesystem path to serve
+ */
 export func serveFile(ctx as Context, path as string) {
     httpd.serveFile($ctx.req, $path);
 }
@@ -247,11 +380,15 @@ func dispatch(app as App, handler as string, ctx as Context, req as httpd.Reques
 
 # --- serving ----------------------------------------------------------------
 
-# serveOn serves on an already-listening httpd.Server, dispatching each request
-# to its matched handler. Blocks until the server is shut down (httpd.accept
-# then errors and the loop exits). Use this when you want to hold the server
-# handle yourself - e.g. to shut it down from another task, or to serve from a
-# `spawn`. `web.run` is the listen-and-serve convenience over it.
+/**
+ * Serve on an already-listening httpd.Server, dispatching each request to its
+ * matched handler. Blocks until the server is shut down (httpd.accept then
+ * errors and the loop exits). Use this when you want to hold the server handle
+ * yourself - e.g. to shut it down from another task, or to serve from a
+ * `spawn`. `web.run` is the listen-and-serve convenience over it.
+ * @param app {App} the router
+ * @param srv {httpd.Server} the already-listening server handle
+ */
 export func serveOn(app as App, srv as httpd.Server) {
     def running as bool init true;
     while ($running) {
@@ -275,8 +412,12 @@ export func serveOn(app as App, srv as httpd.Server) {
     }
 }
 
-# run listens on addr and serves forever, dispatching each request to its
-# matched handler. Blocks; interrupt to stop.
+/**
+ * Listen on addr and serve forever, dispatching each request to its matched
+ * handler. Blocks; interrupt to stop.
+ * @param app {App} the router
+ * @param addr {string} the listen address (e.g. ":8080")
+ */
 export func run(app as App, addr as string) {
     def srv as httpd.Server init httpd.listen($addr);
     serveOn($app, $srv);

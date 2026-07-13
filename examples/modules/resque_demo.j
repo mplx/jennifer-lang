@@ -1,20 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# resque_demo.j - schedule background jobs and drain them from a worker, both
-# sides in one file, with the resque module.
-#
-# Needs a Redis server on 127.0.0.1:6379 and the default `jennifer` binary
-# (resque runs on the redis module, which uses `net`). Start one with
-# `redis-server`, then:
-#
-#     jennifer run examples/modules/resque_demo.j
-#
-# The jobs it enqueues are Resque wire-compatible, so a Ruby-resque worker with
-# SendWelcome / Resize / Ping classes could process them instead of this loop.
-# With no server running it prints the connection error rather than failing.
-# Not a golden test (it needs a live server).
+
+/**
+ * Schedule background jobs and drain them from a worker, both sides in one file, with the resque module.
+ * Needs a Redis server on 127.0.0.1:6379 and the default jennifer binary (resque runs on the redis module, which uses net). The jobs it enqueues are Resque wire-compatible, so a Ruby-resque worker could process them instead. With no server running it prints the connection error rather than failing.
+ * @module resque_demo
+ */
 use io;
 import "../../modules/resque.j" as resque;
 import "../../modules/redis.j" as redis;

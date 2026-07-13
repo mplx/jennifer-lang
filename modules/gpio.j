@@ -1,22 +1,26 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# gpio.j - Raspberry-Pi (and any Linux SBC) GPIO over sysfs. /sys/class/gpio is
-# plain files, so `fs` is the whole backend: export a pin, set its direction,
-# read / write its value, unexport it. "Blink an LED from a five-line script."
-#
-# It is stateless and pin-keyed (sysfs derives every path from the pin number,
-# so no handle is needed). The sysfs root defaults to /sys/class/gpio; set the
-# JENNIFER_GPIO_BASE environment variable to point elsewhere (a differently
-# mounted sysfs, or a mock tree under test).
-#
-# This is the sysfs backend. sysfs GPIO is deprecated in favour of the
-# /dev/gpiochip character device, but stays available on the hobbyist Pi
-# kernels this targets; the API is kept stable so the backend could later be
-# swapped for a chardev system library with no change to scripts.
-#
-# GPIO is a Linux-platform feature: off a GPIO-capable host every call reports a
-# clear "base directory not found" error rather than crashing.
+
+/**
+ * Raspberry-Pi (and any Linux SBC) GPIO over sysfs. /sys/class/gpio is plain
+ * files, so `fs` is the whole backend: export a pin, set its direction, read /
+ * write its value, unexport it. "Blink an LED from a five-line script." It is
+ * stateless and pin-keyed (sysfs derives every path from the pin number, so no
+ * handle is needed). The sysfs root defaults to /sys/class/gpio; set the
+ * JENNIFER_GPIO_BASE environment variable to point elsewhere (a differently
+ * mounted sysfs, or a mock tree under test). This is the sysfs backend, which is
+ * deprecated in favour of the /dev/gpiochip character device but stays available
+ * on the hobbyist Pi kernels this targets; the API is kept stable so the backend
+ * could later be swapped for a chardev system library with no change to scripts.
+ * GPIO is a Linux-platform feature: off a GPIO-capable host every call reports a
+ * clear "base directory not found" error rather than crashing.
+ * @module gpio
+ * @example
+ * import "gpio.j" as gpio;
+ * gpio.setup(17, "out");
+ * gpio.write(17, 1);
+ * gpio.release(17);
+ */
 
 use fs;
 use os;
@@ -49,7 +53,12 @@ func pinDir(dir as string, pin as int) {
     return $dir + "/gpio" + convert.toString($pin);
 }
 
-# setup exports a pin and sets its direction ("in" or "out").
+/**
+ * Export a pin and set its direction ("in" or "out").
+ * @param pin {int} the GPIO pin number
+ * @param direction {string} the pin direction, "in" or "out"
+ * @throws {Error} when direction is not "in"/"out", or the sysfs GPIO tree is absent
+ */
 export func setup(pin as int, direction as string) {
     if (not ($direction == "in" or $direction == "out")) {
         throw Error{ kind: "gpio", message: "gpio.setup: direction must be \"in\" or \"out\", got \"" + $direction + "\"", file: "", line: 0, col: 0 };
@@ -65,7 +74,12 @@ export func setup(pin as int, direction as string) {
     fs.writeString($pd + "/direction", $direction);
 }
 
-# write sets an output pin's value (0 or 1).
+/**
+ * Set an output pin's value (0 or 1).
+ * @param pin {int} the GPIO pin number
+ * @param value {int} the value to write, 0 or 1
+ * @throws {Error} when value is not 0/1, or the sysfs GPIO tree is absent
+ */
 export func write(pin as int, value as int) {
     if (not ($value == 0 or $value == 1)) {
         throw Error{ kind: "gpio", message: "gpio.write: value must be 0 or 1", file: "", line: 0, col: 0 };
@@ -75,7 +89,12 @@ export func write(pin as int, value as int) {
     fs.writeString(pinDir($dir, $pin) + "/value", convert.toString($value));
 }
 
-# read returns a pin's current value (0 or 1).
+/**
+ * Return a pin's current value (0 or 1).
+ * @param pin {int} the GPIO pin number
+ * @return {int} the pin's current value, 0 or 1
+ * @throws {Error} when the sysfs GPIO tree is absent
+ */
 export func read(pin as int) {
     def dir as string init base();
     requireBase($dir);
@@ -83,7 +102,11 @@ export func read(pin as int) {
     return convert.toInt(strings.trim($raw));
 }
 
-# release unexports a pin.
+/**
+ * Unexport a pin.
+ * @param pin {int} the GPIO pin number
+ * @throws {Error} when the sysfs GPIO tree is absent
+ */
 export func release(pin as int) {
     def dir as string init base();
     requireBase($dir);

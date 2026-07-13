@@ -1,16 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# gpio_demo.j - blink an LED with the gpio module.
-#
-# On a real Raspberry Pi, gpio talks to /sys/class/gpio directly - drop the
-# three "mock" lines below and this drives physical pin 17. To keep the demo
-# runnable on any machine (no hardware, no root), it points gpio at a mock
-# sysfs tree via JENNIFER_GPIO_BASE and drives that instead. The gpio calls are
-# exactly what you'd run on the Pi.
-#
-#     jennifer run examples/modules/gpio_demo.j
+
+/**
+ * Blink an LED with the gpio module.
+ * On a real Raspberry Pi, gpio talks to /sys/class/gpio directly - drop the three "mock" lines below and this drives physical pin 17. To keep the demo runnable on any machine (no hardware, no root), it points gpio at a mock sysfs tree via JENNIFER_GPIO_BASE and drives that instead. The gpio calls are exactly what you'd run on the Pi.
+ * @module gpio_demo
+ */
 use io;
 use os;
 use fs;

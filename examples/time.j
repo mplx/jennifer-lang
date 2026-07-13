@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# time.j - exercises the `time` library. Uses `time.fromUnix`
-# throughout so the golden file is deterministic (time.now() would
-# vary with the wall clock).
+
+/**
+ * Exercises the `time` library. Uses `time.fromUnix`
+ * throughout so the golden file is deterministic (time.now() would
+ * vary with the wall clock).
+ * @module time
+ */
 
 use io;
 use time;

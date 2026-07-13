@@ -1,12 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# wordcount.j - small word-frequency analyzer that exercises core
-# features in a realistic shape: split a sentence into a list of words,
-# build a frequency map, find the top word, and render an ASCII bar
-# chart. Then a nested example aggregates per-reviewer totals across a
-# list of map-of-string-to-int reviews. Used as a golden integration
-# test by cmd/jennifer/examples_test.go.
+
+/**
+ * Small word-frequency analyzer that exercises core
+ * features in a realistic shape: split a sentence into a list of words,
+ * build a frequency map, find the top word, and render an ASCII bar
+ * chart. Then a nested example aggregates per-reviewer totals across a
+ * list of map-of-string-to-int reviews. Used as a golden integration
+ * test by cmd/jennifer/examples_test.go.
+ * @module wordcount
+ */
 
 use io;
 use strings;

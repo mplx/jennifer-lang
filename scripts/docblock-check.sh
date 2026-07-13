@@ -66,9 +66,15 @@ import "$docblock" as db;
 def path as string init os.ARGS[1];
 def d as db.FileDoc init db.parse(fs.readString(\$path));
 def n as int init len(\$d.diagnostics);
+# The module preamble (the @module doc) is a separate field, not a func /
+# struct / const; report it as its own 0/1 count.
+def hasmod as int init 0;
+if (not (\$d.module.summary == "")) {
+    \$hasmod = 1;
+}
 if (\$n == 0) {
-    io.printf("ok   %s  (%d func, %d struct, %d const)\n",
-        \$path, len(\$d.funcs), len(\$d.structs), len(\$d.consts));
+    io.printf("ok   %s  (%d module, %d func, %d struct, %d const)\n",
+        \$path, \$hasmod, len(\$d.funcs), len(\$d.structs), len(\$d.consts));
     exit 0;
 }
 io.printf("WARN %s  (%d diagnostic)\n", \$path, \$n);

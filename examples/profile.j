@@ -1,23 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# profile.j - a workload for the allocation profiler. Run it with:
-#
-#   jennifer profile --allocs examples/profile.j
-#
-# It exercises the value-semantics copy paths that `--allocs` tracks:
-# eager copies (a def / assignment / parameter binding that deep-copies a
-# compound value) and spawn-frame deep copies (the scope snapshot taken
-# when a `spawn` launches). It also aliases-then-mutates the way that
-# WOULD force a copy-on-write detachment under a lazier strategy - but the
-# interpreter copies eagerly at every store and keeps the append/index hot
-# loop unshared, so COW detachments stay at or near zero. That contrast is
-# the point: the eager-copy counter is where the real allocation cost is.
-#
-# For the statement/time profile instead, drop --allocs:
-#
-#   jennifer profile examples/profile.j
 
+/**
+ * A workload for the allocation profiler, run with jennifer profile --allocs.
+ * It exercises the value-semantics copy paths that --allocs tracks: eager copies (a def / assignment / parameter binding that deep-copies a compound value) and spawn-frame deep copies. It also aliases-then-mutates the way that would force a copy-on-write detachment under a lazier strategy, but the interpreter copies eagerly at every store and keeps the append/index hot loop unshared, so COW detachments stay at or near zero. Drop --allocs for the statement/time profile instead.
+ * @module profile
+ */
 use io;
 use lists;
 use task;

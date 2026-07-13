@@ -1,28 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# gotify.j - push a notification to a Gotify server (https://gotify.net), a
-# tiny real-world module on top of the `http` client. Hold a value-semantic
-# `Config` (server URL + application token) and call `push`; it POSTs the
-# message form to `URL/message` with the `X-Gotify-Key` header, per Gotify's
-# push-message contract (https://gotify.net/docs/pushmsg). Because it builds on
-# `http` (which uses `net`), this module needs the default `jennifer` binary.
-#
-#     import "gotify.j" as gotify;
-#
-#     def g as gotify.Config init gotify.Config{url: "https://push.example.com",
-#         token: "AqB3cD..."};
-#     def r as http.Response init gotify.push($g, "Deploy", "build 1234 is live", 5);
-#     # $r.status is 200 on success; a bad token comes back as a 4xx value.
-#
-# The URL and token belong to the caller - read them from the environment or a
-# config file; never commit them.
+
+/**
+ * Push notifications to a Gotify server (https://gotify.net), on top of the
+ * `http` client. Hold a value-semantic Config (server URL + application token)
+ * and call push; it POSTs the message form to URL/message with the
+ * X-Gotify-Key header, per Gotify's push-message contract. Needs the default
+ * `jennifer` binary (uses `net` via `http`). The URL and token belong to the
+ * caller - read them from the environment or a config file; never commit them.
+ * @module gotify
+ * @example
+ * def g as gotify.Config init gotify.Config{url: "https://push.example.com", token: "tok"};
+ * def r as http.Response init gotify.push($g, "Deploy", "build 1234 is live", 5);
+ */
 use strings;
 use convert;
 import "./http.j" as http;
 
-# A Gotify target: the server `url` (no trailing slash) and an application
-# `token`. Value-semantic; pass it to each `push` (no mutable module state).
+/**
+ * A Gotify target: value-semantic, passed to each push (no module state).
+ * @field url {string} the server URL, no trailing slash
+ * @field token {string} the application token
+ */
 export def struct Config {
     url as string,
     token as string
@@ -83,9 +82,14 @@ func formBody(title as string, message as string, priority as int) {
 
 # --- push (exported) -----------------------------------------------
 
-# push sends a notification (title / message / priority) to the Gotify server
-# and returns the `http.Response` (2xx on success; a bad token surfaces as a
-# 4xx value, not a crash).
+/**
+ * Send a notification to the Gotify server.
+ * @param cfg {Config} the server URL + token
+ * @param title {string} the notification title
+ * @param message {string} the notification body
+ * @param priority {int} the Gotify priority (higher is more urgent)
+ * @return {http.Response} 2xx on success; a bad token surfaces as a 4xx value
+ */
 export func push(cfg as Config, title as string, message as string, priority as int) {
     def headers as map of string to string init {"X-Gotify-Key": $cfg.token};
     def body as string init formBody($title, $message, $priority);

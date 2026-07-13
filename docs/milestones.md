@@ -1966,19 +1966,24 @@ web.use($app, "logRequests");                  # middleware by name
 web.run($app, ":8080");
 ```
 
-Surface: routing with path params (`/users/:id`) and method dispatch,
-middleware chains, query / form / JSON body parsing (via `json` and
-`toml`), cookies, and static serving. It **reads its configuration from
-`toml`** ([M18.8](#m188---toml-system-library), ordered just before it) -
-listen address, routes / static roots, session / rate-limit knobs from a
-config file, the first real consumer of the `toml` library. And it **wires
-both memcache-backed reference modules**:
-[`session`](#m1861---session-module-on-memcache) for cookie-keyed
-server-side sessions (a `Set-Cookie` session ID whose data lives in
-`memcache`) and [`ratelimit`](#m1862---ratelimit-module-on-memcache) for
-per-client-IP throttling (`allow` check, `429` on deny) - so a real serving
-stack demonstrates config, sessions, and rate limiting end to end instead
-of leaving them as shelfware. Both are opt-in wiring, not hard dependencies.
+Surface: routing with path params (`/users/:id`) and method dispatch, a
+middleware chain, a custom not-found handler, and a `web.Context` carrying
+request accessors (`method` / `path` / `query` / `header` / `body` / `param`)
+and response helpers (`text`, `sendJson` via `json`, `respond`, `setHeader`,
+`serveFile`). `web.run($app, addr)` owns the accept loop (`web.serveOn($app,
+srv)` to hold the server handle).
+
+`web` stays deliberately **dependency-light**: it imports only `httpd`,
+`meta`, `json`, and the collection libraries, so it forces no store or config
+format on an app. The heavier pieces are **opt-in companions the app composes
+in**, not things `web` itself wires: an app reads its own configuration with
+[`toml`](#m188---toml-system-library), adds cookie-keyed server-side sessions
+with [`session`](#m1861---session-module-on-memcache) (a `Set-Cookie` id whose
+data lives in `memcache`), and throttles per client with
+[`ratelimit`](#m1862---ratelimit-module-on-memcache) (`allow` check, `429` on
+deny) - each imported by the app and used from a handler through the request.
+So a real serving stack demonstrates config, sessions, and rate limiting end to
+end without baking a `memcache` dependency into every `web` app.
 
 **`jennifer serve app.j`** is the Hugo-style convenience: it boots a `web`
 app from a file (with reload), the closest analog to `hugo server`. It

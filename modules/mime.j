@@ -1,40 +1,51 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# mime.j - build and parse MIME messages (RFC 5322 headers + RFC 2045/2046
-# bodies): a header-and-boundary structure that is exactly the text
-# orchestration a `.j` module does well. The transfer codecs (base64,
-# quoted-printable) are delegated to the `encoding` system library. This is the
-# message-structure foundation the `mail` clients (SMTP / POP3 / IMAP) build
-# on; it does no networking itself.
-#
-#     import "mime.j" as mime;
-#     def msg as mime.Part init mime.text("text/plain", "Hello, monde: café.");
-#     $msg = mime.withHeader($msg, "Subject", "Hi");
-#     io.printf("%s", mime.encode($msg));
-#     def back as mime.Part init mime.parse(mime.encode($msg));
-#
-# A `Part` is a leaf (headers + a decoded-text `body` with a transfer
-# `encoding`) or a multipart container (headers + child `parts` + a
-# `boundary`). Bodies are held decoded as text; encode applies the transfer
-# encoding, parse removes it. RFC 2047 encoded-words are applied automatically:
-# `encode` encodes a non-ASCII Subject / display name (`=?UTF-8?B?...?=`),
-# `parse` decodes them back to text, and `encodeWord` / `decodeWord` are exposed
-# for manual use. Content is text (UTF-8): binary attachments (a `bytes` body)
-# are not yet handled.
+
+/**
+ * Build and parse MIME messages (RFC 5322 headers + RFC 2045/2046 bodies): a
+ * header-and-boundary structure that is exactly the text orchestration a `.j`
+ * module does well. The transfer codecs (base64, quoted-printable) are delegated
+ * to the `encoding` system library. This is the message-structure foundation the
+ * mail clients (SMTP / POP3 / IMAP) build on; it does no networking itself. A
+ * `Part` is a leaf (headers + a decoded-text `body` with a transfer `encoding`)
+ * or a multipart container (headers + child `parts` + a `boundary`); bodies are
+ * held decoded as text, encode applies the transfer encoding and parse removes
+ * it. RFC 2047 encoded-words are applied automatically on encode and decoded on
+ * parse, with `encodeWord` / `decodeWord` exposed for manual use. Content is
+ * text (UTF-8); binary attachments (a `bytes` body) are not yet handled.
+ * @module mime
+ * @example
+ * import "mime.j" as mime;
+ * def msg as mime.Part init mime.text("text/plain", "Hello, monde: café.");
+ * $msg = mime.withHeader($msg, "Subject", "Hi");
+ * io.printf("%s", mime.encode($msg));
+ * def back as mime.Part init mime.parse(mime.encode($msg));
+ */
+
 use strings;
 use convert;
 use encoding;
 use regex;
 
-# A single header field.
+/**
+ * A single header field.
+ * @field name {string} the field name (e.g. "Subject")
+ * @field value {string} the field value
+ */
 export def struct Header {
     name as string,
     value as string
 };
 
-# A MIME part: a leaf (`body` + `encoding`, `parts` empty) or a multipart
-# container (`parts` + `boundary`, `body` empty).
+/**
+ * A MIME part: a leaf (`body` + `encoding`, `parts` empty) or a multipart
+ * container (`parts` + `boundary`, `body` empty).
+ * @field headers {list of Header} the part's header fields
+ * @field body {string} the decoded text body of a leaf part
+ * @field encoding {string} the transfer encoding ("7bit", "base64", "quoted-printable")
+ * @field parts {list of Part} the child parts of a multipart container
+ * @field boundary {string} the multipart boundary delimiter
+ */
 export def struct Part {
     headers as list of Header,
     body as string,
@@ -262,9 +273,13 @@ func encodeWordChunk(s as string) {
     return "=?UTF-8?B?" + encoding.toText($b, "base64") + "?=";
 }
 
-# encodeWord renders `text` as one or more RFC 2047 UTF-8 base64 encoded-words,
-# each kept under the 75-character limit (split on rune boundaries, never
-# mid-character) and folded with CRLF + space when more than one is needed.
+/**
+ * Render `text` as one or more RFC 2047 UTF-8 base64 encoded-words, each kept
+ * under the 75-character limit (split on rune boundaries, never mid-character)
+ * and folded with CRLF + space when more than one is needed.
+ * @param text {string} the text to encode
+ * @return {string} the encoded-word sequence
+ */
 export func encodeWord(text as string) {
     def words as list of string init [];
     def chunk as string init "";
@@ -333,9 +348,13 @@ func decodeOneWord(charset as string, enc as string, text as string) {
     return decodeCharset($raw, strings.lower($charset));
 }
 
-# decodeWord decodes every RFC 2047 encoded-word in `value`, dropping the
-# linear whitespace that separates two adjacent encoded-words (as a reader
-# should). A word that fails to decode is left verbatim so parse never crashes.
+/**
+ * Decode every RFC 2047 encoded-word in `value`, dropping the linear whitespace
+ * that separates two adjacent encoded-words (as a reader should). A word that
+ * fails to decode is left verbatim so parse never crashes.
+ * @param value {string} the header value possibly carrying encoded-words
+ * @return {string} the decoded text
+ */
 export func decodeWord(value as string) {
     def pat as string init "=\\?([^?]+)\\?([BbQq])\\?([^?]*)\\?=";
     def ms as list of regex.Match init regex.findAll($pat, $value);
@@ -441,8 +460,13 @@ func encodeHeaderValue(name as string, value as string) {
 
 # --- building (exported) -------------------------------------------
 
-# text builds a leaf text part; the body is sent 7bit when ASCII, else
-# quoted-printable. `charset=utf-8` is appended to the content type.
+/**
+ * Build a leaf text part; the body is sent 7bit when ASCII, else
+ * quoted-printable. `charset=utf-8` is appended to the content type.
+ * @param contentType {string} the media type (e.g. "text/plain")
+ * @param body {string} the decoded text body
+ * @return {Part} the leaf text part
+ */
 export func text(contentType as string, body as string) {
     def enc as string init "7bit";
     if (not encoding.isAscii(convert.bytesFromString($body, "utf-8"))) {
@@ -454,8 +478,14 @@ export func text(contentType as string, body as string) {
     return Part{headers: $hs, body: $body, encoding: $enc, parts: [], boundary: ""};
 }
 
-# attachment builds a base64 leaf part with a filename. `body` is text content
-# (UTF-8); binary bodies are not yet supported.
+/**
+ * Build a base64 leaf part with a filename. `body` is text content (UTF-8);
+ * binary bodies are not yet supported.
+ * @param filename {string} the attachment filename
+ * @param contentType {string} the media type
+ * @param body {string} the text content to attach
+ * @return {Part} the attachment part
+ */
 export func attachment(filename as string, contentType as string, body as string) {
     def hs as list of Header init [];
     $hs[] = mkHeader("Content-Type", $contentType);
@@ -464,14 +494,26 @@ export func attachment(filename as string, contentType as string, body as string
     return Part{headers: $hs, body: $body, encoding: "base64", parts: [], boundary: ""};
 }
 
-# multipart builds a container part; every child ships under one `boundary`.
+/**
+ * Build a container part; every child ships under one `boundary`.
+ * @param subtype {string} the multipart subtype (e.g. "mixed", "alternative")
+ * @param boundary {string} the boundary delimiter separating children
+ * @param parts {list of Part} the child parts
+ * @return {Part} the multipart container part
+ */
 export func multipart(subtype as string, boundary as string, parts as list of Part) {
     def hs as list of Header init [];
     $hs[] = mkHeader("Content-Type", "multipart/" + $subtype + "; boundary=\"" + $boundary + "\"");
     return Part{headers: $hs, body: "", encoding: "", parts: $parts, boundary: $boundary};
 }
 
-# withHeader returns a copy of the part with `name` set (replaced or appended).
+/**
+ * Return a copy of the part with `name` set (replaced or appended).
+ * @param part {Part} the part to copy
+ * @param name {string} the header name to set
+ * @param value {string} the header value
+ * @return {Part} the updated copy
+ */
 export func withHeader(part as Part, name as string, value as string) {
     def np as Part init $part;
     $np.headers = setHeaderIn($part.headers, $name, $value);
@@ -488,8 +530,12 @@ func encodeMultipart(p as Part) {
     return $out + "--" + $p.boundary + "--\r\n";
 }
 
-# encode serializes a part (and its subtree) to a MIME message string with CRLF
-# line endings and the declared transfer encodings applied.
+/**
+ * Serialize a part (and its subtree) to a MIME message string with CRLF line
+ * endings and the declared transfer encodings applied.
+ * @param part {Part} the part to serialize
+ * @return {string} the encoded MIME message
+ */
 export func encode(part as Part) {
     def out as string init "";
     for (def h in $part.headers) {
@@ -504,9 +550,13 @@ export func encode(part as Part) {
 
 # --- parsing (exported) --------------------------------------------
 
-# parse reads a MIME message string into a Part tree: headers are unfolded, a
-# multipart body is split on its boundary (recursively), and a leaf body is
-# transfer-decoded.
+/**
+ * Read a MIME message string into a Part tree: headers are unfolded, a multipart
+ * body is split on its boundary (recursively), and a leaf body is
+ * transfer-decoded.
+ * @param text {string} the MIME message text
+ * @return {Part} the parsed part tree
+ */
 export func parse(text as string) {
     def norm as string init strings.replace($text, "\r\n", "\n");
     def idx as int init strings.indexOf($norm, "\n\n");
@@ -532,22 +582,39 @@ export func parse(text as string) {
 
 # --- accessors + helpers (exported) --------------------------------
 
-# headerValue returns a part's header value (case-insensitive) or "".
+/**
+ * Return a part's header value (case-insensitive) or "".
+ * @param part {Part} the part to read
+ * @param name {string} the header name
+ * @return {string} the header value, or "" when absent
+ */
 export func headerValue(part as Part, name as string) {
     return findHeader($part.headers, $name);
 }
 
-# body returns a leaf part's decoded text body.
+/**
+ * Return a leaf part's decoded text body.
+ * @param part {Part} the leaf part
+ * @return {string} the decoded body text
+ */
 export func body(part as Part) {
     return $part.body;
 }
 
-# parts returns a multipart container's child parts.
+/**
+ * Return a multipart container's child parts.
+ * @param part {Part} the multipart container
+ * @return {list of Part} the child parts
+ */
 export func parts(part as Part) {
     return $part.parts;
 }
 
-# contentType returns a part's media type without parameters (e.g. "text/plain").
+/**
+ * Return a part's media type without parameters (e.g. "text/plain").
+ * @param part {Part} the part to read
+ * @return {string} the media type
+ */
 export func contentType(part as Part) {
     return typeOnly(findHeader($part.headers, "Content-Type"));
 }
@@ -560,8 +627,13 @@ func needsQuoting(s as string) {
     return strings.contains($s, "@") or strings.contains($s, "\"");
 }
 
-# address formats an RFC 5322 mailbox: `email` alone, or `Name <email>` with
-# the name quoted when it carries a special character.
+/**
+ * Format an RFC 5322 mailbox: `email` alone, or `Name <email>` with the name
+ * quoted when it carries a special character.
+ * @param name {string} the display name (empty for a bare address)
+ * @param email {string} the email address
+ * @return {string} the formatted mailbox
+ */
 export func address(name as string, email as string) {
     if (len($name) == 0) {
         return $email;

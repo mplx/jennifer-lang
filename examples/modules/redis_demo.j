@@ -1,17 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# redis_demo.j - talk to a Redis server with the redis module.
-#
-# Needs a Redis server listening on 127.0.0.1:6379 and the default `jennifer`
-# binary (the module uses `net`). Start one with `redis-server` (or
-# `docker run -p 6379:6379 redis`), then:
-#
-#     jennifer run examples/modules/redis_demo.j
-#
-# With no server running it prints the connection error rather than failing.
-# Not a golden test (it needs a live server); it demonstrates the surface.
+
+/**
+ * Talk to a Redis server with the redis module.
+ * Needs a Redis server listening on 127.0.0.1:6379 and the default `jennifer` binary (the module uses `net`). With no server running it prints the connection error rather than failing. Not a golden test (it needs a live server); it demonstrates the surface.
+ * @module redis_demo
+ */
 use io;
 import "../../modules/redis.j" as redis;
 

@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# hash.j - exercises the `hash` + `crc` libraries. Both
-# libraries use the codec-table shape: a single function per
-# category with the algorithm as a string argument. This example
-# carries a tiny `bytesToHex` helper so the digests are printable
-# for a golden comparison.
+
+/**
+ * Exercises the `hash` + `crc` libraries.
+ * Both libraries use the codec-table shape: a single function per category
+ * with the algorithm as a string argument. This example carries a tiny
+ * `bytesToHex` helper so the digests are printable for a golden comparison.
+ * @module hash
+ */
 
 use io;
 use convert;
@@ -14,6 +16,11 @@ use lists;
 use hash;
 use crc;
 
+/**
+ * Lowercase hexadecimal encoding of a byte string.
+ * @param b {bytes} the bytes to encode
+ * @return {string} two hex digits per input byte
+ */
 func bytesToHex(b as bytes) {
     def hexchars as string init "0123456789abcdef";
     def out as list of string init [];

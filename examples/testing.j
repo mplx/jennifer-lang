@@ -1,18 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# testing.j - exercises the `testing` library. Defines a
-# handful of test methods hitting every failure mode
-# (pass, user throw, runtime error, exit inside a test) and
-# renders the accumulated results in each of the three shipping
-# formats: human text, TAP, and JUnit XML.
-#
-# Timings vary run to run; the example prints `ms=0` fields by
-# overriding the ms via testing.results()'s copy semantics-
-# well, not really: the accumulator returns a copy but we can't
-# mutate the copy back into anything. So we simply skip printing
-# the elapsed millisecond field to keep the golden output
-# deterministic.
+
+/**
+ * Exercises the `testing` library. Defines a
+ * handful of test methods hitting every failure mode
+ * (pass, user throw, runtime error, exit inside a test) and
+ * renders the accumulated results in each of the three shipping
+ * formats: human text, TAP, and JUnit XML.
+ * Timings vary run to run; the example prints `ms=0` fields by
+ * overriding the ms via testing.results()'s copy semantics-
+ * well, not really: the accumulator returns a copy but we can't
+ * mutate the copy back into anything. So we simply skip printing
+ * the elapsed millisecond field to keep the golden output
+ * deterministic.
+ * @module testing
+ */
 
 use io;
 use testing;

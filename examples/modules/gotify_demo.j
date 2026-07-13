@@ -1,18 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# gotify_demo.j - push a notification to a Gotify server with the gotify module.
-#
-# Needs a Gotify server and the default `jennifer` binary (the module uses
-# `net` via `http`). Supply the target through the environment so nothing is
-# committed:
-#
-#     GOTIFY_URL=https://push.example.com GOTIFY_TOKEN=AqB3cD... \
-#         jennifer run examples/modules/gotify_demo.j
-#
-# With the variables unset (or no server reachable) it prints a hint / the error
-# rather than failing. Not a golden test (it needs a live server).
+
+/**
+ * Push a notification to a Gotify server with the gotify module.
+ * Needs a Gotify server and the default `jennifer` binary (the module uses `net` via `http`). Supply the target through the environment so nothing is committed. With the variables unset (or no server reachable) it prints a hint / the error rather than failing. Not a golden test (it needs a live server).
+ * @module gotify_demo
+ */
 use io;
 use os;
 import "../../modules/gotify.j" as gotify;

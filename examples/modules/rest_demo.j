@@ -1,17 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# rest_demo.j - talk to a JSON REST API with the rest module.
-#
-# Needs a REST server and the default `jennifer` binary (rest builds on the
-# http client, which uses `net`). Point `base` at any JSON API - a local dev
-# server on 127.0.0.1:8080, or a public one - then:
-#
-#     jennifer run examples/modules/rest_demo.j
-#
-# With no server reachable it prints the connection error rather than failing.
-# Not a golden test (it needs a live server); it demonstrates the surface.
+
+/**
+ * Talk to a JSON REST API with the rest module.
+ * Needs a REST server and the default jennifer binary (rest builds on the http client, which uses net). Point base at any JSON API. With no server reachable it prints the connection error rather than failing.
+ * @module rest_demo
+ */
 use io;
 use json;
 import "../../modules/rest.j" as rest;

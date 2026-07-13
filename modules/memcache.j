@@ -1,36 +1,43 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# memcache.j - a client for a memcached server, speaking its classic text
-# protocol over the `net` system library. Store with an expiration (`set` /
-# `add`), read (`get`), remove (`delete`), count atomically (`incr` / `decr`),
-# and re-arm a key's expiry (`touch`). memcached is a volatile cache - keys
-# expire on their `exptime` and the server evicts under memory pressure - so it
-# suits sessions, rate limits, and derived data, not a system of record.
-# Because it uses `net`, this module needs the default `jennifer` binary.
-#
-#     import "memcache.j" as memcache;
-#     def mc as memcache.Session init memcache.connect(memcache.Options{
-#         host: "127.0.0.1", port: 11211});
-#     memcache.set($mc, "greeting", "hello", 60);       # 60-second TTL
-#     io.printf("%s\n", memcache.get($mc, "greeting"));  # hello
-#     memcache.quit($mc);
-#
-# `exptime` is seconds (0 = never expire, until evicted). A protocol error
-# (`ERROR` / `CLIENT_ERROR` / `SERVER_ERROR`) throws a catchable `Error`
-# (kind "memcache"). Values are read as UTF-8 text: byte-exact for ASCII /
-# UTF-8 values (the common case); a binary value whose byte length differs from
-# its rune length is not yet byte-exact.
+
+/**
+ * A client for a memcached server, speaking its classic text protocol over the
+ * `net` system library. Store with an expiration (`set` / `add`), read (`get`),
+ * remove (`delete`), count atomically (`incr` / `decr`), and re-arm a key's
+ * expiry (`touch`). memcached is a volatile cache - keys expire on their
+ * `exptime` and the server evicts under memory pressure - so it suits sessions,
+ * rate limits, and derived data, not a system of record. `exptime` is seconds
+ * (0 = never expire, until evicted). A protocol error (`ERROR` / `CLIENT_ERROR`
+ * / `SERVER_ERROR`) throws a catchable `Error` (kind "memcache"). Values are
+ * read as UTF-8 text: byte-exact for ASCII / UTF-8 values (the common case); a
+ * binary value whose byte length differs from its rune length is not yet
+ * byte-exact. Needs the default `jennifer` binary (uses `net`).
+ * @module memcache
+ * @example
+ * def mc as memcache.Session init memcache.connect(memcache.Options{host: "127.0.0.1", port: 11211});
+ * memcache.set($mc, "greeting", "hello", 60);
+ * io.printf("%s\n", memcache.get($mc, "greeting"));
+ * memcache.quit($mc);
+ */
 use net;
 use strings;
 use convert;
 
-# Connection settings (plaintext; memcached's text protocol has no auth / TLS).
+/**
+ * Connection settings (plaintext; memcached's text protocol has no auth / TLS).
+ * @field host {string} the server host
+ * @field port {int} the server port
+ */
 export def struct Options {
     host as string,
     port as int
 };
 
+/**
+ * An open memcached connection.
+ * @field conn {net.Conn} the underlying socket
+ */
 export def struct Session {
     conn as net.Conn
 };
@@ -114,14 +121,25 @@ func store(session as Session, verb as string, key as string, value as string, e
 
 # --- commands (exported) -------------------------------------------
 
-# connect opens a session to the memcached server.
+/**
+ * Open a session to the memcached server.
+ * @param opts {Options} the connection settings
+ * @return {Session} the open session
+ */
 export func connect(opts as Options) {
     def addr as string init $opts.host + ":" + convert.toString($opts.port);
     return Session{conn: net.connect($addr)};
 }
 
-# set stores `value` at `key` with a `exptime`-second TTL, replacing any
-# existing value.
+/**
+ * Store `value` at `key` with an `exptime`-second TTL, replacing any existing
+ * value.
+ * @param session {Session} the open session
+ * @param key {string} the key to write
+ * @param value {string} the value to store
+ * @param exptime {int} the TTL in seconds (0 = never expire, until evicted)
+ * @throws {Error} kind "memcache" on a non-STORED reply
+ */
 export func set(session as Session, key as string, value as string, exptime as int) {
     def r as string init store($session, "set", $key, $value, $exptime);
     if (not ($r == "STORED")) {
@@ -129,9 +147,16 @@ export func set(session as Session, key as string, value as string, exptime as i
     }
 }
 
-# add stores `value` at `key` only if the key is absent; returns whether it was
-# stored (false when the key already exists). The atomic build block for locks
-# and "create if new".
+/**
+ * Store `value` at `key` only if the key is absent. The atomic build block for
+ * locks and "create if new".
+ * @param session {Session} the open session
+ * @param key {string} the key to write
+ * @param value {string} the value to store
+ * @param exptime {int} the TTL in seconds (0 = never expire, until evicted)
+ * @return {bool} whether it was stored (false when the key already exists)
+ * @throws {Error} kind "memcache" on an unexpected reply
+ */
 export func add(session as Session, key as string, value as string, exptime as int) {
     def r as string init store($session, "add", $key, $value, $exptime);
     if ($r == "STORED") {
@@ -143,7 +168,12 @@ export func add(session as Session, key as string, value as string, exptime as i
     fail($r);
 }
 
-# get returns the string value of `key`, or "" when the key is absent / expired.
+/**
+ * Return the string value of `key`, or "" when the key is absent / expired.
+ * @param session {Session} the open session
+ * @param key {string} the key to read
+ * @return {string} the value, or "" when absent / expired
+ */
 export func get(session as Session, key as string) {
     writeCmd($session, "get " + $key + "\r\n");
     def first as Line init recvLine($session.conn, "");
@@ -160,7 +190,13 @@ export func get(session as Session, key as string) {
     return $value;
 }
 
-# delete removes `key`; returns whether it existed.
+/**
+ * Remove `key`.
+ * @param session {Session} the open session
+ * @param key {string} the key to remove
+ * @return {bool} whether the key existed
+ * @throws {Error} kind "memcache" on an unexpected reply
+ */
 export func delete(session as Session, key as string) {
     writeCmd($session, "delete " + $key + "\r\n");
     def r as Line init recvLine($session.conn, "");
@@ -174,7 +210,14 @@ export func delete(session as Session, key as string) {
     fail($r.text);
 }
 
-# touch re-arms `key`'s expiry to `exptime` seconds; returns whether it existed.
+/**
+ * Re-arm `key`'s expiry to `exptime` seconds.
+ * @param session {Session} the open session
+ * @param key {string} the key to re-arm
+ * @param exptime {int} the new TTL in seconds (0 = never expire, until evicted)
+ * @return {bool} whether the key existed
+ * @throws {Error} kind "memcache" on an unexpected reply
+ */
 export func touch(session as Session, key as string, exptime as int) {
     writeCmd($session, "touch " + $key + " " + convert.toString($exptime) + "\r\n");
     def r as Line init recvLine($session.conn, "");
@@ -200,18 +243,32 @@ func counter(session as Session, verb as string, key as string, delta as int) {
     return convert.toInt($r.text);
 }
 
-# incr atomically adds `delta` to the counter at `key`; -1 when the key is absent.
+/**
+ * Atomically add `delta` to the counter at `key`.
+ * @param session {Session} the open session
+ * @param key {string} the counter key
+ * @param delta {int} the amount to add
+ * @return {int} the new value, or -1 when the key is absent
+ */
 export func incr(session as Session, key as string, delta as int) {
     return counter($session, "incr", $key, $delta);
 }
 
-# decr atomically subtracts `delta` from the counter at `key` (not below 0);
-# -1 when the key is absent.
+/**
+ * Atomically subtract `delta` from the counter at `key` (not below 0).
+ * @param session {Session} the open session
+ * @param key {string} the counter key
+ * @param delta {int} the amount to subtract
+ * @return {int} the new value, or -1 when the key is absent
+ */
 export func decr(session as Session, key as string, delta as int) {
     return counter($session, "decr", $key, $delta);
 }
 
-# quit ends the session and closes the connection.
+/**
+ * End the session and close the connection.
+ * @param session {Session} the open session
+ */
 export func quit(session as Session) {
     writeCmd($session, "quit\r\n");
     net.close($session.conn);

@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# htmlwriter_demo.j - the htmlwriter module (modules/htmlwriter.j): build an
-# element tree and render it to escaped HTML5. Run:
-#
-#     jennifer run examples/modules/htmlwriter_demo.j
+
+/**
+ * The htmlwriter module (modules/htmlwriter.j): build an element tree and render it to escaped HTML5.
+ * Run: jennifer run examples/modules/htmlwriter_demo.j
+ * @module htmlwriter_demo
+ */
 use io;
 import "../../modules/htmlwriter.j" as html;
 

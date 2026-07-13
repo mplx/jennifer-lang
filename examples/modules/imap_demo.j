@@ -1,15 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# imap_demo.j - the imap module (modules/imap.j, IMAP4rev1) with mime
-# (modules/mime.j): select a mailbox, fetch its messages, and parse each. Run:
-#
-#     jennifer run examples/modules/imap_demo.j
-#
-# By default it targets a local IMAP server on 127.0.0.1:2143; with none
-# running it prints the connection error rather than failing. Point host / port
-# / user / pass at a real mailbox to fetch real mail. Needs the default
-# `jennifer` binary (`jennifer-tiny` has no network stack).
+
+/**
+ * The imap module (modules/imap.j, IMAP4rev1) with mime (modules/mime.j): select a mailbox, fetch its messages, and parse each.
+ * By default it targets a local IMAP server on 127.0.0.1:2143; with none running it prints the connection error rather than failing. Point host / port / user / pass at a real mailbox to fetch real mail. Needs the default `jennifer` binary (`jennifer-tiny` has no network stack).
+ * @module imap_demo
+ */
 use io;
 import "../../modules/imap.j" as imap;
 import "../../modules/mime.j" as mime;

@@ -1,37 +1,43 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# rest.j - an ergonomic REST layer over the `http` client and `json`. Hold a
-# value-semantic `Client` (base URL + default headers) and call JSON-aware verbs;
-# the module handles base-URL joining, query strings, `Content-Type`, and
-# Bearer / Basic auth headers. It is pure composition - no sockets, no TLS, no
-# parsing of its own - so all the transport lives in `http` (which uses `net`),
-# and this module needs the default `jennifer` binary.
-#
-#     import "rest.j" as rest;
-#
-#     def api as rest.Client init rest.Client{baseUrl: "https://api.example.com",
-#         headers: {"Authorization": rest.bearer("my-token")}};
-#     def user as json.Value init rest.getJson($api, "/users/1", {});
-#     def created as rest.Response init rest.postJson($api, "/users",
-#         json.decode("{\"name\":\"ada\"}"));
-#
-# A 4xx / 5xx is a normal `Response` (inspect `.status`), not a crash.
+
+/**
+ * An ergonomic REST layer over the `http` client and `json`. Hold a
+ * value-semantic Client (base URL + default headers) and call JSON-aware verbs;
+ * the module handles base-URL joining, query strings, `Content-Type`, and
+ * Bearer / Basic auth headers. It is pure composition - no sockets, no TLS, no
+ * parsing of its own - so all the transport lives in `http` (which uses `net`),
+ * and this module needs the default `jennifer` binary. A 4xx / 5xx is a normal
+ * Response (inspect `.status`), not a crash.
+ * @module rest
+ * @example
+ * def api as rest.Client init rest.Client{baseUrl: "https://api.example.com",
+ *     headers: {"Authorization": rest.bearer("my-token")}};
+ * def user as json.Value init rest.getJson($api, "/users/1", {});
+ */
 use strings;
 use convert;
 use encoding;
 use json;
 import "./http.j" as http;
 
-# A REST client: a `baseUrl` every path joins onto, and default `headers` sent
-# with every request (auth lives here). Value-semantic; thread it per call.
+/**
+ * A REST client: a base URL every path joins onto, and default headers sent
+ * with every request (auth lives here). Value-semantic; thread it per call.
+ * @field baseUrl {string} the base URL every path joins onto
+ * @field headers {map of string to string} default headers sent with every request
+ */
 export def struct Client {
     baseUrl as string,
     headers as map of string to string
 };
 
-# A REST response: the status code, response headers (lowercased keys), and the
-# body text.
+/**
+ * A REST response: the status code, response headers, and the body text.
+ * @field status {int} the HTTP status code
+ * @field headers {map of string to string} the response headers (lowercased keys)
+ * @field body {string} the response body text
+ */
 export def struct Response {
     status as int,
     headers as map of string to string,
@@ -98,19 +104,33 @@ func queryString(params as map of string to string) {
     return $out;
 }
 
-# bearer builds an `Authorization` value for a Bearer token.
+/**
+ * Build an `Authorization` value for a Bearer token.
+ * @param token {string} the bearer token
+ * @return {string} the "Bearer <token>" header value
+ */
 export func bearer(token as string) {
     return "Bearer " + $token;
 }
 
-# basic builds an `Authorization` value for HTTP Basic auth (base64 of
-# "user:password").
+/**
+ * Build an `Authorization` value for HTTP Basic auth (base64 of "user:password").
+ * @param user {string} the username
+ * @param pass {string} the password
+ * @return {string} the "Basic <base64>" header value
+ */
 export func basic(user as string, pass as string) {
     def creds as bytes init convert.bytesFromString($user + ":" + $pass, "utf-8");
     return "Basic " + encoding.toText($creds, "base64");
 }
 
-# withHeader returns a copy of the client with one default header set.
+/**
+ * Return a copy of the client with one default header set.
+ * @param c {Client} the client to copy
+ * @param name {string} the header name
+ * @param value {string} the header value
+ * @return {Client} a new client with the header set
+ */
 export func withHeader(c as Client, name as string, value as string) {
     def nc as Client init $c;
     $nc.headers[$name] = $value;
@@ -134,49 +154,106 @@ func send(c as Client, method as string, path as string,
 
 # --- verbs (exported) ----------------------------------------------
 
-# get issues a GET with an optional query map ({} for none).
+/**
+ * Issue a GET with an optional query map ({} for none).
+ * @param c {Client} the client
+ * @param path {string} the request path, joined onto the base URL
+ * @param query {map of string to string} query parameters ({} for none)
+ * @return {Response} the response
+ */
 export func get(c as Client, path as string, query as map of string to string) {
     return send($c, "GET", $path, $query, "", "");
 }
 
-# delete issues a DELETE with an optional query map.
+/**
+ * Issue a DELETE with an optional query map.
+ * @param c {Client} the client
+ * @param path {string} the request path, joined onto the base URL
+ * @param query {map of string to string} query parameters ({} for none)
+ * @return {Response} the response
+ */
 export func delete(c as Client, path as string, query as map of string to string) {
     return send($c, "DELETE", $path, $query, "", "");
 }
 
-# post issues a POST with a `contentType` and `body`.
+/**
+ * Issue a POST with a content type and body.
+ * @param c {Client} the client
+ * @param path {string} the request path, joined onto the base URL
+ * @param contentType {string} the `Content-Type` header value
+ * @param body {string} the request body
+ * @return {Response} the response
+ */
 export func post(c as Client, path as string, contentType as string, body as string) {
     return send($c, "POST", $path, {}, $contentType, $body);
 }
 
-# put issues a PUT with a `contentType` and `body`.
+/**
+ * Issue a PUT with a content type and body.
+ * @param c {Client} the client
+ * @param path {string} the request path, joined onto the base URL
+ * @param contentType {string} the `Content-Type` header value
+ * @param body {string} the request body
+ * @return {Response} the response
+ */
 export func put(c as Client, path as string, contentType as string, body as string) {
     return send($c, "PUT", $path, {}, $contentType, $body);
 }
 
-# patch issues a PATCH with a `contentType` and `body`.
+/**
+ * Issue a PATCH with a content type and body.
+ * @param c {Client} the client
+ * @param path {string} the request path, joined onto the base URL
+ * @param contentType {string} the `Content-Type` header value
+ * @param body {string} the request body
+ * @return {Response} the response
+ */
 export func patch(c as Client, path as string, contentType as string, body as string) {
     return send($c, "PATCH", $path, {}, $contentType, $body);
 }
 
 # --- JSON verbs (exported) -----------------------------------------
 
-# getJson issues a GET and decodes the response body as JSON.
+/**
+ * Issue a GET and decode the response body as JSON.
+ * @param c {Client} the client
+ * @param path {string} the request path, joined onto the base URL
+ * @param query {map of string to string} query parameters ({} for none)
+ * @return {json.Value} the decoded response body
+ */
 export func getJson(c as Client, path as string, query as map of string to string) {
     return json.decode(get($c, $path, $query).body);
 }
 
-# postJson issues a POST with a JSON body; returns the Response (inspect status).
+/**
+ * Issue a POST with a JSON body; returns the Response (inspect status).
+ * @param c {Client} the client
+ * @param path {string} the request path, joined onto the base URL
+ * @param body {json.Value} the JSON request body
+ * @return {Response} the response
+ */
 export func postJson(c as Client, path as string, body as json.Value) {
     return send($c, "POST", $path, {}, "application/json", json.encode($body));
 }
 
-# putJson issues a PUT with a JSON body.
+/**
+ * Issue a PUT with a JSON body.
+ * @param c {Client} the client
+ * @param path {string} the request path, joined onto the base URL
+ * @param body {json.Value} the JSON request body
+ * @return {Response} the response
+ */
 export func putJson(c as Client, path as string, body as json.Value) {
     return send($c, "PUT", $path, {}, "application/json", json.encode($body));
 }
 
-# patchJson issues a PATCH with a JSON body.
+/**
+ * Issue a PATCH with a JSON body.
+ * @param c {Client} the client
+ * @param path {string} the request path, joined onto the base URL
+ * @param body {json.Value} the JSON request body
+ * @return {Response} the response
+ */
 export func patchJson(c as Client, path as string, body as json.Value) {
     return send($c, "PATCH", $path, {}, "application/json", json.encode($body));
 }

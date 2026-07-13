@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 
-# examples/archive.j - tar / zip / tar.gz bundle round-trips. The packed bytes
-# vary with the zlib version, so this prints only stable facts (entry count,
-# names, and decoded content survive a pack/unpack cycle).
+/**
+ * tar / zip / tar.gz bundle round-trips.
+ * The packed bytes vary with the zlib version, so this prints only stable
+ * facts (entry count, names, and decoded content survive a pack/unpack cycle).
+ * @module archive
+ */
 
 use io;
 use archive;

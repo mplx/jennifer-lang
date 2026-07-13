@@ -1,16 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# smtp_demo.j - the smtp module (modules/smtp.j) with mime (modules/mime.j):
-# build a message and send it. Run:
-#
-#     jennifer run examples/modules/smtp_demo.j
-#
-# By default it targets a local SMTP server on 127.0.0.1:2525 (e.g. a dev
-# MailHog / aiosmtpd); with none running it prints the message and the
-# connection error rather than failing. Point `host` / `port` at a real server
-# to actually deliver. Needs the default `jennifer` binary (`jennifer-tiny`
-# has no network stack).
+
+/**
+ * The smtp module (modules/smtp.j) with mime (modules/mime.j): build a message and send it.
+ * By default it targets a local SMTP server on 127.0.0.1:2525 (e.g. a dev MailHog / aiosmtpd); with none running it prints the message and the connection error rather than failing. Needs the default jennifer binary (jennifer-tiny has no network stack).
+ * @module smtp_demo
+ */
 use io;
 import "../../modules/mime.j" as mime;
 import "../../modules/smtp.j" as smtp;

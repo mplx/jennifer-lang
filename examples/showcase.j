@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# showcase.j - exercises every Jennifer language feature and every
-# standard-library surface. Used as a
-# golden integration test by cmd/jennifer/examples_test.go.
-#
-# meta.VERSION is intentionally NOT printed - its value depends on
-# git state and would make the golden file non-deterministic. Same
-# for time.now() (wall clock), fs paths that depend on cwd, and
-# net addresses that depend on the kernel's ephemeral-port pick.
-# Everything printed below is deliberately deterministic across
-# runs and hosts.
+
+/**
+ * Exercises every Jennifer language feature and every standard-library surface.
+ * Used as a golden integration test by cmd/jennifer/examples_test.go.
+ * meta.VERSION is intentionally NOT printed - its value depends on
+ * git state and would make the golden file non-deterministic. Same
+ * for time.now() (wall clock), fs paths that depend on cwd, and
+ * net addresses that depend on the kernel's ephemeral-port pick.
+ * Everything printed below is deliberately deterministic across
+ * runs and hosts.
+ * @module showcase
+ */
 
 use io;
 use convert;

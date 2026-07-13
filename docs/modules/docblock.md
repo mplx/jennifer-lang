@@ -120,6 +120,41 @@ correctly** - not a fragile "delimiter alone on its line" rule. So a `/**`
 inside a string literal is not mistaken for a doc comment, and a nested
 `/* ... */` inside a doc body does not close it early.
 
+## Checking a file or tree
+
+`scripts/docblock-check.sh` runs the parser over a `.j` file or a whole
+directory and reports each file's doc coverage plus any diagnostics, exiting
+non-zero when it finds a problem - a ready-made pre-commit / CI check:
+
+```sh
+scripts/docblock-check.sh modules/          # every .j under modules/
+scripts/docblock-check.sh myapp.j           # a single file
+# ok   modules/web.j  (1 module, 22 func, 3 struct, 0 const)
+# WARN app.j  (1 diagnostic)
+#        line 12: @param "nmae" is not a param of greet
+```
+
+It finds the interpreter via `JENNIFER=/path/to/jennifer`, else `./jennifer`
+at the repo root, else `jennifer` on `PATH`. It exits `0` when every file is
+clean and `1` when any file has diagnostics, so it drops straight into a
+pre-commit hook.
+
+### Enforced in CI
+
+The project runs this check on every push and pull request (a "Check doc
+comments" step in `.github/workflows/test.yml`), over both trees:
+
+```sh
+scripts/docblock-check.sh examples/
+scripts/docblock-check.sh modules/
+```
+
+A drift diagnostic fails the build, so a doc comment can never silently fall
+out of step with the code it documents - the same guarantee the linter and the
+module test overlays give. A missing doc comment is *not* an error (docblock
+reports drift, not absence); it flags a doc that is present but wrong, or one
+that documents nothing.
+
 ## See also
 
 - [`jennifer fmt`](../technical/cli_fmt.md) - the canonical layout normaliser.

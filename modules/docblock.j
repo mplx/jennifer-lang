@@ -1,38 +1,116 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# docblock.j - a Jennifer doc-comment parser. Read Jennifer source and return
-# the documentation embedded in it as structured, typed values. It produces
-# data; it does not render (turning docs into HTML is a separate consumer).
-#
-# The format: a doc comment opens with exactly `/**` (a plain `/*` block comment
-# stays invisible), and its body is a summary line, an optional description, and
-# `@`-tags. It immediately precedes the construct it documents - `func`,
-# `def struct`, `def const` - or, when it carries an `@module` tag, is the file
-# preamble. `export` is read from the construct keyword, not a tag. Types are
-# written verbatim in Jennifer syntax inside `{ }`: `{int}`, `{list of int}`,
-# `{json.Value}`. Tags: `@param` / `@field name {type} desc`, `@return` /
-# `@throws {type} desc`, `@since @deprecated @see @example @internal`, and the
-# preamble set `@module @author @version @license`.
-#
-# The module reports, never enforces: signature mismatches (a `@param` that
-# names no real parameter, a parameter with no `@param`) and orphaned comments
-# surface as `Diagnostic` values, and the caller decides what is fatal.
 
+/**
+ * A Jennifer doc-comment parser. Read Jennifer source and return the
+ * documentation embedded in it as structured, typed values. It produces data;
+ * it does not render (turning docs into HTML is a separate consumer). A doc
+ * comment opens with a doc-block marker, and its body is a summary line, an
+ * optional description, and tag lines; it immediately precedes the construct it
+ * documents (`func`, `def struct`, `def const`) or, when it carries a module
+ * tag, is the file preamble. `export` is read from the construct keyword, not a
+ * tag. Types are written verbatim in Jennifer syntax inside braces. The module
+ * reports, never enforces: signature mismatches (a documented name that names
+ * no real parameter, a parameter with no doc) and orphaned comments surface as
+ * Diagnostic values, and the caller decides what is fatal.
+ * @module docblock
+ * @example
+ * import "docblock.j" as db;
+ * def doc as db.FileDoc init db.parse(fs.readString("mymod.j"));
+ * io.printf("funcs=%d diagnostics=%d\n", len($doc.funcs), len($doc.diagnostics));
+ */
 use regex;
 use strings;
 use lists;
 
 # ===== result types (all exported; a FileDoc is a tree of these) =====
 
+/**
+ * A reported documentation problem (a mismatch or an orphaned comment).
+ * @field severity {string} the level, currently always "warning"
+ * @field line {int} the source line the doc comment documents
+ * @field message {string} the human-readable description of the problem
+ */
 export def struct Diagnostic { severity as string, line as int, message as string };
+/**
+ * One documented parameter or struct field.
+ * @field name {string} the parameter or field name
+ * @field type {string} the declared type, verbatim in Jennifer syntax
+ * @field description {string} the prose description
+ */
 export def struct ParamDoc { name as string, type as string, description as string };
+/**
+ * A documented return value.
+ * @field type {string} the returned type, verbatim in Jennifer syntax
+ * @field description {string} the prose description
+ */
 export def struct ReturnDoc { type as string, description as string };
+/**
+ * A documented thrown error.
+ * @field type {string} the thrown type, verbatim in Jennifer syntax
+ * @field description {string} the prose description
+ */
 export def struct ThrowDoc { type as string, description as string };
+/**
+ * The module preamble documentation (the doc comment carrying a module tag).
+ * @field summary {string} the one-line summary
+ * @field description {string} the longer description below the summary
+ * @field author {string} the documented author
+ * @field version {string} the documented version
+ * @field license {string} the documented license
+ * @field see {list of string} the cross-references
+ */
 export def struct ModuleDoc { summary as string, description as string, author as string, version as string, license as string, see as list of string };
+/**
+ * The documentation of one constant.
+ * @field name {string} the constant name
+ * @field exported {bool} whether the constant is exported
+ * @field type {string} the declared type, verbatim in Jennifer syntax
+ * @field summary {string} the one-line summary
+ * @field description {string} the longer description below the summary
+ * @field since {string} the documented since-version
+ * @field deprecated {string} the deprecation note, or "" if not deprecated
+ * @field see {list of string} the cross-references
+ * @field internal {bool} whether the constant is marked internal
+ */
 export def struct ConstDoc { name as string, exported as bool, type as string, summary as string, description as string, since as string, deprecated as string, see as list of string, internal as bool };
+/**
+ * The documentation of one struct.
+ * @field name {string} the struct name
+ * @field exported {bool} whether the struct is exported
+ * @field summary {string} the one-line summary
+ * @field description {string} the longer description below the summary
+ * @field fields {list of ParamDoc} the documented fields
+ * @field since {string} the documented since-version
+ * @field deprecated {string} the deprecation note, or "" if not deprecated
+ * @field see {list of string} the cross-references
+ * @field internal {bool} whether the struct is marked internal
+ */
 export def struct StructDoc { name as string, exported as bool, summary as string, description as string, fields as list of ParamDoc, since as string, deprecated as string, see as list of string, internal as bool };
+/**
+ * The documentation of one method.
+ * @field name {string} the method name
+ * @field exported {bool} whether the method is exported
+ * @field summary {string} the one-line summary
+ * @field description {string} the longer description below the summary
+ * @field params {list of ParamDoc} the documented parameters
+ * @field returns {ReturnDoc} the documented return value
+ * @field throws {list of ThrowDoc} the documented thrown errors
+ * @field examples {list of string} the documented examples
+ * @field since {string} the documented since-version
+ * @field deprecated {string} the deprecation note, or "" if not deprecated
+ * @field see {list of string} the cross-references
+ * @field internal {bool} whether the method is marked internal
+ */
 export def struct FuncDoc { name as string, exported as bool, summary as string, description as string, params as list of ParamDoc, returns as ReturnDoc, throws as list of ThrowDoc, examples as list of string, since as string, deprecated as string, see as list of string, internal as bool };
+/**
+ * The full documentation extracted from one source file.
+ * @field module {ModuleDoc} the module preamble documentation
+ * @field funcs {list of FuncDoc} the documented methods
+ * @field structs {list of StructDoc} the documented structs
+ * @field consts {list of ConstDoc} the documented constants
+ * @field diagnostics {list of Diagnostic} the reported documentation problems
+ */
 export def struct FileDoc { module as ModuleDoc, funcs as list of FuncDoc, structs as list of StructDoc, consts as list of ConstDoc, diagnostics as list of Diagnostic };
 
 # ===== private intermediates =====
@@ -48,9 +126,13 @@ def struct Parsed {
 
 # ===== the entry point =====
 
-# parse reads Jennifer source and returns a FileDoc: the module preamble, one
-# doc per func / struct / const, and any diagnostics (mismatched or orphaned
-# doc comments). It reports; it does not fail on a documentation error.
+/**
+ * Read Jennifer source and return a FileDoc: the module preamble, one doc per
+ * func / struct / const, and any diagnostics (mismatched or orphaned doc
+ * comments). It reports; it does not fail on a documentation error.
+ * @param source {string} the Jennifer source text to parse
+ * @return {FileDoc} the extracted documentation tree
+ */
 export func parse(source as string) {
     def raws as list of RawDoc init scanDocs($source);
     def module as ModuleDoc init ModuleDoc{ summary: "", description: "", author: "", version: "", license: "", see: [] };

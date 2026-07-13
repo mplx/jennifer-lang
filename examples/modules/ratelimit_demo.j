@@ -1,17 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# ratelimit_demo.j - throttle requests with a fixed-window limiter on memcached.
-#
-# Needs a memcached server on 127.0.0.1:11211 and the default `jennifer` binary
-# (ratelimit builds on the memcache module, which uses `net`). Start one with
-# `memcached` (or `docker run -p 11211:11211 memcached`), then:
-#
-#     jennifer run examples/modules/ratelimit_demo.j
-#
-# With no server running it prints the connection error rather than failing.
-# Not a golden test (it needs a live server); it demonstrates the surface.
+
+/**
+ * Throttle requests with a fixed-window limiter on memcached.
+ * Needs a memcached server on 127.0.0.1:11211 and the default `jennifer` binary (ratelimit builds on the memcache module, which uses `net`). With no server running it prints the connection error rather than failing. Not a golden test (it needs a live server); it demonstrates the surface.
+ * @module ratelimit_demo
+ */
 use io;
 import "../../modules/ratelimit.j" as ratelimit;
 import "../../modules/memcache.j" as memcache;

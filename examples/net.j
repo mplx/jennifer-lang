@@ -1,17 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# net.j - exercises the `net` library. A tiny in-process TCP echo: a
-# `spawn`'d server accepts one connection and echoes whatever it reads;
-# the main flow connects, sends a message, reads it back, and prints it.
-# Then a short tour of the TLS client surface (connectTLS / startTLS /
-# net.TLSOptions).
-#
-# Uses `:0` on the server so the kernel picks an ephemeral port, then
-# `net.address($listener)` to discover which port that was. Under
-# `jennifer-tiny` (TinyGo build) every net call surfaces a friendly
-# "not available" error - use the default `jennifer` for this.
 
+/**
+ * Exercises the net library. A tiny in-process TCP echo: a spawn'd server accepts one connection and echoes whatever it reads; the main flow connects, sends a message, reads it back, and prints it. Then a short tour of the TLS client surface (connectTLS / startTLS / net.TLSOptions).
+ * Uses :0 on the server so the kernel picks an ephemeral port, then net.address to discover which port that was. Under jennifer-tiny (TinyGo build) every net call surfaces a friendly "not available" error - use the default jennifer for this.
+ * @module net
+ */
 use io;
 use net;
 use task;

@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# mime_demo.j - the mime module (modules/mime.j): build a multipart message,
-# serialize it, then parse it back. Run:
-#
-#     jennifer run examples/modules/mime_demo.j
+
+/**
+ * The mime module (modules/mime.j): build a multipart message, serialize it, then parse it back.
+ * @module mime_demo
+ */
 use io;
 import "../../modules/mime.j" as mime;
 

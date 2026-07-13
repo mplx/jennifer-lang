@@ -1,15 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# pop_demo.j - the pop module (modules/pop.j, POP3) with mime (modules/mime.j):
-# fetch a mailbox and parse each message. Run:
-#
-#     jennifer run examples/modules/pop_demo.j
-#
-# By default it targets a local POP3 server on 127.0.0.1:2110; with none
-# running it prints the connection error rather than failing. Point host / port
-# / user / pass at a real mailbox to fetch real mail. Needs the default
-# `jennifer` binary (`jennifer-tiny` has no network stack).
+
+/**
+ * The pop module (modules/pop.j, POP3) with mime (modules/mime.j): fetch a mailbox and parse each message.
+ * By default it targets a local POP3 server on 127.0.0.1:2110; with none running it prints the connection error rather than failing. Point host / port / user / pass at a real mailbox to fetch real mail. Needs the default `jennifer` binary (`jennifer-tiny` has no network stack).
+ * @module pop_demo
+ */
 use io;
 import "../../modules/pop.j" as pop;
 import "../../modules/mime.j" as mime;

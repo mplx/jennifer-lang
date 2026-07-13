@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# csv_demo.j - the csv module (modules/csv.j): parse RFC 4180 text into rows,
-# read it as named records, and format rows back to CSV. Run:
-#
-#     jennifer run examples/modules/csv_demo.j
+
+/**
+ * The csv module (modules/csv.j): parse RFC 4180 text into rows, read it as named records, and format rows back to CSV.
+ * Run: jennifer run examples/modules/csv_demo.j
+ * @module csv_demo
+ */
 use io;
 import "../../modules/csv.j" as csv;
 

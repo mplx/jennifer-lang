@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# semver_demo.j - the semver module (modules/semver.j): parse, compare, and
-# sort Semantic Versioning strings. Run:
-#
-#     jennifer run examples/modules/semver_demo.j
+
+/**
+ * The semver module (modules/semver.j): parse, compare, and sort Semantic Versioning strings.
+ * @module semver_demo
+ */
 use io;
 import "../../modules/semver.j" as semver;
 

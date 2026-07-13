@@ -1,33 +1,41 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# pop.j - a POP3 receive client (RFC 1939): the line-oriented status dialogue
-# ("+OK" / "-ERR") over the `net` system library, with plaintext, implicit TLS,
-# or STLS, and USER / PASS auth. Retrieved messages come back as strings, ready
-# for the `mime` module to parse. Because it uses `net`, this module needs the
-# default `jennifer` binary (`jennifer-tiny` has no network stack).
-#
-#     import "pop.j" as pop;
-#     import "mime.j" as mime;
-#     def opts as pop.Options init pop.Options{host: "mail.example.com",
-#         port: 995, security: "tls", user: "me", pass: "secret"};
-#     for (def raw in pop.fetchAll($opts)) {
-#         def msg as mime.Part init mime.parse($raw);
-#         io.printf("subject: %s\n", mime.headerValue($msg, "Subject"));
-#     }
-#
-# A session is stateful: `connect`, then `stat` / `sizes` / `retrieve` /
-# `deleteMessage`, then `quit`. `fetchAll` wraps the common "get every message"
-# case. A server "-ERR" throws a catchable `Error` (kind "pop3").
+
+/**
+ * A POP3 receive client (RFC 1939): the line-oriented status dialogue ("+OK" /
+ * "-ERR") over the `net` system library, with plaintext, implicit TLS, or STLS,
+ * and USER / PASS auth. Retrieved messages come back as strings, ready for the
+ * `mime` module to parse. Because it uses `net`, this module needs the default
+ * `jennifer` binary (`jennifer-tiny` has no network stack). A session is
+ * stateful: `connect`, then `stat` / `sizes` / `retrieve` / `deleteMessage`,
+ * then `quit`. `fetchAll` wraps the common "get every message" case. A server
+ * "-ERR" throws a catchable `Error` (kind "pop3").
+ * @module pop
+ * @example
+ * def opts as pop.Options init pop.Options{host: "mail.example.com",
+ *     port: 995, security: "tls", user: "me", pass: "secret", auth: ""};
+ * for (def raw in pop.fetchAll($opts)) {
+ *     def msg as mime.Part init mime.parse($raw);
+ *     io.printf("subject: %s\n", mime.headerValue($msg, "Subject"));
+ * }
+ */
 use net;
 use strings;
 use convert;
 import "./idna.j" as idna;
 import "./sasl.j" as sasl;
 
-# Connection settings. `security` is "none", "tls" (implicit TLS on connect,
-# port 995), or "starttls" (STLS upgrade on port 110). `auth` is "" (USER /
-# PASS) or "xoauth2" (SASL bearer token, where `pass` holds the access token).
+/**
+ * Connection settings. `security` is "none", "tls" (implicit TLS on connect,
+ * port 995), or "starttls" (STLS upgrade on port 110). `auth` is "" (USER /
+ * PASS) or "xoauth2" (SASL bearer token, where `pass` holds the access token).
+ * @field host {string} the server hostname
+ * @field port {int} the server port (110 plaintext / STLS, 995 implicit TLS)
+ * @field security {string} "none", "tls", or "starttls"
+ * @field user {string} the account username
+ * @field pass {string} the password (or access token for xoauth2)
+ * @field auth {string} "" for USER / PASS or "xoauth2" for SASL bearer
+ */
 export def struct Options {
     host as string,
     port as int,
@@ -37,12 +45,19 @@ export def struct Options {
     auth as string
 };
 
-# A live POP3 session over one connection.
+/**
+ * A live POP3 session over one connection.
+ * @field conn {net.Conn} the underlying network connection
+ */
 export def struct Session {
     conn as net.Conn
 };
 
-# Mailbox totals from STAT.
+/**
+ * Mailbox totals from STAT.
+ * @field count {int} the number of messages in the mailbox
+ * @field size {int} the total mailbox size in octets
+ */
 export def struct Stat {
     count as int,
     size as int
@@ -183,7 +198,12 @@ func dial(opts as Options) {
 
 # --- session (exported) --------------------------------------------
 
-# connect opens a session: greet, optional STLS upgrade, then USER / PASS auth.
+/**
+ * Open a session: greet, optional STLS upgrade, then USER / PASS auth.
+ * @param opts {Options} the connection settings
+ * @return {Session} a live authenticated session
+ * @throws {Error} kind "pop3" on a server "-ERR" reply
+ */
 export func connect(opts as Options) {
     def conn as net.Conn init dial($opts);
     expectOK(readLine($conn), "greeting");
@@ -201,44 +221,77 @@ export func connect(opts as Options) {
     return Session{conn: $conn};
 }
 
-# stat returns the mailbox message count and total size.
+/**
+ * Return the mailbox message count and total size.
+ * @param session {Session} the live session
+ * @return {Stat} the mailbox totals
+ * @throws {Error} kind "pop3" on a server "-ERR" reply
+ */
 export func stat(session as Session) {
     def line as string init command($session.conn, "STAT");
     expectOK($line, "STAT");
     return parseStat($line);
 }
 
-# count returns just the number of messages waiting.
+/**
+ * Return just the number of messages waiting.
+ * @param session {Session} the live session
+ * @return {int} the message count
+ * @throws {Error} kind "pop3" on a server "-ERR" reply
+ */
 export func count(session as Session) {
     return stat($session).count;
 }
 
-# sizes returns the octet size of each message, in message order (LIST).
+/**
+ * Return the octet size of each message, in message order (LIST).
+ * @param session {Session} the live session
+ * @return {list of int} the size in octets of each message
+ * @throws {Error} kind "pop3" on a server "-ERR" reply
+ */
 export func sizes(session as Session) {
     net.writeBytes($session.conn, convert.bytesFromString("LIST\r\n", "utf-8"));
     return parseSizes(readMultiline($session.conn, "LIST"));
 }
 
-# retrieve fetches message `n` as a raw message string (RETR), ready for
-# `mime.parse`.
+/**
+ * Fetch message `n` as a raw message string (RETR), ready for `mime.parse`.
+ * @param session {Session} the live session
+ * @param n {int} the 1-based message number
+ * @return {string} the raw message text
+ * @throws {Error} kind "pop3" on a server "-ERR" reply
+ */
 export func retrieve(session as Session, n as int) {
     def cmd as string init "RETR " + convert.toString($n);
     net.writeBytes($session.conn, convert.bytesFromString($cmd + "\r\n", "utf-8"));
     return readMultiline($session.conn, "RETR");
 }
 
-# deleteMessage marks message `n` for deletion (DELE); it is removed at QUIT.
+/**
+ * Mark message `n` for deletion (DELE); it is removed at QUIT.
+ * @param session {Session} the live session
+ * @param n {int} the 1-based message number
+ * @throws {Error} kind "pop3" on a server "-ERR" reply
+ */
 export func deleteMessage(session as Session, n as int) {
     expectOK(command($session.conn, "DELE " + convert.toString($n)), "DELE");
 }
 
-# quit ends the session (committing any deletions) and closes the connection.
+/**
+ * End the session (committing any deletions) and close the connection.
+ * @param session {Session} the live session
+ */
 export func quit(session as Session) {
     command($session.conn, "QUIT");
     net.close($session.conn);
 }
 
-# fetchAll connects, retrieves every message (without deleting), and quits.
+/**
+ * Connect, retrieve every message (without deleting), and quit.
+ * @param opts {Options} the connection settings
+ * @return {list of string} every message as a raw string, in message order
+ * @throws {Error} kind "pop3" on a server "-ERR" reply
+ */
 export func fetchAll(opts as Options) {
     def session as Session init connect($opts);
     def n as int init stat($session).count;

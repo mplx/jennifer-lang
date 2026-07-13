@@ -1,17 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# http_demo.j - make HTTP requests with the http module.
-#
-# Needs an HTTP server and the default `jennifer` binary (the module uses
-# `net`). Point `base` at any server - a local dev server on 127.0.0.1:8080, or
-# a public URL like http://example.com - then:
-#
-#     jennifer run examples/modules/http_demo.j
-#
-# With no server reachable it prints the connection error rather than failing.
-# Not a golden test (it needs a live server); it demonstrates the surface.
+
+/**
+ * Make HTTP requests with the http module.
+ * Needs an HTTP server and the default `jennifer` binary (the module uses `net`). Point `base` at any server - a local dev server on 127.0.0.1:8080, or a public URL like http://example.com. With no server reachable it prints the connection error rather than failing. Not a golden test (it needs a live server); it demonstrates the surface.
+ * @module http_demo
+ */
 use io;
 import "../../modules/http.j" as http;
 

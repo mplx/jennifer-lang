@@ -1,22 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# markdown.j - a lightweight Markdown renderer for a small CommonMark subset:
-# ATX headings, bold / italic emphasis, inline code, links, fenced code
-# blocks, unordered / ordered lists, and GFM tables. Renders to HTML (through
-# the `htmlwriter` module, so escaping is handled for you) and to styled
-# terminal text (through the `ansi` module). It also authors Markdown text
-# (header / style / link / list / codeBlock / table). Pure Jennifer;
-# line-oriented block parsing with a small inline scanner.
-#
-#     import "markdown.j" as markdown;
-#     io.printf("%s\n", markdown.toHtml("# Hi\n\nA **bold** word."));
-#     io.printf("%s\n", markdown.toAnsi("- one\n- two"));
-#
-# Not full CommonMark: inline spans do not nest (the content of `**...**`,
-# `` `...` ``, and a link is plain text), and there is no blockquote, thematic
-# break, image, or reference-link support. Documents are small, so the
-# per-line interpreter overhead is a non-issue.
+
+/**
+ * A lightweight Markdown renderer for a small CommonMark subset: ATX headings,
+ * bold / italic emphasis, inline code, links, fenced code blocks, unordered /
+ * ordered lists, and GFM tables. Renders to HTML (through the `htmlwriter`
+ * module, so escaping is handled for you) and to styled terminal text (through
+ * the `ansi` module). It also authors Markdown text (header / style / link /
+ * list / codeBlock / table). Pure Jennifer; line-oriented block parsing with a
+ * small inline scanner. Not full CommonMark: inline spans do not nest (the
+ * content of `**...**`, `` `...` ``, and a link is plain text), and there is no
+ * blockquote, thematic break, image, or reference-link support.
+ * @module markdown
+ * @example
+ * import "markdown.j" as markdown;
+ * io.printf("%s\n", markdown.toHtml("# Hi\n\nA **bold** word."));
+ * io.printf("%s\n", markdown.toAnsi("- one\n- two"));
+ */
 import "./htmlwriter.j" as html;
 import "./ansi.j" as ansi;
 use strings;
@@ -573,8 +573,12 @@ func blockToNode(b as Block) {
     return html.element("p", [], inlineToNodes(parseInline($b.text)));
 }
 
-# toHtml renders Markdown to an HTML string (block elements concatenated, no
-# indentation).
+/**
+ * Render Markdown to an HTML string (block elements concatenated, no
+ * indentation).
+ * @param md {string} the Markdown source
+ * @return {string} the rendered HTML
+ */
 export func toHtml(md as string) {
     def nodes as list of html.Node init [];
     for (def b in parseBlocks($md)) {
@@ -750,8 +754,11 @@ func blockToAnsi(b as Block) {
     return inlineToAnsi(parseInline($b.text));
 }
 
-# toAnsi renders Markdown to styled terminal text, blocks separated by a blank
-# line.
+/**
+ * Render Markdown to styled terminal text, blocks separated by a blank line.
+ * @param md {string} the Markdown source
+ * @return {string} the rendered terminal text
+ */
 export func toAnsi(md as string) {
     def out as string init "";
     def first as bool init true;
@@ -800,12 +807,24 @@ func headerLevel(level as string) {
     fail("markdown.header: level must be h1..h6, got " + $level);
 }
 
-# header renders an ATX heading; `level` is "h1".."h6".
+/**
+ * Render an ATX heading.
+ * @param level {string} the heading depth, "h1".."h6"
+ * @param text {string} the heading text
+ * @return {string} the Markdown heading line
+ * @throws {Error} when level is not "h1".."h6"
+ */
 export func header(level as string, text as string) {
     return strings.repeat("#", headerLevel($level)) + " " + $text;
 }
 
-# style wraps text in an inline emphasis: "bold", "italic", or "code".
+/**
+ * Wrap text in an inline emphasis span.
+ * @param kind {string} the emphasis, "bold" / "italic" / "code"
+ * @param text {string} the text to wrap
+ * @return {string} the emphasised Markdown span
+ * @throws {Error} when kind is not "bold" / "italic" / "code"
+ */
 export func style(kind as string, text as string) {
     if ($kind == "bold") {
         return "**" + $text + "**";
@@ -819,12 +838,21 @@ export func style(kind as string, text as string) {
     fail("markdown.style: kind must be bold|italic|code, got " + $kind);
 }
 
-# link renders an inline link `[text](url)`.
+/**
+ * Render an inline link `[text](url)`.
+ * @param text {string} the link text
+ * @param url {string} the link target
+ * @return {string} the Markdown link
+ */
 export func link(text as string, url as string) {
     return "[" + $text + "](" + $url + ")";
 }
 
-# bullets renders an unordered list, one `- item` per line.
+/**
+ * Render an unordered list, one `- item` per line.
+ * @param items {list of string} the list items
+ * @return {string} the Markdown bullet list
+ */
 export func bullets(items as list of string) {
     def out as string init "";
     def first as bool init true;
@@ -838,7 +866,11 @@ export func bullets(items as list of string) {
     return $out;
 }
 
-# numbered renders an ordered list, `1. item` upward.
+/**
+ * Render an ordered list, `1. item` upward.
+ * @param items {list of string} the list items
+ * @return {string} the Markdown numbered list
+ */
 export func numbered(items as list of string) {
     def out as string init "";
     def i as int init 1;
@@ -854,7 +886,11 @@ export func numbered(items as list of string) {
     return $out;
 }
 
-# codeBlock renders a fenced code block around verbatim text.
+/**
+ * Render a fenced code block around verbatim text.
+ * @param text {string} the verbatim code
+ * @return {string} the fenced Markdown code block
+ */
 export func codeBlock(text as string) {
     return "```\n" + $text + "\n```";
 }
@@ -913,11 +949,16 @@ func alignRow(aligns as list of string, cols as int) {
     return $out;
 }
 
-# table renders a GFM table from column `headings`, per-column `aligns`
-# ("left" / "right" / "center" / "none"; `[]` for all-default), and `rows`
-# (each a list of cell strings). Columns follow `headings`: a short row is
-# padded with empty cells, extra cells are dropped. Pipes and newlines in a
-# cell are made safe.
+/**
+ * Render a GFM table. Columns follow `headings`: a short row is padded with
+ * empty cells, extra cells are dropped. Pipes and newlines in a cell are made
+ * safe.
+ * @param headings {list of string} the column headings
+ * @param aligns {list of string} the per-column alignment ("left" / "right" / "center" / "none"; `[]` for all-default)
+ * @param rows {list of list of string} the data rows, each a list of cell strings
+ * @return {string} the GFM table source
+ * @throws {Error} when an align value is not "left" / "right" / "center" / "none"
+ */
 export func table(headings as list of string, aligns as list of string,
         rows as list of list of string) {
     def cols as int init len($headings);
@@ -1022,9 +1063,13 @@ func prettyTableAt(lines as list of string, i as int) {
     return TablePretty{lines: $out, next: $ts.next};
 }
 
-# tablePretty reformats every GFM table in Markdown text so its source columns
-# line up (padded cells, aligned delimiters), leaving all other lines exactly
-# as written. The handcraft-then-prettify workflow, in one call.
+/**
+ * Reformat every GFM table in Markdown text so its source columns line up
+ * (padded cells, aligned delimiters), leaving all other lines exactly as
+ * written. The handcraft-then-prettify workflow, in one call.
+ * @param md {string} the Markdown source
+ * @return {string} the source with its tables aligned
+ */
 export func tablePretty(md as string) {
     def lines as list of string init strings.split($md, "\n");
     def out as list of string init [];

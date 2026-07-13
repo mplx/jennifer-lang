@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
 
-# examples/compress.j - gzip / zlib / deflate round-trips + streaming. The
-# compressed bytes vary with the zlib version, so this prints only stable
-# facts (round-trip success, that compressible data shrank).
+/**
+ * gzip / zlib / deflate round-trips + streaming.
+ * The compressed bytes vary with the zlib version, so this prints only stable
+ * facts (round-trip success, that compressible data shrank).
+ * @module compress
+ */
 
 use io;
 use compress;

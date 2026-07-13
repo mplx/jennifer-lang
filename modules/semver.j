@@ -1,22 +1,30 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# semver.j - strict Semantic Versioning 2.0.0 (https://semver.org): parse,
-# compare, and increment version numbers. The second pure-Jennifer reference
-# module (after ansi): no Go, no system library. Parsing uses the canonical
-# SemVer regex (via the `regex` library); precedence comparison and the sort
-# are hand-written Jennifer - the real algorithmic dogfood.
-#
-#     import "semver.j" as semver;
-#     def v as semver.Version init semver.parse("1.2.3-rc.1+build.5");
-#     if (semver.lt($v, semver.parse("1.2.3"))) { ... }   # true: rc < release
-#
-# Range / constraint matching (`^1.2.0`, `>=1.0.0`) is intentionally out of
-# scope; this module is the version values and their ordering.
+
+/**
+ * Strict Semantic Versioning 2.0.0 (https://semver.org): parse, compare, and
+ * increment version numbers. A pure-Jennifer reference module (no Go, no system
+ * library): parsing uses the canonical SemVer regex (via the `regex` library);
+ * precedence comparison and the sort are hand-written Jennifer. Range /
+ * constraint matching (`^1.2.0`, `>=1.0.0`) is intentionally out of scope; this
+ * module is the version values and their ordering.
+ * @module semver
+ * @example
+ * def v as semver.Version init semver.parse("1.2.3-rc.1+build.5");
+ * if (semver.lt($v, semver.parse("1.2.3"))) { ... }   # true: rc < release
+ */
 use strings;
 use convert;
 use regex;
 
+/**
+ * A parsed SemVer version: numeric core plus optional prerelease / build tags.
+ * @field major {int} the major version
+ * @field minor {int} the minor version
+ * @field patch {int} the patch version
+ * @field prerelease {string} the prerelease tag, or "" if none
+ * @field build {string} the build metadata, or "" if none
+ */
 export def struct Version {
     major as int,
     minor as int,
@@ -60,6 +68,12 @@ func invalid(s as string) {
 
 # --- parse / validate / format (exported) --------------------------
 
+/**
+ * Parse a version string into a Version.
+ * @param s {string} the version text (e.g. "1.2.3-rc.1+build.5")
+ * @return {Version} the parsed version
+ * @throws {Error} when s is not a valid SemVer 2.0.0 string
+ */
 export func parse(s as string) {
     def m as regex.Match init regex.find(SEMVER, $s);
     if ($m.start < 0) {
@@ -76,10 +90,20 @@ export func parse(s as string) {
     };
 }
 
+/**
+ * Report whether a string is a valid SemVer 2.0.0 version.
+ * @param s {string} the candidate version text
+ * @return {bool} true when s parses as a valid version
+ */
 export func isValid(s as string) {
     return regex.matches(SEMVER, $s);
 }
 
+/**
+ * Render a Version back to its canonical string form.
+ * @param v {Version} the version to format
+ * @return {string} the "major.minor.patch[-prerelease][+build]" text
+ */
 export func toString(v as Version) {
     def out as string init convert.toString($v.major);
     $out = $out + "." + convert.toString($v.minor);
@@ -151,9 +175,13 @@ func comparePre(a as string, b as string) {
     return sign(len($ai) - len($bi));
 }
 
-# compare returns -1 / 0 / 1 by SemVer precedence: numeric core, then a
-# prerelease ranks below its release, then prerelease fields. Build metadata
-# is ignored.
+/**
+ * Compare two versions by SemVer precedence: numeric core, then a prerelease
+ * ranks below its release, then prerelease fields. Build metadata is ignored.
+ * @param a {Version} the left version
+ * @param b {Version} the right version
+ * @return {int} -1 if a < b, 0 if equal, 1 if a > b
+ */
 export func compare(a as Version, b as Version) {
     if (not ($a.major == $b.major)) {
         return sign($a.major - $b.major);
@@ -178,35 +206,76 @@ export func compare(a as Version, b as Version) {
     return comparePre($a.prerelease, $b.prerelease);
 }
 
+/**
+ * Report whether a orders before b.
+ * @param a {Version} the left version
+ * @param b {Version} the right version
+ * @return {bool} true when a < b by SemVer precedence
+ */
 export func lt(a as Version, b as Version) {
     return compare($a, $b) < 0;
 }
+/**
+ * Report whether a and b have equal precedence (build metadata ignored).
+ * @param a {Version} the left version
+ * @param b {Version} the right version
+ * @return {bool} true when a and b compare equal
+ */
 export func eq(a as Version, b as Version) {
     return compare($a, $b) == 0;
 }
+/**
+ * Report whether a orders after b.
+ * @param a {Version} the left version
+ * @param b {Version} the right version
+ * @return {bool} true when a > b by SemVer precedence
+ */
 export func gt(a as Version, b as Version) {
     return compare($a, $b) > 0;
 }
 
 # --- classification + increment (exported) -------------------------
 
-# isPrerelease is true when a prerelease tag is present.
+/**
+ * Report whether the version carries a prerelease tag.
+ * @param v {Version} the version to classify
+ * @return {bool} true when a prerelease tag is present
+ */
 export func isPrerelease(v as Version) {
     return len($v.prerelease) > 0;
 }
 
-# isStable is a released (major >= 1) version with no prerelease tag; a
-# 0.y.z version is unstable by SemVer convention.
+/**
+ * Report whether the version is stable: a released (major >= 1) version with no
+ * prerelease tag. A 0.y.z version is unstable by SemVer convention.
+ * @param v {Version} the version to classify
+ * @return {bool} true when major >= 1 and there is no prerelease tag
+ */
 export func isStable(v as Version) {
     return $v.major >= 1 and len($v.prerelease) == 0;
 }
 
+/**
+ * Bump the major version, resetting minor / patch and clearing the tags.
+ * @param v {Version} the starting version
+ * @return {Version} a new version with major + 1 and minor = patch = 0
+ */
 export func incMajor(v as Version) {
     return Version{major: $v.major + 1, minor: 0, patch: 0, prerelease: "", build: ""};
 }
+/**
+ * Bump the minor version, resetting patch and clearing the tags.
+ * @param v {Version} the starting version
+ * @return {Version} a new version with minor + 1 and patch = 0
+ */
 export func incMinor(v as Version) {
     return Version{major: $v.major, minor: $v.minor + 1, patch: 0, prerelease: "", build: ""};
 }
+/**
+ * Bump the patch version, clearing the tags.
+ * @param v {Version} the starting version
+ * @return {Version} a new version with patch + 1
+ */
 export func incPatch(v as Version) {
     def next as int init $v.patch + 1;
     return Version{major: $v.major, minor: $v.minor, patch: $next, prerelease: "", build: ""};
@@ -231,8 +300,12 @@ func insertSorted(sorted as list of Version, v as Version) {
     return $out;
 }
 
-# sort returns a new list ordered ascending by SemVer precedence. lists.sort
-# is scalar-only, so this is an insertion sort over compare().
+/**
+ * Return a new list ordered ascending by SemVer precedence. lists.sort is
+ * scalar-only, so this is an insertion sort over compare().
+ * @param vs {list of Version} the versions to order
+ * @return {list of Version} a new list sorted ascending
+ */
 export func sort(vs as list of Version) {
     def out as list of Version init [];
     for (def v in $vs) {

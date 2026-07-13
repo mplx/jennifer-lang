@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# markdown_demo.j - the markdown module (modules/markdown.j): render a small
-# Markdown document to HTML and to styled terminal text. Run:
-#
-#     jennifer run examples/modules/markdown_demo.j
+
+/**
+ * The markdown module (modules/markdown.j): render a small Markdown document to HTML and to styled terminal text.
+ * @module markdown_demo
+ */
 use io;
 import "../../modules/markdown.j" as markdown;
 

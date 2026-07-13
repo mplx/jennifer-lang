@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# encoding.j - exercises the `encoding` library: introspection
-# helpers, hex / base64 round-trips through `toText`/`fromText`, and
-# the codec table for ascii, latin-1, windows-1252, and ebcdic.
+
+/**
+ * Exercises the `encoding` library.
+ * Covers introspection helpers, hex / base64 round-trips through
+ * `toText`/`fromText`, and the codec table for ascii, latin-1, windows-1252,
+ * and ebcdic.
+ * @module encoding
+ */
 
 use io;
 use convert;

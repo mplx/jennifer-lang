@@ -1,19 +1,12 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# web_demo.j - a tiny web app with the web framework module.
-#
-# Registers routes against handler methods by name, serves them on an
-# ephemeral local port in a spawned task, then acts as its own client to
-# exercise the routes and prints the results. Self-contained (it is both the
-# server and the client), so it needs no external service - just the default
-# `jennifer` binary (the httpd engine is net-backed).
-#
-#     jennifer run examples/modules/web_demo.j
-#
-# To run a real app instead, drop the client half and call
-# `web.run($app, ":8080")` - or `jennifer server app.j --watch`.
+
+/**
+ * A tiny web app with the web framework module.
+ * Registers routes against handler methods by name, serves them on an ephemeral local port in a spawned task, then acts as its own client to exercise the routes and prints the results. Self-contained, so it needs no external service - just the default jennifer binary (the httpd engine is net-backed).
+ * @module web_demo
+ */
 use io;
 use httpd;
 use task;
@@ -23,10 +16,18 @@ import "../../modules/http.j" as http;
 
 # --- handlers: each takes a web.Context ------------------------------------
 
+/**
+ * Handle GET / - the welcome page.
+ * @param ctx {web.Context} the request context
+ */
 func showHome(ctx as web.Context) {
     web.text($ctx, 200, "welcome to the jennifer web demo\n");
 }
 
+/**
+ * Handle GET /users/:id - echo the captured id as JSON.
+ * @param ctx {web.Context} the request context
+ */
 func showUser(ctx as web.Context) {
     def id as string init web.param($ctx, "id");
     def out as json.Value init json.map();
@@ -35,7 +36,11 @@ func showUser(ctx as web.Context) {
     web.sendJson($ctx, 200, $out);
 }
 
-# A middleware that tags every response; returns true to continue.
+/**
+ * Middleware: tag every response with an X-Powered-By header.
+ * @param ctx {web.Context} the request context
+ * @return {bool} true to continue to the route handler
+ */
 func addServerHeader(ctx as web.Context) {
     web.setHeader($ctx, "X-Powered-By", "jennifer/web");
     return true;

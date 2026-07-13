@@ -1,23 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 <developer@mplx.eu>
-#
-# benchmark.j - small Jennifer benchmark suite. Two purposes:
-#
-#   1. Demonstrate the `time` library: `time.now()`,
-#      `time.sub(end, start)`, `time.milliseconds(d)`.
-#   2. Provide a side-by-side workload between the default `jennifer`
-#      (standard Go) and the constrained `jennifer-tiny` (TinyGo) so
-#      programmers (and embedding evaluators) can see where the two
-#      binaries diverge on the same machine.
-#
-# `--format text` (default) prints the human table; `--format json`
-# emits one JSON object (for a performance database, e.g. the `flatdb`
-# module).
-#
-# Not part of the golden-file test suite (output is timing-dependent
-# and host-dependent). Tune the workload sizes at the top so each
-# block finishes in O(seconds), not minutes, on a modern laptop.
-#
+
+/**
+ * Small Jennifer benchmark suite.
+ * Demonstrates the `time` library (`time.now()`, `time.sub(end, start)`,
+ * `time.milliseconds(d)`) and provides a side-by-side workload between the
+ * default `jennifer` (standard Go) and the constrained `jennifer-tiny`
+ * (TinyGo). `--format text` (default) prints the human table; `--format json`
+ * emits one JSON object. Not part of the golden-file test suite (output is
+ * timing- and host-dependent).
+ * @module benchmark
+ */
+
 # The report and data-row lines are intentionally wide (aligned output
 # and struct literals), so line-length is silenced file-wide.
 # lint-disable-file: L203
