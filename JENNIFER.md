@@ -338,7 +338,9 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   (`net`).
 - **`web`** - a small HTTP framework over the `httpd` engine. Register routes
   against handler methods **by name** (`web.get($app, "/users/:id",
-  "showUser")` / `post` / `put` / `patch` / `delete` / `route`), plus
+  "showUser")` / `post` / `put` / `patch` / `delete` / `route`); patterns take
+  `:param` captures and a trailing `*rest` wildcard (`/files/*path`; `/*path` as
+  an SPA fallback, registered last), plus
   `web.before` middleware and `web.notFound`; a handler is `func name(ctx as
   web.Context)`, dispatched by `meta.callMain`. `web.Context` helpers:
   `param` / `query` / `method` / `path` / `header` / `body` (bytes) / `bodyJson`

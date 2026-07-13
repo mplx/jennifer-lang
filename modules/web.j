@@ -584,35 +584,73 @@ func splitPath(p as string) {
     return $out;
 }
 
-# matchRoute finds the first route matching method + path, capturing any
-# `:param` segments. Returns a Match with found=false when nothing matches.
+# matchMiss is the "no match" Match value.
+func matchMiss() {
+    def empty as map of string to string init {};
+    return Match{ found: false, handler: "", params: $empty };
+}
+
+# matchPattern tries one route against the request's path segments. A `:name`
+# segment captures one segment; a trailing `*name` segment is a wildcard that
+# captures all remaining segments (joined by "/", possibly empty), so
+# `/files/*path` matches `/files/a/b` with path = "a/b" and `/*path` matches any
+# path. The wildcard is only special as the last pattern segment.
+func matchPattern(r as Route, segs as list of string) {
+    def pat as list of string init splitPath($r.pattern);
+    def wildKey as string init "";
+    def fixed as int init len($pat);
+    if (len($pat) > 0 and strings.startsWith($pat[len($pat) - 1], "*")) {
+        def last as string init $pat[len($pat) - 1];
+        $wildKey = strings.substring($last, 1, len($last));
+        $fixed = len($pat) - 1;
+    }
+    if (len($wildKey) > 0) {
+        if (len($segs) < $fixed) {
+            return matchMiss();
+        }
+    } elseif (not (len($pat) == len($segs))) {
+        return matchMiss();
+    }
+    def params as map of string to string init {};
+    def idx as int init 0;
+    while ($idx < $fixed) {
+        def ps as string init $pat[$idx];
+        if (strings.startsWith($ps, ":")) {
+            $params[strings.substring($ps, 1, len($ps))] = $segs[$idx];
+        } elseif (not ($ps == $segs[$idx])) {
+            return matchMiss();
+        }
+        $idx = $idx + 1;
+    }
+    if (len($wildKey) > 0) {
+        def rest as string init "";
+        def j as int init $fixed;
+        while ($j < len($segs)) {
+            if (len($rest) > 0) {
+                $rest = $rest + "/";
+            }
+            $rest = $rest + $segs[$j];
+            $j = $j + 1;
+        }
+        $params[$wildKey] = $rest;
+    }
+    return Match{ found: true, handler: $r.handler, params: $params };
+}
+
+# matchRoute finds the first route matching method + path, capturing any `:param`
+# and trailing `*name` wildcard segments. Returns a Match with found=false when
+# nothing matches.
 func matchRoute(app as App, method as string, path as string) {
     def segs as list of string init splitPath($path);
     for (def r in $app.routes) {
         if ($r.method == $method) {
-            def pat as list of string init splitPath($r.pattern);
-            if (len($pat) == len($segs)) {
-                def params as map of string to string init {};
-                def ok as bool init true;
-                def idx as int init 0;
-                for (def ps in $pat) {
-                    def actual as string init $segs[$idx];
-                    if (strings.startsWith($ps, ":")) {
-                        def key as string init strings.substring($ps, 1, len($ps));
-                        $params[$key] = $actual;
-                    } elseif (not ($ps == $actual)) {
-                        $ok = false;
-                    }
-                    $idx = $idx + 1;
-                }
-                if ($ok) {
-                    return Match{ found: true, handler: $r.handler, params: $params };
-                }
+            def m as Match init matchPattern($r, $segs);
+            if ($m.found) {
+                return $m;
             }
         }
     }
-    def empty as map of string to string init {};
-    return Match{ found: false, handler: "", params: $empty };
+    return matchMiss();
 }
 
 # runMiddleware runs the chain; returns false as soon as one middleware halts.

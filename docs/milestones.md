@@ -2374,7 +2374,9 @@ unsupported (legacy). A fourth rounded out the request / response surface:
 `web.csrfToken($ctx, secret)` / `web.csrfCheck($ctx, secret)` - stateless
 HMAC-signed double-submit tokens over `hash.hmac`, the app owning the secret and
 opting in via a middleware (no session store, matching the dependency-light
-design).
+design). A sixth added **wildcard routes**: a trailing `*rest` pattern segment
+captures the path remainder (`/files/*path`; `/*path` as an SPA fallback), read
+with `web.param`.
 
 #### M18.16.1 - Cookies
 

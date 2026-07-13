@@ -49,6 +49,43 @@ func testMultiParam() {
     testing.assertEqual($m.params["pid"], "99");
 }
 
+func testMatchWildcard() {
+    def app as App init new();
+    $app = get($app, "/files/*path", "hHome");
+    def m as Match init matchRoute($app, "GET", "/files/a/b/c");
+    testing.assertTrue($m.found);
+    testing.assertEqual($m.params["path"], "a/b/c");
+}
+
+func testMatchWildcardPrefixEmpty() {
+    def app as App init new();
+    $app = get($app, "/files/*path", "hHome");
+    def m as Match init matchRoute($app, "GET", "/files");
+    testing.assertTrue($m.found);
+    testing.assertEqual($m.params["path"], "");
+}
+
+func testMatchSpaFallback() {
+    def app as App init new();
+    $app = get($app, "/*path", "hHome");
+    testing.assertEqual(matchRoute($app, "GET", "/deep/nested/page").params["path"], "deep/nested/page");
+    testing.assertEqual(matchRoute($app, "GET", "/").params["path"], "");
+}
+
+func testWildcardPrecedence() {
+    def app as App init new();
+    $app = get($app, "/files/:id", "hHome");
+    $app = get($app, "/files/*path", "hHome");
+    # a single segment matches the specific :id route (registered first)
+    def one as Match init matchRoute($app, "GET", "/files/report");
+    testing.assertTrue(maps.has($one.params, "id"));
+    testing.assertEqual($one.params["id"], "report");
+    # a multi-segment path falls through to the wildcard
+    def many as Match init matchRoute($app, "GET", "/files/a/b");
+    testing.assertTrue(maps.has($many.params, "path"));
+    testing.assertEqual($many.params["path"], "a/b");
+}
+
 func testNoMatchPath() {
     def app as App init new();
     $app = get($app, "/home", "hHome");

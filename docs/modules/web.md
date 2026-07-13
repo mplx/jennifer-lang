@@ -117,9 +117,21 @@ threading it through:
 | `web.before($app, handler)` | Add a middleware (runs before each route handler). |
 | `web.notFound($app, handler)` | A custom handler for unmatched requests (default: a plain 404). |
 
-Patterns are `/`-separated. A segment beginning with `:` captures a parameter:
-`/users/:id/posts/:pid` matches `/users/7/posts/9` and captures `id` = `7`,
-`pid` = `9`. The first matching route wins.
+Patterns are `/`-separated. A segment beginning with `:` captures a single
+parameter: `/users/:id/posts/:pid` matches `/users/7/posts/9` and captures `id`
+= `7`, `pid` = `9`. A trailing segment beginning with `*` is a **wildcard** that
+captures the entire remainder (joined by `/`, possibly empty): `/files/*path`
+matches `/files/css/app.css` with `path` = `css/app.css`, and `/*path` is a
+catch-all - a natural **SPA fallback**. Read either with `web.param($ctx, name)`.
+
+The first matching route wins, so register specific routes **before** a wildcard
+(a greedy `/*path` registered first would swallow everything). A wildcard is only
+special as the last pattern segment.
+
+```jennifer
+$app = web.get($app, "/static/*path", "serveStatic");   # nested static files
+$app = web.get($app, "/*page", "spaIndex");              # fallback, registered last
+```
 
 ## Middleware
 

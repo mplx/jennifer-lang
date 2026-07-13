@@ -478,3 +478,55 @@ task.wait($server);`, webMod, httpMod)
 		t.Fatalf("web csrf program failed with code %d", code)
 	}
 }
+
+// TestWebWildcard drives wildcard routes live: a `/static/*path` route captures
+// the nested remainder, and a `/*page` catch-all (registered last) is the SPA
+// fallback for everything else, including "/".
+func TestWebWildcard(t *testing.T) {
+	webMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "web.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "http.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+use httpd;
+use task;
+import %q as web;
+import %q as http;
+
+func files(ctx as web.Context) { web.text($ctx, 200, "path=" + web.param($ctx, "path")); }
+func fallback(ctx as web.Context) { web.text($ctx, 200, "spa:" + web.param($ctx, "page")); }
+
+def app as web.App init web.new();
+$app = web.get($app, "/static/*path", "files");
+$app = web.get($app, "/*page", "fallback");
+def srv as httpd.Server init httpd.listen("127.0.0.1:0");
+def addr as string init httpd.address($srv);
+def server as task of null init spawn { web.serveOn($app, $srv); };
+def base as string init "http://" + $addr;
+def h as map of string to string init {};
+
+def asset as http.Response init http.get($base + "/static/css/app.css", $h);
+testing.assertEqual($asset.body, "path=css/app.css");
+
+def spa as http.Response init http.get($base + "/some/deep/route", $h);
+testing.assertEqual($spa.body, "spa:some/deep/route");
+
+def root as http.Response init http.get($base + "/", $h);
+testing.assertEqual($root.body, "spa:");
+
+httpd.shutdown($srv);
+task.wait($server);`, webMod, httpMod)
+
+	progPath := filepath.Join(dir, "wild.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("web wildcard program failed with code %d", code)
+	}
+}
