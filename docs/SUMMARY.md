@@ -68,6 +68,7 @@
 - [`mqtt`](modules/mqtt.md)
 - [`oauth`](modules/oauth.md)
 - [`pop`](modules/pop.md)
+- [`prometheus`](modules/prometheus.md)
 - [`ratelimit`](modules/ratelimit.md)
 - [`redis`](modules/redis.md)
 - [`resque`](modules/resque.md)

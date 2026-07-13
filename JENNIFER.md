@@ -429,6 +429,16 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   TLS via `smtp.Options.security`, `AUTH PLAIN`, `MAIL FROM` / `RCPT TO` /
   `DATA`), with `message` built by `mime`. Throws `Error` (kind `"smtp"`) on
   rejection. Uses `net`, so **default `jennifer` binary only**.
+- **`prometheus`** - Prometheus metrics in two halves. **Exposition** (pure
+  text, both binaries): `prometheus.counter(name, help)` / `gauge(name, help)`
+  -> `prometheus.Metric`, `observe(metric, labels, value)` records a sample
+  (upsert by label set, value-semantic), `render(metrics)` -> the text
+  exposition format (`# HELP` / `# TYPE` / sample lines). Strict name / label
+  validation and value / HELP escaping; an invalid name throws `Error` (kind
+  `"prometheus"`). **Retrieval** (needs the default binary, over `http` +
+  `json`): `query(base, promql)` (instant) / `queryRange(base, promql, start,
+  end, step)` (range) -> `prometheus.Result` (`resultType` + `series` of
+  `metric` label maps and `values` points).
 - **`mqtt`** - an MQTT 3.1.1 pub/sub client over `net` (`mqtts` via TLS):
   `mqtt.connect(opts)` -> `mqtt.Client`, then `subscribe(client, topic)` /
   `publish(client, topic, message)` / `publishBytes(client, topic, payload)` at

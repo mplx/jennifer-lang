@@ -14,7 +14,9 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
 
 The **TinyGo** column says whether a module runs on the constrained
 `jennifer-tiny` binary. A `No` module needs the default `jennifer` binary: it
-uses `net`, and the stock `jennifer-tiny` ships no network stack. Every module
+uses `net`, and the stock `jennifer-tiny` ships no network stack. A `Partial`
+module runs on both binaries except for its network-backed calls, which need the
+default binary. Every module
 name links to its reference doc under [`docs/modules/`](../docs/modules/index.md);
 a runnable demo for each lives in [`examples/modules/`](../examples/modules/).
 
@@ -45,6 +47,7 @@ a runnable demo for each lives in [`examples/modules/`](../examples/modules/).
 | [`redis.j`](../docs/modules/redis.md) | No | A Redis client speaking RESP2 over `net`: typed helpers `get` / `set` / `del` / `exists` / `incr` / `decr` / `keys` / `ping`, plus a generic `command(session, args)` -> `Reply` for anything else. `connect` does optional `AUTH` / `SELECT`; a `-ERR` throws `Error{kind: "redis"}`. |
 | [`resque.j`](../docs/modules/resque.md) | No | Background jobs on Redis, wire-compatible with Resque: `enqueue` onto named queues, `reserve` the next `Job` in priority order, plus `queueLength` / `queues` / `size` / `fail`. Interops with Ruby-resque / php-resque workers. Built on `redis` + `json`. |
 | [`mqtt.j`](../docs/modules/mqtt.md) | No | An MQTT 3.1.1 pub/sub client over `net` (`mqtts` via TLS): `connect` -> `Client`, then `subscribe` / `publish` / `publishBytes` (QoS 0), blocking `receive` and `poll(client, timeoutMs)` (single-threaded, via `net.setDeadline`), `ping`, `disconnect`. Binary packet framing built with bitwise ops + `bytes`. |
+| [`prometheus.j`](../docs/modules/prometheus.md) | Partial | Prometheus metrics in two halves. **Exposition** (`counter` / `gauge` / `observe` / `render`) builds a metric set and renders the text format - pure text, both binaries. **Retrieval** (`query` / `queryRange` -> `Result`) is a read client for the HTTP query API over `http` + `json`, so it needs the default binary. Strict name / label validation and escaping. |
 
 A new module also earns a bullet in the **Module library** section of
 [`JENNIFER.md`](../JENNIFER.md) so an AI assistant writing Jennifer discovers it.

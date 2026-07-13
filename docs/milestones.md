@@ -2220,7 +2220,7 @@ modules.
 
 #### M18.14.1 - exposition (produce metrics)
 
-**No blockers - buildable now.** The Prometheus text exposition format is
+**Done.** The Prometheus text exposition format is
 pure text (`# HELP name text`, `# TYPE name counter`, then
 `name{label="value"} value [timestamp]` sample lines), which a `.j` module
 renders directly. Deliberately **transport-agnostic**: the module builds a
@@ -2249,7 +2249,7 @@ child series) are a documented follow-on. Pure `.j` over `strings` /
 
 #### M18.14.2 - retrieval (query metrics)
 
-A read client for Prometheus's HTTP query API: `query(base, promql)`
+**Done.** A read client for Prometheus's HTTP query API: `query(base, promql)`
 (instant, `/api/v1/query`) and `queryRange(base, promql, start, end, step)`
 (`/api/v1/query_range`), returning the parsed result set (`resultType` plus
 `metric` label maps and `value` / `values` samples). HTTP GET + JSON parse,
