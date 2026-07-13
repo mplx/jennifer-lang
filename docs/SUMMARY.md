@@ -54,6 +54,7 @@
 - [Catalog](modules/index.md)
 - [`ansi`](modules/ansi.md)
 - [`csv`](modules/csv.md)
+- [`docblock`](modules/docblock.md)
 - [`flatdb`](modules/flatdb.md)
 - [`gotify`](modules/gotify.md)
 - [`gpio`](modules/gpio.md)

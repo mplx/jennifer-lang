@@ -2095,7 +2095,7 @@ same script with an emulator `gpio.j` on the search path runs on a laptop.
 
 ### M18.12 - `docblock` module
 
-A doc-comment parser: read Jennifer source and return the documentation
+**Done.** A doc-comment parser: read Jennifer source and return the documentation
 embedded in it as structured values. Two deliverables - a **blessed
 doc-comment format** (documented under `docs/` as "Jennifer doc comments")
 and **`docblock.j`**, the pure-`.j` module that parses it. The module

@@ -287,6 +287,12 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
 - **`csv`** - RFC 4180: `csv.parse(s)` / `format(rows)` (`parseWith` /
   `formatWith` for any single-character delimiter, e.g. TSV), plus `toRecords` /
   `fromRecords` for header-keyed `map of string to string`. Quoting-aware.
+- **`docblock`** - the Jennifer doc-comment format (`/**` ... `*/` with a
+  summary, description, and `@param`/`@field`/`@return`/`@throws`/`@since`/
+  `@deprecated`/`@see`/`@example`/`@internal`/`@module` tags; types in `{...}`)
+  and its parser. `docblock.parse(source)` -> a typed `FileDoc` tree (module
+  preamble + per-construct docs + `Diagnostic`s for doc drift / orphans). Data,
+  not rendering. Over `regex` + `strings`; both binaries.
 - **`flatdb`** - a file-backed JSON store over `json` + `fs`. `flatdb.open(path)`
   -> value-semantic `DB` (empty if the file is absent); query / edit by JSON
   Pointer (`get` / `has` / `keys` / `length`; the fresh-`DB`-returning `set` /

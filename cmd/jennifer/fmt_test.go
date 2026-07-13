@@ -467,6 +467,16 @@ func TestFmtPreservesComments(t *testing.T) {
 			"io.printf($x /* trail */);\n",
 			"io.printf($x /* trail */);\n",
 		},
+		{
+			"leading doc comment before func gets its own line",
+			"/** doc */\nfunc f() { return; }\n",
+			"/** doc */\nfunc f() {\n    return;\n}\n",
+		},
+		{
+			"multiline doc comment before def preserved on its own lines",
+			"/**\n * Summary.\n */\ndef const MAX as int init 5;\n",
+			"/**\n * Summary.\n */\ndef const MAX as int init 5;\n",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

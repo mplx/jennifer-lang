@@ -223,15 +223,30 @@ func (f *fmtState) emitTrivia(t lexer.Token) {
 		}
 		f.atLineStart = true
 	case lexer.TOKEN_COMMENT_BLOCK:
-		// Block comments emit inline. A multi-line block comment
-		// re-emits its body verbatim - the formatter doesn't try to
-		// re-indent the inner lines (v1 limitation).
+		// A block comment on its own line (or at file start) is a
+		// *leading* comment - typically a `/** ... */` doc comment
+		// before a `func` / `def struct` / `def const`. Emit it on its
+		// own line(s) and end the line, so the documented construct
+		// starts fresh below it rather than being glued to the closing
+		// `*/` (never `*/func`). A block comment on the same source
+		// line as the previous real token is *inline*
+		// (`printf(/* n */ $x)`) and keeps its surrounding spaces.
 		//
-		// Leading-space rule: emit a space before the comment unless
-		// the previous token was a tight-on-right operator (`(`, `[`,
-		// `.`) - those would normally hug the next token, and the
-		// comment inherits that behaviour. Same for the start of file
-		// / start of line.
+		// A multi-line block comment re-emits its body verbatim - the
+		// formatter doesn't re-indent the inner ` * ` lines (v1
+		// limitation), which matches how doc comments are conventionally
+		// written at the top level.
+		if !f.hasPrev || f.prev.Line != t.Line {
+			if f.hasPrev && !f.atLineStart {
+				f.newline()
+			}
+			f.writeString(t.Lexeme)
+			f.newline()
+			return
+		}
+		// Inline: emit a space before the comment unless the previous
+		// token was a tight-on-right operator (`(`, `[`, `.`), which
+		// would normally hug the next token.
 		needLeadingSpace := f.hasPrev && !f.atLineStart && !tightOnRight(f.prev.Type)
 		if needLeadingSpace {
 			f.writeByte(' ')

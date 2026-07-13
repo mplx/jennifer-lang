@@ -27,6 +27,16 @@ so `import "NAME.j";` resolves without a path. Local modules resolve with
   `csv.fromRecords(header, records)` for header-keyed `map of string to
   string` records. Pure Jennifer over `strings` and `maps`. See
   [`examples/modules/csv_demo.j`](../examples/modules/csv_demo.j).
+- **`docblock.j`** - the Jennifer doc-comment format and its parser. A doc
+  comment opens with `/**`, immediately precedes a `func` / `def struct` /
+  `def const` (or, with `@module`, is the file preamble), and carries a
+  summary, description, and `@`-tags (`@param` / `@field name {type} desc`,
+  `@return` / `@throws`, `@since @deprecated @see @example @internal`).
+  `docblock.parse(source)` returns a typed `FileDoc` tree; it reports doc drift
+  (a `@param` naming no real parameter, a parameter with no `@param`) and
+  orphaned comments as `Diagnostic`s rather than enforcing them. The scanner is
+  string-literal- and nesting-correct. Pure Jennifer over `regex` / `strings`.
+  See [`examples/modules/docblock_demo.j`](../examples/modules/docblock_demo.j).
 - **`flatdb.j`** - a file-backed JSON document store over `json` + `fs`.
   `flatdb.open(path)` loads a file into a value-semantic `DB` (empty if
   absent); query and edit by JSON Pointer (`get` / `has` / `keys` / `length`,

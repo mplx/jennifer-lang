@@ -197,6 +197,45 @@ user-method pool even when aliasing has technically freed it.
   and `$obj./* doc */ field`.
 - Comments explain *why*, not *what*. The code already says what.
 
+## Doc comments
+
+**Document every public `func`, `def struct`, and `def const` with a doc
+comment**, and open a file with a module preamble. A doc comment is a block
+comment that opens with exactly `/**` (a plain `/*` stays an ordinary
+comment), sits immediately above the construct it documents, and holds a
+summary line, an optional description, and `@`-tags. This is the format the
+[`docblock`](../modules/docblock.md) module parses, so your docs are
+machine-readable, not just prose.
+
+```jennifer
+/**
+ * Distance between two points.
+ * A longer description can follow the summary line.
+ * @param ax {float} first x coordinate
+ * @param ay {float} first y coordinate
+ * @return {float} the Euclidean distance
+ * @since 0.9
+ */
+export func distance(ax as float, ay as float, bx as float, by as float) { ... }
+```
+
+- **Types go in `{ }`, in Jennifer's own syntax**: `{int}`, `{list of int}`,
+  `{map of string to int}`, `{json.Value}`. There is no `any` - an opaque
+  value documents as `json.Value` or a named struct.
+- **`export` is read from the keyword**, never a tag - don't write `@public`.
+- **Tags**: `@param name {type} desc` (functions) and `@field name {type} desc`
+  (structs), one per parameter / field; `@return {type} desc`;
+  `@throws {type} desc`; and the universals `@since`, `@deprecated [reason]`,
+  `@see`, `@example`, `@internal`.
+- **A file preamble** is a doc comment carrying `@module name`, plus optional
+  `@author`, `@version`, `@license`. It goes at the top, after the SPDX header.
+- **Keep doc names in step with the code.** `docblock` cross-checks `@param` /
+  `@field` names against the real declaration and reports drift, so a stale doc
+  is a caught bug, not a silent one.
+
+`jennifer fmt` preserves doc comments and keeps each on its own line above its
+construct, so a formatted file is exactly what `docblock` expects to parse.
+
 ## Source file conventions
 
 - **`.j` extension** for all Jennifer source. The interpreter rejects
@@ -254,12 +293,19 @@ insert_final_newline = true
 
 ```jennifer
 use io;
+
+/**
+ * Factorial of a non-negative integer.
+ * @param n {int} the operand (assumed >= 0)
+ * @return {int} n!
+ */
 func fact(n as int) {
     if ($n == 0) {
         return 1;
     }
     return $n * fact($n - 1);
 }
+
 for (def i as int init 0; $i <= 8; $i = $i + 1) {
     io.printf("%d! = %d\n", $i, fact($i));
 }
@@ -267,8 +313,8 @@ for (def i as int init 0; $i <= 8; $i = $i + 1) {
 
 Everything in this example follows the rules above: 1TBS braces, 4-space
 indent, spaces around binary operators, double-quoted strings, expanded
-blocks. `jennifer fmt` will produce this output byte-for-byte from any
-equivalent input.
+blocks, and a doc comment on the `func`. `jennifer fmt` will produce this
+output byte-for-byte from any equivalent input.
 
 Comments, blank lines, and the shebang on line 1 all survive a `fmt`
 round-trip. The SPDX header (`# SPDX-License-Identifier: ...`) and any
