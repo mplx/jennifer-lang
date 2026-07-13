@@ -154,3 +154,31 @@ func TestModuleImportsWithoutEnableError(t *testing.T) {
 		t.Fatal("expected an error when modules are not enabled, got nil")
 	}
 }
+
+// TestModuleStructZeroValueAndFieldWrite exercises the cross-module struct
+// resolution lookupStructDef / zeroStructFor gained: `def x as m.Struct;`
+// (zero value, no init) and `$x.field = ...` both resolve an imported module
+// struct's definition, and a nested module struct zeroes and writes through.
+// Regression for the "unknown struct" (zero value) and "definition missing"
+// (field write) errors those paths raised because module structs live in the
+// module's own interpreter, not i.NSStructs.
+func TestModuleStructZeroValueAndFieldWrite(t *testing.T) {
+	out, err := runModuleMain(t, map[string]string{
+		"m.j": `export def struct Inner { n as int };
+export def struct Point { tag as string, inner as Inner };`,
+		"main.j": `use io;
+import "./m.j" as m;
+def p as m.Point;
+io.printf("zero tag=[%s] n=%d\n", $p.tag, $p.inner.n);
+$p.tag = "hi";
+$p.inner.n = 7;
+io.printf("wrote tag=[%s] n=%d\n", $p.tag, $p.inner.n);`,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	want := "zero tag=[] n=0\nwrote tag=[hi] n=7\n"
+	if out != want {
+		t.Errorf("got %q, want %q", out, want)
+	}
+}

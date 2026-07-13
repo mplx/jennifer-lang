@@ -1724,6 +1724,23 @@ func (p posNode) astNode()         {}
 // surprises later). `ns` is empty for user-defined
 // structs and set for library-provided namespaced ones.
 func (i *Interpreter) zeroStructFor(ns, name string, st parser.Node) (Value, error) {
+	// A module struct (ns is the module stem): build it inside the module's own
+	// interpreter so nested module-struct fields resolve there, then retag the
+	// module's own structs from their internal bare identity to the stem the
+	// importer sees - the same boundary crossing the `alias.Struct{...}` literal
+	// and the call path make. Library namespaced structs (in NSStructs) fall
+	// through to the normal path below.
+	if ns != "" {
+		if _, isLib := i.NSStructs[nsKey{NS: ns, Name: name}]; !isLib {
+			if mod := i.moduleByNS(ns); mod != nil && mod.isOwnStruct(name) {
+				v, err := mod.interp.zeroStructFor("", name, st)
+				if err != nil {
+					return Value{}, err
+				}
+				return retagStructs(v, "", mod.ns, mod.isOwnStruct), nil
+			}
+		}
+	}
 	def, ok := i.lookupStructDef(ns, name)
 	if !ok {
 		file, line, col := posFor(st)
@@ -1768,8 +1785,20 @@ func (i *Interpreter) zeroStructFor(ns, name string, st parser.Node) (Value, err
 // library-registered table.
 func (i *Interpreter) lookupStructDef(ns, name string) (*parser.StructDef, bool) {
 	if ns != "" {
-		def, ok := i.NSStructs[nsKey{NS: ns, Name: name}]
-		return def, ok
+		if def, ok := i.NSStructs[nsKey{NS: ns, Name: name}]; ok {
+			return def, true
+		}
+		// A module struct: after resolveDeclaredStructNS its namespace is the
+		// module stem, and the definition lives in the module's own
+		// interpreter (not i.NSStructs). Consult it so a cross-module field
+		// write (`$x.field = ...`) and zero-value construction resolve, matching
+		// the `alias.Struct{...}` literal path.
+		if mod := i.moduleByNS(ns); mod != nil {
+			if def, ok := mod.interp.structs[name]; ok {
+				return def, true
+			}
+		}
+		return nil, false
 	}
 	def, ok := i.structs[name]
 	return def, ok
