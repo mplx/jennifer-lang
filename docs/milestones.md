@@ -2365,7 +2365,12 @@ cached via `serveFile`'s Go file server). A third added **server-side HTTP auth
 parsing**: `web.basicAuth($ctx)` (decode `Authorization: Basic` into a
 `BasicCredentials`) and `web.bearerToken($ctx)`; the credential check and `401`
 challenge stay app code, client-side auth stays in `rest`, and Digest is
-unsupported (legacy).
+unsupported (legacy). A fourth rounded out the request / response surface:
+`web.form` / `web.formValue` (decode an `x-www-form-urlencoded` body),
+`web.bodyJson` (decode a JSON body), `web.remoteAddr`, `web.html`,
+`web.redirect`, and `web.serveDir` - filling the obvious gaps against the
+`text` / `sendJson` / `serveFile` helpers already present (and correcting
+`web.body` to its true `bytes` return).
 
 #### M18.16.1 - Cookies
 

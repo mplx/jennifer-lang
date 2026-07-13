@@ -130,6 +130,23 @@ func testFormatSetCookieExpire() {
     testing.assertEqual(formatSetCookie("sid", "", $o), "sid=; Max-Age=-1; Secure");
 }
 
+func testPercentDecode() {
+    testing.assertEqual(percentDecode("hello"), "hello");
+    testing.assertEqual(percentDecode("a+b"), "a b");
+    testing.assertEqual(percentDecode("a%20b"), "a b");
+    testing.assertEqual(percentDecode("%C3%A9"), "é");
+    # a stray % with no two hex digits is left as-is
+    testing.assertEqual(percentDecode("100%"), "100%");
+}
+
+func testParseForm() {
+    def f as map of string to string init parseForm("name=Jane+Doe&city=New%20York&flag=");
+    testing.assertEqual($f["name"], "Jane Doe");
+    testing.assertEqual($f["city"], "New York");
+    testing.assertEqual($f["flag"], "");
+    testing.assertEqual(len(parseForm("")), 0);
+}
+
 func testParseBasicAuth() {
     # base64("user:pass") = "dXNlcjpwYXNz"
     def ok as BasicCredentials init parseBasicAuth("Basic dXNlcjpwYXNz");

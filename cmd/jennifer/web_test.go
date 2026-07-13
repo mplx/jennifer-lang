@@ -338,3 +338,75 @@ task.wait($server);`, webMod, httpMod)
 		t.Fatalf("web auth program failed with code %d", code)
 	}
 }
+
+// TestWebFormAndResponses drives the request/response helpers: a form POST read
+// via web.formValue, a JSON POST read via web.bodyJson, an html response
+// (text/html), a redirect (302 + Location), and remoteAddr. The .j program is
+// its own client.
+func TestWebFormAndResponses(t *testing.T) {
+	webMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "web.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "http.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+use httpd;
+use task;
+use strings;
+use convert;
+use json;
+import %q as web;
+import %q as http;
+
+func submit(ctx as web.Context) { web.text($ctx, 200, "hi " + web.formValue($ctx, "name")); }
+func api(ctx as web.Context) {
+    def doc as json.Value init web.bodyJson($ctx);
+    web.text($ctx, 200, "x=" + convert.toString(json.asInt($doc, "/x")));
+}
+func page(ctx as web.Context) { web.html($ctx, 200, "<h1>ok</h1>"); }
+func old(ctx as web.Context) { web.redirect($ctx, 302, "/new"); }
+func ip(ctx as web.Context) { web.text($ctx, 200, web.remoteAddr($ctx)); }
+
+def app as web.App init web.new();
+$app = web.post($app, "/submit", "submit");
+$app = web.post($app, "/api", "api");
+$app = web.get($app, "/page", "page");
+$app = web.get($app, "/old", "old");
+$app = web.get($app, "/ip", "ip");
+def srv as httpd.Server init httpd.listen("127.0.0.1:0");
+def addr as string init httpd.address($srv);
+def server as task of null init spawn { web.serveOn($app, $srv); };
+def base as string init "http://" + $addr;
+def h as map of string to string init {};
+
+def form as http.Response init http.post($base + "/submit", "application/x-www-form-urlencoded", "name=Jane+Doe", $h);
+testing.assertEqual($form.body, "hi Jane Doe");
+
+def apiResp as http.Response init http.post($base + "/api", "application/json", "{\"x\":5}", $h);
+testing.assertEqual($apiResp.body, "x=5");
+
+def pageResp as http.Response init http.get($base + "/page", $h);
+testing.assertTrue(strings.contains(http.header($pageResp, "Content-Type"), "text/html"));
+
+def red as http.Response init http.get($base + "/old", $h);
+testing.assertEqual($red.status, 302);
+testing.assertEqual(http.header($red, "Location"), "/new");
+
+def ipResp as http.Response init http.get($base + "/ip", $h);
+testing.assertTrue(strings.startsWith($ipResp.body, "127.0.0.1"));
+
+httpd.shutdown($srv);
+task.wait($server);`, webMod, httpMod)
+
+	progPath := filepath.Join(dir, "reqresp.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("web form/response program failed with code %d", code)
+	}
+}

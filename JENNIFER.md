@@ -341,8 +341,9 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   "showUser")` / `post` / `put` / `patch` / `delete` / `route`), plus
   `web.before` middleware and `web.notFound`; a handler is `func name(ctx as
   web.Context)`, dispatched by `meta.callMain`. `web.Context` helpers:
-  `param` / `query` / `method` / `path` / `header` / `body`, and `text` /
-  `sendJson` / `respond` / `setHeader` / `serveFile`. **Cookies:**
+  `param` / `query` / `method` / `path` / `header` / `body` (bytes) / `bodyJson`
+  / `form` / `formValue` / `remoteAddr`, and `text` / `html` / `sendJson` /
+  `redirect` / `respond` / `setHeader` / `serveFile` / `serveDir`. **Cookies:**
   `web.cookie($ctx, name)` / `web.setCookie($ctx, name, value, opts)` with a
   `web.CookieOptions` (`path` / `domain` / `maxAge` / `httpOnly` / `secure` /
   `sameSite`). **Sessions:** `web.sessionId($ctx, cookieName)` resolves or mints

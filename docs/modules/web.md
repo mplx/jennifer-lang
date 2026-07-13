@@ -45,12 +45,19 @@ touches `httpd` directly:
 | `web.param($ctx, name)` | `string` | A captured `:param` (`""` if none). |
 | `web.query($ctx, name)` | `string` | A query-string parameter. |
 | `web.header($ctx, name)` | `string` | A request header. |
-| `web.body($ctx)` | `bytes` | The request body. |
+| `web.body($ctx)` | `bytes` | The raw request body (binary-safe). |
+| `web.bodyJson($ctx)` | `json.Value` | The request body decoded as JSON. |
+| `web.form($ctx)` | `map of string to string` | The `x-www-form-urlencoded` body, decoded. |
+| `web.formValue($ctx, name)` | `string` | One form field (`""` if absent). |
+| `web.remoteAddr($ctx)` | `string` | The client's `host:port`. |
 | `web.setHeader($ctx, name, value)` | `null` | Set a response header (before responding). |
 | `web.respond($ctx, status, body)` | `null` | Send a response (body is a string). |
 | `web.text($ctx, status, body)` | `null` | Respond with `text/plain`. |
+| `web.html($ctx, status, body)` | `null` | Respond with `text/html`. |
 | `web.sendJson($ctx, status, doc)` | `null` | Respond with `application/json` from a `json.Value`. |
+| `web.redirect($ctx, status, location)` | `null` | Redirect (301/302/303/307/308) with a `Location` header. |
 | `web.serveFile($ctx, path)` | `null` | Respond with a file from disk. |
+| `web.serveDir($ctx, root)` | `null` | Serve static files from a directory root. |
 
 ## Cookies
 

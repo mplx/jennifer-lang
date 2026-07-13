@@ -251,11 +251,114 @@ export func query(ctx as Context, name as string) { return httpd.query($ctx.req,
 export func header(ctx as Context, name as string) { return httpd.header($ctx.req, $name); }
 
 /**
- * Return the request body.
+ * Return the raw request body as bytes (binary-safe). Use `web.form` /
+ * `web.bodyJson` for the common structured bodies, or `convert.stringFromBytes`
+ * for text.
  * @param ctx {Context} the request context
- * @return {string} the request body
+ * @return {bytes} the request body
  */
 export func body(ctx as Context) { return httpd.body($ctx.req); }
+
+/**
+ * Return the client's network address (host:port).
+ * @param ctx {Context} the request context
+ * @return {string} the remote address
+ */
+export func remoteAddr(ctx as Context) { return httpd.remoteAddr($ctx.req); }
+
+/**
+ * Decode the request body as JSON. Errors (invalid JSON) propagate - catch them
+ * in the handler or let the framework's 500 net answer.
+ * @param ctx {Context} the request context
+ * @return {json.Value} the decoded request body
+ */
+export func bodyJson(ctx as Context) {
+    return json.decode(convert.stringFromBytes(httpd.body($ctx.req), "utf-8"));
+}
+
+# hexNibble decodes an ASCII hex digit (0-9 / A-F / a-f) to its value, or -1.
+func hexNibble(b as int) {
+    if ($b >= 48 and $b <= 57) {
+        return $b - 48;
+    }
+    if ($b >= 65 and $b <= 70) {
+        return $b - 55;
+    }
+    if ($b >= 97 and $b <= 102) {
+        return $b - 87;
+    }
+    return -1;
+}
+
+# percentDecode decodes a URL-encoded component: `%XX` -> byte, `+` -> space.
+func percentDecode(s as string) {
+    def raw as bytes init convert.bytesFromString($s, "utf-8");
+    def out as bytes;
+    def i as int init 0;
+    while ($i < len($raw)) {
+        def b as int init $raw[$i];
+        if ($b == 43) {
+            $out[] = 32;
+            $i = $i + 1;
+        } elseif ($b == 37 and $i + 2 < len($raw)) {
+            def hi as int init hexNibble($raw[$i + 1]);
+            def lo as int init hexNibble($raw[$i + 2]);
+            if ($hi >= 0 and $lo >= 0) {
+                $out[] = $hi * 16 + $lo;
+                $i = $i + 3;
+            } else {
+                $out[] = $b;
+                $i = $i + 1;
+            }
+        } else {
+            $out[] = $b;
+            $i = $i + 1;
+        }
+    }
+    return convert.stringFromBytes($out, "utf-8");
+}
+
+# parseForm parses an `application/x-www-form-urlencoded` body into a map.
+func parseForm(bodytext as string) {
+    def out as map of string to string init {};
+    if (len($bodytext) == 0) {
+        return $out;
+    }
+    for (def pair in strings.split($bodytext, "&")) {
+        def eq as int init strings.indexOf($pair, "=");
+        if ($eq >= 0) {
+            $out[percentDecode(strings.substring($pair, 0, $eq))] =
+                percentDecode(strings.substring($pair, $eq + 1, len($pair)));
+        } elseif (len($pair) > 0) {
+            $out[percentDecode($pair)] = "";
+        }
+    }
+    return $out;
+}
+
+/**
+ * Parse an `application/x-www-form-urlencoded` request body into a map of
+ * decoded field names to values.
+ * @param ctx {Context} the request context
+ * @return {map of string to string} the form fields
+ */
+export func form(ctx as Context) {
+    return parseForm(convert.stringFromBytes(httpd.body($ctx.req), "utf-8"));
+}
+
+/**
+ * Return one form field's value, or "" when absent.
+ * @param ctx {Context} the request context
+ * @param name {string} the field name
+ * @return {string} the field value, or "" when absent
+ */
+export func formValue(ctx as Context, name as string) {
+    def fields as map of string to string init form($ctx);
+    if (maps.has($fields, $name)) {
+        return $fields[$name];
+    }
+    return "";
+}
 
 /**
  * Return a captured path parameter, or "" if the route had none by that name.
@@ -315,12 +418,45 @@ export func sendJson(ctx as Context, status as int, doc as json.Value) {
 }
 
 /**
+ * Answer with a text/html body.
+ * @param ctx {Context} the request context
+ * @param status {int} the HTTP status code
+ * @param body {string} the HTML body
+ */
+export func html(ctx as Context, status as int, body as string) {
+    httpd.setHeader($ctx.req, "Content-Type", "text/html; charset=utf-8");
+    httpd.respond($ctx.req, $status, $body);
+}
+
+/**
+ * Redirect to `location` with the given status (301 / 302 / 303 / 307 / 308).
+ * @param ctx {Context} the request context
+ * @param status {int} the redirect status code
+ * @param location {string} the target URL for the Location header
+ */
+export func redirect(ctx as Context, status as int, location as string) {
+    httpd.setHeader($ctx.req, "Location", $location);
+    httpd.respond($ctx.req, $status, "");
+    return null;
+}
+
+/**
  * Answer with a file from disk.
  * @param ctx {Context} the request context
  * @param path {string} the filesystem path to serve
  */
 export func serveFile(ctx as Context, path as string) {
     httpd.serveFile($ctx.req, $path);
+}
+
+/**
+ * Serve static files from a directory root (path-safe; 404 for a missing file).
+ * @param ctx {Context} the request context
+ * @param root {string} the directory to serve from
+ */
+export func serveDir(ctx as Context, root as string) {
+    httpd.serveDir($ctx.req, $root);
+    return null;
 }
 
 # --- cookies ----------------------------------------------------------------
