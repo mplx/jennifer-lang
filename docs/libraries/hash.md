@@ -41,6 +41,28 @@ lists the supported set:
 | Call                          | Returns | Notes                                  |
 | ----------------------------- | ------- | -------------------------------------- |
 | `hash.compute(b, algo)`       | `bytes` | Full digest of the entire input.       |
+| `hash.hmac(key, message, algo)` | `bytes` | Keyed-hash MAC (RFC 2104) over the same algorithms. |
+
+## HMAC
+
+`hash.hmac(key, message, algo)` computes the keyed-hash message authentication
+code (RFC 2104) - the primitive behind JWT (HS256), TOTP, AWS SigV4, and webhook
+signatures. `key` and `message` are `bytes`; the result is the raw MAC as
+`bytes` (hex / base64 via [`encoding`](encoding.md), matching `compute`).
+
+```jennifer
+use hash;
+use convert;
+use encoding;
+
+def key as bytes init convert.bytesFromString("secret", "utf-8");
+def msg as bytes init convert.bytesFromString("payload", "utf-8");
+def mac as bytes init hash.hmac($key, $msg, "sha256");
+io.printf("%s\n", encoding.toText($mac, "hex"));
+```
+
+To **verify**, recompute the MAC over the same message and compare it to the
+received one (comparing the full digests, not a prefix).
 
 ## Streaming
 

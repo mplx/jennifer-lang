@@ -154,3 +154,56 @@ func TestStreamWrongStruct(t *testing.T) {
 		t.Errorf("error doesn't mention hash.Stream: %v", err)
 	}
 }
+
+// hmac is a Go-side wrapper around hmacFn for the table tests.
+func hmacHelper(t *testing.T, key, msg []byte, algo string) []byte {
+	t.Helper()
+	v, err := hmacFn(interpreter.BuiltinCtx{}, []interpreter.Value{
+		interpreter.BytesVal(key),
+		interpreter.BytesVal(msg),
+		interpreter.StringVal(algo),
+	})
+	if err != nil {
+		t.Fatalf("hmac(%q): %v", algo, err)
+	}
+	if v.Kind != interpreter.KindBytes {
+		t.Fatalf("hmac(%q): expected KindBytes, got %s", algo, v.Kind)
+	}
+	return v.Bytes
+}
+
+// TestHmacKnownVectors pins hash.hmac against the canonical RFC 2202 / RFC 4231
+// vectors (key "Jefe", data "what do ya want for nothing?") for each algorithm.
+func TestHmacKnownVectors(t *testing.T) {
+	key := []byte("Jefe")
+	msg := []byte("what do ya want for nothing?")
+	vectors := []struct {
+		algo, hexWant string
+	}{
+		{"md5", "750c783e6ab0b503eaa86e310a5db738"},
+		{"sha1", "effcdf6ae5eb2fa2d27416d5f184df9c259a7c79"},
+		{"sha256", "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"},
+	}
+	for _, v := range vectors {
+		got := hex.EncodeToString(hmacHelper(t, key, msg, v.algo))
+		if got != v.hexWant {
+			t.Errorf("hmac(%q) = %s, want %s", v.algo, got, v.hexWant)
+		}
+	}
+}
+
+// TestHmacErrors covers the boundary checks.
+func TestHmacErrors(t *testing.T) {
+	good := interpreter.BytesVal([]byte("k"))
+	cases := [][]interpreter.Value{
+		{good, good}, // too few args
+		{interpreter.StringVal("k"), good, interpreter.StringVal("sha256")}, // key not bytes
+		{good, interpreter.StringVal("m"), interpreter.StringVal("sha256")}, // message not bytes
+		{good, good, interpreter.StringVal("sha3")},                         // unknown algo
+	}
+	for i, args := range cases {
+		if _, err := hmacFn(interpreter.BuiltinCtx{}, args); err == nil {
+			t.Errorf("case %d: expected an error, got nil", i)
+		}
+	}
+}

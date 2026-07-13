@@ -25,6 +25,7 @@
 package hashlib
 
 import (
+	"crypto/hmac"
 	"crypto/md5"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -66,6 +67,7 @@ func Install(in *interpreter.Interpreter) {
 	})
 
 	in.RegisterNamespaced(LibraryName, "compute", computeFn)
+	in.RegisterNamespaced(LibraryName, "hmac", hmacFn)
 	in.RegisterNamespaced(LibraryName, "stream", streamFn)
 	in.RegisterNamespaced(LibraryName, "update", updateFn)
 	in.RegisterNamespaced(LibraryName, "finalize", finalizeFn)
@@ -113,6 +115,33 @@ func computeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.
 	h := ctor()
 	h.Write(args[0].Bytes)
 	return interpreter.BytesVal(h.Sum(nil)), nil
+}
+
+// hmacFn implements `hash.hmac(key, message, algo) -> bytes`: the keyed-hash
+// message authentication code (RFC 2104) over the same algorithms as compute.
+// Raw digest bytes out (hex / base64 via the `encoding` library, matching
+// compute). The keyed comparison of two MACs should use a constant-time check;
+// this returns the MAC, and callers verify by recomputing and comparing.
+func hmacFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 3 {
+		return interpreter.Null(), fmt.Errorf("hash.hmac expects 3 arguments (key, message, algo), got %d", len(args))
+	}
+	if args[0].Kind != interpreter.KindBytes {
+		return interpreter.Null(), fmt.Errorf("hash.hmac: key must be bytes, got %s", args[0].Kind)
+	}
+	if args[1].Kind != interpreter.KindBytes {
+		return interpreter.Null(), fmt.Errorf("hash.hmac: message must be bytes, got %s", args[1].Kind)
+	}
+	if args[2].Kind != interpreter.KindString {
+		return interpreter.Null(), fmt.Errorf("hash.hmac: algo must be string, got %s", args[2].Kind)
+	}
+	ctor, ok := algoCtor[args[2].Str]
+	if !ok {
+		return interpreter.Null(), fmt.Errorf("hash.hmac: unknown digest algorithm %q; known: %s", args[2].Str, algoList)
+	}
+	mac := hmac.New(ctor, args[0].Bytes)
+	mac.Write(args[1].Bytes)
+	return interpreter.BytesVal(mac.Sum(nil)), nil
 }
 
 // streamFn implements `hash.stream(algo) -> hash.Stream`.
