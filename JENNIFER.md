@@ -342,7 +342,13 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `web.before` middleware and `web.notFound`; a handler is `func name(ctx as
   web.Context)`, dispatched by `meta.callMain`. `web.Context` helpers:
   `param` / `query` / `method` / `path` / `header` / `body`, and `text` /
-  `sendJson` / `respond` / `setHeader` / `serveFile`. `web.run($app, addr)`
+  `sendJson` / `respond` / `setHeader` / `serveFile`. **Cookies:**
+  `web.cookie($ctx, name)` / `web.setCookie($ctx, name, value, opts)` with a
+  `web.CookieOptions` (`path` / `domain` / `maxAge` / `httpOnly` / `secure` /
+  `sameSite`). **Sessions:** `web.sessionId($ctx, cookieName)` resolves or mints
+  the session-id cookie (a new UUID + `HttpOnly` cookie on first use); `web`
+  owns only that cookie, the session store stays the app's (e.g. `session` over
+  `memcache`), so `web` forces no store dependency. `web.run($app, addr)`
   owns the accept loop (`web.serveOn($app, srv)` to hold the server handle).
   Run with `jennifer serve app.j [--watch]`. **Default `jennifer` binary
   only** (`net`).

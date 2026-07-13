@@ -208,7 +208,14 @@ func makeHandler(st *serverState) http.Handler {
 			return
 		}
 		for _, h := range headers {
-			w.Header().Set(h.key, h.value)
+			// Set-Cookie is the canonical multi-value response header: a handler
+			// may emit several. Add() keeps each; Set() (used for every other
+			// header) would collapse them to the last one.
+			if strings.EqualFold(h.key, "Set-Cookie") {
+				w.Header().Add(h.key, h.value)
+			} else {
+				w.Header().Set(h.key, h.value)
+			}
 		}
 		w.WriteHeader(status)
 		if len(respBody) > 0 {

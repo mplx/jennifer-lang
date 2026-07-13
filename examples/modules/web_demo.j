@@ -11,8 +11,16 @@ use io;
 use httpd;
 use task;
 use json;
+use convert;
+use maps;
+use strings;
 import "../../modules/web.j" as web;
 import "../../modules/http.j" as http;
+
+# The app owns its session store. A real app would use the `session` module over
+# `memcache`; here a simple in-program map keyed by session id keeps the demo
+# self-contained. `web` only manages the id cookie.
+def store as map of string to int init {};
 
 # --- handlers: each takes a web.Context ------------------------------------
 
@@ -37,6 +45,22 @@ func showUser(ctx as web.Context) {
 }
 
 /**
+ * Handle GET /hit - count visits per session. web.sessionId mints an id cookie
+ * on first use; the count lives in the app-owned store keyed by that id.
+ * @param ctx {web.Context} the request context
+ */
+func hit(ctx as web.Context) {
+    def id as string init web.sessionId($ctx, "sid");
+    def n as int init 0;
+    if (maps.has($store, $id)) {
+        $n = $store[$id];
+    }
+    $n = $n + 1;
+    $store[$id] = $n;
+    web.text($ctx, 200, "visits this session: " + convert.toString($n) + "\n");
+}
+
+/**
  * Middleware: tag every response with an X-Powered-By header.
  * @param ctx {web.Context} the request context
  * @return {bool} true to continue to the route handler
@@ -52,6 +76,7 @@ def app as web.App init web.new();
 $app = web.before($app, "addServerHeader");
 $app = web.get($app, "/", "showHome");
 $app = web.get($app, "/users/:id", "showUser");
+$app = web.get($app, "/hit", "hit");
 
 # --- serve on an ephemeral port, in the background --------------------------
 
@@ -71,6 +96,16 @@ io.printf("GET /users/7   -> %d %s\n", $user.status, $user.body);
 
 def missing as http.Response init http.get("http://" + $addr + "/missing", $noHeaders);
 io.printf("GET /missing   -> %d %s", $missing.status, $missing.body);
+
+# A session round-trip: the first hit mints a cookie; replaying it counts up.
+def firstHit as http.Response init http.get("http://" + $addr + "/hit", $noHeaders);
+io.printf("GET /hit (new) -> %d %s", $firstHit.status, $firstHit.body);
+def setCookie as string init http.header($firstHit, "Set-Cookie");
+def pair as string init strings.substring($setCookie, 0, strings.indexOf($setCookie, ";"));
+def withCookie as map of string to string init {};
+$withCookie["Cookie"] = $pair;
+def secondHit as http.Response init http.get("http://" + $addr + "/hit", $withCookie);
+io.printf("GET /hit (same)-> %d %s", $secondHit.status, $secondHit.body);
 
 # --- shut down cleanly ------------------------------------------------------
 

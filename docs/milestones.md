@@ -2348,14 +2348,15 @@ the cab dialect (M18.15.1) is a follow-on encoder.
 
 ### M18.16 - `web` framework enhancements: cookies and sessions
 
-`httpd` deliberately owns no routing, cookies, or sessions - those live in the
-`web` module above it. `web` already ships routing, `:param` capture, a
-middleware chain, a custom not-found handler, and a `web.Context`, but
-**cookies and sessions are not yet implemented** - this milestone closes that
-gap so the framework matches what the layer above the engine is described as
-providing. `web` stays **dependency-light** and keeps **one way to do each
-thing** with a **selectable backend** where a real choice exists (design
-stance 1).
+**Done.** `httpd` deliberately owns no routing, cookies, or sessions - those
+live in the `web` module above it. `web` already shipped routing, `:param`
+capture, a middleware chain, a custom not-found handler, and a `web.Context`;
+this milestone adds **cookies and sessions** so the framework matches what the
+layer above the engine is described as providing. `web` stays
+**dependency-light** and keeps **one way to do each thing** (design stance 1).
+An `httpd` fix rode along: multiple `Set-Cookie` response headers are now
+emitted with `Header().Add` (not collapsed to the last by `Set`), so an app can
+set several cookies.
 
 #### M18.16.1 - Cookies
 
@@ -2376,40 +2377,37 @@ rendering, value quoting), unit-tested in the overlay without a live server.
 
 #### M18.16.2 - Sessions
 
-Cookie-keyed sessions built on M18.16.1. A module top level is
-declarations-only, so `web` cannot hold mutable session state itself: it
-manages the session-**id** cookie and reads / writes the data through a
-**store handle** the app supplies - the integer-handle-into-a-registry pattern,
-whose state is shared across value copies, carried on the `App`. The store is a
-**selectable backend**:
+Cookie-keyed sessions built on M18.16.1. The design goal that dictated the shape:
+**`web` must not force a store or network dependency.** The originally-sketched
+`withSessions(app, store, ...)` would have `web` carry a typed `memcache.Session`
+on the `App` - which requires `web` to `import "memcache.j"`, pulling in
+`memcache` + `net` for *every* `web` app, contradicting dependency-light. Since a
+module cannot name that type without importing it, the store cannot live in
+`web`. So the split is: **`web` owns only the session-id cookie; the session data
+lives in a store the app owns.**
 
-- **`session` / `memcache`** (opt-in, the reference backend) - the existing
-  [`session`](#m1861---session-module-on-memcache) module, for multi-process
-  serving. Pulled in only when the app opts into sessions, so a `web` app that
-  never touches them keeps its dependency surface at `httpd` + `meta` + `json` +
-  the collection libraries.
-
-Surface:
-
-- `web.withSessions(app, store, cookieName) -> App` registers a store on the
-  App and names the id cookie (default `"sid"`).
-- `web.session(ctx) -> session handle` returns the current request's session -
-  minting a new id plus a `Set-Cookie` on first use, resolving the existing id
-  cookie otherwise - then the handler reads / writes through the `session`
-  module's own verbs. Calling it on an App with no store registered is a
-  positioned `web`-kind error with a "call web.withSessions first" hint.
+- `web.sessionId(ctx, cookieName) -> string` returns the request's session id,
+  minting a fresh UUID plus an `HttpOnly` / `SameSite=Lax` / path-`/` cookie on
+  first use and returning the existing id cookie otherwise. `web` gains only
+  `use uuid;`; it never imports `session` / `memcache`. Call once per request.
+- The **store is entirely the app's** (a genuinely selectable backend, since
+  `web` imposes nothing): a multi-process app pairs the id with the
+  [`session`](#m1861---session-module-on-memcache) module over `memcache`; a
+  single-process app can use anything it holds. So a `web` app that uses no
+  sessions keeps its dependency surface at `httpd` + `meta` + `json` +
+  collections (+ `uuid`).
 
 Stateless signed-cookie sessions (the data in the cookie, no server store) need
 real HMAC and so wait on the `crypto` library - parked in
 [horizon.md](horizon.md), not this milestone.
 
-Middleware already ships (`web.before` + the chain); this milestone leaves it
-as is. Discipline: extend `modules/web_test.j` (the cookie parse / format
-helpers and the session-id round trip against an in-process fake store),
-refresh `docs/modules/web.md` and `examples/modules/web_demo.j` (a
-login / counter-in-session demo), and update the `httpd.md` scope note and the
-`JENNIFER.md` `web` bullet. Prereq: M18.9.2 (`web`) and, for the memcache
-backend, M18.6.1 (`session`).
+Middleware already ships (`web.before` + the chain); this milestone leaves it as
+is. Discipline done: `modules/web_test.j` (the cookie parse / format helpers),
+the Go integration tests (`TestWebCookiesAndSession` for the session round trip,
+`TestSetCookieMultiple` for the `Header().Add` fix), refreshed
+`docs/modules/web.md` and `examples/modules/web_demo.j` (a counter-in-session
+route), and updated `httpd.md` scope note + `JENNIFER.md` `web` bullet. Prereq:
+M18.9.2 (`web`).
 
 ## M19 - cross-cutting tooling
 

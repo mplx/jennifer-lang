@@ -25,6 +25,8 @@ use json;
 use lists;
 use maps;
 use strings;
+use convert;
+use uuid;
 
 /**
  * One registered (method, pattern, handler-name) triple. Exported only to
@@ -296,6 +298,116 @@ export func sendJson(ctx as Context, status as int, doc as json.Value) {
  */
 export func serveFile(ctx as Context, path as string) {
     httpd.serveFile($ctx.req, $path);
+}
+
+# --- cookies ----------------------------------------------------------------
+
+/**
+ * Attributes for a Set-Cookie header. A zero-value struct is a session cookie
+ * (no attributes); set the fields you need.
+ * @field path {string} the Path attribute ("" omits it)
+ * @field domain {string} the Domain attribute ("" omits it)
+ * @field maxAge {int} the Max-Age in seconds; 0 omits it, a negative value expires the cookie now
+ * @field httpOnly {bool} add HttpOnly (hide the cookie from JavaScript)
+ * @field secure {bool} add Secure (send only over HTTPS)
+ * @field sameSite {string} the SameSite attribute: "Lax", "Strict", "None", or "" to omit
+ */
+export def struct CookieOptions {
+    path as string,
+    domain as string,
+    maxAge as int,
+    httpOnly as bool,
+    secure as bool,
+    sameSite as string
+};
+
+# parseCookie finds `name` in a raw `Cookie` header ("k1=v1; k2=v2"), returning
+# its value or "" when absent.
+func parseCookie(header as string, name as string) {
+    def parts as list of string init strings.split($header, ";");
+    for (def p in $parts) {
+        def kv as string init strings.trim($p);
+        def eq as int init strings.indexOf($kv, "=");
+        if ($eq > 0) {
+            if (strings.substring($kv, 0, $eq) == $name) {
+                return strings.substring($kv, $eq + 1, len($kv));
+            }
+        }
+    }
+    return "";
+}
+
+# formatSetCookie renders a Set-Cookie header value from name, value, and options.
+func formatSetCookie(name as string, value as string, opts as CookieOptions) {
+    def out as string init $name + "=" + $value;
+    if (len($opts.path) > 0) {
+        $out = $out + "; Path=" + $opts.path;
+    }
+    if (len($opts.domain) > 0) {
+        $out = $out + "; Domain=" + $opts.domain;
+    }
+    if (not ($opts.maxAge == 0)) {
+        $out = $out + "; Max-Age=" + convert.toString($opts.maxAge);
+    }
+    if ($opts.httpOnly) {
+        $out = $out + "; HttpOnly";
+    }
+    if ($opts.secure) {
+        $out = $out + "; Secure";
+    }
+    if (len($opts.sameSite) > 0) {
+        $out = $out + "; SameSite=" + $opts.sameSite;
+    }
+    return $out;
+}
+
+/**
+ * Return the value of the request cookie named `name`, or "" if absent.
+ * @param ctx {Context} the request context
+ * @param name {string} the cookie name
+ * @return {string} the cookie value, or "" when absent
+ */
+export func cookie(ctx as Context, name as string) {
+    return parseCookie(httpd.header($ctx.req, "Cookie"), $name);
+}
+
+/**
+ * Set a response cookie with the given attributes (a `Set-Cookie` header).
+ * @param ctx {Context} the request context
+ * @param name {string} the cookie name
+ * @param value {string} the cookie value
+ * @param opts {CookieOptions} the cookie attributes (zero-value = a session cookie)
+ */
+export func setCookie(ctx as Context, name as string, value as string, opts as CookieOptions) {
+    httpd.setHeader($ctx.req, "Set-Cookie", formatSetCookie($name, $value, $opts));
+    return null;
+}
+
+# --- sessions ---------------------------------------------------------------
+
+/**
+ * Return the request's session id, minting a new one on first use. If the
+ * `cookieName` cookie is present its value is returned; otherwise a fresh UUID
+ * is generated and set as a `HttpOnly`, `SameSite=Lax`, path-`/` cookie. `web`
+ * manages only the id cookie - the session data itself lives in a store the app
+ * owns (e.g. the `session` module over `memcache`), so `web` forces no store or
+ * network dependency. Call once per request and capture the returned id.
+ * @param ctx {Context} the request context
+ * @param cookieName {string} the session-id cookie name (e.g. "sid")
+ * @return {string} the session id (existing or newly minted)
+ */
+export func sessionId(ctx as Context, cookieName as string) {
+    def id as string init cookie($ctx, $cookieName);
+    if (len($id) > 0) {
+        return $id;
+    }
+    $id = uuid.generate("v4");
+    def opts as CookieOptions;
+    $opts.path = "/";
+    $opts.httpOnly = true;
+    $opts.sameSite = "Lax";
+    setCookie($ctx, $cookieName, $id, $opts);
+    return $id;
 }
 
 # --- routing internals ------------------------------------------------------

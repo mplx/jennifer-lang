@@ -10,7 +10,7 @@
 # well as the exported registration surface. The serving loop itself is covered
 # by the Go integration test (cmd/jennifer/web_test.go) and the demo, since it
 # needs a live listener. web.j already `use`s httpd / meta / json / lists /
-# maps / strings, so the overlay only adds testing.
+# maps / strings / convert / uuid, so the overlay only adds testing.
 use testing;
 
 # Dummy handlers so route registration's meta.defined check passes.
@@ -98,4 +98,34 @@ func badRoute() {
 
 func testRouteValidatesHandler() {
     testing.assertThrows("badRoute", "web");
+}
+
+func testParseCookie() {
+    testing.assertEqual(parseCookie("sid=abc; theme=dark", "theme"), "dark");
+    testing.assertEqual(parseCookie("sid=abc; theme=dark", "sid"), "abc");
+    testing.assertEqual(parseCookie("sid=abc", "sid"), "abc");
+    testing.assertEqual(parseCookie("", "sid"), "");
+    testing.assertEqual(parseCookie("a=1; b=2", "c"), "");
+}
+
+func testFormatSetCookieMinimal() {
+    def o as CookieOptions;
+    testing.assertEqual(formatSetCookie("sid", "abc", $o), "sid=abc");
+}
+
+func testFormatSetCookieFull() {
+    def o as CookieOptions;
+    $o.path = "/";
+    $o.maxAge = 3600;
+    $o.httpOnly = true;
+    $o.sameSite = "Lax";
+    testing.assertEqual(formatSetCookie("sid", "abc", $o),
+        "sid=abc; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax");
+}
+
+func testFormatSetCookieExpire() {
+    def o as CookieOptions;
+    $o.maxAge = -1;
+    $o.secure = true;
+    testing.assertEqual(formatSetCookie("sid", "", $o), "sid=; Max-Age=-1; Secure");
 }

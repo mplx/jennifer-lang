@@ -52,6 +52,50 @@ touches `httpd` directly:
 | `web.sendJson($ctx, status, doc)` | `null` | Respond with `application/json` from a `json.Value`. |
 | `web.serveFile($ctx, path)` | `null` | Respond with a file from disk. |
 
+## Cookies
+
+Pure HTTP-header work over `httpd`, no extra dependency:
+
+| Call | Returns | |
+| ---- | ------- | - |
+| `web.cookie($ctx, name)` | `string` | The request cookie's value (`""` if absent). |
+| `web.setCookie($ctx, name, value, opts)` | `null` | Emit a `Set-Cookie` response header. |
+
+`opts` is a `web.CookieOptions` - `path`, `domain`, `maxAge` (int seconds; `0`
+omits the attribute, negative expires the cookie now), `httpOnly`, `secure`,
+`sameSite` (`"Lax"` / `"Strict"` / `"None"` / `""`). A zero-value struct is a
+plain session cookie. Several `setCookie` calls emit several `Set-Cookie`
+headers (they are not collapsed).
+
+## Sessions
+
+`web` owns only the session **id cookie**; the session **data** lives in a store
+the **app** owns, so `web` forces no store or network dependency (it never
+imports `session` / `memcache`). That keeps a `web` app that uses no sessions at
+`httpd` + `meta` + `json` + collections.
+
+| Call | Returns | |
+| ---- | ------- | - |
+| `web.sessionId($ctx, cookieName)` | `string` | The request's session id, minting a new UUID + `HttpOnly` / `SameSite=Lax` / path-`/` cookie on first use. |
+
+Call `web.sessionId` once per request and pair the id with your own store - for
+multi-process serving the [`session`](session.md) module over
+[`memcache`](memcache.md); for a single process anything the app holds:
+
+```jennifer
+# The app owns the store; web just resolves the id cookie.
+func profile(ctx as web.Context) {
+    def id as string init web.sessionId($ctx, "sid");
+    def data as map of string to string init session.load($store, $id);   # app's store
+    # ... read / write $data ...
+    session.save($store, $id, $data, 3600);
+    web.text($ctx, 200, "ok\n");
+}
+```
+
+Stateless signed-cookie sessions (data in the cookie, no store) wait on a
+`crypto` library for real HMAC - see [horizon.md](../horizon.md).
+
 ## Registering routes
 
 Each registrar returns a **new** `App` (value semantics), so build the app by

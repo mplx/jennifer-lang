@@ -180,12 +180,12 @@ app processes on distinct ports or sockets behind one nginx `upstream {}` block.
   by `net/http`.
 - The request body is buffered with a **10 MiB cap**; a configurable limit and
   explicit read/idle/write timeout knobs are a planned follow-up.
-- **Routing, path parameters, and middleware** are not in the engine - they
-  belong to the `web` framework module built on top of it, which does
-  name-based handler dispatch itself (the engine never calls back into the
-  interpreter). **Cookies and sessions** likewise sit above the engine, in
-  `web` (a planned enhancement - see M18.16 in
-  [milestones.md](../milestones.md)).
+- **Routing, path parameters, middleware, cookies, and sessions** are not in
+  the engine - they belong to the [`web`](../modules/web.md) framework module
+  built on top of it, which does name-based handler dispatch itself (the engine
+  never calls back into the interpreter). `web` owns the session **id cookie**;
+  the session **store** stays with the app, so the engine and `web` both stay
+  storage-agnostic.
 
 ## See also
 

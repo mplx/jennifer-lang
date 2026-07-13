@@ -279,3 +279,27 @@ func TestRespondRejectsBadStatus(t *testing.T) {
 		t.Error("expected error for status 1000")
 	}
 }
+
+// TestSetCookieMultiple verifies that several Set-Cookie response headers are
+// each preserved (emitted with Header().Add, not collapsed by Set) - the
+// property the web module's cookie support relies on.
+func TestSetCookieMultiple(t *testing.T) {
+	ResetForTest()
+	srv, addr := startServer(t)
+	defer shutdownFn(noCtx, []Value{srv})
+
+	serveOnce(srv, func(req Value) {
+		_, _ = setHeaderFn(noCtx, []Value{req, interpreter.StringVal("Set-Cookie"), interpreter.StringVal("sid=abc; HttpOnly")})
+		_, _ = setHeaderFn(noCtx, []Value{req, interpreter.StringVal("Set-Cookie"), interpreter.StringVal("theme=dark")})
+		_, _ = respondFn(noCtx, []Value{req, interpreter.IntVal(200), interpreter.StringVal("ok")})
+	})
+
+	resp, err := http.Get("http://" + addr + "/")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	if cookies := resp.Header["Set-Cookie"]; len(cookies) != 2 {
+		t.Fatalf("Set-Cookie count = %d, want 2 (%v)", len(cookies), cookies)
+	}
+}
