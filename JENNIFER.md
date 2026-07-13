@@ -348,7 +348,18 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `sameSite`). **Sessions:** `web.sessionId($ctx, cookieName)` resolves or mints
   the session-id cookie (a new UUID + `HttpOnly` cookie on first use); `web`
   owns only that cookie, the session store stays the app's (e.g. `session` over
-  `memcache`), so `web` forces no store dependency. `web.run($app, addr)`
+  `memcache`), so `web` forces no store dependency. **CORS:** `web.cors($app,
+  opts)` with a `web.CorsOptions` (`allowOrigin` / `allowMethods` /
+  `allowHeaders` / `allowCredentials` / `maxAge`) sets an app-wide policy - the
+  serve loop adds the `Access-Control-*` headers and answers an `OPTIONS`
+  preflight with `204`. **Caching:** `web.serveFile` already sets `ETag` /
+  `Last-Modified` for static files; for a dynamic response `web.etag($ctx, tag)`
+  sets the `ETag` and answers `304` on a matching `If-None-Match` (returns true
+  so the handler stops). **Auth:** `web.basicAuth($ctx)` decodes
+  `Authorization: Basic` into `web.BasicCredentials` (`user` / `password` /
+  `present`) and `web.bearerToken($ctx)` extracts a bearer token; the credential
+  check + `401` challenge stay app code (client-side auth is in `rest`; Digest is
+  unsupported). `web.run($app, addr)`
   owns the accept loop (`web.serveOn($app, srv)` to hold the server handle).
   Run with `jennifer serve app.j [--watch]`. **Default `jennifer` binary
   only** (`net`).

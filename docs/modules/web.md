@@ -135,6 +135,86 @@ $app = web.before($app, "requireKey");
 Every request is answered exactly once: if a handler throws or forgets to
 respond, the framework sends a `500` so the connection never hangs.
 
+## Authentication
+
+`web` parses the incoming `Authorization` header; **checking** the credentials
+(against your user store) and sending the `401` challenge stay app code.
+
+| Call | Returns | |
+| ---- | ------- | - |
+| `web.basicAuth($ctx)` | `BasicCredentials` | Decode `Authorization: Basic base64(user:pass)`. |
+| `web.bearerToken($ctx)` | `string` | The token from `Authorization: Bearer <token>` (`""` if absent). |
+
+`BasicCredentials` is `{ user, password, present }`; `present` is false when the
+header was missing or malformed. A Basic-auth gate is a middleware:
+
+```jennifer
+func requireLogin(ctx as web.Context) {
+    def cred as web.BasicCredentials init web.basicAuth($ctx);
+    if ($cred.present and checkUser($cred.user, $cred.password)) {
+        return true;
+    }
+    web.setHeader($ctx, "WWW-Authenticate", "Basic realm=\"app\"");   # the 401 challenge is a two-liner
+    web.text($ctx, 401, "unauthorized\n");
+    return false;
+}
+$app = web.before($app, "requireLogin");
+```
+
+For **bearer** tokens, `web.bearerToken($ctx)` extracts the token; validate it
+yourself (an opaque lookup, or `jwt.verify` once the `jwt` module lands). Client
+-side auth (sending `Authorization`) lives in the [`rest`](rest.md) module
+(`rest.basic` / `rest.bearer`). **Digest** auth is not supported (a legacy,
+challenge/nonce scheme; use Basic over TLS or a bearer token).
+
+## CORS
+
+`web.cors($app, opts) -> App` sets a cross-origin policy for the whole app.
+When it is set, the serve loop adds the `Access-Control-*` headers to **every**
+response and answers a preflight `OPTIONS` request with a `204` before routing -
+so CORS is a one-line, app-wide policy, not something each handler repeats.
+
+```jennifer
+def opts as web.CorsOptions;
+$opts.allowOrigin = "*";
+$opts.allowMethods = "GET, POST, PUT, DELETE, OPTIONS";
+$opts.allowHeaders = "Content-Type, Authorization";
+$app = web.cors($app, $opts);
+```
+
+`opts` is a `web.CorsOptions` - `allowOrigin` (`"*"` or a specific origin; `""`
+leaves CORS off), `allowMethods`, `allowHeaders`, `allowCredentials` (bool), and
+`maxAge` (int seconds, `0` omits it). A zero-value struct is CORS off, so
+`web.new()` starts with no policy.
+
+## Caching
+
+**Static files are already cached:** `web.serveFile` rides Go's file server,
+which sets `ETag` / `Last-Modified` and answers `If-None-Match` /
+`If-Modified-Since` (and `Range`) on its own. **Plain cache headers** are a
+one-liner - `web.setHeader($ctx, "Cache-Control", "max-age=3600")` - so there is
+no wrapper for them.
+
+For a **dynamic** response, `web.etag($ctx, tag) -> bool` handles the conditional
+GET: it sets the `ETag` header and, if the request's `If-None-Match` matches,
+answers `304 Not Modified` and returns `true` so the handler stops before
+sending the body. `tag` is your choice of validator - a content hash (via
+`hash`), a database row version, an mtime - so `web` needs no hashing of its own.
+
+```jennifer
+func page(ctx as web.Context) {
+    def body init render();
+    def tag init hashOf($body);           # your validator
+    if (web.etag($ctx, $tag)) {
+        return;                            # 304 sent; skip the body
+    }
+    web.text($ctx, 200, $body);
+}
+```
+
+The match is a simple exact / `*` comparison; the RFC 7232 comma-list and weak
+(`W/`) tag forms are not parsed.
+
 ## Serving
 
 | Call | |

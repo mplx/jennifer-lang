@@ -155,3 +155,186 @@ task.wait($server);`, webMod, httpMod)
 		t.Fatalf("web cookie/session program failed with code %d", code)
 	}
 }
+
+// TestWebCors drives the CORS policy end to end: with web.cors set, a normal GET
+// carries the Access-Control-Allow-Origin header, and an OPTIONS preflight is
+// answered 204 with the configured Allow-Methods (before any route runs). Also
+// exercises cross-module zero-value construction (`def o as web.CorsOptions;`).
+func TestWebCors(t *testing.T) {
+	webMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "web.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "http.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+use httpd;
+use task;
+import %q as web;
+import %q as http;
+
+func ok(ctx as web.Context) { web.text($ctx, 200, "ok"); }
+
+def opts as web.CorsOptions;
+$opts.allowOrigin = "*";
+$opts.allowMethods = "GET, POST, OPTIONS";
+$opts.allowHeaders = "Content-Type";
+$opts.maxAge = 600;
+
+def app as web.App init web.new();
+$app = web.cors($app, $opts);
+$app = web.get($app, "/", "ok");
+
+def srv as httpd.Server init httpd.listen("127.0.0.1:0");
+def addr as string init httpd.address($srv);
+def server as task of null init spawn { web.serveOn($app, $srv); };
+
+def h as map of string to string init {};
+def get as http.Response init http.get("http://" + $addr + "/", $h);
+testing.assertEqual($get.status, 200);
+testing.assertEqual($get.body, "ok");
+testing.assertEqual(http.header($get, "Access-Control-Allow-Origin"), "*");
+
+def pre as http.Response init http.request("OPTIONS", "http://" + $addr + "/", $h, "");
+testing.assertEqual($pre.status, 204);
+testing.assertEqual(http.header($pre, "Access-Control-Allow-Methods"), "GET, POST, OPTIONS");
+testing.assertEqual(http.header($pre, "Access-Control-Max-Age"), "600");
+
+httpd.shutdown($srv);
+task.wait($server);`, webMod, httpMod)
+
+	progPath := filepath.Join(dir, "cors.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("web cors program failed with code %d", code)
+	}
+}
+
+// TestWebEtag drives the conditional-GET helper: a first GET returns 200 with an
+// ETag header; a second GET replaying that ETag in If-None-Match is answered
+// 304 with an empty body (web.etag short-circuits before the handler's body).
+func TestWebEtag(t *testing.T) {
+	webMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "web.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "http.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+use httpd;
+use task;
+import %q as web;
+import %q as http;
+
+func page(ctx as web.Context) {
+    if (web.etag($ctx, "v1")) { return; }
+    web.text($ctx, 200, "hello");
+}
+
+def app as web.App init web.new();
+$app = web.get($app, "/", "page");
+def srv as httpd.Server init httpd.listen("127.0.0.1:0");
+def addr as string init httpd.address($srv);
+def server as task of null init spawn { web.serveOn($app, $srv); };
+
+def h as map of string to string init {};
+def first as http.Response init http.get("http://" + $addr + "/", $h);
+testing.assertEqual($first.status, 200);
+testing.assertEqual($first.body, "hello");
+testing.assertEqual(http.header($first, "ETag"), "\"v1\"");
+
+def hc as map of string to string init {};
+$hc["If-None-Match"] = "\"v1\"";
+def second as http.Response init http.get("http://" + $addr + "/", $hc);
+testing.assertEqual($second.status, 304);
+testing.assertEqual(len($second.body), 0);
+
+httpd.shutdown($srv);
+task.wait($server);`, webMod, httpMod)
+
+	progPath := filepath.Join(dir, "etag.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("web etag program failed with code %d", code)
+	}
+}
+
+// TestWebAuth drives the server-side auth helpers: a Basic-gated route returns
+// 401 + a WWW-Authenticate challenge with no credentials and 200 with the right
+// ones (built by the .j client via encoding), and a route echoes the extracted
+// bearer token. The credential check stays app code; web only parses the header.
+func TestWebAuth(t *testing.T) {
+	webMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "web.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "http.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+use httpd;
+use task;
+use strings;
+use convert;
+use encoding;
+import %q as web;
+import %q as http;
+
+func secret(ctx as web.Context) {
+    def cred as web.BasicCredentials init web.basicAuth($ctx);
+    if ($cred.present and $cred.user == "admin" and $cred.password == "s3cret") {
+        web.text($ctx, 200, "welcome " + $cred.user);
+        return;
+    }
+    web.setHeader($ctx, "WWW-Authenticate", "Basic realm=\"demo\"");
+    web.text($ctx, 401, "unauthorized");
+}
+func token(ctx as web.Context) { web.text($ctx, 200, "token=" + web.bearerToken($ctx)); }
+
+def app as web.App init web.new();
+$app = web.get($app, "/secret", "secret");
+$app = web.get($app, "/token", "token");
+def srv as httpd.Server init httpd.listen("127.0.0.1:0");
+def addr as string init httpd.address($srv);
+def server as task of null init spawn { web.serveOn($app, $srv); };
+
+def none as map of string to string init {};
+def denied as http.Response init http.get("http://" + $addr + "/secret", $none);
+testing.assertEqual($denied.status, 401);
+testing.assertTrue(strings.contains(http.header($denied, "WWW-Authenticate"), "Basic"));
+
+def encoded as string init encoding.toText(convert.bytesFromString("admin:s3cret", "utf-8"), "base64");
+def auth as map of string to string init {};
+$auth["Authorization"] = "Basic " + $encoded;
+def okResp as http.Response init http.get("http://" + $addr + "/secret", $auth);
+testing.assertEqual($okResp.status, 200);
+testing.assertEqual($okResp.body, "welcome admin");
+
+def bt as map of string to string init {};
+$bt["Authorization"] = "Bearer xyz.tok";
+def tokResp as http.Response init http.get("http://" + $addr + "/token", $bt);
+testing.assertEqual($tokResp.body, "token=xyz.tok");
+
+httpd.shutdown($srv);
+task.wait($server);`, webMod, httpMod)
+
+	progPath := filepath.Join(dir, "auth.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("web auth program failed with code %d", code)
+	}
+}

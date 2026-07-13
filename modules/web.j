@@ -27,6 +27,7 @@ use maps;
 use strings;
 use convert;
 use uuid;
+use encoding;
 
 /**
  * One registered (method, pattern, handler-name) triple. Exported only to
@@ -49,11 +50,32 @@ export def struct Route {
  * @field routes {list of Route} the registered routes
  * @field middleware {list of string} handler names run before each route
  * @field notFound {string} the not-found handler name (empty = built-in 404)
+ * @field cors {CorsOptions} the CORS policy applied by the serve loop (zero-value = off)
  */
 export def struct App {
     routes as list of Route,
     middleware as list of string,
-    notFound as string
+    notFound as string,
+    cors as CorsOptions
+};
+
+/**
+ * A cross-origin (CORS) policy. When set on an App via `web.cors`, the serve
+ * loop adds the `Access-Control-*` headers to every response and answers a
+ * preflight `OPTIONS` request with `204`. A zero-value struct (empty
+ * `allowOrigin`) leaves CORS off.
+ * @field allowOrigin {string} the `Access-Control-Allow-Origin` value ("*" or an origin; "" = off)
+ * @field allowMethods {string} the `Access-Control-Allow-Methods` value ("" omits it)
+ * @field allowHeaders {string} the `Access-Control-Allow-Headers` value ("" omits it)
+ * @field allowCredentials {bool} add `Access-Control-Allow-Credentials: true`
+ * @field maxAge {int} the `Access-Control-Max-Age` in seconds (0 omits it)
+ */
+export def struct CorsOptions {
+    allowOrigin as string,
+    allowMethods as string,
+    allowHeaders as string,
+    allowCredentials as bool,
+    maxAge as int
 };
 
 /**
@@ -84,7 +106,8 @@ def struct Match {
 export func new() {
     def routes as list of Route init [];
     def mw as list of string init [];
-    return App{ routes: $routes, middleware: $mw, notFound: "" };
+    def noCors as CorsOptions;
+    return App{ routes: $routes, middleware: $mw, notFound: "", cors: $noCors };
 }
 
 /**
@@ -490,6 +513,150 @@ func dispatch(app as App, handler as string, ctx as Context, req as httpd.Reques
     ensureAnswered($req, 500, "500 internal server error\n");
 }
 
+# --- authentication ---------------------------------------------------------
+
+/**
+ * Parsed HTTP Basic credentials from the request. `present` is false when the
+ * request carried no valid `Authorization: Basic` header.
+ * @field user {string} the username
+ * @field password {string} the password
+ * @field present {bool} true when valid Basic credentials were supplied
+ */
+export def struct BasicCredentials {
+    user as string,
+    password as string,
+    present as bool
+};
+
+# parseBasicAuth decodes an `Authorization: Basic base64(user:pass)` header value.
+func parseBasicAuth(header as string) {
+    def absent as BasicCredentials init BasicCredentials{ user: "", password: "", present: false };
+    def sp as int init strings.indexOf($header, " ");
+    if ($sp < 0) {
+        return $absent;
+    }
+    if (not (strings.lower(strings.substring($header, 0, $sp)) == "basic")) {
+        return $absent;
+    }
+    def raw as string init strings.trim(strings.substring($header, $sp + 1, len($header)));
+    def decoded as string init "";
+    try {
+        $decoded = convert.stringFromBytes(encoding.fromText($raw, "base64"), "utf-8");
+    } catch (err) {
+        return $absent;
+    }
+    def colon as int init strings.indexOf($decoded, ":");
+    if ($colon < 0) {
+        return $absent;
+    }
+    return BasicCredentials{ user: strings.substring($decoded, 0, $colon), password: strings.substring($decoded, $colon + 1, len($decoded)), present: true };
+}
+
+# parseBearer extracts the token from an `Authorization: Bearer <token>` header
+# value, or "" when the scheme is not Bearer.
+func parseBearer(header as string) {
+    def sp as int init strings.indexOf($header, " ");
+    if ($sp < 0) {
+        return "";
+    }
+    if (not (strings.lower(strings.substring($header, 0, $sp)) == "bearer")) {
+        return "";
+    }
+    return strings.trim(strings.substring($header, $sp + 1, len($header)));
+}
+
+/**
+ * Parse the request's HTTP Basic credentials. Checking them (against a user
+ * store) and sending a `401` challenge are the app's - web only decodes the
+ * header.
+ * @param ctx {Context} the request context
+ * @return {BasicCredentials} the decoded credentials (`present` false if absent / invalid)
+ */
+export func basicAuth(ctx as Context) {
+    return parseBasicAuth(httpd.header($ctx.req, "Authorization"));
+}
+
+/**
+ * Return the request's bearer token (the `<token>` in `Authorization: Bearer
+ * <token>`), or "" when absent. Validate it yourself (an opaque lookup, or
+ * `jwt.verify` once the `jwt` module lands).
+ * @param ctx {Context} the request context
+ * @return {string} the bearer token, or "" when absent
+ */
+export func bearerToken(ctx as Context) {
+    return parseBearer(httpd.header($ctx.req, "Authorization"));
+}
+
+# --- caching ----------------------------------------------------------------
+
+# etagMatches reports whether an If-None-Match header value matches the tag (in
+# either its quoted or bare form) or the wildcard "*". A simple exact match: the
+# RFC 7232 comma-list and weak-tag (W/) forms are not parsed.
+func etagMatches(inm as string, quoted as string, tag as string) {
+    return $inm == "*" or $inm == $quoted or $inm == $tag;
+}
+
+/**
+ * Set an `ETag` and honour a conditional GET. Sets the `ETag` response header to
+ * `tag` (quoted) and, if the request's `If-None-Match` matches, answers
+ * `304 Not Modified` and returns true - the handler should then stop. Returns
+ * false when the client has no matching cached copy, so the handler sends the
+ * full body. `tag` is the app's choice of validator: a content hash (via
+ * `hash`), a row version, an mtime - so `web` needs no hashing of its own.
+ * @param ctx {Context} the request context
+ * @param tag {string} the entity tag identifying this version of the response
+ * @return {bool} true if a 304 was sent (stop), false to send the full response
+ */
+export func etag(ctx as Context, tag as string) {
+    def quoted as string init "\"" + $tag + "\"";
+    httpd.setHeader($ctx.req, "ETag", $quoted);
+    if (etagMatches(httpd.header($ctx.req, "If-None-Match"), $quoted, $tag)) {
+        httpd.respond($ctx.req, 304, "");
+        return true;
+    }
+    return false;
+}
+
+# --- CORS -------------------------------------------------------------------
+
+/**
+ * Set the CORS policy for the whole app, returning a new App. When set (a
+ * non-empty `opts.allowOrigin`), the serve loop adds the `Access-Control-*`
+ * headers to every response and answers a preflight `OPTIONS` request with a
+ * `204` before routing.
+ * @param app {App} the router to configure
+ * @param opts {CorsOptions} the CORS policy
+ * @return {App} a new App with the policy set
+ */
+export func cors(app as App, opts as CorsOptions) {
+    def out as App init $app;
+    $out.cors = $opts;
+    return $out;
+}
+
+# corsEnabled reports whether a CORS policy is set (a non-empty allow-origin).
+func corsEnabled(app as App) {
+    return not ($app.cors.allowOrigin == "");
+}
+
+# applyCors adds the configured Access-Control-* response headers.
+func applyCors(ctx as Context, opts as CorsOptions) {
+    httpd.setHeader($ctx.req, "Access-Control-Allow-Origin", $opts.allowOrigin);
+    if (len($opts.allowMethods) > 0) {
+        httpd.setHeader($ctx.req, "Access-Control-Allow-Methods", $opts.allowMethods);
+    }
+    if (len($opts.allowHeaders) > 0) {
+        httpd.setHeader($ctx.req, "Access-Control-Allow-Headers", $opts.allowHeaders);
+    }
+    if ($opts.allowCredentials) {
+        httpd.setHeader($ctx.req, "Access-Control-Allow-Credentials", "true");
+    }
+    if ($opts.maxAge > 0) {
+        httpd.setHeader($ctx.req, "Access-Control-Max-Age", convert.toString($opts.maxAge));
+    }
+    return null;
+}
+
 # --- serving ----------------------------------------------------------------
 
 /**
@@ -510,7 +677,13 @@ export func serveOn(app as App, srv as httpd.Server) {
             def p as string init httpd.path($req);
             def matched as Match init matchRoute($app, $m, $p);
             def ctx as Context init Context{ req: $req, params: $matched.params };
-            if ($matched.found) {
+            if (corsEnabled($app)) {
+                applyCors($ctx, $app.cors);
+            }
+            if (corsEnabled($app) and $m == "OPTIONS") {
+                # Preflight: the CORS headers are set; answer without routing.
+                httpd.respond($req, 204, "");
+            } elseif ($matched.found) {
                 dispatch($app, $matched.handler, $ctx, $req);
             } elseif (not ($app.notFound == "")) {
                 dispatch($app, $app.notFound, $ctx, $req);

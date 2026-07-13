@@ -2356,7 +2356,16 @@ layer above the engine is described as providing. `web` stays
 **dependency-light** and keeps **one way to do each thing** (design stance 1).
 An `httpd` fix rode along: multiple `Set-Cookie` response headers are now
 emitted with `Header().Add` (not collapsed to the last by `Set`), so an app can
-set several cookies.
+set several cookies. A follow-on added **CORS**: `web.cors($app, opts)` sets an
+app-wide policy (a `web.CorsOptions`) and the serve loop adds the
+`Access-Control-*` headers plus answers an `OPTIONS` preflight with `204`. A
+second follow-on added **conditional-GET caching**: `web.etag($ctx, tag)` sets an
+`ETag` and answers `304` on a matching `If-None-Match` (static files were already
+cached via `serveFile`'s Go file server). A third added **server-side HTTP auth
+parsing**: `web.basicAuth($ctx)` (decode `Authorization: Basic` into a
+`BasicCredentials`) and `web.bearerToken($ctx)`; the credential check and `401`
+challenge stay app code, client-side auth stays in `rest`, and Digest is
+unsupported (legacy).
 
 #### M18.16.1 - Cookies
 
@@ -2408,6 +2417,181 @@ the Go integration tests (`TestWebCookiesAndSession` for the session round trip,
 `docs/modules/web.md` and `examples/modules/web_demo.j` (a counter-in-session
 route), and updated `httpd.md` scope note + `JENNIFER.md` `web` bullet. Prereq:
 M18.9.2 (`web`).
+
+### M18.17 - `totp` module (one-time passwords)
+
+RFC 6238 TOTP over RFC 4226 HOTP: `totp.generate(secret, ...)` and
+`totp.verify(secret, code, ...)` for two-factor auth codes, plus `totp.uri(...)`
+building the `otpauth://` provisioning string a QR code encodes. Built on the
+`hash.hmac` primitive (HMAC-SHA1 by default; SHA-256 / SHA-512 optional),
+`encoding` (base32 secrets), `time` (the 30-second step), and bytes / bitwise
+(the dynamic-truncation step). `verify` accepts a small +/-1-step skew window.
+Pure `.j`, both binaries. Prereq: `hash.hmac` (shipped).
+
+### M18.18 - `webhook` module (signed webhooks)
+
+Send and verify HMAC-signed webhooks (the GitHub / Stripe `X-Hub-Signature`
+convention): `webhook.sign(payload, secret) -> string`, `webhook.verify(payload,
+signature, secret) -> bool`, and a thin `webhook.send(url, payload, secret)` that
+POSTs the payload with the signature header. Built on `hash.hmac` + `encoding`
+(hex) + `http`. `sign` / `verify` are pure and run on both binaries; `send` needs
+the default binary. Prereq: `hash.hmac` (shipped), `http` (M18.7).
+
+### M18.19 - `bucket` module (S3-compatible object storage)
+
+An S3 client over `http` signing requests with AWS Signature Version 4:
+`connect` -> a `Client` (endpoint, region, access key, secret key), then `get` /
+`put` / `delete` / `list`. SigV4 is HMAC-SHA256 chaining, so it builds on
+`hash.hmac` + `hash.compute` + `encoding` (hex) + `http` + `time`; the endpoint
+is configurable, so **one module serves AWS S3 and every S3-compatible store**
+(MinIO, Cloudflare R2, Backblaze B2) - a selectable backend, not a module per
+vendor (stance 1). Named **`bucket`** rather than `s3` because a module namespace
+is letters-only (no digit, like `pop` not `pop3`). Needs the default binary
+(`net` via `http`). Prereq: `hash.hmac` (shipped), `http` (M18.7).
+
+### M18.20 - `dotenv` module (.env config)
+
+Load `.env` files: `dotenv.read(path) -> map of string to string` (parse a file
+without touching the environment), `dotenv.parse(text) -> map` (parse a string),
+and `dotenv.load(path)` (parse and set each variable via `os.setEnv`). Handles
+`KEY=VALUE`, `#` comments, blank lines, single / double quoting, and a leading
+`export`. Over `fs` + `strings` + `os`. Pure `.j`, both binaries. No new prereq.
+
+### M18.21 - `cron` module (cron schedules)
+
+Parse and evaluate cron expressions: `cron.parse(expr) -> Schedule`,
+`cron.next(schedule, after) -> time.Time` (the next fire at or after a time),
+and `cron.matches(schedule, t) -> bool`. The five standard fields (minute, hour,
+day-of-month, month, day-of-week) with `*`, `,`, `-`, and `/`. A scheduler loop
+(`spawn` + `time.sleep` on `cron.next`) is the caller's, so the module stays a
+pure calculator over `time`. Both binaries. No new prereq.
+
+### M18.22 - `log` module (structured logging)
+
+Leveled, structured logging: a `log.Logger` carrying a level (debug / info /
+warn / error), an output format (text / logfmt / json), and a sink.
+`log.info(logger, message, fields)` (and the sibling levels) render a record
+with a timestamp and the caller's key/value fields. Sinks: stdout / stderr (both
+binaries) and an RFC 5424 **syslog** sink over `net` (default binary only), so
+the module is **partial** on `jennifer-tiny` - the console logging works, the
+syslog sink returns the no-network error. Over `io` / `fs` + `json` + `strings`
++ `time` (+ `net` for syslog). No new prereq.
+
+### M18.23 - `ical` module (iCalendar)
+
+Build and parse iCalendar (RFC 5545): `ical.calendar()`, value-semantic
+`ical.event(...)` builders, `ical.encode(cal) -> string` (a `VCALENDAR` with
+`VEVENT`s, correct line folding and value escaping), and `ical.parse(text) ->
+Calendar`. Dates and times go through `time`. A pure text format like `csv` /
+`markdown`; both binaries. No new prereq.
+
+### M18.24 - `vcard` module (vCard contacts)
+
+Build and parse vCard (RFC 6350): `vcard.card(...)` builders for name / org /
+email / phone / address, `vcard.encode(card) -> string`, and `vcard.parse(text)
+-> Card` (one card or many). The contacts counterpart to `ical`, sharing the
+same folded-line / escaped-value discipline over `strings`. Both binaries. No
+new prereq.
+
+### M18.25 - `jsonl` module (JSON Lines)
+
+Read and write newline-delimited JSON (JSONL / NDJSON):
+`jsonl.encode(records) -> string` and `jsonl.decode(text) -> list of json.Value`,
+plus line-at-a-time helpers over `fs` for large files. A thin layer over `json` +
+`io` / `fs`. Pure `.j`, both binaries. No new prereq.
+
+### M18.26 - `ipnet` module (IP addresses and CIDR)
+
+Parse and reason about IP addresses and CIDR networks: `ipnet.parse(cidr) ->
+Network`, `ipnet.contains(network, ip) -> bool`, plus address / netmask /
+broadcast accessors. IPv4 and IPv6 (128-bit addresses handled as `bytes`), over
+`strings` + bitwise ops - for allow-lists and subnet math. Pure `.j`, both
+binaries. No new prereq.
+
+### M18.27 - `ntp` module (network time)
+
+An SNTP client: `ntp.query(server) -> Time` (and the clock offset) over `net`
+UDP, packing / unpacking the 48-byte NTP packet with `bytes` and bitwise ops and
+converting the NTP epoch through `time`. Small and self-contained. Needs the
+default binary (`net`). No new prereq.
+
+### M18.28 - `statsd` module (metrics)
+
+A StatsD client over `net` UDP: `statsd.count` / `gauge` / `timing` /
+`increment` emit the `metric:value|type` text lines a StatsD / Datadog agent
+ingests. Fire-and-forget and tiny; the push counterpart to the pull-based
+`prometheus`. Needs the default binary (`net`). No new prereq.
+
+### M18.29 - `influxdb` module (time-series)
+
+An InfluxDB client over `http`: `write(...)` sends line-protocol points and
+`query(...)` runs a query and returns the parsed result - the same shape as
+`prometheus`'s retrieval half, over `http` + `json` + `time`. Needs the default
+binary. Prereq: `http` (M18.7).
+
+### M18.30 - `slack` + `discord` modules (chat notifiers)
+
+Two incoming-webhook push clients, siblings of `gotify`: `slack.send(webhookUrl,
+message)` and `discord.send(webhookUrl, message)`, each with a small rich-message
+builder (Slack blocks / Discord embeds) over `http` + `json`. Separate modules
+(distinct payload shapes) delivered together. Need the default binary. Prereq:
+`http` (M18.7).
+
+### M18.31 - `telegram` module (bot API)
+
+A Telegram Bot API client over `http` + `json`: `sendMessage` and the common
+send verbs plus `getUpdates` (long-poll). Larger than the one-shot notifiers (a
+stateful update loop). Needs the default binary. Prereq: `http` (M18.7).
+
+### M18.32 - `websocket` module (WebSocket client)
+
+An RFC 6455 WebSocket **client** over `net`: the HTTP `Upgrade` handshake (the
+`Sec-WebSocket-Accept` key is SHA-1 + base64, both in hand), then framed `send` /
+`receive` with client-side masking, ping / pong, and close - binary framing over
+`net` + `hash` (SHA-1) + `encoding` + bitwise. Needs the default binary. A
+server-side upgrade would need an `httpd` connection-hijack hook (a separate,
+larger piece). No new prereq.
+
+### M18.33 - `amqp` module (RabbitMQ)
+
+An AMQP 0-9-1 client over `net` (RabbitMQ and compatible brokers): the
+connection / channel handshake, `publish`, and `consume`, with the binary
+frame / method encoding built from `bytes` and bitwise ops. The **largest**
+protocol module attempted - much bigger than `mqtt` - so a candidate to
+reassess as a Go library if the tree-walker becomes the bottleneck. Needs the
+default binary. No new prereq.
+
+### M18.34 - `multipart` module (form-data)
+
+Build and parse `multipart/form-data` (RFC 7578) bodies - the file-upload
+counterpart to `mime`'s email multipart: `build(parts) -> (contentType, bytes)`
+and `parse(contentType, body) -> list of Part` (fields + files). Over `strings` +
+`bytes`; pairs with `web` for handling uploads. Pure `.j`, both binaries. No new
+prereq.
+
+### M18.35 - `pdfwriter` module (PDF documents)
+
+Generate simple PDF documents - text, lines, rectangles - the way `htmlwriter` /
+`label` generate their formats: `document()`, page / text / graphics builders,
+and `render() -> bytes` writing the PDF object / xref structure by hand (no
+stdlib PDF). The standard-14 fonts first; embedded fonts and images are
+follow-ons. Over `bytes` + `strings` + `compress` (FlateDecode streams). Pure
+`.j`, both binaries. No new prereq.
+
+### M18.36 - `bloom` + `ringbuffer` modules (data structures)
+
+Two pure data-structure utilities delivered together: a **Bloom filter**
+(`bloom.new(size, hashes)` / `add` / `mightContain`) over `hash` + `bytes`, and a
+fixed-capacity **ring buffer** (`ringbuffer.new(cap)` / `push` / `pop`,
+overwrite-oldest) over `list`. Value-semantic, both binaries. No new prereq.
+
+Each of M18.17-M18.36 ships the usual module discipline: a 100%-passing
+`modules/X_test.j` overlay, a Go integration test where a network path exists,
+`docs/modules/X.md` + a catalog / `SUMMARY.md` / `modules/README.md` /
+`JENNIFER.md` entry, and a runnable `examples/modules/X_demo.j`. The `hash.hmac`
+primitive that `totp` / `webhook` / `bucket` build on already shipped (a small
+`hash` library addition, no milestone). The paired-module entries (M18.30,
+M18.36) ship two small modules each.
 
 ## M19 - cross-cutting tooling
 
@@ -2616,13 +2800,14 @@ M15.6.
   `uuidlib.randByte` at it so `uuid.v4` is unguessable; the change is one
   function, no surface change. Until then `uuid` must not be used for
   security tokens.
-- **Message authentication (HMAC).** `crypto.hmac(key, data, algo) ->
-  bytes` over the `hash` algorithms, plus a constant-time
-  `crypto.hmacEqual` for verification. Go standard library
-  (`crypto/hmac`), no dependency, TinyGo-clean - and the shared
-  foundation the KDFs below build on (PBKDF2 is iterated HMAC; HKDF and
-  SASL SCRAM are HMAC-based). Needed directly all the time too: request
-  signing, webhook verification, JWT HS256, TOTP.
+- **Message authentication (HMAC) already shipped as `hash.hmac`.** HMAC
+  is a hash construction, so it lives in the `hash` library (RFC 2104,
+  Go `crypto/hmac`, TinyGo-clean) rather than here - it unblocks request
+  signing, webhook verification, JWT HS256, and TOTP without a crypto
+  library. What can still land here is a constant-time
+  `crypto.hmacEqual` for MAC comparison (verification today recomputes
+  and compares the full digest). The KDFs below build on HMAC (PBKDF2 is
+  iterated HMAC; HKDF and SASL SCRAM are HMAC-based).
 - **Key derivation (stdlib, no dependency).** `HKDF` - derive keys from a
   high-entropy secret - and `PBKDF2-HMAC-SHA256` - derive a key from a
   password (salt + iteration count). Both come from the Go standard
@@ -2698,6 +2883,31 @@ sit in the [M21.1](#m211---screen--tui-module) `screen` / `tui` module on top.
 Output-only TUIs (dashboards, progress bars) need neither this library nor raw
 mode - just `ansi` + `os.isTerminal`.
 
+### M20.6 - hardware buses (`serial` / `spi` / `iic`)
+
+Device-bus I/O libraries for embedded / single-board-computer hosts - the
+syscall-backed siblings of the sysfs-backed `gpio` module
+([M18.11](#m1811---gpio-module)). Each needs `ioctl` / `termios`, which `.j` and
+plain `fs` cannot reach, so they are Go **system libraries**, not modules:
+
+- **`serial`** - open a serial port (`/dev/ttyUSB0`, `/dev/ttyAMA0`), configure
+  it (baud rate, data bits, parity, stop bits via `termios`), then `read` /
+  `write` / `close`. Setting the baud rate is a `termios` `ioctl`, unreachable
+  from `fs` - which is what forces a library.
+- **`spi`** - open a SPI device (`/dev/spidev0.0`), set mode / speed, and
+  `transfer(bytes) -> bytes` (full-duplex), via the `SPI_IOC_MESSAGE` `ioctl`.
+- **`iic`** - the I2C bus (`/dev/i2c-1`): select a slave address and `read` /
+  `write` register bytes via the `I2C_SLAVE` `ioctl`. Named **`iic`** (Inter-IC)
+  rather than `i2c` because a library namespace is letters-only (no digit, like
+  `bucket` not `s3`); candidates `iic` / `twi` / `wire`, settled at build time.
+
+Build-tag split like `net` / `os`: the real implementation on Linux (the
+supported platform), a friendly-error stub elsewhere. Default binary; a
+`jennifer-tiny` rebuilt for a specific board could include them (TinyGo's
+`machine` package is a different, microcontroller-level API - these target the
+Linux `/dev` + `ioctl` interface). Together with `gpio` they complete the SBC
+I/O story.
+
 ## M21 - general backlog (catch-all)
 
 The general holding area for milestones that fit no other bucket - not a
@@ -2752,6 +2962,35 @@ both formats as pure helpers; a networked fetch-and-parse against an in-process
 server in a Go test), `docs/modules/feed.md`, a catalog row, a `SUMMARY.md`
 entry, a `modules/README.md` entry, a `JENNIFER.md` bullet, and a runnable
 `examples/modules/feed_demo.j`.
+
+### M21.3 - `jwt` module (JSON Web Tokens)
+
+A JWT (RFC 7519) module. The HMAC algorithms (HS256 / HS384 / HS512) need only
+the shipped `hash.hmac` and could stand alone, but the module targets the full
+common surface - including the asymmetric **RS256 / ES256** that OAuth / OIDC
+rely on - so it is parked here **gated on [M20.1 `crypto`](#m201---crypto)** for
+the public-key signing / verification, and graduates into the M18 module track
+when `crypto` lands. Surface: `jwt.sign(claims, key, alg)`, `jwt.verify(token,
+key) -> claims` (checks the signature and the `exp` / `nbf` time claims), and
+`jwt.decode(token) -> claims` (read without verifying). Over `hash.hmac` (+
+`crypto` for RS / ES), `encoding` (base64url), `json`, and `time`. **`jwt_auth`**
+is not a separate module: it is this module used as a `web.before` middleware
+that pulls the bearer token from the `Authorization` header, `jwt.verify`s it,
+and rejects on failure (`func requireJwt(ctx) { ...; return true; }`) - shipped
+as a snippet in the demo / docs, not its own surface. Discipline as usual: a
+`modules/jwt_test.j` overlay (sign / verify round-trips and tampered-token
+rejection), docs, catalog, and demo.
+
+### M21.4 - `acme` module (Let's Encrypt / ACME)
+
+An ACME (RFC 8555) client - obtain and renew TLS certificates from Let's Encrypt
+and compatible CAs: account registration, an order plus HTTP-01 / DNS-01
+challenge, CSR submission, and certificate download, over `http` + `json`. Parked
+here **gated on [M20.1 `crypto`](#m201---crypto)**: ACME requests are JWS-signed
+with an account key (RS256 / ES256) and the flow needs CSR generation - both
+asymmetric-crypto operations. Composes with `web` / `httpd` to serve the HTTP-01
+challenge. Graduates into the M18 module track when `crypto` lands. Needs the
+default binary. Discipline as usual.
 
 ---
 

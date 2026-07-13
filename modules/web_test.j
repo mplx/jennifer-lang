@@ -129,3 +129,45 @@ func testFormatSetCookieExpire() {
     $o.secure = true;
     testing.assertEqual(formatSetCookie("sid", "", $o), "sid=; Max-Age=-1; Secure");
 }
+
+func testParseBasicAuth() {
+    # base64("user:pass") = "dXNlcjpwYXNz"
+    def ok as BasicCredentials init parseBasicAuth("Basic dXNlcjpwYXNz");
+    testing.assertTrue($ok.present);
+    testing.assertEqual($ok.user, "user");
+    testing.assertEqual($ok.password, "pass");
+    # scheme is case-insensitive
+    testing.assertTrue(parseBasicAuth("basic dXNlcjpwYXNz").present);
+    # wrong scheme / absent / malformed
+    testing.assertFalse(parseBasicAuth("Bearer dXNlcjpwYXNz").present);
+    testing.assertFalse(parseBasicAuth("").present);
+    testing.assertFalse(parseBasicAuth("Basic !!!not-base64!!!").present);
+}
+
+func testParseBearer() {
+    testing.assertEqual(parseBearer("Bearer abc.def.ghi"), "abc.def.ghi");
+    testing.assertEqual(parseBearer("bearer tok"), "tok");
+    testing.assertEqual(parseBearer("Basic dXNlcjpwYXNz"), "");
+    testing.assertEqual(parseBearer(""), "");
+}
+
+func testEtagMatches() {
+    testing.assertTrue(etagMatches("\"v1\"", "\"v1\"", "v1"));
+    testing.assertTrue(etagMatches("v1", "\"v1\"", "v1"));
+    testing.assertTrue(etagMatches("*", "\"v1\"", "v1"));
+    testing.assertFalse(etagMatches("\"v2\"", "\"v1\"", "v1"));
+    testing.assertFalse(etagMatches("", "\"v1\"", "v1"));
+}
+
+func testCorsRegisters() {
+    def app as App init new();
+    testing.assertFalse(corsEnabled($app));
+    def opts as CorsOptions;
+    $opts.allowOrigin = "*";
+    $opts.allowMethods = "GET, POST";
+    def out as App init cors($app, $opts);
+    testing.assertTrue(corsEnabled($out));
+    testing.assertEqual($out.cors.allowOrigin, "*");
+    # Registration is immutable: the original app is unchanged.
+    testing.assertFalse(corsEnabled($app));
+}
