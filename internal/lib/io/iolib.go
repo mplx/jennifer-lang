@@ -21,6 +21,7 @@ const LibraryName = "io"
 // Call this before Interpreter.Run(prog).
 func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "printf", printf)
+	in.RegisterNamespaced(LibraryName, "eprintf", eprintf)
 	in.RegisterNamespaced(LibraryName, "sprintf", sprintf)
 	in.RegisterNamespaced(LibraryName, "readLine", readLine)
 	in.RegisterNamespaced(LibraryName, "eof", eofFn)
@@ -39,6 +40,20 @@ func printf(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 		return interpreter.Null(), err
 	}
 	if _, err := io.WriteString(ctx.Out, s); err != nil {
+		return interpreter.Null(), err
+	}
+	return interpreter.Null(), nil
+}
+
+// eprintf is printf's stderr sibling: same formatting, writes to the error
+// stream instead of stdout. For diagnostics / logs that must not pollute a
+// program's stdout data.
+func eprintf(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	s, err := formatArgs(args)
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	if _, err := io.WriteString(ctx.Err, s); err != nil {
 		return interpreter.Null(), err
 	}
 	return interpreter.Null(), nil

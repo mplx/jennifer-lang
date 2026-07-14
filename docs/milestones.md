@@ -1425,6 +1425,66 @@ comparison / boolean functions, `$` root, variables, range index, and the
 `default` / `truncate` / `join` / `len` / `printf` pipes, plus the `title` pipe
 and trim markers). No new prereq.
 
+### M18.38 - `barcode` module (barcode / QR generation)
+
+Generate scannable codes as **images**, not printer commands - the complement to
+`label` (which emits printer-native barcode *commands* for the printer to render;
+this module renders the code itself, for the web, email, PDFs, on-screen display,
+or embedding as a bitmap into a `label.image`). **One** module with the symbology
+as a selector (stance 1, like `label`'s dialects), covering both 1D and 2D:
+
+- **Encode.** `barcode.encode(data, symbology, opts) -> Symbol` builds a
+  device-independent representation - a black/white module **matrix** for the 2D
+  codes, a run of **bar widths** for the 1D codes. Symbologies: **2D** `qr`
+  (Reed-Solomon over GF(256), the four EC levels `L`/`M`/`Q`/`H`, automatic
+  version selection and data-mask scoring); **1D** `code128`, `ean13`, `ean8`,
+  `itf` (Interleaved 2 of 5), `code39` (bit-pattern / check-digit tables). The
+  1D set matches `label`'s, so the two modules speak the same symbology names.
+  `datamatrix` is a follow-on (a second 2D code once QR is proven).
+- **Render.** From a `Symbol`: `barcode.svg(symbol, opts) -> string` (the primary
+  output - resolution-independent, embeds directly in HTML / email / the docs);
+  `barcode.png(symbol, opts) -> bytes` (a monochrome PNG hand-encoded over
+  `compress` for the zlib IDAT and `crc` for the chunk CRC-32s - no image
+  library); `barcode.terminal(symbol) -> string` (Unicode half-block art for the
+  CLI / REPL); and `barcode.matrix(symbol) -> list of list of bool` (the raw
+  cells, e.g. to feed `label.image` or a caller's own renderer). `opts` carries
+  the module size / bar height, the quiet-zone width, and the foreground /
+  background colours (for SVG / PNG).
+
+Pure `.j`, so **both binaries** - it builds only on the compiled-in `compress`
+(zlib), `crc` (CRC-32), `encoding` (the numeric / alphanumeric packing), `bytes`,
+and bitwise operators; no `net`, no new Go code, no third-party dependency. QR's
+Reed-Solomon and mask scoring are the substantial `.j` work (a dogfood of the
+byte / bitwise surface); a typical QR is a few hundred codewords, well within the
+tree-walker's budget.
+
+The GF(256) / Reed-Solomon math lives in **its own file** inside the module -
+`barcode.j` `include`s `barcode_ecc.j` (the multi-file pattern `label.j` uses for
+`label_zpl.j` / `label_cab.j`) - so it is cleanly isolated but **private**: not
+an exported public surface. This keeps the layering pointing downward (a caller
+never reaches through the whole renderer for the field math) while making the
+math trivially promotable. The **trigger** to promote it: a genuine second
+consumer *outside* `barcode` (a standalone Data Matrix / Aztec / PDF417 module,
+or erasure coding). Data Matrix, the only near-term reuser, lives *inside* this
+module and shares the file directly, so nothing needs exporting yet. When a real
+outside consumer appears, extract `barcode_ecc.j` into a cohesive `ecc.j` module
+(Reed-Solomon over GF(256)) that `barcode` then imports - **not** an export bolted
+onto `barcode`, and **not** a `crypto` / `galois` library (Reed-Solomon is forward
+error correction, not cryptography, and GF arithmetic alone is a building block,
+not a user-facing topic). A Go `ecc` library is the further escape hatch only if
+the `.j` math ever proves too slow (pure Go, ~60 lines, no third-party dep).
+
+Discipline: a 100%-passing `modules/barcode_test.j` overlay pinned against known
+vectors (QR matrices for a few payloads / EC levels, 1D bar patterns, and a PNG
+byte-signature check), a `cmd/jennifer/barcode_test.go` (decode a generated PNG /
+matrix to confirm it scans, or at least round-trips the structure),
+`docs/modules/barcode.md`, an `examples/modules/barcode_demo.j`, and the catalog /
+`SUMMARY.md` / `README.md` / `JENNIFER.md` entries. Prereq: `compress` (M16.11)
+and `crc` (M15.6), both shipped. No general image library (a deliberate
+non-goal - the only raster need is a monochrome bitmap, which the PNG encoder
+covers in ~50 lines; revisit a general `image` module only if a broader need
+appears).
+
 ## M19 - cross-cutting tooling
 
 The catch-all bucket for milestones that improve the interpreter or its

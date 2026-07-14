@@ -24,14 +24,33 @@ func callSprintf(in *interpreter.Interpreter, args []interpreter.Value) (interpr
 	return in.LookupNamespacedBuiltin("io", "sprintf")(interpreter.BuiltinCtx{}, args)
 }
 
+func callEprintf(in *interpreter.Interpreter, errW io.Writer, args []interpreter.Value) (interpreter.Value, error) {
+	return in.LookupNamespacedBuiltin("io", "eprintf")(interpreter.BuiltinCtx{Err: errW}, args)
+}
+
 func TestInstallRegistersBuiltins(t *testing.T) {
 	in := interpreter.New()
 	Install(in)
-	if in.LookupNamespacedBuiltin("io", "printf") == nil {
-		t.Fatal("io.printf not registered after Install")
+	for _, name := range []string{"printf", "eprintf", "sprintf"} {
+		if in.LookupNamespacedBuiltin("io", name) == nil {
+			t.Fatalf("io.%s not registered after Install", name)
+		}
 	}
-	if in.LookupNamespacedBuiltin("io", "sprintf") == nil {
-		t.Fatal("io.sprintf not registered after Install")
+}
+
+// TestEprintfWritesToErr confirms eprintf formats like printf but targets the
+// error stream (ctx.Err), not stdout (ctx.Out).
+func TestEprintfWritesToErr(t *testing.T) {
+	in := interpreter.New()
+	Install(in)
+	var errBuf bytes.Buffer
+	if _, err := callEprintf(in, &errBuf, []interpreter.Value{
+		interpreter.StringVal("n=%d\n"), interpreter.IntVal(7),
+	}); err != nil {
+		t.Fatalf("io.eprintf: %v", err)
+	}
+	if errBuf.String() != "n=7\n" {
+		t.Errorf("io.eprintf wrote %q, want %q", errBuf.String(), "n=7\n")
 	}
 }
 

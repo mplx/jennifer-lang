@@ -76,6 +76,7 @@ flat lookup view, not authoritative.
 | [`io`](io.md)`.eof()`                                 | True if and only if the next `io.readLine()` would error. Pair with `while (not io.eof()) {...}`.                                   |
 | [`io`](io.md)`.printf(format, args...)`               | Format-string write to stdout. Verbs: `%d %f %s %t %v %%`; per-verb `\|key=value` modifiers (`pad`, `prec`, `base`, `null=*`, ...). |
 | [`io`](io.md)`.printf(value)`                         | Write a value's display form to stdout.                                                                                             |
+| [`io`](io.md)`.eprintf(format, args...)`              | Like `printf`, but writes to **stderr** (diagnostics / logs that must not mix into stdout).                                        |
 | [`io`](io.md)`.readLine()`                            | Read one line from stdin (trailing newline stripped). Errors at EOF - check `io.eof()` first.                                       |
 | [`io`](io.md)`.readLine(prompt)`                      | Same as `io.readLine()` but writes `prompt` to stdout first.                                                                        |
 | [`io`](io.md)`.sprintf(format, args...)`              | Format-string version of `sprintf`. Same verbs and `\|key=value` modifiers as `printf`.                                             |

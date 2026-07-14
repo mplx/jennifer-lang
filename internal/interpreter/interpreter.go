@@ -24,6 +24,7 @@ import (
 // editor for input.
 type BuiltinCtx struct {
 	Out    io.Writer
+	Err    io.Writer
 	In     io.Reader
 	InREPL bool
 	// Call-site position, so a builtin that raises a Jennifer error (via
@@ -69,6 +70,7 @@ type nsKey struct {
 // Interpreter walks a parsed Program and runs it.
 type Interpreter struct {
 	Out             io.Writer // defaults to os.Stdout if nil
+	Err             io.Writer // defaults to os.Stderr if nil
 	In              io.Reader // defaults to os.Stdin if nil
 	InREPL          bool      // set by the REPL so stdin-consuming builtins refuse
 	Builtins        map[string]builtinEntry
@@ -765,6 +767,9 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	if i.Out == nil {
 		i.Out = os.Stdout
 	}
+	if i.Err == nil {
+		i.Err = os.Stderr
+	}
 	if i.In == nil {
 		i.In = os.Stdin
 	}
@@ -1053,6 +1058,9 @@ func (i *Interpreter) checkMethodNoShadow(m *parser.MethodDef) error {
 func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 	if i.Out == nil {
 		i.Out = os.Stdout
+	}
+	if i.Err == nil {
+		i.Err = os.Stderr
 	}
 	if i.In == nil {
 		i.In = os.Stdin
@@ -3123,7 +3131,7 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 			args = append(args, v)
 		}
 		pf, pl, pc := posFor(c)
-		ctx := BuiltinCtx{Out: i.Out, In: i.In, InREPL: i.InREPL, File: pf, Line: pl, Col: pc}
+		ctx := BuiltinCtx{Out: i.Out, Err: i.Err, In: i.In, InREPL: i.InREPL, File: pf, Line: pl, Col: pc}
 		v, err := b.Fn(ctx, args)
 		if err != nil {
 			return Value{}, builtinError(err, pf, pl, pc)
@@ -3209,7 +3217,7 @@ func (i *Interpreter) evalQualifiedCall(c *parser.QualifiedCallExpr, env *Enviro
 		args = append(args, v)
 	}
 	pf, pl, pc := posFor(c)
-	ctx := BuiltinCtx{Out: i.Out, In: i.In, InREPL: i.InREPL, File: pf, Line: pl, Col: pc}
+	ctx := BuiltinCtx{Out: i.Out, Err: i.Err, In: i.In, InREPL: i.InREPL, File: pf, Line: pl, Col: pc}
 	v, err := fn(ctx, args)
 	if err != nil {
 		return Value{}, builtinError(err, pf, pl, pc)

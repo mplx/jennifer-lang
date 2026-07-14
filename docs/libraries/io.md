@@ -1,8 +1,9 @@
 # `io` - input/output
 
-Enable with `use io;`. It provides formatted output - `printf` and `sprintf`,
-which share a Go-style format-string mini-language - and stdin input:
-`readLine` / `eof` for lines, `readBytes` / `readChars` for binary.
+Enable with `use io;`. It provides formatted output - `printf` (stdout),
+`eprintf` (stderr), and `sprintf` (to a string), which share a Go-style
+format-string mini-language - and stdin input: `readLine` / `eof` for lines,
+`readBytes` / `readChars` for binary.
 
 ## `printf`
 
@@ -13,6 +14,17 @@ io.printf("hi\n");                              # literal string (no verbs)
 io.printf($x);                                  # single non-string value, displayed
 io.printf("you are %d years old!\n", $age);     # format string + arguments
 io.printf("%s = %d, ok=%t\n", "answer", 42, true);
+```
+
+## `eprintf`
+
+Exactly like `printf` - same argument forms and verbs - but writes to **standard
+error** instead of standard output. Use it for diagnostics, warnings, and logs
+that must not mix into a program's stdout data (so a pipeline consuming the stdout
+stays clean).
+
+```jennifer
+io.eprintf("warning: retrying (%d/%d)\n", $attempt, $max);   # goes to stderr
 ```
 
 ## `sprintf`
