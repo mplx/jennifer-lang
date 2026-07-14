@@ -1256,11 +1256,14 @@ default binary (`net` via `http`). Prereq: `hash.hmac` (shipped), `http` (M18.7)
 
 ### M18.20 - `dotenv` module (.env config)
 
-Load `.env` files: `dotenv.read(path) -> map of string to string` (parse a file
-without touching the environment), `dotenv.parse(text) -> map` (parse a string),
-and `dotenv.load(path)` (parse and set each variable via `os.setEnv`). Handles
-`KEY=VALUE`, `#` comments, blank lines, single / double quoting, and a leading
-`export`. Over `fs` + `strings` + `os`. Pure `.j`, both binaries. No new prereq.
+**Done.** Load `.env` files: `dotenv.read(path) -> map of string to string`
+(parse a file without touching the environment), `dotenv.parse(text) -> map`
+(parse a string), and `dotenv.load(path)` (parse and set each variable via
+`os.setEnv`, returning the map). Handles `KEY=VALUE`, `#` comments (whole-line
+and, on unquoted values, inline), blank lines, single quotes (literal) / double
+quotes (expanding `\n` / `\t` / `\r`), a value containing `=`, and a leading
+`export`. No `${VAR}` interpolation. Over `fs` + `strings` + `os`. Pure `.j`,
+both binaries. No new prereq.
 
 ### M18.21 - `cron` module (cron schedules)
 

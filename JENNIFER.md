@@ -299,6 +299,12 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `append` / `remove`); `flatdb.save(db)` writes back with a crash-atomic
   temp+`rename`. Values are `json.Value`s (`json.decode` for scalars). Not a
   database engine - crash-atomic snapshotting of small data. Both binaries.
+- **`dotenv`** - read `.env` config files. `dotenv.parse(text)` /
+  `dotenv.read(path)` -> `map of string to string`; `dotenv.load(path)` also sets
+  each variable via `os.setEnv` (returns the map). Handles `#` comments
+  (whole-line + inline on unquoted values), blank lines, a leading `export`,
+  single quotes (literal) and double quotes (expand `\n` / `\t` / `\r`). No
+  `${VAR}` interpolation. Over `fs` + `strings` + `os`; both binaries.
 - **`htmlwriter`** - build an HTML element tree and render escaped HTML5:
   `html.element(tag, attrs, children)` / `text(s)` / `raw(s)` / `attr(n, v)`
   constructors, `render` / `renderAll`, `escape`. A writer, not a parser.
