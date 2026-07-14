@@ -1301,19 +1301,36 @@ prereq.
 
 ### M18.23 - `ical` module (iCalendar)
 
-Build and parse iCalendar (RFC 5545): `ical.calendar()`, value-semantic
-`ical.event(...)` builders, `ical.encode(cal) -> string` (a `VCALENDAR` with
-`VEVENT`s, correct line folding and value escaping), and `ical.parse(text) ->
-Calendar`. Dates and times go through `time`. A pure text format like `csv` /
-`markdown`; both binaries. No new prereq.
+**Done.** Build and parse iCalendar (RFC 5545): `ical.calendar()` /
+`calendarWith(prodid)`, value-semantic `event(uid, start, end, summary)` /
+`describe` / `locate` / `add` builders, `ical.encode(cal) -> string` (a
+`VCALENDAR` of `VEVENT`s with CRLF lines, RFC 5545 text escaping, and 75-char
+line folding), and `ical.parse(text) -> Calendar` (unfolds, ignores property
+parameters, unescapes, skips a `VEVENT` with no `DTSTART`, defaults a missing
+`DTEND` to the start), so `parse(encode(cal))` round-trips. `DTSTAMP` / `DTSTART`
+/ `DTEND` go through `time` as UTC `DATE-TIME` values (normalising a non-UTC
+`time.Time` to UTC on the way out). `VEVENT`-only - no `RRULE` / `VALARM` /
+`VTIMEZONE`, events stored in UTC (no per-event `TZID`, since `time` ships
+fixed-offset zones only). A pure text format like `csv` / `markdown`; **both
+binaries** over `strings` / `lists` + `time`. No new prereq.
 
 ### M18.24 - `vcard` module (vCard contacts)
 
-Build and parse vCard (RFC 6350): `vcard.card(...)` builders for name / org /
-email / phone / address, `vcard.encode(card) -> string`, and `vcard.parse(text)
--> Card` (one card or many). The contacts counterpart to `ical`, sharing the
-same folded-line / escaped-value discipline over `strings`. Both binaries. No
-new prereq.
+**Done.** Build and parse vCard (RFC 6350, vCard 4.0): a value-semantic
+`vcard.Card` built with `card(formattedName)` + `withName` / `withOrg` /
+`addEmail` / `addPhone` / `address` + `addAddress` / `withUrl` / `withNote`,
+`vcard.encode(card) -> string` (one `VCARD`) / `encodeAll(cards)`, and
+`vcard.parse(text) -> list of Card` (one or many `VCARD`s - parse always returns
+a list). Structured `N` / `ADR` / `ORG` values, RFC 6350 text escaping, and
+75-char line folding, so `parse(encode(card))` round-trips; property parameters
+(`;TYPE=work`) are ignored. A contact subset - no `BDAY` / `PHOTO` / grouping /
+parameter round-trip. The contacts counterpart to `ical`, and it genuinely
+shares that discipline: the folded-line / escaped-value / name-split codec was
+extracted into a private partial **`ical_vcard_shared.j`** that both `ical.j` and
+`vcard.j` `include` (the `label_zpl.j` shared-partial pattern - no `use` of its
+own, no separate module surface), so there is one implementation of the vCard /
+iCalendar content-line grammar. Both binaries over `strings` / `lists`. No new
+prereq.
 
 ### M18.25 - `jsonl` module (JSON Lines)
 
@@ -1495,6 +1512,60 @@ and `crc` (M15.6), both shipped. No general image library (a deliberate
 non-goal - the only raster need is a monochrome bitmap, which the PNG encoder
 covers in ~50 lines; revisit a general `image` module only if a broader need
 appears).
+
+### M18.39 - `mikrotik` module (RouterOS API client)
+
+Connect to a MikroTik RouterOS device and run commands over its **binary API**,
+not SSH. SSH is deliberately out of scope: a real SSH client needs key exchange,
+host-key verification, and cipher / MAC negotiation - the whole `crypto` surface
+(M20.1) plus a heavy `golang.org/x/crypto/ssh` dependency, against the
+dependency-free + TinyGo-clean stance. The RouterOS API is the purpose-built,
+crypto-optional door, and it is plain TCP.
+
+- **Transport.** RouterOS serves the API on plain TCP **8728** (`net.connect`)
+  and on **8729** for api-ssl (`net.connectTLS`, already shipped) - the same
+  transport-agnostic `net.Conn`, so plaintext and TLS share the read / write
+  path. The wire protocol is **sentence-based**: a sentence is a run of
+  length-prefixed **words** terminated by a zero-length word. The length prefix
+  is MikroTik's variable-length scheme (1 byte below `0x80`, then the
+  `0x8000` / `0xC0...` / `0xE0...` / `0xF0`-flagged 2-5 byte forms) - pure
+  bit-twiddling over `bytes`, the same class of hand-rolled framing `mqtt`
+  already does. Words: command `/interface/print`, attributes `=name=value`,
+  queries `?name=value`, API tags `.tag=N`.
+- **Surface.** `mikrotik.connect(opts) -> Session` (host / port / user /
+  password / tls, logging in as part of the connect); `mikrotik.talk(session,
+  command, attrs) -> list of (map of string to string)` (the general call - each
+  `!re` reply sentence's `=key=value` words fold into one row map);
+  `mikrotik.print(session, path)` sugar for a `"/.../print"` read;
+  `mikrotik.run(session, path, attrs)` for `add` / `set` / `remove`; and
+  `mikrotik.close(session)`. A `!trap` / `!fatal` reply throws
+  `Error{kind: "mikrotik"}`; `!done` ends the exchange.
+- **Login needs no crypto.** RouterOS 6.43+ accepts a plaintext `/login` with
+  `=name=` / `=password=` (confidentiality comes from api-ssl, exactly like the
+  mail clients over TLS), so the primary path adds no prereq. The pre-6.43 MD5
+  challenge-response is an **optional fallback** and even that only needs
+  `hash.compute(b, "md5")`, already compiled in.
+
+Deps: `net` (+ `net.connectTLS`), `hash` (MD5 fallback), `bytes`, the bitwise
+operators, `convert`, `strings` - all shipped, **no new prereq**. Net-backed, so
+**partial** on `jennifer-tiny` (the no-network stub), like every `net` module.
+
+Scope for v1: the API-only backend covering both RouterOS v6 and v7. The v7
+**REST API** (HTTP + JSON) is a possible *second backend* under stance 1, but
+deferred - it is a different, stateless request / response shape that does not
+share the binary API's session model, so v1 ships the binary API cleanly and a
+REST backend is revisited only on a concrete need (the same "add the second way
+when a real consumer appears" discipline the `barcode` ECC file uses). Query
+(`?`) words and `.tag`-multiplexed concurrent commands are likewise a follow-on
+once the synchronous `talk` path is proven.
+
+Discipline: a 100%-passing `modules/mikrotik_test.j` overlay against a fake API
+server (word length-prefix encode / decode round-trips, sentence framing, reply
+parsing, `!trap` -> `Error`) - the wire codec is pure and testable without a
+device; a `cmd/jennifer/mikrotik_test.go` driving a fake Go TCP server through a
+login + `talk` exchange; `docs/modules/mikrotik.md`; an
+`examples/modules/mikrotik_demo.j`; and the catalog / `SUMMARY.md` / `README.md`
+/ `JENNIFER.md` entries. Prereq: `net` (M16.2) and `hash` (M15.6), both shipped.
 
 ## M19 - cross-cutting tooling
 

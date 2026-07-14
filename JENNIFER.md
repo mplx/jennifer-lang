@@ -558,6 +558,30 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   UDP (facility `user`); console and file sinks work on both binaries, the
   **syslog sink needs the default `jennifer` binary** (`net`). Over `io` / `fs`
   + `json` + `strings` + `time` + `os` (+ `net` for syslog).
+- **`ical`** - iCalendar (RFC 5545) build and parse. Build a value-semantic
+  `ical.Calendar` of `ical.Event`s: `ical.calendar()` / `calendarWith(prodid)`,
+  `event(uid, start, end, summary)` (dates are `time.Time`), then
+  `describe(ev, text)` / `locate(ev, place)` / `add(cal, ev)` (each returns a
+  fresh copy). `ical.encode(cal) -> string` renders a `VCALENDAR` of `VEVENT`s -
+  CRLF lines, RFC 5545-escaped text (`\` `;` `,` newline), long lines folded at
+  75 characters, `DTSTAMP` / `DTSTART` / `DTEND` as UTC `DATE-TIME` (`...Z`).
+  `ical.parse(text) -> Calendar` unfolds, ignores property parameters, unescapes,
+  skips a `VEVENT` with no `DTSTART`, and defaults a missing `DTEND` to the start,
+  so `parse(encode(cal))` round-trips. `VEVENT`-only (no `RRULE` / `VALARM` /
+  `TZID`; events are UTC). Pure text over `strings` / `lists` + `time`; **both
+  binaries**.
+- **`vcard`** - vCard (RFC 6350, vCard 4.0) contacts build and parse. Build a
+  value-semantic `vcard.Card`: `vcard.card(formattedName)` then
+  `withName(c, family, given)` / `withOrg(c, org, title)` / `addEmail(c, email)`
+  / `addPhone(c, phone)` / `addAddress(c, vcard.address(street, locality, region,
+  postalCode, country))` / `withUrl(c, url)` / `withNote(c, note)` (each returns
+  a fresh copy). `vcard.encode(c) -> string` (one `VCARD`) / `encodeAll(cards)`
+  writes `VERSION:4.0`, structured `N` / `ADR` / `ORG`, RFC 6350-escaped text,
+  and 75-char folding; `vcard.parse(text) -> list of Card` reads one or many
+  cards, ignoring property parameters (`;TYPE=work`), so `parse(encode(c))`
+  round-trips. A contact subset (no `BDAY` / `PHOTO` / grouping / parameter
+  round-trip). Shares the content-line codec with `ical`. Pure text over
+  `strings` / `lists`; **both binaries**.
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).

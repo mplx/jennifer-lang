@@ -117,6 +117,47 @@ func TestShippedMarkdownOverlayPasses(t *testing.T) {
 	}
 }
 
+// The shipped ical module's white-box overlay (modules/ical_test.j over
+// modules/ical.j) loads and its tests pass - a guard against ical.j /
+// ical_test.j drifting out of sync. Pure text over strings / lists + time.
+func TestShippedIcalOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "ical_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the ical overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testRoundTrip", "testEncodeStructure", "testParseFoldedLine", "testEscapeRoundTrips"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
+// The shipped vcard module's white-box overlay (modules/vcard_test.j over
+// modules/vcard.j) loads and its tests pass - a guard against vcard.j /
+// vcard_test.j drifting out of sync. Shares the content-line codec
+// (ical_vcard_shared.j) with ical via `include`, exercised here end to end.
+func TestShippedVcardOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "vcard_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the vcard overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testRoundTrip", "testEncodeStructure", "testEncodeAllAndParseMany", "testSplitStructuredKeepsEscapedSemicolon"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
 // A plain test file with no sibling module keeps working (no overlay spliced),
 // and its own `export` is still rejected (it is not a module).
 func TestNonOverlayTestFileUnaffected(t *testing.T) {

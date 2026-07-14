@@ -63,6 +63,7 @@
 - [`gpio`](modules/gpio.md)
 - [`htmlwriter`](modules/htmlwriter.md)
 - [`http`](modules/http.md)
+- [`ical`](modules/ical.md)
 - [`idna`](modules/idna.md)
 - [`imap`](modules/imap.md)
 - [`label`](modules/label.md)
@@ -84,6 +85,7 @@
 - [`smtp`](modules/smtp.md)
 - [`tengine`](modules/tengine.md)
 - [`totp`](modules/totp.md)
+- [`vcard`](modules/vcard.md)
 - [`web`](modules/web.md)
 - [`webhook`](modules/webhook.md)
 
