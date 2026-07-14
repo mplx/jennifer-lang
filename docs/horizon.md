@@ -293,6 +293,51 @@ mechanism), the `semver` module (constraint solving), and `http` / git
 provided later; the import convention above is the one language-surface
 question to settle.
 
+### DRAFT#13 - Higher-level PDF: font metrics, layout, and Markdown -> PDF
+
+A three-phase build on top of the shipped `pdfwriter` module (M18.35), taking it
+from "place text and shapes at coordinates" to "flow a document". The phases are
+strictly ordered because each depends on the one before; they land as separate
+milestones when graduated, but share one draft handle because they are one arc.
+
+**Phase 1 - font metrics (the keystone).** Today `pdfwriter` can place text but
+cannot **measure** it, so there is no way to wrap a paragraph, auto-size a table
+column, or align text - all of which need the rendered width of a string. Add
+the **standard-14 AFM width tables** (public Adobe Font Metrics: per-glyph
+advance widths, in 1/1000 em, for WinAnsiEncoding) and a
+`pdfwriter.stringWidth(font, size, text) -> int` that sums them. Courier is
+monospace (600 units/glyph, trivial); Helvetica and Times need the real
+per-character tables, generated into an included `.j` data file the way the
+`encoding` codecs were generated from the Unicode mapping files
+(`gen_*.go` -> `*_gen.j`). First payoff: `textAligned(pg, x, y, font, size,
+align, str)` for left / center / right placement. Nothing in the later phases is
+expressible without this.
+
+**Phase 2 - table and flow layout.** The layer that removes the manual
+cell-positioning pain (the ergonomic win people reach for TCPDF's `writeHTML`
+tables to get - but as a typed API, not an HTML subset). On top of `stringWidth`:
+`table(columns, rows, options)` (auto column sizing, in-cell word wrap, borders,
+a header row, page-break across rows); `paragraph(pg, text, x, y, width, font,
+size) -> int` (wrapped flowing text that returns the y it ended at, so callers
+stack blocks); and `heading` / list helpers.
+
+**Phase 3 - Markdown -> PDF.** The markup-driven document story, and the reason
+it is Markdown rather than HTML: Jennifer ships a `markdown` parser (GFM tables,
+headings, lists, emphasis) but no HTML *parser* (`htmlwriter` only builds HTML),
+so the cheap, ergonomic path to "write markup, get a PDF" is to drive the Phase-2
+layout layer from the existing Markdown parse rather than write a quirky
+HTML-subset parser (Markdown tables are also easier to author than HTML tables).
+A prerequisite to verify first: whether the `markdown` module exposes a reusable
+parse tree or only renders straight to a string - if the latter, it needs a small
+refactor to surface the intermediate document model. An HTML-subset front-end
+(TCPDF-style) stays a *later* option, only worth it for consuming pre-existing
+HTML, and it would sit on the same layout foundation.
+
+Stays pure `.j` (static data + lookups + layout math), both binaries.
+**Requires:** none hard for Phase 1 (builds on the shipped `pdfwriter` module,
+M18.35); Phase 2 requires Phase 1; Phase 3 requires Phase 2 and the shipped
+`markdown` module (plus possibly a parse-tree surface on it).
+
 ## Loose ideas
 
 A grab-bag, recorded when it comes up.

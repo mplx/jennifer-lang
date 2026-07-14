@@ -1323,12 +1323,25 @@ prereq.
 
 ### M18.35 - `pdfwriter` module (PDF documents)
 
-Generate simple PDF documents - text, lines, rectangles - the way `htmlwriter` /
-`label` generate their formats: `document()`, page / text / graphics builders,
-and `render() -> bytes` writing the PDF object / xref structure by hand (no
-stdlib PDF). The standard-14 fonts first; embedded fonts and images are
-follow-ons. Over `bytes` + `strings` + `compress` (FlateDecode streams). Pure
-`.j`, both binaries. No new prereq.
+**Done.** Generate simple PDF documents - text, lines, rectangles - the way
+`htmlwriter` / `label` generate their formats: value-semantic `document()` /
+`page(w, h)` / `text` / `line` / `rect` / `color` / `addPage` builders, document
+metadata (`info(doc, key, value)` -> the PDF Info dictionary; `Producer` defaults
+to "Jennifer pdfwriter", `pdfDate(t)` formats a PDF date string), and
+`render(doc) -> bytes` writing the PDF 1.7 object / xref structure by hand (no
+stdlib PDF) - catalog, page tree, one FlateDecode-compressed content stream per
+page (via `compress`, `zlib`), shared standard-14 Type1 font objects, the Info
+dictionary, a byte-offset xref, and the trailer. The standard-14 base fonts (an
+unknown font throws `Error{kind: "pdfwriter"}`); coordinates are PDF points
+(ints, origin bottom-left), colour is 0-255 RGB. Output is **byte-identical**
+run-to-run and across both binaries - no timestamp is auto-stamped (opt into one
+via `info` + `pdfDate`), so a rendered PDF is safe to assert against a golden in
+an automated test - and validates clean under `qpdf --check` (the Go suite runs
+`qpdf` + `pdftotext` + `pdfinfo` when present, plus always-on byte-level checks).
+Embedded fonts and images are follow-ons; a writer, not a reader. Over `bytes` +
+`strings` + `lists` + `convert` + `compress` + `time`. Pure `.j`, both binaries.
+The higher-level layer (font metrics, table / flow layout, Markdown -> PDF) is
+`DRAFT#13`. No new prereq.
 
 ### M18.36 - `bloom` + `ringbuffer` modules (data structures)
 
