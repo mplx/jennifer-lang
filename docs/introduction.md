@@ -27,9 +27,6 @@ via `spawn` and the [task](libraries/task.md) library. Browse the full
 [library catalog](libraries/index.md) and
 [module catalog](modules/index.md) - both grow with every release.
 
-> Prefer to read offline? [Download the whole manual as a single PDF](jennifer-manual.pdf).
-> It is regenerated from these same pages on every docs build.
-
 It is also a natural fit for teaching and learning: an interactive
 [REPL](technical/cli_repl.md), an [easy-to-read grammar](technical/grammar.md),
 and [token and AST dumps](technical/cli_inspect.md) that make it ideal for
@@ -95,3 +92,9 @@ Source, issues, and pull requests live at
 <https://github.com/mplx/jennifer-lang>.
 
 License: LGPL-3.0-only.
+
+## Manual
+
+> **[Download the whole manual as a single PDF](jennifer-manual.pdf).**
+> The entire documentation in one file, regenerated from these pages on every
+> build - handy for reading or searching offline.
