@@ -455,18 +455,22 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   rejection. Uses `net`, so **default `jennifer` binary only**.
 - **`label`** - industrial label printing in a build / render / emit pipeline.
   Build a device-independent `label.Label` in millimetres: `label.new(w, h)`
-  then value-semantic `text(label, x, y, opts, content)` / `barcode(label, x, y,
-  type, opts, data)` (linear code128 / ean13 / itf / code39 / gs1-128, 2D
-  datamatrix / qr; ITF is padded to even length, GS1-128 takes `(AI)data`; a
-  zero-value `label.BarcodeOptions` = defaults, else set `height` / `checkDigit`
+  then value-semantic `text(label, x, y, opts, content)` (`label.TextOptions`:
+  `height` mm / `points` / `rotation` 0-90-180-270 / `bold`) / `barcode(label, x,
+  y, type, opts, data)` (linear code128 / ean13 / ean8 / itf / code39 / gs1-128,
+  2D datamatrix / qr; ITF is padded to even length, GS1-128 takes `(AI)data`; a
+  zero-value `label.BarcodeOptions` = defaults, else set `height` / `moduleWidth`
+  (narrow element mm) / `ratio` (wide:narrow for ITF / Code 39) / `checkDigit`
   (`"mod10"` -> cab `+MOD10`) / `errorLevel` (`"L"`/`"M"`/`"Q"`/`"H"`) /
-  `hideText`) / `box(label, x, y, w, h, thickness)` / `image(label, x, y, name)`
-  (a pre-stored logo by reference) / `quantity(label, n)`. `render(label,
-  device)` emits a selectable dialect: `label.Device{dialect: "zpl", dpi: 203}`
-  (Zebra, raster) or `{dialect: "cab", dpi: 0}` (cab JScript, mm-native). Build
-  and render are pure (both binaries); `send(host, port, rendered)` writes the
-  stream to a printer's raw `:9100` port (**default `jennifer` binary only**,
-  `net`).
+  `hideText`) / `box(label, x, y, w, h, thickness)` /
+  `image(label, x, y, name)` (a pre-stored logo by reference) / `quantity(label,
+  n)`. `render(label, device)` emits a selectable dialect; build the device with
+  `label.zpl(dpi)` (Zebra, raster) or `label.cab()` / `label.cabWith(setup)` (cab
+  JScript, mm-native). cab-only print-setup - the `J` job name, `H` heat/speed,
+  `O` orientation, and `S` sensor + geometry lines - rides in a `label.CabSetup`
+  vendor struct (ZPL ignores it). Build and render are pure (both binaries);
+  `send(host, port, rendered)` writes the stream to a printer's raw `:9100` port
+  (**default `jennifer` binary only**, `net`).
 - **`prometheus`** - Prometheus metrics in two halves. **Exposition** (pure
   text, both binaries): `prometheus.counter(name, help)` / `gauge(name, help)`
   -> `prometheus.Metric`, `observe(metric, labels, value)` records a sample

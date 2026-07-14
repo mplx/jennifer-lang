@@ -43,7 +43,7 @@ func zplEscape(s as string) {
 # Options: `hideText` toggles the human-readable interpretation line, `checkDigit`
 # turns on a symbology's native check digit (Code 39 / ITF; other codes carry it
 # in the data), `errorLevel` sets the QR error-correction level.
-func zplBarcode(f as Field, h as int) {
+func zplBarcode(f as Field, h as int, dpi as int) {
     def hs as string init convert.toString($h);
     def btype as string init $f.barcodeType;
     def data as string init $f.data;
@@ -55,21 +55,29 @@ func zplBarcode(f as Field, h as int) {
     if (not ($f.checkDigit == "")) {
         $chk = "Y";
     }
+    # ^BY sets the narrow-element (module) width in dots; default 2.
+    def by as string init "^BY2";
+    if ($f.moduleWidth > 0.0) {
+        $by = "^BY" + convert.toString(mmToDots($f.moduleWidth, $dpi));
+    }
     if ($btype == "code128") {
-        return "^BY2^BCN," + $hs + "," + $hri + ",N,N^FD" + $data + "^FS";
+        return $by + "^BCN," + $hs + "," + $hri + ",N,N^FD" + $data + "^FS";
     }
     if ($btype == "ean13") {
         return "^BEN," + $hs + "," + $hri + ",N^FD" + $data + "^FS";
     }
+    if ($btype == "ean8") {
+        return "^B8N," + $hs + "," + $hri + ",N^FD" + $data + "^FS";
+    }
     if ($btype == "itf") {
-        return "^BY2^B2N," + $hs + "," + $hri + ",N," + $chk + "^FD" + $data + "^FS";
+        return $by + "^B2N," + $hs + "," + $hri + ",N," + $chk + "^FD" + $data + "^FS";
     }
     if ($btype == "code39") {
-        return "^BY2^B3N," + $chk + "," + $hs + "," + $hri + ",N^FD" + $data + "^FS";
+        return $by + "^B3N," + $chk + "," + $hs + "," + $hri + ",N^FD" + $data + "^FS";
     }
     if ($btype == "gs1-128") {
         # ^BC mode D = UCC/EAN (GS1-128); parenthesised AI data is parsed.
-        return "^BY2^BCN," + $hs + "," + $hri + ",N,N,D^FD" + $data + "^FS";
+        return $by + "^BCN," + $hs + "," + $hri + ",N,N,D^FD" + $data + "^FS";
     }
     if ($btype == "datamatrix") {
         # ^BX: module height in dots, quality 200 = ECC200.
@@ -82,12 +90,31 @@ func zplBarcode(f as Field, h as int) {
     return "^BQN,2,5^FD" + $lvl + "A," + $data + "^FS";
 }
 
+# zplOrient maps a rotation in degrees to a ZPL field orientation letter.
+func zplOrient(rotation as int) {
+    if ($rotation == 90) {
+        return "R";
+    }
+    if ($rotation == 180) {
+        return "I";
+    }
+    if ($rotation == 270) {
+        return "B";
+    }
+    return "N";
+}
+
 # zplField renders one field as a ZPL command sequence.
 func zplField(f as Field, dpi as int) {
     def origin as string init "^FO" + convert.toString(mmToDots($f.x, $dpi)) + "," + convert.toString(mmToDots($f.y, $dpi));
     if ($f.kind == "text") {
-        def h as string init convert.toString(mmToDots($f.h, $dpi));
-        return $origin + "^A0N," + $h + "," + $h + "^FH^FD" + zplEscape($f.data) + "^FS";
+        # A point size (1/72 inch) wins over a millimetre height when set.
+        def dots as int init mmToDots($f.h, $dpi);
+        if ($f.points > 0) {
+            $dots = math.round(convert.toFloat($f.points) * convert.toFloat($dpi) / 72.0);
+        }
+        def h as string init convert.toString($dots);
+        return $origin + "^A0" + zplOrient($f.rotation) + "," + $h + "," + $h + "^FH^FD" + zplEscape($f.data) + "^FS";
     }
     if ($f.kind == "box") {
         return $origin + "^GB" + convert.toString(mmToDots($f.w, $dpi)) + "," +
@@ -98,7 +125,7 @@ func zplField(f as Field, dpi as int) {
         # Recall a stored graphic by name at native size.
         return $origin + "^XG" + $f.data + ",1,1^FS";
     }
-    return $origin + zplBarcode($f, mmToDots($f.h, $dpi));
+    return $origin + zplBarcode($f, mmToDots($f.h, $dpi), $dpi);
 }
 
 # renderZpl renders a whole label as a ZPL command stream.

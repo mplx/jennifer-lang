@@ -17,10 +17,11 @@
  * @module label
  * @example
  * def l as label.Label init label.new(50.0, 30.0);
- * $l = label.text($l, 5.0, 5.0, label.TextOptions{height: 4.0}, "HELLO");
+ * def t as label.TextOptions; $t.height = 4.0;
+ * $l = label.text($l, 5.0, 5.0, $t, "HELLO");
  * def o as label.BarcodeOptions;
  * $l = label.barcode($l, 5.0, 15.0, "code128", $o, "12345678");
- * io.printf("%s", label.render($l, label.Device{dialect: "zpl", dpi: 203}));
+ * io.printf("%s", label.render($l, label.zpl(203)));
  */
 use lists;
 use math;
@@ -53,6 +54,11 @@ def const DEFAULT_MODULE_SIZE as float init 1.0;
  * @field checkDigit {string} a barcode's auto-computed check digit ("" | "mod10" | ...)
  * @field errorLevel {string} a 2D barcode's error-correction level ("" | "L" | "M" | "Q" | "H")
  * @field hideText {bool} suppress a linear barcode's human-readable line
+ * @field rotation {int} text rotation in degrees counter-clockwise (0, 90, 180, 270)
+ * @field points {int} text font size in points; 0 means use `h` as a millimetre height
+ * @field bold {bool} bold text face
+ * @field moduleWidth {float} a linear barcode's narrow-element width in millimetres (0 = dialect default)
+ * @field ratio {float} a ratio-based barcode's wide:narrow ratio (0 = dialect default)
  */
 export def struct Field {
     kind as string,
@@ -65,7 +71,12 @@ export def struct Field {
     data as string,
     checkDigit as string,
     errorLevel as string,
-    hideText as bool
+    hideText as bool,
+    rotation as int,
+    points as int,
+    bold as bool,
+    moduleWidth as float,
+    ratio as float
 };
 
 /**
@@ -85,23 +96,101 @@ export def struct Label {
 };
 
 /**
- * Options for a text field.
- * @field height {float} the font height in millimetres
+ * Options for a text field. A zero-value struct
+ * (`def o as label.TextOptions;`) means an unrotated, non-bold field sized by
+ * `height`. Set `points` for a point-sized font (it wins over `height`).
+ * @field height {float} the font height in millimetres (used when `points` is 0)
+ * @field points {int} the font size in points; when > 0 it is used instead of `height`
+ * @field rotation {int} rotation in degrees counter-clockwise: 0, 90, 180, or 270
+ * @field bold {bool} true selects a bold face
  */
 export def struct TextOptions {
-    height as float
+    height as float,
+    points as int,
+    rotation as int,
+    bold as bool
+};
+
+/**
+ * cab-only print-setup that has no ZPL equivalent, carried on the render target
+ * so it can be reproduced without leaking into the device-independent `Label`. A
+ * zero-value struct emits none of it (a bare `J`, no `H`/`O` line, and an `S`
+ * line derived from the label size). Every field is optional; the cab encoder
+ * emits a command only when the corresponding field is set. ZPL ignores it all.
+ * @field jobName {string} the `J` job name; "" emits a bare `J`
+ * @field heat {int} the `H` heat/contrast level
+ * @field speed {int} the `H` print speed
+ * @field mode {string} the trailing `H` tokens verbatim, e.g. "T,R0"; "" and heat/speed 0 omit the `H` line
+ * @field orientation {string} the `O` orientation token, e.g. "R"; "" omits the `O` line
+ * @field sensor {string} the `S` photocell/sensor type, e.g. "l1" (die-cut labels with gap); "" emits no prefix
+ * @field xOffset {float} the `S` horizontal origin offset in millimetres
+ * @field yOffset {float} the `S` vertical origin offset in millimetres
+ * @field height {float} the `S` label height in millimetres (transport direction); 0 derives the whole `S` line from the label size
+ * @field pitch {float} the `S` label pitch in millimetres (label height + gap between labels)
+ * @field width {float} the `S` label width in millimetres
+ * @field columnPitch {float} the `S` horizontal distance to the next column in millimetres (multi-up dies)
+ * @field columns {int} the `S` number of labels across; <= 1 emits a single-up geometry
+ */
+export def struct CabSetup {
+    jobName as string,
+    heat as int,
+    speed as int,
+    mode as string,
+    orientation as string,
+    sensor as string,
+    xOffset as float,
+    yOffset as float,
+    height as float,
+    pitch as float,
+    width as float,
+    columnPitch as float,
+    columns as int
 };
 
 /**
  * The render target: which dialect to emit and, for raster dialects, the
- * printer resolution.
+ * printer resolution. Build one with `label.zpl(dpi)`, `label.cab()`, or
+ * `label.cabWith(setup)` rather than a raw literal.
  * @field dialect {string} "zpl" or "cab"
  * @field dpi {int} the printer dots-per-inch (used by "zpl"; ignored by "cab")
+ * @field cab {CabSetup} cab-only print-setup (ignored by "zpl")
  */
 export def struct Device {
     dialect as string,
-    dpi as int
+    dpi as int,
+    cab as CabSetup
 };
+
+# noCab returns a zero-value CabSetup (emit no cab-specific setup).
+func noCab() {
+    return CabSetup{ jobName: "", heat: 0, speed: 0, mode: "", orientation: "", sensor: "", xOffset: 0.0, yOffset: 0.0, height: 0.0, pitch: 0.0, width: 0.0, columnPitch: 0.0, columns: 0 };
+}
+
+/**
+ * Build a ZPL render target for a printer of the given resolution.
+ * @param dpi {int} the printer dots-per-inch
+ * @return {Device} a ZPL device
+ */
+export func zpl(dpi as int) {
+    return Device{ dialect: "zpl", dpi: $dpi, cab: noCab() };
+}
+
+/**
+ * Build a cab JScript render target with default print-setup.
+ * @return {Device} a cab device
+ */
+export func cab() {
+    return Device{ dialect: "cab", dpi: 0, cab: noCab() };
+}
+
+/**
+ * Build a cab JScript render target carrying explicit cab print-setup.
+ * @param setup {CabSetup} the cab-only print-setup (job name, heat, orientation, sensor, geometry)
+ * @return {Device} a cab device
+ */
+export func cabWith(setup as CabSetup) {
+    return Device{ dialect: "cab", dpi: 0, cab: $setup };
+}
 
 /**
  * Optional refinements for a barcode. A zero-value struct
@@ -111,12 +200,16 @@ export def struct Device {
  * @field checkDigit {string} append an auto-computed check digit: "" (none), "mod10", "mod11", "mod16", "mod36", or "mod43"
  * @field errorLevel {string} 2D error-correction level: "" (default), "L", "M", "Q", or "H"
  * @field hideText {bool} true suppresses a linear barcode's human-readable line
+ * @field moduleWidth {float} a linear barcode's narrow-element width in millimetres; 0 uses the dialect default (cab; zpl uses its own default module width)
+ * @field ratio {float} the wide:narrow bar ratio for a ratio-based code (Interleaved 2 of 5 / Code 39); 0 uses the default (3)
  */
 export def struct BarcodeOptions {
     height as float,
     checkDigit as string,
     errorLevel as string,
-    hideText as bool
+    hideText as bool,
+    moduleWidth as float,
+    ratio as float
 };
 
 # --- build (exported) -------------------------------------------------------
@@ -142,7 +235,7 @@ export func new(width as float, height as float) {
  * @return {Label} a new Label with the text field added
  */
 export func text(label as Label, x as float, y as float, opts as TextOptions, content as string) {
-    def f as Field init Field{ kind: "text", x: $x, y: $y, w: 0.0, h: $opts.height, thickness: 0.0, barcodeType: "", data: $content, checkDigit: "", errorLevel: "", hideText: false };
+    def f as Field init Field{ kind: "text", x: $x, y: $y, w: 0.0, h: $opts.height, thickness: 0.0, barcodeType: "", data: $content, checkDigit: "", errorLevel: "", hideText: false, rotation: $opts.rotation, points: $opts.points, bold: $opts.bold, moduleWidth: 0.0, ratio: 0.0 };
     def out as Label init $label;
     $out.fields = lists.push($out.fields, $f);
     return $out;
@@ -166,8 +259,8 @@ func isDigits(s as string) {
 
 /**
  * Place a barcode field, returning a new Label. `type` is a linear symbology -
- * "code128", "ean13", "itf" (Interleaved 2 of 5), "code39", "gs1-128" - or a 2D
- * symbology - "datamatrix", "qr". `opts` refines it (size, check digit, 2D error
+ * "code128", "ean13", "ean8", "itf" (Interleaved 2 of 5), "code39", "gs1-128" -
+ * or a 2D symbology - "datamatrix", "qr". `opts` refines it (size, check digit, 2D error
  * level, human-readable line); pass a zero-value `BarcodeOptions` for the
  * defaults. ITF is numeric-only and even-length (its digits are paired):
  * non-numeric data is rejected and odd-length data is padded with a leading zero
@@ -176,14 +269,14 @@ func isDigits(s as string) {
  * @param label {Label} the label to extend
  * @param x {float} the x origin in millimetres
  * @param y {float} the y origin in millimetres
- * @param type {string} the barcode symbology ("code128"/"ean13"/"itf"/"code39"/"gs1-128"/"datamatrix"/"qr")
+ * @param type {string} the barcode symbology ("code128"/"ean13"/"ean8"/"itf"/"code39"/"gs1-128"/"datamatrix"/"qr")
  * @param opts {BarcodeOptions} size / check-digit / error-level / text refinements
  * @param data {string} the barcode data
  * @return {Label} a new Label with the barcode field added
  * @throws {Error} kind "label" for an unknown type or invalid ITF data
  */
 export func barcode(label as Label, x as float, y as float, type as string, opts as BarcodeOptions, data as string) {
-    if (not ($type == "code128" or $type == "ean13" or $type == "itf" or $type == "code39" or
+    if (not ($type == "code128" or $type == "ean13" or $type == "ean8" or $type == "itf" or $type == "code39" or
         $type == "gs1-128" or $type == "datamatrix" or $type == "qr")) {
         throw Error{ kind: "label", message: "label: unknown barcode type: " + $type, file: "", line: 0, col: 0 };
     }
@@ -205,7 +298,7 @@ export func barcode(label as Label, x as float, y as float, type as string, opts
     if ($opts.height > 0.0) {
         $size = $opts.height;
     }
-    def f as Field init Field{ kind: "barcode", x: $x, y: $y, w: 0.0, h: $size, thickness: 0.0, barcodeType: $type, data: $d, checkDigit: $opts.checkDigit, errorLevel: $opts.errorLevel, hideText: $opts.hideText };
+    def f as Field init Field{ kind: "barcode", x: $x, y: $y, w: 0.0, h: $size, thickness: 0.0, barcodeType: $type, data: $d, checkDigit: $opts.checkDigit, errorLevel: $opts.errorLevel, hideText: $opts.hideText, rotation: 0, points: 0, bold: false, moduleWidth: $opts.moduleWidth, ratio: $opts.ratio };
     def out as Label init $label;
     $out.fields = lists.push($out.fields, $f);
     return $out;
@@ -223,7 +316,7 @@ export func barcode(label as Label, x as float, y as float, type as string, opts
  * @return {Label} a new Label with the image field added
  */
 export func image(label as Label, x as float, y as float, name as string) {
-    def f as Field init Field{ kind: "image", x: $x, y: $y, w: 0.0, h: 0.0, thickness: 0.0, barcodeType: "", data: $name, checkDigit: "", errorLevel: "", hideText: false };
+    def f as Field init Field{ kind: "image", x: $x, y: $y, w: 0.0, h: 0.0, thickness: 0.0, barcodeType: "", data: $name, checkDigit: "", errorLevel: "", hideText: false, rotation: 0, points: 0, bold: false, moduleWidth: 0.0, ratio: 0.0 };
     def out as Label init $label;
     $out.fields = lists.push($out.fields, $f);
     return $out;
@@ -240,7 +333,7 @@ export func image(label as Label, x as float, y as float, name as string) {
  * @return {Label} a new Label with the box added
  */
 export func box(label as Label, x as float, y as float, w as float, h as float, thickness as float) {
-    def f as Field init Field{ kind: "box", x: $x, y: $y, w: $w, h: $h, thickness: $thickness, barcodeType: "", data: "", checkDigit: "", errorLevel: "", hideText: false };
+    def f as Field init Field{ kind: "box", x: $x, y: $y, w: $w, h: $h, thickness: $thickness, barcodeType: "", data: "", checkDigit: "", errorLevel: "", hideText: false, rotation: 0, points: 0, bold: false, moduleWidth: 0.0, ratio: 0.0 };
     def out as Label init $label;
     $out.fields = lists.push($out.fields, $f);
     return $out;
@@ -272,7 +365,7 @@ export func render(label as Label, device as Device) {
         return renderZpl($label, $device.dpi);
     }
     if ($device.dialect == "cab") {
-        return renderCab($label);
+        return renderCab($label, $device.cab);
     }
     throw Error{ kind: "label", message: "label: unknown dialect: " + $device.dialect, file: "", line: 0, col: 0 };
 }

@@ -43,8 +43,8 @@ func TestLabelSend(t *testing.T) {
 	prog := fmt.Sprintf(`use io;
 import %q as label;
 def l as label.Label init label.new(50.0, 30.0);
-$l = label.text($l, 5.0, 5.0, label.TextOptions{height: 4.0}, "HELLO");
-def zpl as string init label.render($l, label.Device{dialect: "zpl", dpi: 203});
+$l = label.text($l, 5.0, 5.0, label.TextOptions{height: 4.0, points: 0, rotation: 0, bold: false}, "HELLO");
+def zpl as string init label.render($l, label.zpl(203));
 label.send("127.0.0.1", %d, $zpl);`, labelMod, port)
 	progPath := filepath.Join(dir, "print.j")
 	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
