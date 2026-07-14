@@ -1,10 +1,11 @@
 # `semver` - Semantic Versioning 2.0.0
 
-Import with `import "semver.j" as semver;`. Parses, compares, sorts, and
-increments strict [SemVer 2.0.0](https://semver.org) version strings. Pure
-Jennifer - parsing uses the canonical SemVer regex (`regex`), the
-precedence comparison and sort are hand-written - so it runs on either
-binary.
+Import with `import "semver.j" as semver;`. Parses, compares, sorts,
+increments, and **range-matches** strict [SemVer 2.0.0](https://semver.org)
+version strings - the full surface a package registry or dependency resolver
+needs. Pure Jennifer - parsing uses the canonical SemVer regex (`regex`); the
+precedence comparison, sort, and range matching are hand-written - so it runs on
+either binary.
 
 ```jennifer
 use io;
@@ -45,12 +46,21 @@ Build it with `semver.parse` or a literal
 | `semver.lt(a, b)`          | `bool`           | `compare(a, b) < 0`.                                                   |
 | `semver.eq(a, b)`          | `bool`           | `compare(a, b) == 0` (so `1.0.0+a` equals `1.0.0+b`).                  |
 | `semver.gt(a, b)`          | `bool`           | `compare(a, b) > 0`.                                                   |
+| `semver.gte(a, b)`         | `bool`           | `compare(a, b) >= 0`.                                                  |
+| `semver.lte(a, b)`         | `bool`           | `compare(a, b) <= 0`.                                                  |
+| `semver.neq(a, b)`         | `bool`           | `compare(a, b) != 0`.                                                  |
+| `semver.diff(a, b)`        | `string`         | The change kind: `"major"` / `"minor"` / `"patch"` / `"prerelease"` / `""`. |
 | `semver.isStable(v)`       | `bool`           | `major >= 1` and no prerelease. `0.y.z` is unstable by convention.    |
 | `semver.isPrerelease(v)`   | `bool`           | Whether a prerelease tag is present.                                  |
 | `semver.incMajor(v)`       | `Version`        | `major+1`; resets minor / patch and clears prerelease + build.        |
 | `semver.incMinor(v)`       | `Version`        | `minor+1`; resets patch and clears prerelease + build.                |
 | `semver.incPatch(v)`       | `Version`        | `patch+1`; clears prerelease + build.                                 |
 | `semver.sort(vs)`          | `list of Version`| A new list ordered ascending by precedence.                           |
+| `semver.rsort(vs)`         | `list of Version`| A new list ordered descending (highest first).                        |
+| `semver.satisfies(ver, range)` | `bool`       | Whether the version string matches the range. See [Ranges](#ranges-and-constraints). |
+| `semver.maxSatisfying(vers, range)` | `string`| Highest version string in `vers` matching `range`, or `""`.           |
+| `semver.minSatisfying(vers, range)` | `string`| Lowest version string in `vers` matching `range`, or `""`.            |
+| `semver.validRange(range)` | `bool`           | Whether a range expression is well-formed.                            |
 
 ## Strict, not a loose parser
 
@@ -118,12 +128,57 @@ for (def s in semver.sort($vs)) {
 # sorted: 1.0.0-alpha 1.0.0 1.2.0 1.10.0 2.0.0
 ```
 
-## Out of scope
+## Ranges and constraints
 
-Range / constraint matching (`^1.2.0`, `>=1.0.0`, `~1.2.3`) is a separate,
-harder parser and is not part of this module - `semver` ships the version
-*values* and their ordering. Constraint solving lands later with the
-package-manager work.
+`semver.satisfies(version, range)` matches a concrete version string against a
+range expression, following the npm / Composer grammar:
+
+| Form | Example | Means |
+| ---- | ------- | ----- |
+| exact | `1.2.3` / `=1.2.3` | that version exactly |
+| caret | `^1.2.0` | `>=1.2.0 <2.0.0` (up to the next non-zero left component) |
+| tilde | `~1.2` | `>=1.2.0 <1.3.0` |
+| comparators | `>=1.0.0` `<2.0.0` `>1.2` `<=3` | numeric bounds (a partial operand expands, npm-style) |
+| AND | `>=1.2.0 <2.0.0` (space or `,`) | all comparators in the clause hold |
+| OR | `^1.0.0 \|\| ^3.0.0` | any clause holds |
+| hyphen | `1.2.3 - 2.3.4` | `>=1.2.3 <=2.3.4` (a partial upper bumps to `<`) |
+| x-range | `1.x` / `1.2.*` | `>=1.0.0 <2.0.0` / `>=1.2.0 <1.3.0` |
+| any | `*` / `""` / `"any"` | any released version |
+
+```jennifer
+semver.satisfies("1.4.0", "^1.2.0");                    # true
+semver.satisfies("2.0.0", "^1.2.0");                    # false
+semver.satisfies("1.9.0", ">=1.2.0 <2.0.0");            # true
+semver.satisfies("3.4.0", "^1.0.0 || ^3.0.0");          # true
+semver.satisfies("2.0.0", "1.2.3 - 2.3.4");             # true
+```
+
+**Prereleases are excluded** from ranges by default: a version like `2.0.0-rc.1`
+satisfies a range only when a comparator in the *same clause* pins a prerelease
+at the same `major.minor.patch` (the npm rule), e.g. `>=1.2.3-rc.1 <1.3.0`
+admits `1.2.3-rc.2` but not `1.4.0-rc.1`. An invalid version string never
+satisfies anything.
+
+### Selecting from a set
+
+For a registry resolving "the best available version", `maxSatisfying` /
+`minSatisfying` pick the highest / lowest candidate that matches, skipping any
+non-SemVer entries and returning `""` when none match:
+
+```jennifer
+def tags as list of string init ["1.0.0", "1.2.0", "1.4.3", "2.0.0"];
+semver.maxSatisfying($tags, "^1.2.0");   # "1.4.3"
+semver.minSatisfying($tags, "^1.2.0");   # "1.2.0"
+```
+
+`semver.validRange(range)` reports whether a range expression is well-formed,
+without evaluating it.
+
+### Scope
+
+Single-set ranges as above. No `intersects` (do two ranges overlap) and no
+`subset` yet - those are dependency-solver primitives that can layer on top when
+needed.
 
 ## See also
 

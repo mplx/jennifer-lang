@@ -2,7 +2,8 @@
 # Copyright (C) 2026 <developer@mplx.eu>
 
 /**
- * The semver module (modules/semver.j): parse, compare, and sort Semantic Versioning strings.
+ * The semver module (modules/semver.j): parse, compare, sort, and range-match
+ * Semantic Versioning strings - the surface a package registry needs.
  * @module semver_demo
  */
 use io;
@@ -24,3 +25,15 @@ for (def s in semver.sort($vs)) {
     io.printf(" %s", semver.toString($s));
 }
 io.printf("\n");
+
+# Range matching - the package-registry surface.
+io.printf("--- ranges ---\n");
+io.printf("1.4.0 satisfies ^1.2.0            : %t\n", semver.satisfies("1.4.0", "^1.2.0"));
+io.printf("2.0.0 satisfies ^1.2.0            : %t\n", semver.satisfies("2.0.0", "^1.2.0"));
+io.printf("1.9.0 satisfies >=1.2.0 <2.0.0    : %t\n", semver.satisfies("1.9.0", ">=1.2.0 <2.0.0"));
+io.printf("3.4.0 satisfies ^1.0.0 || ^3.0.0  : %t\n", semver.satisfies("3.4.0", "^1.0.0 || ^3.0.0"));
+
+# Resolve the best available version a registry would install for "^1.2.0".
+def tags as list of string init ["1.0.0", "1.2.0", "1.4.3", "1.5.0-rc.1", "2.0.0"];
+io.printf("maxSatisfying(tags, ^1.2.0)       : %s\n", semver.maxSatisfying($tags, "^1.2.0"));
+io.printf("diff(1.4.3, 2.0.0)                : %s\n", semver.diff(semver.parse("1.4.3"), semver.parse("2.0.0")));

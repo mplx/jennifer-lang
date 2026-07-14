@@ -439,9 +439,15 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `sasl.bearer(user, token)` (SASL XOAUTH2 - the "use a token" half of OAuth2,
   for Google / Microsoft 365). The mail clients select it with
   `Options.auth = "xoauth2"` (token in `pass`).
-- **`semver`** - strict SemVer 2.0.0 over a `Version` struct: `semver.parse(s)` /
-  `isValid` / `toString`, `compare` / `lt` / `eq` / `gt`, `isStable` /
-  `isPrerelease`, `incMajor` / `incMinor` / `incPatch`, `sort`.
+- **`semver`** - strict SemVer 2.0.0 over a `Version` struct, package-registry-grade:
+  `semver.parse(s)` / `isValid` / `toString`, `compare` / `lt` / `lte` / `eq` /
+  `neq` / `gt` / `gte` / `diff`, `isStable` / `isPrerelease`, `incMajor` /
+  `incMinor` / `incPatch`, `sort` / `rsort`; plus npm/Composer **range matching**:
+  `satisfies(version, range)` (caret `^1.2.0`, tilde `~1.2`, comparators
+  `>=1.0.0 <2.0.0`, OR `^1 || ^3`, hyphen `1.2.3 - 2.3.4`, x-ranges `1.x`;
+  prereleases excluded unless a comparator pins one at the same
+  major.minor.patch), `maxSatisfying` / `minSatisfying(versions, range)`, and
+  `validRange(range)`.
 - **`imap`** - receive mail (IMAP4rev1, RFC 3501) over `net`, a reading subset:
   `imap.connect(opts)` -> `imap.Session`, then `selectMailbox(session, name)`
   (count), `search(session)` (sequence numbers), `fetch(session, n)` (a whole

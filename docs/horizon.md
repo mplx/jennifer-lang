@@ -288,7 +288,9 @@ deck-shaped rather than standard-library-shaped.
 
 A whole track of its own. **Requires:** the `toml` library (`M18.8`, for
 `deck.toml`); builds on the shipped module system (the search-root
-mechanism), the `semver` module (constraint solving), and `http` / git
+mechanism), the `semver` module (constraint solving - which now ships the
+range-matching surface `satisfies` / `maxSatisfying` / `minSatisfying` /
+`validRange`, so the resolver primitive is in place), and `http` / git
 (fetching decks). The public deck **registry** is separate infrastructure,
 provided later; the import convention above is the one language-surface
 question to settle.
