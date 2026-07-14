@@ -66,6 +66,7 @@
 - [`ical`](modules/ical.md)
 - [`idna`](modules/idna.md)
 - [`imap`](modules/imap.md)
+- [`ipnet`](modules/ipnet.md)
 - [`jsonl`](modules/jsonl.md)
 - [`label`](modules/label.md)
 - [`log`](modules/log.md)

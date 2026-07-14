@@ -179,6 +179,27 @@ func TestShippedJsonlOverlayPasses(t *testing.T) {
 	}
 }
 
+// The shipped ipnet module's white-box overlay (modules/ipnet_test.j over
+// modules/ipnet.j) loads and its tests pass - a guard against ipnet.j /
+// ipnet_test.j drifting out of sync. Pure IPv4 / IPv6 + CIDR math over strings
+// / convert and the bitwise operators.
+func TestShippedIpnetOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "ipnet_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the ipnet overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testParseSixCanonical", "testContainsFour", "testContainsSix", "testNetmaskSix", "testParseErrors"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
 // A plain test file with no sibling module keeps working (no overlay spliced),
 // and its own `export` is still rejected (it is not a module).
 func TestNonOverlayTestFileUnaffected(t *testing.T) {

@@ -1211,8 +1211,8 @@ the milestone-number index (numbers were assigned in rough priority order).
 | M18.6.1/.2 | `session` / `ratelimit` | server-side sessions + fixed-window rate limiting on `memcache`.                                  |
 | M18.7      | `http`                  | HTTP/1.1 client over `net` (`https://` via TLS).                                                  |
 | M18.7.1/.3 | `gotify` / `rest` / `oauth` | push notifications; ergonomic REST layer; OAuth2 get-a-token - all on `http`.                 |
-| M18.8      | `toml` (**Go library**) | RFC TOML 1.0 encode / decode; opaque `toml.Value`, JSON-Pointer walk. TinyGo-clean.              |
-| M18.9.1    | `httpd` (**Go library**)| HTTP/1.1 server engine over `net/http`; pull-loop `accept` / `respond`.                          |
+| M18.8      | `toml` (**library**) | RFC TOML 1.0 encode / decode; opaque `toml.Value`, JSON-Pointer walk. TinyGo-clean.              |
+| M18.9.1    | `httpd` (**library**)| HTTP/1.1 server engine over `net/http`; pull-loop `accept` / `respond`.                          |
 | M18.9.2    | `web` + `jennifer serve`| `.j` routing framework over `httpd` (routes by handler name, `:param`, middleware, `web.Context`), dispatched by `meta.callMain`; `serve` runs / `--watch`-reloads a program. |
 | M18.10     | `flatdb`                | file-backed JSON document store over `json` + `fs`; JSON-Pointer query / edit; crash-atomic save.|
 | M18.11     | `gpio`                  | Linux GPIO over the sysfs / character-device interface.                                          |
@@ -1351,11 +1351,18 @@ binaries. No new prereq.
 
 ### M18.26 - `ipnet` module (IP addresses and CIDR)
 
-Parse and reason about IP addresses and CIDR networks: `ipnet.parse(cidr) ->
-Network`, `ipnet.contains(network, ip) -> bool`, plus address / netmask /
-broadcast accessors. IPv4 and IPv6 (128-bit addresses handled as `bytes`), over
-`strings` + bitwise ops - for allow-lists and subnet math. Pure `.j`, both
-binaries. No new prereq.
+**Done.** Parse and reason about IP addresses and CIDR networks, IPv4 and IPv6:
+`ipnet.parseAddress(s) -> Address` (dotted-quad, or IPv6 with `::` compression
+and a trailing embedded IPv4), `ipnet.toString(addr)` (canonical text, RFC 5952
+for IPv6 - lowercase, no leading zeros, leftmost-longest zero run compressed to
+`::`), `ipnet.parse(cidr) -> Network` (host bits zeroed), `ipnet.contains(net,
+addr) -> bool` (a version mismatch is false), and `netmask` / `broadcast` /
+`networkString` / `equal` / `version` accessors. An `Address` holds its raw
+`octets as bytes` (4 or 16, network byte order) and `version`; a `Network` pairs
+a base address with a `prefix`. Subnet math is bitwise (mask / broadcast /
+membership) - for allow-lists and CIDR reasoning; malformed input throws
+`Error{kind: "ipnet"}`. Pure `.j` over `strings` + `convert` and the bitwise
+operators; both binaries. No new prereq.
 
 ### M18.27 - `ntp` module (network time)
 

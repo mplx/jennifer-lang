@@ -592,6 +592,16 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `closeReader`) that reads one record at a time for files too large for memory
   (`readRecord` throws `Error{kind: "jsonl"}` at end - guard with `hasMore`). A
   thin framing layer over `json` + `fs`; **both binaries**.
+- **`ipnet`** - IP addresses and CIDR networks, IPv4 and IPv6. `ipnet.parseAddress(s)
+  -> Address` (dotted-quad or IPv6 with `::` compression + embedded IPv4),
+  `toString(addr)` (canonical, RFC 5952 for IPv6), `version(addr)`,
+  `equal(a, b)`; and `ipnet.parse(cidr) -> Network` (host bits zeroed),
+  `contains(net, addr) -> bool` (version mismatch is false), `netmask(net)` /
+  `broadcast(net)` -> `Address`, `networkString(net)`. An `ipnet.Address` holds
+  its raw `octets as bytes` (4 or 16) and `version`; a `Network` pairs a base
+  `addr` with a `prefix`. Bitwise subnet math for allow-lists and membership;
+  malformed input throws `Error{kind: "ipnet"}`. Pure `.j` over `strings` +
+  `convert`; **both binaries**.
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).
