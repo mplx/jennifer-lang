@@ -124,8 +124,28 @@ An output or assignment value may be piped through one or more functions:
 | `truncate N` | The first `N` characters, with `...` appended when it shortened (excerpts). |
 | `join SEP` | Join a list's elements into a string with `SEP` between them. |
 | `len` | The length: characters of a string, or elements of a list / map. |
+| `printf FORMAT` | Format the piped value per `FORMAT` (see below). |
 
 An unknown pipe throws a catchable `Error` (kind `"tengine"`).
+
+### `printf`
+
+`printf` formats values with a `text/template`-style format string. It works both
+as a **function** - `{{ printf "%s: %d" .name .count }}` - and as a **pipe**,
+where the piped value is the last argument: `{{ .n | printf "%02d" }}` renders
+`07`. Verbs: `%s` / `%v` (string), `%d` (integer), `%f` (float), `%t` (bool), and
+`%%` (a literal `%`). Each verb accepts the flags `-` (left-align) and `0`
+(zero-pad), a width, and a `.precision` (decimal places for `%f`, or a maximum
+length for `%s`):
+
+```
+{{ printf "%.2f" .price }}     -> 3.50
+{{ printf "%-10s|" .name }}    -> "Ada       |"
+{{ range $i, $t := .items }}{{ printf "%02d. %s\n" $i $t.title }}{{ end }}
+```
+
+(This is a self-contained subset, not the full Go / `io.printf` verb set - no
+`%x` / `%e` / `%q`, and no `*` dynamic width.)
 
 ### Whitespace-trim markers
 
@@ -169,10 +189,10 @@ to the node it was called with.
 A focused subset - enough to drive a lightweight CMS (list and single pages,
 menus, conditional sections, excerpts), not a general programming language:
 
-- **Pipe arguments are literal / path terms** (`default "x"`, `truncate 20`,
-  `join ", "`); there is no `printf`.
+- **Pipe / function arguments are literal or path terms** (`default "x"`,
+  `truncate 20`, `printf "%02d" .n`); no `*` dynamic widths.
 - **No user-defined functions** and no method calls - the built-in comparison /
-  boolean functions and pipes are the whole vocabulary.
+  boolean / `printf` functions and pipes are the whole vocabulary.
 - **Fixed data source.** The data tree is the `json.Value` you pass; there is no
   file inclusion or front-matter parsing (compose the tree yourself, e.g. with
   `toml` / `json` for front matter and `markdown` for bodies).

@@ -1417,13 +1417,13 @@ with the functions `eq` / `ne` / `lt` / `le` / `gt` / `ge` / `and` / `or` / `not
 each with `else`; `{{ $x := PIPE }}` variables; `define` / `template` / `block`
 layout inheritance; `{{/* comments */}}`; `{{- -}}` whitespace-trim markers; and
 output pipes `upper` / `lower` / `title` / `trim` / `html` / `urlize` /
-`default` / `truncate` / `join` / `len`. Not auto-escaped (a `text/template`, not
+`default` / `truncate` / `join` / `len` / `printf`. Not auto-escaped (a `text/template`, not
 `html/template`). Over the compiled-in `json` / `strings` / `lists` / `maps` /
 `convert`, so both binaries. Contributed as a Jennifer-coded module, refactored
 to the module conventions, and extended to the CMS feature set (conditionals with
 comparison / boolean functions, `$` root, variables, range index, and the
-`default` / `truncate` / `join` / `len` pipes, plus the `title` pipe and trim
-markers). No new prereq.
+`default` / `truncate` / `join` / `len` / `printf` pipes, plus the `title` pipe
+and trim markers). No new prereq.
 
 ## M19 - cross-cutting tooling
 

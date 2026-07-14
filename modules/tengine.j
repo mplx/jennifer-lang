@@ -32,6 +32,7 @@ use json;
 use strings;
 use lists;
 use maps;
+use math;
 use convert;
 
 /**
@@ -78,6 +79,17 @@ def struct ElseState {
     inElse as bool,
     opened as int,
     elsePart as string
+};
+
+# A parsed printf verb spec (`%[-][0][width][.prec]verb`) and the format position
+# just past it.
+def struct Verb {
+    verb as string,
+    width as int,
+    leftAlign as bool,
+    zeroPad as bool,
+    prec as int,
+    pos as int
 };
 
 # --- set construction (exported) --------------------------------------------
@@ -527,10 +539,12 @@ func tokenize(expr as string) {
     return $toks;
 }
 
-# isFunc reports whether a token names a condition / boolean function.
+# isFunc reports whether a token names a built-in function usable in an
+# expression (comparison / boolean, or printf).
 func isFunc(name as string) {
     return $name == "eq" or $name == "ne" or $name == "lt" or $name == "le" or
-        $name == "gt" or $name == "ge" or $name == "and" or $name == "or" or $name == "not";
+        $name == "gt" or $name == "ge" or $name == "and" or $name == "or" or
+        $name == "not" or $name == "printf";
 }
 
 # evalExpr evaluates a prefix expression starting at token `pos`, returning the
@@ -549,6 +563,19 @@ func evalExpr(toks as list of string, pos as int, node as json.Value, root as js
 
 # evalFunc applies a condition / boolean function to its argument expressions.
 func evalFunc(name as string, toks as list of string, pos as int, node as json.Value, root as json.Value, vars as map of string to json.Value) {
+    if ($name == "printf") {
+        def parts as list of json.Value init [];
+        def p as int init $pos;
+        while ($p < len($toks) and not ($toks[$p] == ")")) {
+            def a as Eval init evalExpr($toks, $p, $node, $root, $vars);
+            $p = $a.pos;
+            $parts = lists.push($parts, $a.value);
+        }
+        if (len($parts) == 0) {
+            return Eval{ value: strVal(""), pos: $p };
+        }
+        return Eval{ value: strVal(sprintfValues(nodeToString($parts[0]), tailValues($parts))), pos: $p };
+    }
     if ($name == "not") {
         def a as Eval init evalExpr($toks, $pos, $node, $root, $vars);
         return Eval{ value: boolVal(not isTruthy($a.value)), pos: $a.pos };
@@ -706,7 +733,204 @@ func applyPipe(seg as string, val as json.Value, node as json.Value, root as jso
     if ($name == "len") {
         return numVal(lengthOf($val));
     }
+    if ($name == "printf") {
+        def fmtEval as Eval init evalExpr($toks, 1, $node, $root, $vars);
+        def args as list of json.Value init [];
+        def p as int init $fmtEval.pos;
+        while ($p < len($toks)) {
+            def a as Eval init evalExpr($toks, $p, $node, $root, $vars);
+            $p = $a.pos;
+            $args = lists.push($args, $a.value);
+        }
+        $args = lists.push($args, $val);
+        return strVal(sprintfValues(nodeToString($fmtEval.value), $args));
+    }
     throw Error{ kind: "tengine", message: "tengine: unknown pipe function: " + $name, file: "", line: 0, col: 0 };
+}
+
+# --- printf (private) -------------------------------------------------------
+
+# sprintfValues formats `args` per a printf format string. Verbs: %s %v (string),
+# %d (integer), %f (float), %t (bool), %% (literal). Flags `-` (left-align) and
+# `0` (zero-pad), a width, and `.prec` (float decimals, or a string's max length).
+func sprintfValues(format as string, args as list of json.Value) {
+    def out as string init "";
+    def cs as list of string init strings.chars($format);
+    def i as int init 0;
+    def n as int init len($cs);
+    def ai as int init 0;
+    while ($i < $n) {
+        if (not ($cs[$i] == "%")) {
+            $out = $out + $cs[$i];
+            $i = $i + 1;
+        } elseif ($i + 1 < $n and $cs[$i + 1] == "%") {
+            $out = $out + "%";
+            $i = $i + 2;
+        } else {
+            def spec as Verb init parseVerb($cs, $i + 1);
+            $i = $spec.pos;
+            def arg as json.Value init nullVal();
+            if ($ai < len($args)) {
+                $arg = $args[$ai];
+                $ai = $ai + 1;
+            }
+            $out = $out + formatVerb($spec, $arg);
+        }
+    }
+    return $out;
+}
+
+# parseVerb reads a verb spec from `cs` starting just after the `%`.
+func parseVerb(cs as list of string, start as int) {
+    def i as int init $start;
+    def n as int init len($cs);
+    def leftAlign as bool init false;
+    def zeroPad as bool init false;
+    while ($i < $n and ($cs[$i] == "-" or $cs[$i] == "0")) {
+        if ($cs[$i] == "-") {
+            $leftAlign = true;
+        } else {
+            $zeroPad = true;
+        }
+        $i = $i + 1;
+    }
+    def width as int init 0;
+    while ($i < $n and isDigit($cs[$i])) {
+        $width = $width * 10 + toDigit($cs[$i]);
+        $i = $i + 1;
+    }
+    def prec as int init -1;
+    if ($i < $n and $cs[$i] == ".") {
+        $i = $i + 1;
+        $prec = 0;
+        while ($i < $n and isDigit($cs[$i])) {
+            $prec = $prec * 10 + toDigit($cs[$i]);
+            $i = $i + 1;
+        }
+    }
+    def verb as string init "";
+    if ($i < $n) {
+        $verb = $cs[$i];
+        $i = $i + 1;
+    }
+    return Verb{ verb: $verb, width: $width, leftAlign: $leftAlign, zeroPad: $zeroPad, prec: $prec, pos: $i };
+}
+
+# formatVerb renders one argument per a parsed verb spec.
+func formatVerb(spec as Verb, arg as json.Value) {
+    if ($spec.verb == "d") {
+        return padNumber(convert.toString(intValueOf($arg)), $spec.width, $spec.leftAlign, $spec.zeroPad);
+    }
+    if ($spec.verb == "f") {
+        def p as int init 6;
+        if ($spec.prec >= 0) {
+            $p = $spec.prec;
+        }
+        return padNumber(formatFloatStr(numOf($arg), $p), $spec.width, $spec.leftAlign, $spec.zeroPad);
+    }
+    if ($spec.verb == "t") {
+        return padStr(boolStr(isTruthy($arg)), $spec.width, $spec.leftAlign);
+    }
+    def s as string init nodeToString($arg);
+    if ($spec.prec >= 0 and len($s) > $spec.prec) {
+        $s = strings.substring($s, 0, $spec.prec);
+    }
+    return padStr($s, $spec.width, $spec.leftAlign);
+}
+
+# padStr space-pads a string to `width` (right-aligned unless leftAlign).
+func padStr(s as string, width as int, leftAlign as bool) {
+    if (len($s) >= $width) {
+        return $s;
+    }
+    def pad as string init strings.repeat(" ", $width - len($s));
+    if ($leftAlign) {
+        return $s + $pad;
+    }
+    return $pad + $s;
+}
+
+# padNumber pads a numeric string, honouring zero-pad (after any leading `-`).
+func padNumber(s as string, width as int, leftAlign as bool, zeroPad as bool) {
+    if (len($s) >= $width) {
+        return $s;
+    }
+    def count as int init $width - len($s);
+    if ($leftAlign) {
+        return $s + strings.repeat(" ", $count);
+    }
+    if ($zeroPad) {
+        if (strings.startsWith($s, "-")) {
+            return "-" + strings.repeat("0", $count) + strings.substring($s, 1, len($s));
+        }
+        return strings.repeat("0", $count) + $s;
+    }
+    return strings.repeat(" ", $count) + $s;
+}
+
+# formatFloatStr renders a float with exactly `prec` decimal places.
+func formatFloatStr(f as float, prec as int) {
+    def neg as bool init $f < 0.0;
+    def a as float init $f;
+    if ($neg) {
+        $a = 0.0 - $a;
+    }
+    def scale as int init 1;
+    def k as int init 0;
+    while ($k < $prec) {
+        $scale = $scale * 10;
+        $k = $k + 1;
+    }
+    def scaled as int init math.round($a * convert.toFloat($scale));
+    def s as string init convert.toString($scaled // $scale);
+    if ($prec > 0) {
+        def frac as string init convert.toString($scaled % $scale);
+        while (len($frac) < $prec) {
+            $frac = "0" + $frac;
+        }
+        $s = $s + "." + $frac;
+    }
+    if ($neg) {
+        return "-" + $s;
+    }
+    return $s;
+}
+
+# intValueOf coerces a value to an int for %d (numbers convert; else 0).
+func intValueOf(v as json.Value) {
+    def t as string init json.typeOf($v);
+    if ($t == "int") {
+        return json.asInt($v);
+    }
+    if ($t == "float") {
+        return convert.toInt(json.asFloat($v));
+    }
+    if ($t == "string" and isNumber(json.asString($v))) {
+        return convert.toInt(json.asString($v));
+    }
+    return 0;
+}
+
+func boolStr(b as bool) {
+    if ($b) {
+        return "true";
+    }
+    return "false";
+}
+
+func toDigit(c as string) {
+    return strings.indexOf("0123456789", $c);
+}
+
+# tailValues returns a list's elements from index 1 onward.
+func tailValues(vs as list of json.Value) {
+    def out as list of json.Value init [];
+    def i as int init 1;
+    while ($i < len($vs)) {
+        $out = lists.push($out, $vs[$i]);
+        $i = $i + 1;
+    }
+    return $out;
 }
 
 # --- value helpers (private) ------------------------------------------------
@@ -765,10 +989,17 @@ func isNumeric(t as string) {
 }
 
 func numOf(v as json.Value) {
-    if (json.typeOf($v) == "int") {
+    def t as string init json.typeOf($v);
+    if ($t == "int") {
         return convert.toFloat(json.asInt($v));
     }
-    return json.asFloat($v);
+    if ($t == "float") {
+        return json.asFloat($v);
+    }
+    if ($t == "string" and isNumber(json.asString($v))) {
+        return convert.toFloat(json.asString($v));
+    }
+    return 0.0;
 }
 
 func lengthOf(v as json.Value) {

@@ -178,6 +178,27 @@ func testPipeLen() {
     testing.assertEqual(render(oneSet("{{ .s | len }}"), "main", json.decode("{\"s\":\"abcd\"}")), "4");
 }
 
+func testPrintfPipe() {
+    testing.assertEqual(render(oneSet("{{ .n | printf \"%02d\" }}"), "main", json.decode("{\"n\":7}")), "07");
+    testing.assertEqual(render(oneSet("[{{ .s | printf \"%-6s\" }}]"), "main", json.decode("{\"s\":\"hi\"}")), "[hi    ]");
+}
+
+func testPrintfFunc() {
+    testing.assertEqual(render(oneSet("{{ printf \"%s: %d\" .k .n }}"), "main", json.decode("{\"k\":\"posts\",\"n\":5}")), "posts: 5");
+    testing.assertEqual(render(oneSet("{{ printf \"$%.2f\" .price }}"), "main", json.decode("{\"price\":3.5}")), "$3.50");
+    testing.assertEqual(render(oneSet("[{{ printf \"%6s\" .s }}]"), "main", json.decode("{\"s\":\"hi\"}")), "[    hi]");
+    testing.assertEqual(render(oneSet("{{ printf \"%t/%v\" .b .n }}"), "main", json.decode("{\"b\":true,\"n\":9}")), "true/9");
+}
+
+func testPrintfLiteralPercent() {
+    testing.assertEqual(render(oneSet("{{ printf \"100%%\" }}"), "main", json.decode("null")), "100%");
+}
+
+func testSprintfHelper() {
+    testing.assertEqual(sprintfValues("%03d", [numVal(5)]), "005");
+    testing.assertEqual(sprintfValues("%.1f", [strVal("2")]), "2.0");
+}
+
 func testNumberAndBoolLiterals() {
     testing.assertEqual(render(oneSet("{{ if eq .flag true }}on{{ end }}"), "main", json.decode("{\"flag\":true}")), "on");
     testing.assertEqual(render(oneSet("{{ if lt .n 10 }}under{{ end }}"), "main", json.decode("{\"n\":7}")), "under");

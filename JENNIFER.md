@@ -326,7 +326,7 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `else`; `{{ $x := PIPE }}` variables; `{{ define }}` / `{{ template }}` /
   `{{ block }}` layout inheritance; `{{/* comments */}}`; `{{- -}}` trim markers;
   and output pipes `upper` / `lower` / `title` / `trim` / `html` / `urlize` /
-  `default` / `truncate` / `join` / `len`. Not auto-escaped (use the `html`
+  `default` / `truncate` / `join` / `len` / `printf`. Not auto-escaped (use the `html`
   pipe). Over `json` / `strings` / `lists` / `maps` / `convert`; both binaries.
 - **`http`** - an HTTP/1.1 client over `net` (`https://` via TLS):
   `http.request(method, url, headers, body)` (method-agnostic; or
