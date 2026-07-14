@@ -1239,15 +1239,20 @@ under its library):
 
 ### M18.19 - `bucket` module (S3-compatible object storage)
 
-An S3 client over `http` signing requests with AWS Signature Version 4:
+**Done.** An S3 client over `http` signing requests with AWS Signature Version 4:
 `connect` -> a `Client` (endpoint, region, access key, secret key), then `get` /
-`put` / `delete` / `list`. SigV4 is HMAC-SHA256 chaining, so it builds on
-`hash.hmac` + `hash.compute` + `encoding` (hex) + `http` + `time`; the endpoint
-is configurable, so **one module serves AWS S3 and every S3-compatible store**
-(MinIO, Cloudflare R2, Backblaze B2) - a selectable backend, not a module per
-vendor (stance 1). Named **`bucket`** rather than `s3` because a module namespace
-is letters-only (no digit, like `pop` not `pop3`). Needs the default binary
-(`net` via `http`). Prereq: `hash.hmac` (shipped), `http` (M18.7).
+`put` / `delete` / `listObjects` (+ `objectKeys` to parse the ListObjectsV2 XML).
+The list op is `listObjects` because `list` is a reserved type keyword. SigV4 is
+HMAC-SHA256 chaining, so it builds on `hash.hmac` + `hash.compute` + `encoding`
+(hex) + `http` + `time`; the payload hash is a real SHA-256 (not
+`UNSIGNED-PAYLOAD`). Path-style addressing, and the endpoint is configurable, so
+**one module serves AWS S3 and every S3-compatible store** (MinIO, Cloudflare R2,
+Backblaze B2) - a selectable backend, not a module per vendor (stance 1). Named
+**`bucket`** rather than `s3` because a module namespace is letters-only (no
+digit, like `pop` not `pop3`). The signature is pinned against two independent
+SigV4 implementations (an overlay reference vector and a re-signing fake S3 in
+the Go suite, which validates the `http` host coupling end to end). Needs the
+default binary (`net` via `http`). Prereq: `hash.hmac` (shipped), `http` (M18.7).
 
 ### M18.20 - `dotenv` module (.env config)
 

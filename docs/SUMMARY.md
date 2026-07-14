@@ -53,6 +53,7 @@
 
 - [Catalog](modules/index.md)
 - [`ansi`](modules/ansi.md)
+- [`bucket`](modules/bucket.md)
 - [`csv`](modules/csv.md)
 - [`docblock`](modules/docblock.md)
 - [`flatdb`](modules/flatdb.md)
