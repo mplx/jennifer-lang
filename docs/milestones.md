@@ -1267,12 +1267,15 @@ both binaries. No new prereq.
 
 ### M18.21 - `cron` module (cron schedules)
 
-Parse and evaluate cron expressions: `cron.parse(expr) -> Schedule`,
-`cron.next(schedule, after) -> time.Time` (the next fire at or after a time),
-and `cron.matches(schedule, t) -> bool`. The five standard fields (minute, hour,
-day-of-month, month, day-of-week) with `*`, `,`, `-`, and `/`. A scheduler loop
-(`spawn` + `time.sleep` on `cron.next`) is the caller's, so the module stays a
-pure calculator over `time`. Both binaries. No new prereq.
+**Done.** Parse and evaluate cron expressions: `cron.parse(expr) -> Schedule`,
+`cron.next(schedule, after) -> time.Time` (the next fire at or after a time,
+keeping its zone offset), and `cron.matches(schedule, t) -> bool`. The five
+standard fields (minute, hour, day-of-month, month, day-of-week `0-7` where
+`0`/`7` are Sunday) with `*`, `,`, `-`, and `/n`; the standard dom-OR-dow rule
+when both day fields are restricted. `next` skips non-matching days whole and
+gives up after a five-year horizon (an impossible schedule throws). A scheduler
+loop (`spawn` + `time.sleep` on `cron.next`) is the caller's, so the module stays
+a pure calculator over `time`. Both binaries. No new prereq.
 
 ### M18.22 - `log` module (structured logging)
 

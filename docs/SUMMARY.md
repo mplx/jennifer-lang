@@ -54,6 +54,7 @@
 - [Catalog](modules/index.md)
 - [`ansi`](modules/ansi.md)
 - [`bucket`](modules/bucket.md)
+- [`cron`](modules/cron.md)
 - [`csv`](modules/csv.md)
 - [`docblock`](modules/docblock.md)
 - [`dotenv`](modules/dotenv.md)

@@ -305,6 +305,13 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   (whole-line + inline on unquoted values), blank lines, a leading `export`,
   single quotes (literal) and double quotes (expand `\n` / `\t` / `\r`). No
   `${VAR}` interpolation. Over `fs` + `strings` + `os`; both binaries.
+- **`cron`** - parse and evaluate cron expressions. `cron.parse(expr)` -> a
+  `Schedule`; `cron.matches(schedule, t)` -> bool; `cron.next(schedule, after)` ->
+  the next `time.Time` at or after a time (keeps its offset). Five fields
+  (minute / hour / day-of-month / month / day-of-week 0-7) with `*` / `,` / `-`
+  and `/n` steps; when both day fields are restricted a day matching either
+  fires. A pure calculator over `time` (no clock) - a scheduler is your own
+  `spawn` + `time.sleep` loop. Both binaries.
 - **`htmlwriter`** - build an HTML element tree and render escaped HTML5:
   `html.element(tag, attrs, children)` / `text(s)` / `raw(s)` / `attr(n, v)`
   constructors, `render` / `renderAll`, `escape`. A writer, not a parser.
