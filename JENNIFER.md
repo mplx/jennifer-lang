@@ -315,6 +315,19 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
 - **`htmlwriter`** - build an HTML element tree and render escaped HTML5:
   `html.element(tag, attrs, children)` / `text(s)` / `raw(s)` / `attr(n, v)`
   constructors, `render` / `renderAll`, `escape`. A writer, not a parser.
+- **`tengine`** - a lightweight-CMS text template engine (a subset of Go
+  `text/template`) rendered over a `json.Value` tree. `tengine.newSet()` ->
+  `Set`; `tengine.add(set, name, src)` -> `Set` (extracting `{{ define }}`
+  blocks); `tengine.render(set, entry, data)` -> string. Addressing: `.a.b`
+  (current node), `$` / `$.a.b` (root), `$var` (variable). Actions: value output;
+  `{{ if COND }}` / `{{ else if COND }}` / `{{ else }}` with the functions `eq` /
+  `ne` / `lt` / `le` / `gt` / `ge` / `and` / `or` / `not` (parenthesised nesting);
+  `{{ range .xs }}` / `{{ range $i, $e := .xs }}` and `{{ with }}`, each with
+  `else`; `{{ $x := PIPE }}` variables; `{{ define }}` / `{{ template }}` /
+  `{{ block }}` layout inheritance; `{{/* comments */}}`; `{{- -}}` trim markers;
+  and output pipes `upper` / `lower` / `title` / `trim` / `html` / `urlize` /
+  `default` / `truncate` / `join` / `len`. Not auto-escaped (use the `html`
+  pipe). Over `json` / `strings` / `lists` / `maps` / `convert`; both binaries.
 - **`http`** - an HTTP/1.1 client over `net` (`https://` via TLS):
   `http.request(method, url, headers, body)` (method-agnostic; or
   `requestWith(..., timeoutMs)` for an explicit per-read idle timeout - `request`

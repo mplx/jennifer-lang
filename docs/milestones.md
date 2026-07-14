@@ -1404,6 +1404,27 @@ primitive that `totp` / `webhook` / `bucket` build on already shipped (a small
 `hash` library addition, no milestone). The paired-module entries (M18.30,
 M18.36) ship two small modules each.
 
+### M18.37 - `tengine` module (text template engine)
+
+**Done.** A lightweight-CMS text template engine - a subset of Go's
+`text/template` (the Go / Hugo style) - rendered directly over a `json.Value`
+data tree (dotted paths resolve as JSON Pointers; `$` is the root, `$var` a
+variable), with no compile step (it re-scans block bodies). `newSet` /
+`add(set, name, src)` (pulling `{{ define }}` blocks into their own entries) /
+`render(set, entry, data)`. Actions: value output; `if` / `else if` / `else`
+with the functions `eq` / `ne` / `lt` / `le` / `gt` / `ge` / `and` / `or` / `not`
+(parenthesised nesting); `range` (with an optional `$i, $e :=` bind) and `with`,
+each with `else`; `{{ $x := PIPE }}` variables; `define` / `template` / `block`
+layout inheritance; `{{/* comments */}}`; `{{- -}}` whitespace-trim markers; and
+output pipes `upper` / `lower` / `title` / `trim` / `html` / `urlize` /
+`default` / `truncate` / `join` / `len`. Not auto-escaped (a `text/template`, not
+`html/template`). Over the compiled-in `json` / `strings` / `lists` / `maps` /
+`convert`, so both binaries. Contributed as a Jennifer-coded module, refactored
+to the module conventions, and extended to the CMS feature set (conditionals with
+comparison / boolean functions, `$` root, variables, range index, and the
+`default` / `truncate` / `join` / `len` pipes, plus the `title` pipe and trim
+markers). No new prereq.
+
 ## M19 - cross-cutting tooling
 
 The catch-all bucket for milestones that improve the interpreter or its
