@@ -461,6 +461,13 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   string a QR code encodes. `secret` is base32; a zero-value `totp.Options` is 6
   digits / 30 s / SHA-1, else set `digits` / `period` / `algorithm` (`"sha256"` /
   `"sha512"`). Over `hash.hmac` + `encoding` + `time`; pure, both binaries.
+- **`webhook`** - HMAC-signed webhooks (the GitHub `X-Hub-Signature-256`
+  convention). `webhook.sign(payload, secret)` -> `"sha256=" + hex HMAC-SHA256`;
+  `webhook.verify(payload, signature, secret)` -> bool (constant-time compare,
+  never throws) - both pure, both binaries. `webhook.send(url, payload, secret)`
+  POSTs the payload as `application/json` with the signature header and returns
+  an `http.Response` (**default `jennifer` binary only**, over `http`). Sign /
+  verify the raw body bytes, before any parsing. Over `hash.hmac` + `encoding`.
 - **`label`** - industrial label printing in a build / render / emit pipeline.
   Build a device-independent `label.Label` in millimetres: `label.new(w, h)`
   then value-semantic `text(label, x, y, opts, content)` (`label.TextOptions`:
