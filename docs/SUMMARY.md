@@ -74,6 +74,7 @@
 - [`memcache`](modules/memcache.md)
 - [`mime`](modules/mime.md)
 - [`mqtt`](modules/mqtt.md)
+- [`ntp`](modules/ntp.md)
 - [`oauth`](modules/oauth.md)
 - [`pop`](modules/pop.md)
 - [`prometheus`](modules/prometheus.md)

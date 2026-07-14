@@ -31,7 +31,7 @@ arrived.
 | `net.accept($listener)`          | `net.Conn`      | Blocking accept. Non-blocking use pairs with `spawn`.                                     |
 | `net.readBytes($conn, n)`        | `bytes`         | Blocks for at least one byte; returns whatever's available, capped at `n`. Sticky-EOF on close. |
 | `net.writeBytes($conn, b)`       | `null`          | Blocking write of every byte.                                                             |
-| `net.setDeadline($conn, ms)`     | `null`          | Arm a read/write deadline `ms` milliseconds out; `0` clears it. A read past the deadline fails with a distinguishable `read timed out` error. |
+| `net.setDeadline($conn, ms)`     | `null`          | Arm a read/write deadline `ms` milliseconds out; `0` clears it. A read past the deadline fails with a distinguishable `read timed out` error. Accepts a `net.Conn` or a `net.UDPSocket` (so a `recvFrom` can time out). |
 | `net.eof($conn)`                 | `bool`          | Looks ahead: true iff the next read would return partial or fail.                        |
 | `net.address($conn)`             | `string`        | Peer's `"host:port"` (for logs). Polymorphic - see [Address helpers](#address-helpers).  |
 
@@ -73,7 +73,9 @@ out` error you can `catch`, rather than blocking forever or crashing.
 `net.setDeadline($conn, 0)` clears the deadline again. This turns a
 blocking read into a poll-with-timeout, so a protocol client can wait
 for a packet and, on a timeout, do idle work (send a keepalive) - all
-on one flow, without dedicating a `spawn`ed reader.
+on one flow, without dedicating a `spawn`ed reader. The same call
+accepts a `net.UDPSocket`, so a datagram `recvFrom` can be bounded by a
+timeout the same way (an SNTP client that must not hang on a lost reply).
 
 ```jennifer
 use net;

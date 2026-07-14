@@ -602,6 +602,15 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `addr` with a `prefix`. Bitwise subnet math for allow-lists and membership;
   malformed input throws `Error{kind: "ipnet"}`. Pure `.j` over `strings` +
   `convert`; **both binaries**.
+- **`ntp`** - a simple SNTP network-time client (RFC 4330 / 5905). `ntp.query(host)
+  -> Result` (port 123, 5s timeout) and `ntp.queryWith(address, timeoutMs) ->
+  Result` query a server over UDP; `ntp.Result` carries `serverTime as time.Time`,
+  `offset as time.Duration` (server minus local clock), and `delay as
+  time.Duration` (round-trip). Packs / unpacks the 48-byte NTP packet with `bytes`
+  + bitwise ops and converts the NTP epoch (seconds since 1900) through `time`; a
+  lost reply times out via a UDP receive deadline (throws `Error{kind: "ntp"}`)
+  rather than hanging. Query-only - it measures the offset, it does not discipline
+  the clock or run as a daemon. **Default `jennifer` binary only** (`net`).
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).

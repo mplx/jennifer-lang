@@ -200,6 +200,27 @@ func TestShippedIpnetOverlayPasses(t *testing.T) {
 	}
 }
 
+// The shipped ntp module's white-box overlay (modules/ntp_test.j over
+// modules/ntp.j) loads and its packet-codec tests pass - a guard against ntp.j /
+// ntp_test.j drifting out of sync. The live UDP query is covered separately by
+// TestNtpQuery / TestNtpTimeout.
+func TestShippedNtpOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "ntp_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the ntp overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testBuildRequestTransmitRoundTrip", "testReadTimestampKnown", "testTimestampFractionRoundTripsToMillis"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
 // A plain test file with no sibling module keeps working (no overlay spliced),
 // and its own `export` is still rejected (it is not a module).
 func TestNonOverlayTestFileUnaffected(t *testing.T) {

@@ -1187,9 +1187,9 @@ Built atop the existing system libraries. Each one ships as a Jennifer
 them are compiled into the interpreter binary. Sub-milestones in priority
 order.
 
-### M18.1-M18.18 - shipped modules (compacted)
+### M18.1-M18.26 - shipped modules (compacted)
 
-**All done.** Eighteen sub-milestones (with their nested parts) shipped as
+**All done.** Twenty-six sub-milestones (with their nested parts) shipped as
 pure-Jennifer `modules/` (except where noted as a Go **system library**), each
 with the standard discipline: a 100%-passing `*_test.j` overlay, a
 `cmd/jennifer/*_test.go` integration test, a `docs/modules/*.md` reference, an
@@ -1223,11 +1223,22 @@ the milestone-number index (numbers were assigned in rough priority order).
 | M18.16     | `web` cookies + sessions| cookie helpers + cookie-keyed sessions on the `web` framework.                                   |
 | M18.17     | `totp`                  | RFC 6238 TOTP: `generate` / `verify` / `uri`. Over `hash.hmac` + `encoding` + `time`.            |
 | M18.18     | `webhook`               | GitHub `X-Hub-Signature-256` HMAC `sign` / `verify` (pure) + `send` (over `http`).               |
+| M18.19     | `bucket`                | S3-compatible object storage over `http` (AWS SigV4): `connect` / `get` / `put` / `delete` / `listObjects`. One module for AWS S3 + MinIO / R2 / B2. |
+| M18.20     | `dotenv`                | `.env` config: `parse` / `read` / `load` (into env via `os.setEnv`). Over `fs` + `strings` + `os`. |
+| M18.21     | `cron`                  | parse cron expressions; `next(schedule, after)` / `matches`. A calculator over `time`.           |
+| M18.22     | `log`                   | leveled structured logging (`debug`..`error`; text / logfmt / json) to stdout / stderr / file / RFC 5424 syslog. |
+| M18.23     | `ical`                  | iCalendar (RFC 5545) build + parse: a `Calendar` of `VEVENT`s, escaped + line-folded, dates through `time`. |
+| M18.24     | `vcard`                 | vCard (RFC 6350) contacts build + parse; shares the content-line codec (`ical_vcard_shared.j`) with `ical`. |
+| M18.25     | `jsonl`                 | JSON Lines (NDJSON): `encode` / `decode` + whole-file + streaming `Reader`, over `json` + `fs`.   |
+| M18.26     | `ipnet`                 | IPv4 / IPv6 addresses + CIDR math: `parseAddress` / `toString` (RFC 5952) / `parse` / `contains` / `netmask` / `broadcast`. |
 
 **Enabling changes** these modules pulled into the system side (each documented
 under its library):
 
 - **`net.setDeadline`** - a read/write deadline for socket timeouts (M18.13).
+- **`io.eprintf`** - the stdout-`printf` twin that writes to stderr (a new
+  `Interpreter.Err` / `BuiltinCtx.Err` writer), the stderr sink `log` builds on
+  (M18.22).
 - **`toml`** and **`httpd`** - two new Go **system libraries** (a char-by-char
   TOML parser and a `net/http` server engine both belong in Go, not a `.j`
   module); M18.8 / M18.9.1.
@@ -1237,139 +1248,24 @@ under its library):
 - **`hash.hmac`** (RFC 2104) and the **`sha512`** digest - the HMAC primitive
   `totp` / `webhook` build on (and that `jwt` / SigV4 will reuse).
 
-### M18.19 - `bucket` module (S3-compatible object storage)
-
-**Done.** An S3 client over `http` signing requests with AWS Signature Version 4:
-`connect` -> a `Client` (endpoint, region, access key, secret key), then `get` /
-`put` / `delete` / `listObjects` (+ `objectKeys` to parse the ListObjectsV2 XML).
-The list op is `listObjects` because `list` is a reserved type keyword. SigV4 is
-HMAC-SHA256 chaining, so it builds on `hash.hmac` + `hash.compute` + `encoding`
-(hex) + `http` + `time`; the payload hash is a real SHA-256 (not
-`UNSIGNED-PAYLOAD`). Path-style addressing, and the endpoint is configurable, so
-**one module serves AWS S3 and every S3-compatible store** (MinIO, Cloudflare R2,
-Backblaze B2) - a selectable backend, not a module per vendor (stance 1). Named
-**`bucket`** rather than `s3` because a module namespace is letters-only (no
-digit, like `pop` not `pop3`). The signature is pinned against two independent
-SigV4 implementations (an overlay reference vector and a re-signing fake S3 in
-the Go suite, which validates the `http` host coupling end to end). Needs the
-default binary (`net` via `http`). Prereq: `hash.hmac` (shipped), `http` (M18.7).
-
-### M18.20 - `dotenv` module (.env config)
-
-**Done.** Load `.env` files: `dotenv.read(path) -> map of string to string`
-(parse a file without touching the environment), `dotenv.parse(text) -> map`
-(parse a string), and `dotenv.load(path)` (parse and set each variable via
-`os.setEnv`, returning the map). Handles `KEY=VALUE`, `#` comments (whole-line
-and, on unquoted values, inline), blank lines, single quotes (literal) / double
-quotes (expanding `\n` / `\t` / `\r`), a value containing `=`, and a leading
-`export`. No `${VAR}` interpolation. Over `fs` + `strings` + `os`. Pure `.j`,
-both binaries. No new prereq.
-
-### M18.21 - `cron` module (cron schedules)
-
-**Done.** Parse and evaluate cron expressions: `cron.parse(expr) -> Schedule`,
-`cron.next(schedule, after) -> time.Time` (the next fire at or after a time,
-keeping its zone offset), and `cron.matches(schedule, t) -> bool`. The five
-standard fields (minute, hour, day-of-month, month, day-of-week `0-7` where
-`0`/`7` are Sunday) with `*`, `,`, `-`, and `/n`; the standard dom-OR-dow rule
-when both day fields are restricted. `next` skips non-matching days whole and
-gives up after a five-year horizon (an impossible schedule throws). A scheduler
-loop (`spawn` + `time.sleep` on `cron.next`) is the caller's, so the module stays
-a pure calculator over `time`. Both binaries. No new prereq.
-
-### M18.22 - `log` module (structured logging)
-
-**Done.** Leveled, structured logging: a value-semantic `log.Logger` carrying a
-minimum level (`debug` < `info` < `warn` < `error`), an output format (`text` /
-`logfmt` / `json`), and a sink. `log.debug` / `info` / `warn` / `error` (and
-`at(logger, level, message, fields)` for a runtime level) render one record - an
-RFC 3339 timestamp, the level, the message, and the caller's
-`map of string to string` `fields` - and write it, dropping records below the
-logger's level; a field value with a space / quote / `=` is quoted in the text /
-logfmt forms. Sinks are fixed by the constructor: `new` (stdout) / `toStderr` /
-`toFile` (append) work on both binaries; `toSyslog` frames each record as an RFC
-5424 datagram over UDP (facility `user`, PRI = `8 + severity`) via `net`, so the
-module is **partial** on `jennifer-tiny` - console and file logging work, the
-syslog sink returns the no-network error. Over `io` / `fs` + `json` + `strings`
-+ `time` + `os` (+ `net` for syslog).
-
-The stderr sink needed an enabling library addition (like `hash.hmac` before
-it): **`io.eprintf(format, args...)`** - the stdout `printf` twin that writes to
-standard error - backed by a new `Interpreter.Err` / `BuiltinCtx.Err` writer
-(defaulting to `os.Stderr`), so the sink is capturable in tests. No other new
-prereq.
-
-### M18.23 - `ical` module (iCalendar)
-
-**Done.** Build and parse iCalendar (RFC 5545): `ical.calendar()` /
-`calendarWith(prodid)`, value-semantic `event(uid, start, end, summary)` /
-`describe` / `locate` / `add` builders, `ical.encode(cal) -> string` (a
-`VCALENDAR` of `VEVENT`s with CRLF lines, RFC 5545 text escaping, and 75-char
-line folding), and `ical.parse(text) -> Calendar` (unfolds, ignores property
-parameters, unescapes, skips a `VEVENT` with no `DTSTART`, defaults a missing
-`DTEND` to the start), so `parse(encode(cal))` round-trips. `DTSTAMP` / `DTSTART`
-/ `DTEND` go through `time` as UTC `DATE-TIME` values (normalising a non-UTC
-`time.Time` to UTC on the way out). `VEVENT`-only - no `RRULE` / `VALARM` /
-`VTIMEZONE`, events stored in UTC (no per-event `TZID`, since `time` ships
-fixed-offset zones only). A pure text format like `csv` / `markdown`; **both
-binaries** over `strings` / `lists` + `time`. No new prereq.
-
-### M18.24 - `vcard` module (vCard contacts)
-
-**Done.** Build and parse vCard (RFC 6350, vCard 4.0): a value-semantic
-`vcard.Card` built with `card(formattedName)` + `withName` / `withOrg` /
-`addEmail` / `addPhone` / `address` + `addAddress` / `withUrl` / `withNote`,
-`vcard.encode(card) -> string` (one `VCARD`) / `encodeAll(cards)`, and
-`vcard.parse(text) -> list of Card` (one or many `VCARD`s - parse always returns
-a list). Structured `N` / `ADR` / `ORG` values, RFC 6350 text escaping, and
-75-char line folding, so `parse(encode(card))` round-trips; property parameters
-(`;TYPE=work`) are ignored. A contact subset - no `BDAY` / `PHOTO` / grouping /
-parameter round-trip. The contacts counterpart to `ical`, and it genuinely
-shares that discipline: the folded-line / escaped-value / name-split codec was
-extracted into a private partial **`ical_vcard_shared.j`** that both `ical.j` and
-`vcard.j` `include` (the `label_zpl.j` shared-partial pattern - no `use` of its
-own, no separate module surface), so there is one implementation of the vCard /
-iCalendar content-line grammar. Both binaries over `strings` / `lists`. No new
-prereq.
-
-### M18.25 - `jsonl` module (JSON Lines)
-
-**Done.** Read and write newline-delimited JSON (JSONL / NDJSON):
-`jsonl.encode(records) -> string` (one compact `json.Value` per line, each
-newline-terminated) and `jsonl.decode(text) -> list of json.Value` (one record
-per non-blank line, blank / whitespace lines skipped and a trailing `\r`
-trimmed), so `decode(encode(rows))` round-trips; any top-level JSON type is a
-valid line. Whole-file `readFile` / `writeFile` / `appendFile`, plus a streaming
-`jsonl.Reader` (`openReader` / `hasMore` / `readRecord` / `closeReader`) for
-files too large to hold in memory - the wrapped `fs.File` shares its read
-position across value copies (the handle carve-out), so successive `readRecord`
-calls advance one stream; `readRecord` throws `Error{kind: "jsonl"}` at end,
-mirroring `fs.readLine`. A thin framing layer over `json` + `fs` (JSONL is a
-framing convention, not a new encoder - there is no parser to write, so it stays
-a `.j` module rather than folding into the `json` library). Pure `.j`, both
-binaries. No new prereq.
-
-### M18.26 - `ipnet` module (IP addresses and CIDR)
-
-**Done.** Parse and reason about IP addresses and CIDR networks, IPv4 and IPv6:
-`ipnet.parseAddress(s) -> Address` (dotted-quad, or IPv6 with `::` compression
-and a trailing embedded IPv4), `ipnet.toString(addr)` (canonical text, RFC 5952
-for IPv6 - lowercase, no leading zeros, leftmost-longest zero run compressed to
-`::`), `ipnet.parse(cidr) -> Network` (host bits zeroed), `ipnet.contains(net,
-addr) -> bool` (a version mismatch is false), and `netmask` / `broadcast` /
-`networkString` / `equal` / `version` accessors. An `Address` holds its raw
-`octets as bytes` (4 or 16, network byte order) and `version`; a `Network` pairs
-a base address with a `prefix`. Subnet math is bitwise (mask / broadcast /
-membership) - for allow-lists and CIDR reasoning; malformed input throws
-`Error{kind: "ipnet"}`. Pure `.j` over `strings` + `convert` and the bitwise
-operators; both binaries. No new prereq.
-
 ### M18.27 - `ntp` module (network time)
 
-An SNTP client: `ntp.query(server) -> Time` (and the clock offset) over `net`
-UDP, packing / unpacking the 48-byte NTP packet with `bytes` and bitwise ops and
-converting the NTP epoch through `time`. Small and self-contained. Needs the
-default binary (`net`). No new prereq.
+**Done.** A simple SNTP client (RFC 4330 / 5905): `ntp.query(host) -> Result`
+(port 123, 5s timeout) and `ntp.queryWith(address, timeoutMs) -> Result` over
+`net` UDP. `Result` carries `serverTime as time.Time`, `offset as
+time.Duration` (server minus local clock, from the four-timestamp SNTP formula),
+and `delay as time.Duration` (round-trip). The 48-byte NTP packet is packed /
+unpacked with `bytes` and the bitwise operators, and the NTP epoch (seconds
+since 1900) converts through `time`. Query-only - it measures the offset and
+hands it back, it does not discipline the clock or run as a daemon. Named `ntp`
+(not `sntp`) because SNTP is wire-identical to NTP and `ntp` is the discoverable,
+idiomatic name (cf. `beevik/ntp`, `ntplib`). Needs the default binary (`net`).
+
+Enabling change (like `io.eprintf` before it): **`net.setDeadline` now accepts a
+`net.UDPSocket`** as well as a `net.Conn` (a datagram `PacketConn` honours
+`SetDeadline` too), so a `recvFrom` can be bounded by a timeout - the SNTP client
+fails fast on a lost reply instead of hanging. Validated end to end against a
+real NTP server (sub-millisecond LAN offset). No other new prereq.
 
 ### M18.28 - `statsd` module (metrics)
 
