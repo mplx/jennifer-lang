@@ -29,6 +29,7 @@ use convert;
 use uuid;
 use encoding;
 use hash;
+use compress;
 
 /**
  * One registered (method, pattern, handler-name) triple. Exported only to
@@ -457,6 +458,34 @@ export func serveFile(ctx as Context, path as string) {
  */
 export func serveDir(ctx as Context, root as string) {
     httpd.serveDir($ctx.req, $root);
+    return null;
+}
+
+# acceptsGzip reports whether an Accept-Encoding header names gzip. A simple
+# substring test (the `q=0` disable form is not parsed).
+func acceptsGzip(accept as string) {
+    return strings.contains($accept, "gzip");
+}
+
+/**
+ * Answer with a body, gzip-compressed when the client accepts it. Sets `Vary:
+ * Accept-Encoding` always; if the request's `Accept-Encoding` names gzip, the
+ * body is compressed and sent with `Content-Encoding: gzip`, otherwise it is
+ * sent as-is. Set the `Content-Type` yourself (via `web.setHeader`) before
+ * calling. Worth it for large text / JSON / HTML; skip it for already-compressed
+ * payloads (images, archives).
+ * @param ctx {Context} the request context
+ * @param status {int} the HTTP status code
+ * @param body {string} the response body
+ */
+export func sendGzip(ctx as Context, status as int, body as string) {
+    httpd.setHeader($ctx.req, "Vary", "Accept-Encoding");
+    if (acceptsGzip(httpd.header($ctx.req, "Accept-Encoding"))) {
+        httpd.setHeader($ctx.req, "Content-Encoding", "gzip");
+        httpd.respond($ctx.req, $status, compress.pack(convert.bytesFromString($body, "utf-8"), "gzip"));
+        return null;
+    }
+    httpd.respond($ctx.req, $status, $body);
     return null;
 }
 

@@ -55,6 +55,7 @@ touches `httpd` directly:
 | `web.text($ctx, status, body)` | `null` | Respond with `text/plain`. |
 | `web.html($ctx, status, body)` | `null` | Respond with `text/html`. |
 | `web.sendJson($ctx, status, doc)` | `null` | Respond with `application/json` from a `json.Value`. |
+| `web.sendGzip($ctx, status, body)` | `null` | Respond, gzip-compressed when the client accepts it. |
 | `web.redirect($ctx, status, location)` | `null` | Redirect (301/302/303/307/308) with a `Location` header. |
 | `web.serveFile($ctx, path)` | `null` | Respond with a file from disk. |
 | `web.serveDir($ctx, root)` | `null` | Serve static files from a directory root. |
@@ -275,6 +276,22 @@ func page(ctx as web.Context) {
 
 The match is a simple exact / `*` comparison; the RFC 7232 comma-list and weak
 (`W/`) tag forms are not parsed.
+
+### Compression
+
+`web.sendGzip($ctx, status, body)` answers with the body gzip-compressed when the
+client's `Accept-Encoding` names gzip, otherwise plain. It always sets `Vary:
+Accept-Encoding` (so caches don't cross the wires) and, when compressing,
+`Content-Encoding: gzip`. Set the `Content-Type` yourself first. Worth it for
+large text / JSON / HTML; skip it for already-compressed payloads (images,
+archives).
+
+```jennifer
+func report(ctx as web.Context) {
+    web.setHeader($ctx, "Content-Type", "application/json");
+    web.sendGzip($ctx, 200, json.encode($bigDocument));
+}
+```
 
 ## Serving
 

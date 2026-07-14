@@ -2376,7 +2376,9 @@ HMAC-signed double-submit tokens over `hash.hmac`, the app owning the secret and
 opting in via a middleware (no session store, matching the dependency-light
 design). A sixth added **wildcard routes**: a trailing `*rest` pattern segment
 captures the path remainder (`/files/*path`; `/*path` as an SPA fallback), read
-with `web.param`.
+with `web.param`. A seventh added **response compression**: `web.sendGzip($ctx,
+status, body)` gzips the body when the client's `Accept-Encoding` allows,
+setting `Vary` / `Content-Encoding` (over the `compress` library).
 
 #### M18.16.1 - Cookies
 

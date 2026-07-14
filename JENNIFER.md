@@ -345,7 +345,8 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   web.Context)`, dispatched by `meta.callMain`. `web.Context` helpers:
   `param` / `query` / `method` / `path` / `header` / `body` (bytes) / `bodyJson`
   / `form` / `formValue` / `remoteAddr`, and `text` / `html` / `sendJson` /
-  `redirect` / `respond` / `setHeader` / `serveFile` / `serveDir`. **Cookies:**
+  `redirect` / `respond` / `setHeader` / `serveFile` / `serveDir` / `sendGzip`
+  (gzip when the client accepts it). **Cookies:**
   `web.cookie($ctx, name)` / `web.setCookie($ctx, name, value, opts)` with a
   `web.CookieOptions` (`path` / `domain` / `maxAge` / `httpOnly` / `secure` /
   `sameSite`). **Sessions:** `web.sessionId($ctx, cookieName)` resolves or mints

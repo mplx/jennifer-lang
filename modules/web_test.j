@@ -167,6 +167,13 @@ func testFormatSetCookieExpire() {
     testing.assertEqual(formatSetCookie("sid", "", $o), "sid=; Max-Age=-1; Secure");
 }
 
+func testAcceptsGzip() {
+    testing.assertTrue(acceptsGzip("gzip, deflate, br"));
+    testing.assertTrue(acceptsGzip("gzip"));
+    testing.assertFalse(acceptsGzip("deflate, br"));
+    testing.assertFalse(acceptsGzip(""));
+}
+
 func testCsrfValid() {
     def secret as string init "topsecret";
     def rand as string init "sometoken";
