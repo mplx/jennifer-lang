@@ -582,6 +582,16 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   round-trips. A contact subset (no `BDAY` / `PHOTO` / grouping / parameter
   round-trip). Shares the content-line codec with `ical`. Pure text over
   `strings` / `lists`; **both binaries**.
+- **`jsonl`** - JSON Lines (JSONL / NDJSON): newline-delimited JSON, one
+  independent `json.Value` per line. `jsonl.encode(records)` writes one compact
+  JSON value per line (each newline-terminated); `jsonl.decode(text) -> list of
+  json.Value` parses each non-blank line (blank / whitespace lines skipped,
+  trailing `\r` trimmed), so `decode(encode(rows))` round-trips. Whole-file
+  `readFile` / `writeFile` / `appendFile` (append is the growing-log pattern),
+  plus a streaming `jsonl.Reader` (`openReader` / `hasMore` / `readRecord` /
+  `closeReader`) that reads one record at a time for files too large for memory
+  (`readRecord` throws `Error{kind: "jsonl"}` at end - guard with `hasMore`). A
+  thin framing layer over `json` + `fs`; **both binaries**.
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).

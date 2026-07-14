@@ -158,6 +158,27 @@ func TestShippedVcardOverlayPasses(t *testing.T) {
 	}
 }
 
+// The shipped jsonl module's white-box overlay (modules/jsonl_test.j over
+// modules/jsonl.j) loads and its in-memory tests pass - a guard against jsonl.j
+// / jsonl_test.j drifting out of sync. The fs-backed helpers are covered
+// separately by TestJsonlFileAndStreaming.
+func TestShippedJsonlOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "jsonl_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the jsonl overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testRoundTrip", "testDecodeSkipsBlankLines", "testMixedTopLevelTypes"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
 // A plain test file with no sibling module keeps working (no overlay spliced),
 // and its own `export` is still rejected (it is not a module).
 func TestNonOverlayTestFileUnaffected(t *testing.T) {

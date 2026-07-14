@@ -1,0 +1,85 @@
+# `jsonl` - JSON Lines (JSONL / NDJSON)
+
+Import with `import "jsonl.j" as jsonl;`. Read and write **newline-delimited
+JSON**: one independent JSON value per line. A thin framing layer over
+[`json`](../libraries/json.md) - each record is a `json.Value`, so `encode` /
+`decode` compose `json.encode` / `json.decode` with a `\n` split / join, and the
+file helpers add `fs`. Pure Jennifer; runs on **both** binaries.
+
+```jennifer
+import "jsonl.j" as jsonl;
+use json;
+
+def rows as list of json.Value init [json.decode("{\"a\":1}"), json.decode("[2,3]")];
+def text as string init jsonl.encode($rows);   # {"a":1}\n[2,3]\n
+def back as list of json.Value init jsonl.decode($text);
+```
+
+Runnable: [`examples/modules/jsonl_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/jsonl_demo.j).
+
+## In-memory
+
+| Call | Returns | |
+| ---- | ------- | - |
+| `jsonl.encode(records)` | `string` | one compact JSON value per line, each newline-terminated |
+| `jsonl.decode(text)` | `list of json.Value` | one record per non-blank line |
+
+`records` is a `list of json.Value` - build them with `json.decode`,
+`json.map()` / `json.set`, or by re-encoding a struct through `json`. Any
+top-level JSON type is a valid line (object, array, number, string, `true` /
+`false` / `null`). `decode` skips blank and whitespace-only lines and trims a
+trailing `\r` (CRLF input), so `decode(encode(records))` round-trips. An empty
+list encodes to `""`; `decode("")` is the empty list.
+
+## Whole file
+
+| Call | Returns | |
+| ---- | ------- | - |
+| `jsonl.readFile(path)` | `list of json.Value` | read and decode a whole JSONL file |
+| `jsonl.writeFile(path, records)` | `null` | encode and write (replacing existing content) |
+| `jsonl.appendFile(path, records)` | `null` | encode and append (file created if missing) |
+
+`appendFile` is the common JSONL pattern - adding rows to a growing log or event
+stream without rewriting the file.
+
+## Streaming large files
+
+For JSONL too large to hold in memory, a `Reader` yields one record at a time.
+The wrapped `fs.File` is a handle - it shares its read position across value
+copies, so successive `readRecord` calls advance the same stream.
+
+| Call | Returns | |
+| ---- | ------- | - |
+| `jsonl.openReader(path)` | `Reader` | open a file for streaming |
+| `jsonl.hasMore(reader)` | `bool` | whether more input remains |
+| `jsonl.readRecord(reader)` | `json.Value` | the next record (skips blank lines) |
+| `jsonl.closeReader(reader)` | `null` | close the reader |
+
+`readRecord` mirrors `fs.readLine`: it throws `Error{kind: "jsonl"}` when the
+stream is exhausted, so guard it with `hasMore`.
+
+```jennifer
+def r as jsonl.Reader init jsonl.openReader("events.jsonl");
+while (jsonl.hasMore($r)) {
+    def rec as json.Value init jsonl.readRecord($r);
+    # process one record without loading the whole file
+}
+jsonl.closeReader($r);
+```
+
+## Scope
+
+- **Records are `json.Value`.** JSONL is a framing convention, not a new
+  encoder - the actual JSON work stays in the `json` library, and rebuilding a
+  typed target from a decoded record is the same explicit step it is there (no
+  map-to-struct coercion).
+- **`\n`-separated.** Records are separated by line feed; a trailing `\r` is
+  tolerated on read. `encode` writes `\n` and terminates the last line too.
+
+## See also
+
+- [json.md](../libraries/json.md) - the encoder / decoder and the `json.Value`
+  accessors each record is built from.
+- [fs.md](../libraries/fs.md) - the file surface the read / write / stream
+  helpers build on.
+- [modules/index.md](index.md) - the module catalog and import rules.

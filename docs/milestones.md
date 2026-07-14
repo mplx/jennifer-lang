@@ -1334,10 +1334,20 @@ prereq.
 
 ### M18.25 - `jsonl` module (JSON Lines)
 
-Read and write newline-delimited JSON (JSONL / NDJSON):
-`jsonl.encode(records) -> string` and `jsonl.decode(text) -> list of json.Value`,
-plus line-at-a-time helpers over `fs` for large files. A thin layer over `json` +
-`io` / `fs`. Pure `.j`, both binaries. No new prereq.
+**Done.** Read and write newline-delimited JSON (JSONL / NDJSON):
+`jsonl.encode(records) -> string` (one compact `json.Value` per line, each
+newline-terminated) and `jsonl.decode(text) -> list of json.Value` (one record
+per non-blank line, blank / whitespace lines skipped and a trailing `\r`
+trimmed), so `decode(encode(rows))` round-trips; any top-level JSON type is a
+valid line. Whole-file `readFile` / `writeFile` / `appendFile`, plus a streaming
+`jsonl.Reader` (`openReader` / `hasMore` / `readRecord` / `closeReader`) for
+files too large to hold in memory - the wrapped `fs.File` shares its read
+position across value copies (the handle carve-out), so successive `readRecord`
+calls advance one stream; `readRecord` throws `Error{kind: "jsonl"}` at end,
+mirroring `fs.readLine`. A thin framing layer over `json` + `fs` (JSONL is a
+framing convention, not a new encoder - there is no parser to write, so it stays
+a `.j` module rather than folding into the `json` library). Pure `.j`, both
+binaries. No new prereq.
 
 ### M18.26 - `ipnet` module (IP addresses and CIDR)
 
