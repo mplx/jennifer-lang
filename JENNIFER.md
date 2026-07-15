@@ -448,7 +448,7 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `1.2.3 - 2.3.4`, x-ranges `1.x`; prereleases excluded unless a comparator pins
   one at the same major.minor.patch), `maxSatisfying` / `minSatisfying(versions,
   range)`, `minVersion(range)`, `validRange(range)`, and the solver algebra
-  `intersects(a, b)` / `subset(inner, outer)` / `gtr` / `ltr` / `outside`.
+  `intersects(a, b)` / `subset(inner, outer)` / `gtr` / `ltr` / `outside` / `simplifyRange(versions, range)`, all prerelease-precise.
 - **`imap`** - receive mail (IMAP4rev1, RFC 3501) over `net`, a reading subset:
   `imap.connect(opts)` -> `imap.Session`, then `selectMailbox(session, name)`
   (count), `search(session)` (sequence numbers), `fetch(session, n)` (a whole

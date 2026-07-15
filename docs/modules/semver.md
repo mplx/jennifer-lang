@@ -69,6 +69,7 @@ Build it with `semver.parse` or a literal
 | `semver.gtr(v, range)`     | `bool`           | Whether `v` is above the whole range.                                 |
 | `semver.ltr(v, range)`     | `bool`           | Whether `v` is below the whole range.                                 |
 | `semver.outside(v, range)` | `bool`           | `gtr(v, range) or ltr(v, range)`.                                     |
+| `semver.simplifyRange(vers, range)` | `string`| The shortest range matching the same subset of `vers`.                |
 
 ## Strict, not a loose parser
 
@@ -205,9 +206,23 @@ operators reason over interval sets - no candidate list needed:
 | `semver.ltr(v, range)` | is `v` below the whole range? |
 | `semver.outside(v, range)` | above or below (not in an interior gap) |
 
-These operate on the **release** version space (prereleases ignored) - the
-regime a resolver reasons in. Full prerelease-precise range algebra and
-`simplifyRange` are the only pieces intentionally left out.
+The algebra is **prerelease-precise**: intervals carry full-version bounds with
+inclusivity flags plus the `major.minor.patch` tuples at which each clause
+admits prereleases, so `intersects(">=1.2.3-rc.1 <1.2.3", ">=1.5.0-rc.1 <1.5.0")`
+is `false` (prereleases at different tuples never meet) while
+`intersects(">=1.2.3-rc.1 <1.2.3", ">=1.2.3-rc.2 <1.2.3")` is `true`.
+
+### Simplifying against a version set
+
+`semver.simplifyRange(versions, range)` returns the shortest range that matches
+the *same subset of the given versions* - runs of consecutive matches collapse
+to `>=lo <=hi` clauses joined by `||`, `*` when all match, `<0.0.0-0` when none
+do, and the original is kept when it is already at least as short:
+
+```jennifer
+def vers as list of string init ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0"];
+semver.simplifyRange($vers, ">=1.0.0 <=1.0.0 || >=1.1.0 <=1.3.0");   # ">=1.0.0 <=1.3.0"
+```
 
 ## See also
 

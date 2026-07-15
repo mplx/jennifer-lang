@@ -344,3 +344,40 @@ func testGtrLtrOutside() {
     testing.assertTrue(outside("0.1.0", "^1.2.0"));
     testing.assertFalse(outside("2.5.0", "^1.0.0 || ^3.0.0"));  # interior gap is not outside
 }
+
+# --- range algebra: prerelease-precise ------------------------------
+
+func testMinVersionPrerelease() {
+    testing.assertEqual(minVersion(">=1.2.3-rc.1"), "1.2.3-rc.1");
+    testing.assertEqual(minVersion(">=1.2.3-rc.1 <2.0.0"), "1.2.3-rc.1");
+    testing.assertEqual(minVersion(">1.2.3-rc.1"), "1.2.3");   # excluded prerelease -> its release
+}
+
+func testIntersectsPrerelease() {
+    testing.assertTrue(intersects(">=1.2.3-rc.1 <1.2.3", ">=1.2.3-rc.2 <1.2.3"));   # same tuple
+    testing.assertFalse(intersects(">=1.2.3-rc.1 <1.2.3", ">=1.5.0-rc.1 <1.5.0"));  # different tuple
+    testing.assertFalse(intersects(">=1.2.3-rc.1 <1.2.3", "^1.0.0"));               # pre-only vs release
+    testing.assertTrue(intersects(">=1.2.3-rc.1 <2.0.0", "^1.5.0"));                # shares releases
+}
+
+func testSubsetPrerelease() {
+    testing.assertTrue(subset(">=1.2.3-rc.1 <1.3.0", ">=1.2.3-rc.1 <1.3.0"));
+    testing.assertFalse(subset(">=1.2.3-rc.1 <2.0.0", "^1.2.3"));                   # caret admits no prereleases
+    testing.assertTrue(subset(">=1.2.3-rc.5 <1.5.0", ">=1.2.3-rc.1 <2.0.0"));       # outer pins the tuple
+}
+
+func testLtrPrerelease() {
+    testing.assertTrue(ltr("1.2.3-rc.0", ">=1.2.3-rc.1 <2.0.0"));
+    testing.assertFalse(ltr("1.2.3-rc.2", ">=1.2.3-rc.1 <2.0.0"));
+}
+
+# --- simplifyRange --------------------------------------------------
+
+func testSimplifyRange() {
+    def vers as list of string init ["1.0.0", "1.1.0", "1.2.0", "1.3.0", "2.0.0", "2.1.0"];
+    testing.assertEqual(simplifyRange($vers, ">=1.0.0 <=1.0.0 || >=1.1.0 <=1.3.0"), ">=1.0.0 <=1.3.0");
+    testing.assertEqual(simplifyRange($vers, ">=1.0.0"), "*");
+    testing.assertEqual(simplifyRange($vers, "^9.0.0"), "<0.0.0-0");
+    testing.assertEqual(simplifyRange($vers, "^1.0.0"), "^1.0.0");   # original kept when shorter
+    testing.assertEqual(simplifyRange($vers, "1.0.0 || 2.1.0"), "1.0.0 || 2.1.0");
+}
