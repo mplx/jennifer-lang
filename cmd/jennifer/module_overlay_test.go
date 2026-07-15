@@ -411,6 +411,27 @@ func TestShippedWebsocketOverlayPasses(t *testing.T) {
 	}
 }
 
+// The shipped amqp module's white-box overlay (modules/amqp_test.j over
+// modules/amqp.j) loads and its integer / string / table encode-decode tests
+// pass - a guard against amqp.j / amqp_test.j drifting. The full handshake +
+// publish / get round trip is covered by TestAmqpRoundTrip.
+func TestShippedAmqpOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "amqp_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the amqp overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testPutIntegers", "testPutStrings", "testReadIntegers", "testReadShortStr", "testShortStrTruncatedNul"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
 // A plain test file with no sibling module keeps working (no overlay spliced),
 // and its own `export` is still rejected (it is not a module).
 func TestNonOverlayTestFileUnaffected(t *testing.T) {

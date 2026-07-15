@@ -73,6 +73,9 @@ from the start. See [Editor & AI support](user-guide/tooling.md).
 - **[Libraries](libraries/index.md)** - per-library reference plus
   an alphabetical [cheatsheet](libraries/cheatsheet.md) of every
   builtin.
+- **[Modules](modules/index.md)** - the Jennifer-coded, importable
+  module ecosystem (`import "name.j";`): formats, mail, stores, web,
+  and protocol clients, each with its own reference page.
 - **[Technical reference](technical/index.md)** - implementation
   details for the lexer, parser, interpreter, and CLI.
 - **[Project](milestones.md)** - milestones, design stances,

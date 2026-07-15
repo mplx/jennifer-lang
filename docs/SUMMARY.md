@@ -52,6 +52,7 @@
 # Modules
 
 - [Catalog](modules/index.md)
+- [`amqp`](modules/amqp.md)
 - [`ansi`](modules/ansi.md)
 - [`bucket`](modules/bucket.md)
 - [`cron`](modules/cron.md)

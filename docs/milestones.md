@@ -1369,12 +1369,25 @@ an `httpd` connection-hijack hook). Needs the default binary. No new prereq.
 
 ### M18.33 - `amqp` module (RabbitMQ)
 
-An AMQP 0-9-1 client over `net` (RabbitMQ and compatible brokers): the
-connection / channel handshake, `publish`, and `consume`, with the binary
-frame / method encoding built from `bytes` and bitwise ops. The **largest**
-protocol module attempted - much bigger than `mqtt` - so a candidate to
-reassess as a Go library if the tree-walker becomes the bottleneck. Needs the
-default binary. No new prereq.
+**Done.** An AMQP 0-9-1 client over `net` for RabbitMQ and compatible brokers -
+the largest protocol module. `connect` runs the connection + channel handshake
+(protocol header, `Connection.Start` / `Start-Ok` with SASL PLAIN,
+`Tune` / `Tune-Ok` with heartbeats disabled, `Open` / `Open-Ok`,
+`Channel.Open`); `declareQueue` -> `QueueInfo`; `publish` / `publishText` send a
+method frame + content-header frame + body frame; `get` pulls the next message
+with a synchronous `Basic.Get` (returning `Message.empty` when the queue is
+empty, reassembling the body across frames) and `ack` acknowledges it; `close`
+does a clean `Connection.Close`. All the AMQP encoding - octet / short / long /
+longlong integers, short- and long-strings, the (empty) field-table, and the
+`type + channel + size + payload + 0xCE` frame envelope - is hand-built from
+`bytes` and the bitwise operators. Single channel (1), SASL PLAIN, no TLS, pull
+(not async `Basic.Consume` delivery). The pure integer / string / table
+encode-decode is unit-tested in the `modules/amqp_test.j` overlay; the full
+handshake + declare + publish + get + ack + close round trip runs against a
+minimal in-process AMQP broker (stdlib only) in `cmd/jennifer/amqp_test.go`,
+which echoes the published body back through `Basic.Get` so the wire bytes are
+verified end to end. A candidate to reassess as a Go library if the tree-walker
+becomes the throughput bottleneck. Needs the default binary. No new prereq.
 
 ### M18.34 - `multipart` module (form-data)
 

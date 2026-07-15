@@ -715,6 +715,20 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   mask and handshake nonce use `math`'s non-crypto RNG (not a security boundary).
   A protocol error or dropped connection throws `Error{kind: "websocket"}`. Client
   only (no server upgrade). **Default `jennifer` binary only** (`net`).
+- **`amqp`** - an AMQP 0-9-1 client for RabbitMQ over `net` (the largest protocol
+  module). `amqp.connect(amqp.options(host, user, password))` (tweak with
+  `withPort` / `withVhost`) runs the full handshake (protocol header,
+  `Connection.Start`/`Start-Ok` SASL PLAIN, `Tune`/`Tune-Ok`, `Open`/`Open-Ok`,
+  `Channel.Open`) and returns a `Conn`. `declareQueue(c, name, durable) ->
+  QueueInfo{name, messageCount, consumerCount}`; `publish(c, exchange, routingKey,
+  bytesBody)` / `publishText(c, exchange, routingKey, text)` send method +
+  content-header + body frames (exchange "" routes to a queue by name);
+  `get(c, queue, autoAck) -> Message{empty, deliveryTag, exchange, routingKey, body}`
+  pulls the next message with a synchronous `Basic.Get` (loop until `empty`);
+  `ack(c, deliveryTag)`; `close(c)`. All integer / short-string / long-string /
+  field-table / frame encoding is hand-built from `bytes` and the bitwise operators.
+  Single channel, SASL PLAIN, no TLS, pull (not async delivery). A protocol error
+  throws `Error{kind: "amqp"}`. **Default `jennifer` binary only** (`net`).
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).
