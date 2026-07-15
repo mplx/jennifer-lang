@@ -411,6 +411,74 @@ task.wait($server);`, webMod, httpMod)
 	}
 }
 
+// TestWebMultipartForm drives a multipart/form-data upload through
+// web.multipartForm: the .j client builds a form (a field + a file) with the
+// multipart module and POSTs it; the handler parses it back with
+// web.multipartForm and echoes a summary. This also exercises cross-module
+// struct identity - a multipart.Part flows entry -> web -> multipart and back.
+func TestWebMultipartForm(t *testing.T) {
+	webMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "web.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "http.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mpMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "multipart.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+use httpd;
+use task;
+use convert;
+import %q as web;
+import %q as http;
+import %q as multipart;
+
+func upload(ctx as web.Context) {
+    def items as list of multipart.Part init web.multipartForm($ctx);
+    def out as string init "";
+    for (def p in $items) {
+        if (multipart.isFile($p)) {
+            $out = $out + "file:" + $p.name + "=" + $p.filename + "(" + convert.toString(len($p.data)) + ");";
+        } else {
+            $out = $out + "field:" + $p.name + "=" + multipart.text($p) + ";";
+        }
+    }
+    web.text($ctx, 200, $out);
+}
+
+def app as web.App init web.new();
+$app = web.post($app, "/upload", "upload");
+def srv as httpd.Server init httpd.listen("127.0.0.1:0");
+def addr as string init httpd.address($srv);
+def server as task of null init spawn { web.serveOn($app, $srv); };
+def base as string init "http://" + $addr;
+
+def parts as list of multipart.Part init [
+    multipart.field("name", "Jane Doe"),
+    multipart.file("doc", "a.txt", "text/plain", convert.bytesFromString("hello", "utf-8"))
+];
+def form as multipart.Built init multipart.buildWith($parts, "TESTBND");
+def h as map of string to string init {};
+def resp as http.Response init http.post($base + "/upload", $form.contentType, convert.stringFromBytes($form.body, "utf-8"), $h);
+testing.assertEqual($resp.body, "field:name=Jane Doe;file:doc=a.txt(5);");
+
+httpd.shutdown($srv);
+task.wait($server);`, webMod, httpMod, mpMod)
+
+	progPath := filepath.Join(dir, "multipart.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("web multipart program failed with code %d", code)
+	}
+}
+
 // TestWebCsrf drives the CSRF flow: a GET mints a token (returned in the body,
 // set in the csrf cookie); a guarded POST replaying the token in X-CSRF-Token
 // plus the cookie is accepted, and a POST with neither is rejected 403.

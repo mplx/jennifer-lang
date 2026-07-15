@@ -30,6 +30,7 @@ use uuid;
 use encoding;
 use hash;
 use compress;
+import "./multipart.j" as formdata;
 
 /**
  * One registered (method, pattern, handler-name) triple. Exported only to
@@ -360,6 +361,21 @@ export func formValue(ctx as Context, name as string) {
         return $fields[$name];
     }
     return "";
+}
+
+/**
+ * Parse a `multipart/form-data` request body (a file-upload form) into its
+ * parts, using the request's Content-Type header (with the boundary) and the
+ * raw body. The completion of the body-parser family alongside `web.form`
+ * (urlencoded) and `web.bodyJson` (JSON). Each `multipart.Part` is a field or a
+ * file (`multipart.isFile` / `multipart.text` distinguish them); the handler
+ * imports `multipart.j` to name the type. A missing boundary or malformed part
+ * throws `Error{kind: "multipart"}`.
+ * @param ctx {Context} the request context
+ * @return {list of multipart.Part} the form parts (fields and files)
+ */
+export func multipartForm(ctx as Context) {
+    return formdata.parse(httpd.header($ctx.req, "Content-Type"), httpd.body($ctx.req));
 }
 
 /**

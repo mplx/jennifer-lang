@@ -1404,7 +1404,12 @@ parse round-trips (text fields, a file part, binary data, hand-written bodies)
 and the boundary / header extraction are unit-tested in the
 `modules/multipart_test.j` overlay - a pure module, so no live server test is
 needed. Over `strings` + `bytes`; pairs with `web` / `http` for uploads. Pure
-`.j`, both binaries. No new prereq.
+`.j`, both binaries. The pairing is realized on the `web` side: **`web.j` gained
+`web.multipartForm(ctx) -> list of multipart.Part`** (importing `multipart.j`
+as `formdata`), completing its body-parser family alongside `web.form`
+(urlencoded) and `web.bodyJson` (JSON); a live upload through it - including the
+cross-module `multipart.Part` identity entry -> web -> multipart and back - is
+verified in `cmd/jennifer/web_test.go` (`TestWebMultipartForm`). No new prereq.
 
 ### M18.35 - `pdfwriter` module (PDF documents)
 

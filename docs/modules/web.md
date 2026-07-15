@@ -49,6 +49,7 @@ touches `httpd` directly:
 | `web.bodyJson($ctx)` | `json.Value` | The request body decoded as JSON. |
 | `web.form($ctx)` | `map of string to string` | The `x-www-form-urlencoded` body, decoded. |
 | `web.formValue($ctx, name)` | `string` | One form field (`""` if absent). |
+| `web.multipartForm($ctx)` | `list of multipart.Part` | The `multipart/form-data` body (file uploads), parsed via the [`multipart`](multipart.md) module. Import `multipart.j` in the handler to name `multipart.Part` / use `multipart.isFile` / `multipart.text`. |
 | `web.remoteAddr($ctx)` | `string` | The client's `host:port`. |
 | `web.setHeader($ctx, name, value)` | `null` | Set a response header (before responding). |
 | `web.respond($ctx, status, body)` | `null` | Send a response (body is a string). |
