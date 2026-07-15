@@ -100,6 +100,13 @@ io.printf("pi=%f\n", m.PI);               # aliased prefix
 - **Repeating a `use` is a silent no-op in the REPL.** In a batch
   program a duplicate `use` is accepted as a no-op too. Pick one
   form per program.
+- **Module `import` works in the REPL.** `import "./mod.j";` at the
+  prompt loads the module and binds its namespace (local `./` / `../`
+  paths resolve against the current directory; a bare name walks the
+  system module path), so a later `mod.member` resolves across inputs.
+  Re-typing the same import is a no-op. A module is loaded once and
+  cached by path, so editing the file and re-importing in the same
+  session keeps the cached version - restart the REPL to pick up edits.
 
 #### `len` is a language built-in
 

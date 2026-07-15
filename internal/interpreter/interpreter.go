@@ -832,7 +832,7 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	// Module imports load (and their modules initialise) before this
 	// program's body runs - depth-first post-order, so an imported module
 	// is fully initialised before the code that imports it.
-	if err := i.loadModuleImports(prog); err != nil {
+	if err := i.loadModuleImports(prog, false); err != nil {
 		return err
 	}
 	if i.prof != nil {
@@ -1090,6 +1090,14 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 	}
 	if i.global == nil {
 		i.global = NewEnvironment(nil)
+	}
+	// Module imports (`import "..."`) load and bind their namespaces before the
+	// input's body runs, so a later `alias.member` resolves. The REPL flag lets
+	// a re-submitted `import` no-op instead of erroring on the bound alias.
+	// Modules stay disabled (a positioned error) if the REPL never called
+	// EnableModules.
+	if err := i.loadModuleImports(prog, true); err != nil {
+		return Null(), err
 	}
 	last := Null()
 	for _, st := range prog.TopLevel {

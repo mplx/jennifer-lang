@@ -35,7 +35,7 @@ const (
 // editing shortcuts. When stdin is not a terminal (piped input, tests,
 // `jennifer repl < script.j`) we fall back to bufio line reading - the
 // editor would do nothing useful on a non-interactive stream anyway.
-func runRepl() int {
+func runRepl(searchDirs []string) int {
 	in := interpreter.New()
 	// Mark this interpreter as REPL-owned so stdin-consuming builtins
 	// (`readLine`, `eof`) refuse rather than fighting the line editor
@@ -48,6 +48,13 @@ func runRepl() int {
 		fmt.Fprintf(os.Stderr, "jennifer: %v\n", err)
 		return 1
 	}
+
+	// Enable `import "..."` in the REPL: local imports (`./`, `../`) resolve
+	// relative to the current directory; bare names walk searchDirs (the system
+	// module dir). Each module loads into a fresh sub-interpreter that
+	// installLibraries populates. Without this the REPL would accept an
+	// `import` line and silently register no namespace.
+	in.EnableModules(cwd, searchDirs, loadModuleProgram, installLibraries)
 
 	// Print the banner in cooked mode so newlines auto-translate. Raw
 	// mode (if we enter it) starts on the next line.

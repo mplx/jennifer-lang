@@ -134,8 +134,9 @@ func TestModuleInitThrowFailsAtLoad(t *testing.T) {
 }
 
 func TestModuleImportsWithoutEnableError(t *testing.T) {
-	// A program with module imports but no EnableModules (e.g. the REPL path)
-	// fails with a clear message rather than silently ignoring the import.
+	// A program with module imports but no EnableModules (an embedding that
+	// never wired the module system) fails with a clear message rather than
+	// silently ignoring the import.
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "dep.j"), []byte(`def const D as int init 1;`), 0o644); err != nil {
 		t.Fatal(err)

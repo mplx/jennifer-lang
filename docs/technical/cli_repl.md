@@ -8,6 +8,17 @@ imports and method definitions are idempotent / re-assignable so the user
 can iterate, and the value of a trailing `ExprStmt` is returned so the loop
 can print it.
 
+Both import kinds work at the prompt: `use LIB;` activates a library
+namespace, and `import "PATH.j";` loads a module (`runRepl` calls
+`EnableModules` with the current directory as the local-import base and the
+system module dir as the search path, so `./mod.j` resolves against the cwd and
+a bare `mod.j` through the search path). `EvalInteractive` calls
+`loadModuleImports` in REPL mode, which no-ops a re-submitted `import` of the
+same module under the same alias (a module is run-once / cached) while still
+rejecting an alias bound to a different module. Because caching is by resolved
+path, editing a module file and re-importing it in the same session serves the
+cached version - restart the REPL to pick up edits.
+
 ## Echoing a value
 
 Because `EvalInteractive` returns the trailing `ExprStmt`'s value, you can

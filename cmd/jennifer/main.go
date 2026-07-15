@@ -63,11 +63,14 @@ func main() {
 			usage()
 			os.Exit(2)
 		}
-		if _, err := setupSysmoddir(""); err != nil {
+		sm, err := setupSysmoddir("")
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "jennifer: %v\n", err)
 			os.Exit(2)
 		}
-		os.Exit(runRepl())
+		// The REPL resolves bare-name module imports through the system module
+		// dir (local `./` imports resolve against the cwd, set in runRepl).
+		os.Exit(runRepl([]string{sm.Dir}))
 	case "tokens":
 		if len(os.Args) != 3 {
 			usage()
