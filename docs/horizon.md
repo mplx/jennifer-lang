@@ -455,20 +455,45 @@ A grab-bag, recorded when it comes up.
   uncommon libraries writable in Jennifer) is the module system's job with
   zero binary cost; build-time selection is only for the curated Go-level
   core.
-- **Relational databases (`sql`).** Postponed pending a design discussion. A
-  system library - a storage engine and SQL planner can't be interpreted,
-  and wire-protocol auth needs crypto - driver-agnostic over Go's
-  `database/sql`, SQLite first, then MySQL / PostgreSQL; standard-Go only,
-  stubbed on `jennifer-tiny`. The questions that gate it: the SQLite driver
-  (cgo `mattn/go-sqlite3`, which breaks static / cross-compile / TinyGo, vs
-  pure-Go `modernc.org/sqlite`, multi-MB); whether to accept the first
-  heavyweight dependency in the library layer (a break from "libraries stay
-  dependency-free") and, if so, gate it as a build-tag opt-in (per the note
-  above); and the result-row shape - an opaque `sql.Row` accessor type
-  mirroring `json.Value` vs a typed struct via the deferred map-to-struct
-  conversion. Values bind only through `?` placeholders (injection safety).
-  Contrast the text-protocol stores `redis` / `memcache`, which are pure
-  Jennifer over `net` and need none of this.
+- **SQLite (`sql` engine backend).** The client-server half of relational
+  support - MySQL / MariaDB + PostgreSQL - is committed as
+  [M20.7](milestones.md) (a `sql` system library over Go's `database/sql`,
+  pure-Go drivers). SQLite stays parked here, and it is worth being precise
+  about *why*, because it is not the reason it first looks like. SQLite is
+  **also** just a pure-Go `database/sql` driver - `modernc.org/sqlite`,
+  registered with the same one-line `import _` as `go-sql-driver/mysql` or
+  `pgx`, cross-compiling cleanly like any pure-Go package (the cgo
+  `mattn/go-sqlite3`, which *does* break static / cross-compile / TinyGo and
+  needs a C toolchain, is rejected in its favor). So integration effort and
+  API are identical to M20.7's two drivers; SQLite is in every practical
+  sense "just a third driver" for the same library, sharing its surface and
+  opaque `sql.Row` result shape.
+  The one real difference is **weight**. `modernc.org/sqlite` is the entire
+  SQLite C source transpiled to Go plus `modernc.org/libc` (a Go libc
+  reimplementation) - multiple MB of generated code, versus the
+  hand-written, few-hundred-KB protocol clients M20.7 ships. Baking that into
+  every default `jennifer` bloats the binary for the many users who only ever
+  touch a network database. That, and only that, is why SQLite is gated as a
+  **build-tag opt-in** (`-tags sqlite`), surfaced as a `jennifer-full`
+  release artifact - a build *variant* of the default binary, not a third
+  supported brand. The binary ladder becomes `jennifer-tiny` (DBs stubbed) ⊂
+  `jennifer` (MySQL + Postgres) ⊂ `jennifer-full` (+ SQLite). The dependency
+  break from "libraries stay dependency-free" is already accepted at M20.7;
+  SQLite adds size, not a new principle.
+  **TinyGo** is the one place SQLite is categorically worse, and it is
+  architectural, not a build choice: `modernc.org/sqlite`'s libc emulation
+  (unsafe, goroutines, syscall-level memory management) cannot compile under
+  TinyGo, and no TinyGo-compatible SQLite exists. Unlike a wire-protocol
+  database - which could in principle be reimplemented as pure `.j` over a
+  net-enabled tiny rebuild - SQLite has no wire protocol and so can *never*
+  reach the embeddable binary. That is the genuinely ironic gap: a local,
+  file-based store is exactly what a minimal embedded target would most want,
+  and it is the one database that binary can't have with current tooling.
+  Because SQLite is really just another driver, the only open call is timing:
+  fold it into M20.7 behind the `-tags sqlite` gate, or keep it deferred here
+  until the `jennifer-full` variant earns its place in the release / CI /
+  packaging matrix. Contrast the text-protocol stores `redis` / `memcache`,
+  pure Jennifer over `net`, which need none of this.
 - **Explicit map-to-struct conversion.** A spelled-out, validating way to
   turn a `json.Value` object (or a homogeneous `map of string to T`) into a
   typed struct - the sanctioned counterpart to the *rejected* implicit

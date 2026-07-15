@@ -1808,6 +1808,69 @@ supported platform), a friendly-error stub elsewhere. Default binary; a
 Linux `/dev` + `ioctl` interface). Together with `gpio` they complete the SBC
 I/O story.
 
+### M20.7 - `sql` (MySQL / MariaDB + PostgreSQL)
+
+A relational-database client library over Go's `database/sql`, shipping the
+two **client-server** engines: MySQL / MariaDB (`go-sql-driver/mysql`) and
+PostgreSQL (`jackc/pgx`), both **pure-Go** drivers (no cgo, so cross-compile
+and the best-effort macOS / Windows artifacts stay clean). SQLite - the one
+*embedded* engine - is deliberately **not** here; it needs a multi-MB
+dependency and cannot build under TinyGo, so it stays a build-tag opt-in
+parked in [horizon](horizon.md) (the `jennifer-full` variant).
+
+**Why a Go library and not a `.j` module over `net`.** MySQL and Postgres are
+open TCP wire protocols, so a client *is* writable in pure Jennifer - the same
+shape as `redis` / `memcache` / `imap`, and the auth crypto it needs (SHA-1,
+SHA-256, `hash.hmac`, PBKDF2 as iterated HMAC) already ships. The deciding
+factor is not performance: a database client is **latency-bound** (network
+round-trip + server execution dominate; client-side decode only becomes the
+cost center when streaming 10^5+ rows, a bulk workload Jennifer is not the
+right tool for regardless of driver), and the COW shared-marker protocol
+already makes materializing a large result set amortized O(N). The deciding
+factor is **correctness maturity**: the mature drivers have absorbed a decade
+of protocol long-tail - every auth plugin (MySQL `caching_sha2_password`
+full-auth / the RSA path, Postgres SCRAM-SHA-256), charset handling, NULL
+semantics, multi-result-sets, server-version quirks - that a hand-rolled `.j`
+client would re-derive one edge case at a time. For databases users depend on
+daily, that maturity is worth the dependency. Going Go also makes the auth
+crypto the driver's problem, not the language's, so this needs nothing from
+[M20.1 `crypto`](#m201---crypto).
+
+**The deliberate dependency break.** These are the **first heavyweight
+dependencies in the library layer** - a conscious exception to the
+dependency-free discipline `CLAUDE.md` states for the library layer (the
+only third-party dependency today is CLI-scoped `golang.org/x/term`). Both
+drivers are pure-Go, but they are real dependency trees. The exception gets a
+reasoning record in [technical/design-decisions.md](technical/design-decisions.md)
+when it lands - the sanctioned home for a feature that ships despite appearing
+to cut against project doctrine - justified as above, not slid into.
+
+**Build / TinyGo.** Build-tag split exactly like `net` / `httpd`:
+`sqllib_std.go` (`//go:build !tinygo`) imports `database/sql` + drivers;
+`sqllib_tiny.go` (`//go:build tinygo`) registers `use sql;` and returns a
+friendly positioned "not available on this build" error. TinyGo never
+compiles the driver imports, so the language stays TinyGo-clean and the
+interpreter core is untouched. On stock `jennifer-tiny` the engines are
+unavailable anyway (no net driver), consistent with every net-backed module.
+
+**Surface.** Integer-handle-into-a-registry like `fs` / `net`:
+`sql.open(driver, dsn) -> Connection`, `sql.query(conn, sql, params...) ->
+Rows`, `sql.exec(conn, sql, params...) -> Result` (affected-rows /
+last-insert-id), prepared statements, `sql.begin` / `commit` / `rollback`
+transactions, `sql.close`. **Values bind only through placeholders**
+(injection safety) - `database/sql` abstracts the per-driver spelling (`?`
+for MySQL, `$1` for Postgres). The result-row shape is an opaque `sql.Row`
+`KindObject` mirroring `json.Value` (foreshadowed in interpreter note 18),
+walked by accessors; a typed-struct path waits on the deferred map-to-struct
+conversion. A `.j` `postgres.j` module (Postgres has the clean protocol, no
+RSA gap) remains a possible later *optional* dependency-free alternative and
+language stress-test - not the primary path.
+
+**Builds on.** The [M21.5 `orm` module](#m215---orm-module) is layered on this
+library (its hard prerequisite) and inherits the `sql.Row` caveat above - its
+typed-row ergonomics wait on the same deferred map-to-struct conversion, so it
+graduates in stages.
+
 ## M21 - general backlog (catch-all)
 
 The general holding area for milestones that fit no other bucket - not a
@@ -1891,6 +1954,51 @@ with an account key (RS256 / ES256) and the flow needs CSR generation - both
 asymmetric-crypto operations. Composes with `web` / `httpd` to serve the HTTP-01
 challenge. Graduates into the M18 module track when `crypto` lands. Needs the
 default binary. Discipline as usual.
+
+### M21.5 - `orm` module
+
+A relational mapper layered over the [M20.7 `sql`](#m207---sql-mysql--mariadb--postgresql)
+library (its **hard prerequisite** - no `sql`, no `orm`), and a good stress-test
+of how far the module system stretches. Jennifer's semantics dictate the shape,
+and it is **Data Mapper, not Active Record**: structs are value-semantic and
+carry no methods, and a module is declarations-only with no mutable state, so a
+row object cannot know how to `save()` / `delete()` itself and there is no place
+to hold identity-map or dirty-tracking state. The pattern is therefore a
+**repository / table-gateway** - the caller passes a record and a schema to
+module functions: `orm.insert(conn, schema, record)`, `orm.find(conn, schema,
+id) -> record`, `orm.update` / `orm.delete`, `orm.all(conn, query)`.
+
+Three constraints shape the surface:
+
+- **Explicit schema descriptor (no reflection).** `.j` cannot introspect a
+  struct's fields, so the caller declares the mapping once - an `orm.Schema`
+  (table name, column-to-field list, primary key, per-column type) built with a
+  small constructor. This is the module's central object; everything keys off it.
+- **Non-mutating functional query builder**, mirroring the `json.Value` write
+  surface (`set` / `insert` / `append` returning fresh handles) rather than
+  method chaining (values have no methods): `orm.where(orm.from(schema), "age",
+  ">", 18)` returns a new `orm.Query`, composed functionally through
+  `orm.where` / `orm.orderBy` / `orm.limit` / `orm.join`, then rendered to
+  **parameterized** SQL - values bind only through placeholders (injection
+  safety inherited from `sql`). A small **dialect** layer (placeholder spelling
+  `?` vs `$1`, identifier quoting, `LIMIT` / `OFFSET`, `RETURNING`) is a backend
+  selector on one module, not parallel modules (stance 1 / the one-module rule).
+- **Row-to-struct mapping is partly gated.** `sql.query` yields an opaque
+  `sql.Row`; turning it into a *typed* struct wants the deferred **explicit
+  map-to-struct conversion** ([horizon](horizon.md)). So `orm` ships in two
+  steps: first a `map of string to V` (or by-hand field extraction via the
+  schema) row form that needs nothing new, then the typed-struct return once
+  map-to-struct lands.
+
+Transactions come straight from `sql.begin` / `commit` / `rollback`. Kept out of
+v1: relations beyond a plain `join` (has-many / belongs-to eager loading wants
+object identity and lazy proxies Jennifer does not have), and migrations (a thin
+`orm.createTable(schema)` DDL emitter is a plausible follow-on, full migration
+tooling is its own module). Needs the default binary. Discipline as usual: a
+`modules/orm_test.j` overlay, docs, catalog, and demo - with the overlay split
+so the **query-builder-to-SQL** surface (pure string generation) is covered 100%
+offline, and live CRUD sits behind a DB-service-gated integration test rather
+than the unit overlay.
 
 ---
 

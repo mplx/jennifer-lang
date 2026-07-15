@@ -87,6 +87,7 @@
 - [`semver`](modules/semver.md)
 - [`session`](modules/session.md)
 - [`smtp`](modules/smtp.md)
+- [`statsd`](modules/statsd.md)
 - [`tengine`](modules/tengine.md)
 - [`totp`](modules/totp.md)
 - [`vcard`](modules/vcard.md)

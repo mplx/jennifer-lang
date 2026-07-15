@@ -634,6 +634,16 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   assert against a golden; `qpdf`-clean. A writer, not a reader (no embedded fonts
   / images yet). Pure `.j` over `strings` / `lists` / `convert` / `compress` /
   `time`; **both binaries**.
+- **`statsd`** - a fire-and-forget StatsD metrics client over UDP. `statsd.client(host)`
+  (default port 8125) / `statsd.clientWith(address, prefix)` open a `Client`
+  (`socket` + agent `address` + a metric-name `prefix`, "" for none; copies share
+  the socket). The verbs each format one `[prefix.]name:value|type` line and send
+  one datagram: `count(c, name, value)` / `increment(c, name)` / `decrement(c, name)`
+  (counter `c`), `gauge(c, name, value)` (`g`), `timing(c, name, ms)` (`ms`),
+  `set(c, name, value)` (`s`); `close(c)` closes the socket. The push counterpart to
+  a pull-based scrape - UDP means no reply and no error when no agent is listening
+  (metrics, not data you must not lose). Integer counter / gauge values; no sample
+  rates or Datadog tags in this version. **Default `jennifer` binary only** (`net`).
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).
