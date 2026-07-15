@@ -16,6 +16,17 @@ io.printf("you are %d years old!\n", $age);     # format string + arguments
 io.printf("%s = %d, ok=%t\n", "answer", 42, true);
 ```
 
+> **Never pass a dynamic string as the format argument.** A single **string**
+> argument is always the format string, so `io.printf(s)` scans `s` for verbs.
+> That is safe only for a string *you* wrote. For any value you did not author -
+> a generated password, user input, file contents - use
+> `io.printf("%s", s)` (or `"%s\n"`). A stray `%` in the data would otherwise be
+> read as a verb: `%c` fails as an unknown verb, `%s` as a missing argument, so
+> `io.printf(password)` is a latent bug. This is deliberate - there is no
+> separate verbatim-print builtin (see
+> [technical/rejected.md](../technical/rejected.md)); `printf("%s", s)` is the
+> one canonical way to print a dynamic string.
+
 ## `eprintf`
 
 Exactly like `printf` - same argument forms and verbs - but writes to **standard

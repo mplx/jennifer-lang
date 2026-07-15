@@ -193,6 +193,36 @@ position, double it (`||`), parallel to the `%%` escape for a
 literal `%`. The rule is uniform and easy to remember; the migration
 cost was small (five test strings in this repo).
 
+## Verbatim print builtin (`io.print` / `io.println`)
+
+Considered: a plain `io.print(s)` / `io.println(s)` that writes a
+string with no format interpretation - the safe primitive for "just
+emit this string," since a dynamic value passed as `io.printf(s)`
+misparses any `%` it contains (a generated password, user input, or
+file bytes containing `%c` reads as an unknown verb, `%s` as a missing
+argument).
+
+Rejected because:
+
+- It is a second way to do a job `printf` already covers. Any string
+  prints with `printf("%s", s)`, so `print(s)` is convenience sugar
+  over that - exactly the "no two `printf` flavors for the same job"
+  case stance 1 (one way per thing) rules out.
+- Keeping a single output entry point (`printf` / `sprintf` /
+  `eprintf`) keeps the surface uniform; a reader never wonders which
+  printer a program uses.
+- The counter-argument - that a verbatim printer is a *distinct*
+  primitive (no format language at all) rather than a printf flavor -
+  is real but does not clear stance 1's bar: the observable job ("put
+  this string on stdout") is the same, and the language prefers one
+  canonical spelling even when a shorthand would be safer.
+
+The accepted trade-off: `printf("%s", s)` is the **mandatory** idiom
+for any dynamic or untrusted string, and `printf(s)` on such a value
+is a latent bug. Documented in [io.md](../libraries/io.md) so the
+footgun is called out at the source rather than papered over with a
+second builtin.
+
 ## Methods on structs
 
 Considered during M15.5 (`time` library) planning: let structs
