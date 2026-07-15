@@ -514,6 +514,28 @@ func TestShippedMikrotikOverlayPasses(t *testing.T) {
 	}
 }
 
+// The shipped barcode module's white-box overlay (modules/barcode_test.j over
+// modules/barcode.j, which itself includes barcode_ecc.j) loads and its
+// Reed-Solomon / BCH / codeword / 1D-pattern / structure tests pass - a guard
+// against drift. The rendered PNG is decoded (stdlib + optical) in
+// TestBarcodePng.
+func TestShippedBarcodeOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "barcode_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the barcode overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testReedSolomonVector", "testFormatBch", "testVersionBch", "testByteModeCodewords", "testQrStructure"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
 // A plain test file with no sibling module keeps working (no overlay spliced),
 // and its own `export` is still rejected (it is not a module).
 func TestNonOverlayTestFileUnaffected(t *testing.T) {

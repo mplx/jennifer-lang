@@ -1486,7 +1486,7 @@ and trim markers). No new prereq.
 
 ### M18.38 - `barcode` module (barcode / QR generation)
 
-Generate scannable codes as **images**, not printer commands - the complement to
+**Done.** Generate scannable codes as **images**, not printer commands - the complement to
 `label` (which emits printer-native barcode *commands* for the printer to render;
 this module renders the code itself, for the web, email, PDFs, on-screen display,
 or embedding as a bitmap into a `label.image`). **One** module with the symbology

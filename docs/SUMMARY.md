@@ -54,6 +54,7 @@
 - [Catalog](modules/index.md)
 - [`amqp`](modules/amqp.md)
 - [`ansi`](modules/ansi.md)
+- [`barcode`](modules/barcode.md)
 - [`bloom`](modules/bloom.md)
 - [`bucket`](modules/bucket.md)
 - [`cron`](modules/cron.md)

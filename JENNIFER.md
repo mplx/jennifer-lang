@@ -739,6 +739,17 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   decodes a field value, `isFile(part)` tests for a filename. Bodies are `bytes` and
   the boundary is matched at `CRLF--boundary`, so binary file content round-trips
   intact. Pure `.j` over `strings` + `bytes`; **both binaries**.
+- **`barcode`** - generate scannable barcodes / QR codes as images (the complement to
+  `label`, which emits printer commands). `barcode.encode(data, symbology, opts) ->
+  Symbol` encodes: `"qr"` (Reed-Solomon over GF(256), EC levels L/M/Q/H via
+  `opts.ecLevel`, automatic version 1-10, data-mask scoring, byte mode - any UTF-8) or
+  1D `"code128"` / `"code39"` / `"ean13"` / `"ean8"` / `"itf"`. Render a `Symbol` with
+  `barcode.svg(sym, opts) -> string`, `barcode.png(sym, opts) -> bytes` (a monochrome
+  PNG hand-encoded over `compress` + `crc`, no image library), `barcode.terminal(sym)
+  -> string` (Unicode half-blocks, 2D only), or `barcode.matrix(sym) -> list of list
+  of bool`. `barcode.defaults()` gives an `Options` (scale / height / quiet / ecLevel /
+  foreground / background). The GF(256) / Reed-Solomon math is a private, `include`d
+  `barcode_ecc.j`. Pure `.j`; **both binaries**.
 - **`bloom`** - a Bloom filter (probabilistic set). `bloom.new(size, hashes) -> Filter`;
   `bloom.add(f, item)` / `bloom.addAll(f, items)` return a fresh filter (value-semantic,
   so `$f = bloom.add($f, x)`); `bloom.mightContain(f, item) -> bool` has no false
