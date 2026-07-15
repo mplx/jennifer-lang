@@ -1285,10 +1285,25 @@ default binary (`net`). No new prereq.
 
 ### M18.29 - `influxdb` module (time-series)
 
-An InfluxDB client over `http`: `write(...)` sends line-protocol points and
-`query(...)` runs a query and returns the parsed result - the same shape as
-`prometheus`'s retrieval half, over `http` + `json` + `time`. Needs the default
-binary. Prereq: `http` (M18.7).
+**Done.** An InfluxDB 1.x client over the `http` module. `client` /
+`clientWith` open a `Client` (base URL + database + optional Basic auth). A
+`Point` is built with value-semantic builders - `point` / `tag` / `field`
+(float) / `intField` / `stringField` / `boolField` / `at` / `atTime` - each
+returning a fresh point; field types ride as pre-rendered line-protocol
+fragments so one point mixes float / int / string / bool despite Jennifer's
+homogeneous maps. `line` renders one line-protocol line (throws if a point has
+no fields), and `write(client, points)` posts them to `/write` at nanosecond
+precision. `query(client, influxql) -> Result` runs InfluxQL against `/query`
+and parses the tabular JSON into a `list of Series` (name, tag set, columns,
+stringified rows) - the same read-a-parsed-result shape as `prometheus`'s
+retrieval half. Line-protocol escaping is automatic; a request failure or a
+per-statement query error throws `Error{kind: "influxdb"}`. Over `http` +
+`json` + `time` + `encoding` (Basic-auth base64). The pure line-protocol
+rendering and query-JSON parsing are unit-tested in the
+`modules/influxdb_test.j` overlay; the live write / query round-trip (body,
+auth header, URL encoding) is verified against a fake HTTP server in
+`cmd/jennifer/influxdb_test.go`. Needs the default binary. Prereq: `http`
+(M18.7).
 
 ### M18.30 - `slack` + `discord` modules (chat notifiers)
 

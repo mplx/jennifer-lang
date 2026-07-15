@@ -305,6 +305,27 @@ func TestShippedPasswordOverlayPasses(t *testing.T) {
 	}
 }
 
+// The shipped influxdb module's white-box overlay (modules/influxdb_test.j over
+// modules/influxdb.j) loads and its line-protocol / query-parse tests pass - a
+// guard against influxdb.j / influxdb_test.j drifting out of sync. The live
+// write / query over http is covered separately by TestInfluxdbWriteAndQuery.
+func TestShippedInfluxdbOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "influxdb_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the influxdb overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testLineFieldTypes", "testLineEscaping", "testParseQuery", "testParseQueryError", "testCellString"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
 // A plain test file with no sibling module keeps working (no overlay spliced),
 // and its own `export` is still rejected (it is not a module).
 func TestNonOverlayTestFileUnaffected(t *testing.T) {

@@ -657,6 +657,21 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   A disabled class overrides a leftover minimum. Randomness is `math`'s non-crypto,
   seedable RNG (like `uuid` - swaps to `crypto` later; not for high-value secrets yet).
   Pure `.j` over `math` / `strings` / `lists` / `convert`; **both binaries**.
+- **`influxdb`** - an InfluxDB 1.x time-series client over the `http` module.
+  `influxdb.client(url, db)` / `clientWith(url, db, user, password)` open a `Client`.
+  Build a `Point` with value-semantic builders: `point(measurement)`, then
+  `tag(p, k, v)` / `field(p, k, floatVal)` / `intField(p, k, intVal)` /
+  `stringField(p, k, strVal)` / `boolField(p, k, boolVal)` / `at(p, unixNanos)` /
+  `atTime(p, t)` (each returns a fresh `Point`; field types are held as pre-rendered
+  line-protocol fragments so one point mixes types). `line(p) -> string` renders one
+  line-protocol line (throws if no fields); `write(client, points)` posts a
+  `list of Point` to `/write` (nanosecond precision, throws `Error{kind: "influxdb"}`
+  on failure). `query(client, influxql) -> Result` runs InfluxQL and parses the
+  tabular JSON into `Result{series as list of Series}`, each `Series{name, tags as
+  map of string to string, columns as list of string, values as list of list of
+  string}` with every cell stringified (convert numeric columns yourself). Automatic
+  line-protocol escaping; Basic auth. Over `http` + `json` + `time` + `encoding`.
+  **Default `jennifer` binary only** (`net`).
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).
