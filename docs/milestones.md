@@ -1307,10 +1307,25 @@ auth header, URL encoding) is verified against a fake HTTP server in
 
 ### M18.30 - `slack` + `discord` modules (chat notifiers)
 
-Two incoming-webhook push clients, siblings of `gotify`: `slack.send(webhookUrl,
-message)` and `discord.send(webhookUrl, message)`, each with a small rich-message
-builder (Slack blocks / Discord embeds) over `http` + `json`. Separate modules
-(distinct payload shapes) delivered together. Need the default binary. Prereq:
+**Done.** Two incoming-webhook push clients, siblings of `gotify`, delivered
+together as separate modules (distinct payload shapes). Each has a plain
+`send(webhookUrl, text)` and a value-semantic rich-message builder that
+assembles a JSON payload from pre-rendered fragments (so nested, heterogeneous
+structures build under Jennifer's homogeneous maps), rendered by `render` and
+posted by `sendMessage`:
+
+- **`slack`** - `send` posts `{"text": ...}`; the builder assembles Block Kit
+  blocks (`message` / `text` / `section` / `header` / `divider`). Slack answers
+  200 "ok".
+- **`discord`** - `send` posts `{"content": ...}`; the builder assembles embeds
+  (`message` / `content` / `embed(m, title, description, color)`, `color` a
+  decimal RGB int). Discord answers 204.
+
+All text is JSON-escaped through the `json` library (`json.encode` on a string
+value), so quotes / newlines are safe. Over `http` + `json`. The pure payload
+rendering is unit-tested in `modules/slack_test.j` / `modules/discord_test.j`;
+the live webhook POST bodies (plain + rich) are asserted against a fake HTTP
+server in `cmd/jennifer/chatnotify_test.go`. Need the default binary. Prereq:
 `http` (M18.7).
 
 ### M18.31 - `telegram` module (bot API)

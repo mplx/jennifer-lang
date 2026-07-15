@@ -672,6 +672,24 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   string}` with every cell stringified (convert numeric columns yourself). Automatic
   line-protocol escaping; Basic auth. Over `http` + `json` + `time` + `encoding`.
   **Default `jennifer` binary only** (`net`).
+- **`slack`** - post to a Slack Incoming Webhook over the `http` module (sibling of
+  `gotify` / `discord`). `slack.send(webhookUrl, text)` posts a plain `{"text": ...}`
+  message. For a rich message, build a `Message` with `message()` then
+  `text(m, s)` / `section(m, markdown)` / `header(m, heading)` / `divider(m)` (each
+  returns a fresh `Message`; blocks held as pre-rendered Block Kit JSON fragments),
+  and post it with `sendMessage(webhookUrl, m)` (`render(m) -> string` gives the JSON
+  payload). All text is JSON-escaped for you. Both `send` / `sendMessage` return the
+  `http.Response` (Slack answers 200 "ok"). Over `http` + `json`.
+  **Default `jennifer` binary only** (`net`).
+- **`discord`** - post to a Discord channel Webhook over the `http` module (sibling of
+  `gotify` / `slack`). `discord.send(webhookUrl, content)` posts a plain
+  `{"content": ...}` message. For a rich message, build a `Message` with `message()`
+  then `content(m, s)` / `embed(m, title, description, color)` (each returns a fresh
+  `Message`; `color` is a decimal RGB int; embeds held as pre-rendered JSON
+  fragments), and post it with `sendMessage(webhookUrl, m)` (`render(m) -> string`
+  gives the JSON). All text is JSON-escaped for you. `send` / `sendMessage` return the
+  `http.Response` (Discord answers 204). Over `http` + `json`.
+  **Default `jennifer` binary only** (`net`).
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).

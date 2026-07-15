@@ -326,6 +326,48 @@ func TestShippedInfluxdbOverlayPasses(t *testing.T) {
 	}
 }
 
+// The shipped slack module's white-box overlay (modules/slack_test.j over
+// modules/slack.j) loads and its Block Kit payload tests pass - a guard against
+// slack.j / slack_test.j drifting. The live webhook POST is covered separately
+// by TestSlackWebhook.
+func TestShippedSlackOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "slack_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the slack overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testRenderTextOnly", "testRenderBlocks", "testTextAndBlocks", "testSectionEscaping"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
+// The shipped discord module's white-box overlay (modules/discord_test.j over
+// modules/discord.j) loads and its embed payload tests pass - a guard against
+// discord.j / discord_test.j drifting. The live webhook POST is covered
+// separately by TestDiscordWebhook.
+func TestShippedDiscordOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "discord_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the discord overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testRenderContentOnly", "testEmbed", "testContentAndEmbed", "testMultipleEmbeds"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
 // A plain test file with no sibling module keeps working (no overlay spliced),
 // and its own `export` is still rejected (it is not a module).
 func TestNonOverlayTestFileUnaffected(t *testing.T) {
