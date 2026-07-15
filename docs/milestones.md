@@ -1546,8 +1546,23 @@ appears).
 
 ### M18.39 - `mikrotik` module (RouterOS API client)
 
-Connect to a MikroTik RouterOS device and run commands over its **binary API**,
-not SSH. SSH is deliberately out of scope: a real SSH client needs key exchange,
+**Done.** A MikroTik RouterOS API client over `net`: `connect` (plaintext login
+with an automatic MD5 challenge-response fallback for pre-6.43 routers, plain
+TCP or api-ssl TLS), `talk(s, command, attrs) -> list of map of string to
+string` (each `!re` reply sentence folded into a row map), `print` read sugar,
+`run` for add / set / remove (returning the `!done` `=ret=`), and `close`. The
+sentence-based wire protocol - length-prefixed words in RouterOS's
+variable-length scheme (1-5 byte prefixes), zero-length-word terminator - is
+hand-built from `bytes` and the bitwise operators; a `!trap` throws
+`Error{kind: "mikrotik"}` after consuming the trailing `!done` (so the session
+stays usable) and a `!fatal` throws immediately. The pure word codec (all five
+length forms, round-trips, offset decode), sentence field parsing, command
+building, and the MD5 challenge response are unit-tested in the
+`modules/mikrotik_test.j` overlay; the live login + print + run + trap exchange
+runs against a fake RouterOS API server (a stdlib-only Go implementation of the
+same word codec) in `cmd/jennifer/mikrotik_test.go`. Query (`?`) words,
+`.tag`-multiplexed commands, and a v7 REST backend stay follow-ons. SSH is
+deliberately out of scope: a real SSH client needs key exchange,
 host-key verification, and cipher / MAC negotiation - the whole `crypto` surface
 (M20.1) plus a heavy `golang.org/x/crypto/ssh` dependency, against the
 dependency-free + TinyGo-clean stance. The RouterOS API is the purpose-built,

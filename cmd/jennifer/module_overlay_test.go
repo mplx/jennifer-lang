@@ -493,6 +493,27 @@ func TestShippedRingbufferOverlayPasses(t *testing.T) {
 	}
 }
 
+// The shipped mikrotik module's white-box overlay (modules/mikrotik_test.j over
+// modules/mikrotik.j) loads and its RouterOS word-codec / field-parsing tests
+// pass - a guard against mikrotik.j / mikrotik_test.j drifting. The live login +
+// talk exchange is covered separately by TestMikrotikTalk.
+func TestShippedMikrotikOverlayPasses(t *testing.T) {
+	overlay := filepath.Join("..", "..", "modules", "mikrotik_test.j")
+	in, code := loadForTest(overlay)
+	if in == nil || code != testExitPass {
+		t.Fatalf("loading the mikrotik overlay failed: code %d", code)
+	}
+	for _, name := range []string{"testEncodeLenForms", "testDecodeLenRoundTrip", "testParseFields", "testBuildWords", "testChallengeResponseShape"} {
+		if !hasMethod(in, name) {
+			t.Errorf("test %q not found in the spliced program", name)
+			continue
+		}
+		if _, err := in.CallByName(name); err != nil {
+			t.Errorf("%s failed: %v", name, err)
+		}
+	}
+}
+
 // A plain test file with no sibling module keeps working (no overlay spliced),
 // and its own `export` is still rejected (it is not a module).
 func TestNonOverlayTestFileUnaffected(t *testing.T) {

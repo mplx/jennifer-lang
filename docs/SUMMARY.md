@@ -76,6 +76,7 @@
 - [`log`](modules/log.md)
 - [`markdown`](modules/markdown.md)
 - [`memcache`](modules/memcache.md)
+- [`mikrotik`](modules/mikrotik.md)
 - [`mime`](modules/mime.md)
 - [`mqtt`](modules/mqtt.md)
 - [`multipart`](modules/multipart.md)

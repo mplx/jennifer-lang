@@ -754,6 +754,19 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   pop can't return both the item and the new buffer). Plus `last` / `size` / `capacity`
   / `isEmpty` / `isFull` / `toList` (oldest-first). Strings only. Over `lists`;
   **both binaries**.
+- **`mikrotik`** - a MikroTik RouterOS API client over `net` (the binary API, not
+  SSH). `mikrotik.connect(mikrotik.options(host, user, password))` (or `optionsTLS`
+  for api-ssl on 8729) logs in - plaintext for RouterOS 6.43+/v7, with an automatic
+  MD5 challenge-response fallback for older routers - and returns a `Session`.
+  `talk(s, command, attrs) -> list of map of string to string` sends a command
+  (`/interface/print`) with a `map of string to string` of `=key=value` attributes and
+  folds each `!re` reply sentence into a row map; `print(s, path)` is read sugar
+  (`path + "/print"`); `run(s, command, attrs) -> string` is for add / set / remove
+  and returns the `!done`'s `=ret=` (e.g. a new item id). The wire protocol is
+  sentence-based (length-prefixed words, zero-length terminator) with RouterOS's
+  variable-length length codec, hand-built from `bytes` + the bitwise operators. A
+  `!trap` / `!fatal` reply throws `Error{kind: "mikrotik"}`. Over `net` + `hash` (MD5
+  fallback) + `encoding`. **Default `jennifer` binary only** (`net`).
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).
