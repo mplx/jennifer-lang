@@ -1349,12 +1349,23 @@ default binary. Prereq: `http` (M18.7).
 
 ### M18.32 - `websocket` module (WebSocket client)
 
-An RFC 6455 WebSocket **client** over `net`: the HTTP `Upgrade` handshake (the
-`Sec-WebSocket-Accept` key is SHA-1 + base64, both in hand), then framed `send` /
-`receive` with client-side masking, ping / pong, and close - binary framing over
-`net` + `hash` (SHA-1) + `encoding` + bitwise. Needs the default binary. A
-server-side upgrade would need an `httpd` connection-hijack hook (a separate,
-larger piece). No new prereq.
+**Done.** An RFC 6455 WebSocket client over `net`. `connect` / `connectWith`
+do the HTTP `Upgrade` handshake (`ws://` plain TCP, `wss://` TLS) and verify the
+server's `Sec-WebSocket-Accept` (`base64(SHA1(key + GUID))` - `hash.compute`
+returns the raw digest bytes, base64 in hand). `send` / `sendBytes` write masked
+text / binary frames (client frames must be masked), auto-encoding the length in
+the 7 / 16 / 64-bit form; `receive` reads the next `Message` (kind "text" /
+"binary" / "close" / "pong"), transparently answering pings with pongs and
+reassembling fragmented (continuation) frames; `ping` and `close` (a close frame
+plus socket shutdown) round it out. The mask and handshake nonce draw from
+`math`'s non-crypto RNG - neither is a security boundary. Binary framing is
+hand-rolled with the bitwise operators over `net` + `hash` (SHA-1) + `encoding` +
+`math`. The pure accept computation (the RFC 6455 vector), URL parsing, and
+frame encoding / masking are unit-tested in `modules/websocket_test.j`; the live
+handshake + masked send + server-frame decode round trip runs against a minimal
+in-process server in `cmd/jennifer/websocket_test.go` (and the demo against a
+real `wss://` echo server). A server-side upgrade stays out of scope (it needs
+an `httpd` connection-hijack hook). Needs the default binary. No new prereq.
 
 ### M18.33 - `amqp` module (RabbitMQ)
 

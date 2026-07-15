@@ -98,6 +98,7 @@
 - [`vcard`](modules/vcard.md)
 - [`web`](modules/web.md)
 - [`webhook`](modules/webhook.md)
+- [`websocket`](modules/websocket.md)
 
 # Technical reference
 

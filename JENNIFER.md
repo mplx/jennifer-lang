@@ -703,6 +703,18 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `Update.message`. `chatId` is a 64-bit `int` (channel ids are large / negative).
   Params are form-encoded to `baseUrl/bot<token>/<method>`. **Default `jennifer`
   binary only** (`net`).
+- **`websocket`** - an RFC 6455 WebSocket client over `net`. `websocket.connect(url)`
+  (or `connectWith(url, timeoutMs)`) does the HTTP Upgrade handshake to a `ws://`
+  (plain TCP) or `wss://` (TLS) URL and verifies the server's `Sec-WebSocket-Accept`
+  (`base64(SHA1(key + GUID))`), returning a `Conn`. `send(c, text)` /
+  `sendBytes(c, data)` write masked frames (client frames must be masked);
+  `receive(c) -> Message{kind, text, data}` reads the next message, kind one of
+  "text" / "binary" / "close" / "pong" - it transparently answers a ping with a pong
+  and reassembles fragmented messages. `ping(c)` and `close(c)` (sends a close frame,
+  shuts the socket). Frame length is auto-encoded in the 7 / 16 / 64-bit form; the
+  mask and handshake nonce use `math`'s non-crypto RNG (not a security boundary).
+  A protocol error or dropped connection throws `Error{kind: "websocket"}`. Client
+  only (no server upgrade). **Default `jennifer` binary only** (`net`).
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).
