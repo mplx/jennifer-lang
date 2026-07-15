@@ -1269,10 +1269,19 @@ real NTP server (sub-millisecond LAN offset). No other new prereq.
 
 ### M18.28 - `statsd` module (metrics)
 
-A StatsD client over `net` UDP: `statsd.count` / `gauge` / `timing` /
-`increment` emit the `metric:value|type` text lines a StatsD / Datadog agent
-ingests. Fire-and-forget and tiny; the push counterpart to the pull-based
-`prometheus`. Needs the default binary (`net`). No new prereq.
+**Done.** A fire-and-forget StatsD client over `net` UDP. `statsd.client(host)`
+(default port 8125) / `statsd.clientWith(address, prefix)` open a `Client`
+(sending socket + agent address + optional metric-name prefix), then
+`count` / `increment` / `decrement` (counter `c`), `gauge` (`g`), `timing`
+(`ms`), and `set` (`s`) each format one `[prefix.]name:value|type` line and
+send one datagram; `close` releases the socket. The push counterpart to the
+pull-based `prometheus` - UDP means no reply and no error when no agent is
+listening, so a metric costs one datagram and never blocks. Integer counter /
+gauge values; sample rates and Datadog tags are deliberately out of this
+version. The pure name / line formatting is unit-tested in the
+`modules/statsd_test.j` overlay; the live wire output is verified end to end
+against a real UDP loopback listener in `cmd/jennifer/statsd_test.go`. Needs the
+default binary (`net`). No new prereq.
 
 ### M18.29 - `influxdb` module (time-series)
 
@@ -1492,6 +1501,33 @@ device; a `cmd/jennifer/mikrotik_test.go` driving a fake Go TCP server through a
 login + `talk` exchange; `docs/modules/mikrotik.md`; an
 `examples/modules/mikrotik_demo.j`; and the catalog / `SUMMARY.md` / `README.md`
 / `JENNIFER.md` entries. Prereq: `net` (M16.2) and `hash` (M15.6), both shipped.
+
+### M18.40 - `password` module (generate / validate / score)
+
+**Done.** Password generation, validation, and complexity scoring against a
+policy `Schema` (character classes, a length range, per-class minimum counts, a
+symbol set, exclude-ambiguous-glyphs). `password.schema()` is a strong default;
+copy-on-write builders (`withLength` / `withClasses` / `withMinimums` /
+`withSymbolSet` / `withoutAmbiguous`) each return a fresh `Schema`.
+`generate(schema) -> string` produces a conforming password (a length in
+`[minLength, maxLength]`, the per-class minimums guaranteed, the rest filled
+from the enabled alphabet, then shuffled; throws `Error{kind: "password"}` on an
+infeasible schema). `validate(schema, pw) -> Report{valid, reasons}` checks
+length + per-class minimums (minimums, not a whitelist), listing the failed
+rules. `complexity(pw) -> Strength{length, classes, poolSize, entropy, label}`
+estimates bits as `length * log2(poolSize)` (a `binaryLog` helper - `math` has
+no `log`) and bands them very weak / weak / reasonable / strong / very strong. A
+disabled class overrides a leftover minimum (the enable bool is authoritative).
+
+Randomness draws from `math`'s shared, seedable, **non-crypto** RNG (the `uuid`
+precedent): documented as unsuitable for high-value secrets until it repoints at
+crypto-grade random when M20.1 `crypto` lands - a one-function change, no surface
+change. Pure `.j` over `math` / `strings` / `lists` / `convert`, so it runs on
+**both binaries**. Discipline: a 100%-passing `modules/password_test.j` overlay
+(generation-conforms property tests with a seeded RNG, plus deterministic
+validate / complexity / `binaryLog` cases), a `TestShippedPasswordOverlayPasses`
+guard, `docs/modules/password.md`, an `examples/modules/password_demo.j`, and the
+catalog / `SUMMARY.md` / `README.md` / `JENNIFER.md` entries. No new prereq.
 
 ## M19 - cross-cutting tooling
 

@@ -644,6 +644,19 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   a pull-based scrape - UDP means no reply and no error when no agent is listening
   (metrics, not data you must not lose). Integer counter / gauge values; no sample
   rates or Datadog tags in this version. **Default `jennifer` binary only** (`net`).
+- **`password`** - generate, validate, and score passwords against a policy schema.
+  `password.schema()` is a strong default (16 chars, all four classes, min 1 each);
+  copy-on-write builders `withLength(s, lo, hi)` / `withClasses(s, lo, up, dig, sym)`
+  / `withMinimums(s, lo, up, dig, sym)` / `withSymbolSet(s, chars)` /
+  `withoutAmbiguous(s)` each return a fresh `Schema`. `generate(schema) -> string`
+  produces a conforming password (throws `Error{kind: "password"}` on an infeasible
+  schema); `validate(schema, pw) -> Report{valid as bool, reasons as list of string}`
+  checks length + per-class minimums (minimums, not a whitelist); `complexity(pw) ->
+  Strength{length, classes, poolSize, entropy as float, label}` estimates bits
+  (`length * log2(pool)`, banded very weak / weak / reasonable / strong / very strong).
+  A disabled class overrides a leftover minimum. Randomness is `math`'s non-crypto,
+  seedable RNG (like `uuid` - swaps to `crypto` later; not for high-value secrets yet).
+  Pure `.j` over `math` / `strings` / `lists` / `convert`; **both binaries**.
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).

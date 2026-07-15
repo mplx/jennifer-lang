@@ -76,6 +76,7 @@
 - [`mqtt`](modules/mqtt.md)
 - [`ntp`](modules/ntp.md)
 - [`oauth`](modules/oauth.md)
+- [`password`](modules/password.md)
 - [`pdfwriter`](modules/pdfwriter.md)
 - [`pop`](modules/pop.md)
 - [`prometheus`](modules/prometheus.md)
