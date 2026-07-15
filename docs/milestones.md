@@ -1391,11 +1391,20 @@ becomes the throughput bottleneck. Needs the default binary. No new prereq.
 
 ### M18.34 - `multipart` module (form-data)
 
-Build and parse `multipart/form-data` (RFC 7578) bodies - the file-upload
-counterpart to `mime`'s email multipart: `build(parts) -> (contentType, bytes)`
-and `parse(contentType, body) -> list of Part` (fields + files). Over `strings` +
-`bytes`; pairs with `web` for handling uploads. Pure `.j`, both binaries. No new
-prereq.
+**Done.** Build and parse `multipart/form-data` (RFC 7578) - the file-upload
+counterpart to `mime`'s email multipart. `field` / `file` build `Part`s;
+`build(parts)` (fresh random boundary) / `buildWith(parts, boundary)` return
+`Built{contentType, body}` (the ready `Content-Type` header + the encoded body);
+`parse(contentType, body) -> list of Part` reads it back, with `text` / `isFile`
+accessors on a part. Bodies are `bytes` (so binary file content round-trips) and
+the boundary is matched at `CRLF--boundary` on a normalised body, so a boundary
+token appearing inside a file body does not split it. A missing boundary or a
+part without a header terminator throws `Error{kind: "multipart"}`. All build /
+parse round-trips (text fields, a file part, binary data, hand-written bodies)
+and the boundary / header extraction are unit-tested in the
+`modules/multipart_test.j` overlay - a pure module, so no live server test is
+needed. Over `strings` + `bytes`; pairs with `web` / `http` for uploads. Pure
+`.j`, both binaries. No new prereq.
 
 ### M18.35 - `pdfwriter` module (PDF documents)
 

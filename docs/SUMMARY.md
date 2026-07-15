@@ -77,6 +77,7 @@
 - [`memcache`](modules/memcache.md)
 - [`mime`](modules/mime.md)
 - [`mqtt`](modules/mqtt.md)
+- [`multipart`](modules/multipart.md)
 - [`ntp`](modules/ntp.md)
 - [`oauth`](modules/oauth.md)
 - [`password`](modules/password.md)

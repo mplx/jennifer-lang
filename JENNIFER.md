@@ -729,6 +729,16 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   field-table / frame encoding is hand-built from `bytes` and the bitwise operators.
   Single channel, SASL PLAIN, no TLS, pull (not async delivery). A protocol error
   throws `Error{kind: "amqp"}`. **Default `jennifer` binary only** (`net`).
+- **`multipart`** - build and parse `multipart/form-data` (RFC 7578), the file-upload
+  counterpart to `mime`. `multipart.field(name, value)` and
+  `multipart.file(name, filename, contentType, dataBytes)` build `Part{name,
+  filename, contentType, data as bytes}` values; `multipart.build(parts)` (fresh
+  random boundary) or `buildWith(parts, boundary)` returns `Built{contentType, body
+  as bytes}` (POST `body` with header `Content-Type: contentType`);
+  `multipart.parse(contentType, body) -> list of Part` reads it back. `text(part)`
+  decodes a field value, `isFile(part)` tests for a filename. Bodies are `bytes` and
+  the boundary is matched at `CRLF--boundary`, so binary file content round-trips
+  intact. Pure `.j` over `strings` + `bytes`; **both binaries**.
 
 Full per-module reference: the hosted
 [module docs](https://mplx.github.io/jennifer-lang/modules/index.html).
