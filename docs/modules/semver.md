@@ -41,6 +41,8 @@ Build it with `semver.parse` or a literal
 | -------------------------- | ---------------- | --------------------------------------------------------------------- |
 | `semver.parse(s)`          | `Version`        | Parse a strict version string; `throw`s (`kind: "value"`) on invalid. |
 | `semver.isValid(s)`        | `bool`           | Whether `s` is a strict SemVer string (no throw).                     |
+| `semver.coerce(s)`         | `string`         | Extract a version from loose text (a `v`-tag, a partial); `""` if none. |
+| `semver.clean(s)`          | `string`         | Strict-normalise (trim, drop `v` / `=`); `""` if not a full version.  |
 | `semver.toString(v)`       | `string`         | Canonical form; round-trips `parse`.                                  |
 | `semver.compare(a, b)`     | `int`            | `-1` / `0` / `1` by SemVer precedence. Build metadata ignored.        |
 | `semver.lt(a, b)`          | `bool`           | `compare(a, b) < 0`.                                                   |
@@ -61,6 +63,12 @@ Build it with `semver.parse` or a literal
 | `semver.maxSatisfying(vers, range)` | `string`| Highest version string in `vers` matching `range`, or `""`.           |
 | `semver.minSatisfying(vers, range)` | `string`| Lowest version string in `vers` matching `range`, or `""`.            |
 | `semver.validRange(range)` | `bool`           | Whether a range expression is well-formed.                            |
+| `semver.minVersion(range)` | `string`         | The lowest version that could satisfy `range` (its floor), or `""`.   |
+| `semver.intersects(a, b)`  | `bool`           | Whether two ranges share any satisfying version.                      |
+| `semver.subset(inner, outer)` | `bool`        | Whether every version in `inner` is also allowed by `outer`.          |
+| `semver.gtr(v, range)`     | `bool`           | Whether `v` is above the whole range.                                 |
+| `semver.ltr(v, range)`     | `bool`           | Whether `v` is below the whole range.                                 |
+| `semver.outside(v, range)` | `bool`           | `gtr(v, range) or ltr(v, range)`.                                     |
 
 ## Strict, not a loose parser
 
@@ -172,13 +180,34 @@ semver.minSatisfying($tags, "^1.2.0");   # "1.2.0"
 ```
 
 `semver.validRange(range)` reports whether a range expression is well-formed,
-without evaluating it.
+without evaluating it. `semver.minVersion(range)` returns the lowest version
+that could satisfy a range (its floor), with no candidate list:
+`minVersion("^1.2.0")` is `"1.2.0"`, `minVersion(">1.2.3")` is `"1.2.4"`.
 
-### Scope
+### Ingesting loose versions
 
-Single-set ranges as above. No `intersects` (do two ranges overlap) and no
-`subset` yet - those are dependency-solver primitives that can layer on top when
-needed.
+Real registries take messy tags. `semver.coerce(s)` extracts a version from a
+`v`-prefix, a partial, or surrounding noise (`coerce("v1.2.3")` -> `"1.2.3"`,
+`coerce("1.2")` -> `"1.2.0"`, `coerce("latest")` -> `""`), while
+`semver.clean(s)` strictly normalises a near-clean string (trim, drop a leading
+`v` / `=`) and returns `""` unless it is already a full version.
+
+### Range algebra
+
+For a dependency **solver** (conflict detection, deduplication), the range-vs-range
+operators reason over interval sets - no candidate list needed:
+
+| Call | Question |
+| ---- | -------- |
+| `semver.intersects(a, b)` | do ranges `a` and `b` share any version? `^1.2.0` ∩ `>=1.5.0` = true; `^1.2.0` ∩ `^2.0.0` = false |
+| `semver.subset(inner, outer)` | is every version in `inner` also in `outer`? `subset("^1.5.0", "^1.0.0")` = true |
+| `semver.gtr(v, range)` | is `v` above the whole range? |
+| `semver.ltr(v, range)` | is `v` below the whole range? |
+| `semver.outside(v, range)` | above or below (not in an interior gap) |
+
+These operate on the **release** version space (prereleases ignored) - the
+regime a resolver reasons in. Full prerelease-precise range algebra and
+`simplifyRange` are the only pieces intentionally left out.
 
 ## See also
 

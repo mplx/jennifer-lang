@@ -285,3 +285,62 @@ func testRangeHelpers() {
     testing.assertEqual(len(tokenize(">=1.2.0  <2.0.0")), 2);
     testing.assertEqual(operandOf(">=1.2.0"), "1.2.0");
 }
+
+# --- lenient input: coerce / clean ----------------------------------
+
+func testCoerce() {
+    testing.assertEqual(coerce("v1.2.3"), "1.2.3");
+    testing.assertEqual(coerce("1.2"), "1.2.0");
+    testing.assertEqual(coerce("2"), "2.0.0");
+    testing.assertEqual(coerce("release-2.3"), "2.3.0");
+    testing.assertEqual(coerce("v01.02.03"), "1.2.3");   # leading zeros normalised
+    testing.assertEqual(coerce("latest"), "");
+}
+
+func testClean() {
+    testing.assertEqual(clean("v1.2.3"), "1.2.3");
+    testing.assertEqual(clean("  =1.2.3  "), "1.2.3");
+    testing.assertEqual(clean("1.2.3+build"), "1.2.3+build");
+    testing.assertEqual(clean("1.2"), "");               # strict: not a full version
+    testing.assertEqual(clean("garbage"), "");
+}
+
+# --- range algebra: minVersion / intersects / subset / gtr ----------
+
+func testMinVersion() {
+    testing.assertEqual(minVersion("^1.2.0"), "1.2.0");
+    testing.assertEqual(minVersion(">=1.2.3"), "1.2.3");
+    testing.assertEqual(minVersion(">1.2.3"), "1.2.4");
+    testing.assertEqual(minVersion("<2.0.0"), "0.0.0");
+    testing.assertEqual(minVersion("^2.0.0 || ^0.5.0"), "0.5.0");
+    testing.assertEqual(minVersion("garbage"), "");
+}
+
+func testIntersects() {
+    testing.assertTrue(intersects("^1.2.0", ">=1.5.0"));
+    testing.assertFalse(intersects("^1.2.0", "^2.0.0"));
+    testing.assertTrue(intersects(">=1.5.0 <1.8.0", "^1.2.0"));
+    testing.assertFalse(intersects("^1.0.0", "^2.0.0 || ^3.0.0"));
+    testing.assertTrue(intersects("^1.0.0 || ^3.0.0", "^3.2.0"));
+    testing.assertFalse(intersects("^1.0.0", "garbage"));
+}
+
+func testSubset() {
+    testing.assertTrue(subset("^1.5.0", "^1.0.0"));
+    testing.assertFalse(subset("^1.0.0", "^1.5.0"));
+    testing.assertTrue(subset("~1.2.3", "^1.0.0"));
+    testing.assertTrue(subset(">=1.2.0 <1.5.0", "^1.0.0"));
+    testing.assertTrue(subset("^1.0.0 || ^2.0.0", ">=1.0.0 <3.0.0"));
+    testing.assertFalse(subset("^1.0.0 || ^3.0.0", "^1.0.0"));   # the ^3 clause is not covered
+}
+
+func testGtrLtrOutside() {
+    testing.assertTrue(gtr("2.0.0", "^1.2.0"));
+    testing.assertFalse(gtr("1.5.0", "^1.2.0"));
+    testing.assertFalse(gtr("9.9.9", ">=1.0.0"));               # unbounded above
+    testing.assertTrue(ltr("0.9.0", "^1.2.0"));
+    testing.assertFalse(ltr("1.5.0", "^1.2.0"));
+    testing.assertTrue(outside("2.0.0", "^1.2.0"));
+    testing.assertTrue(outside("0.1.0", "^1.2.0"));
+    testing.assertFalse(outside("2.5.0", "^1.0.0 || ^3.0.0"));  # interior gap is not outside
+}
