@@ -2321,11 +2321,16 @@ func (i *Interpreter) execTry(st *parser.TryStmt, env *Environment) (blockResult
 		// Unknown error type - don't try to catch it; let it propagate.
 		return blockResult{}, err
 	}
-	// Bind the catch variable in a fresh scope, then run the handler.
-	// The catch scope shadows nothing because no-shadowing already
-	// rejects a CatchName collision with an outer binding at runtime
-	// via env.Define.
-	catchEnv := NewEnvironment(env)
+	// Bind the catch variable in a fresh handler frame, then run the
+	// handler. The frame is pre-sized to CatchBody.NumSlots and the
+	// variable bound at its resolved slot (slot 0), mirroring
+	// execForEach: binding name-only would leave slot 0 empty, and the
+	// first catch-body `def` would grow the slot slice over it, making
+	// every later slot-resolved read of the catch variable hit a zeroed
+	// (null) binding. In the resolver-less REPL path CatchSlot is -1,
+	// so DefineAt falls back to the name map and still runs the
+	// no-shadowing check (the resolver rejects shadowing at parse time
+	// on the batch path).
 	declType := parser.StructType(canonicalErrorStructName)
 	if caught.Kind != KindStruct || caught.StructName != canonicalErrorStructName {
 		// User threw a non-Error value (any kind is permitted by the
@@ -2333,10 +2338,14 @@ func (i *Interpreter) execTry(st *parser.TryStmt, env *Environment) (blockResult
 		// uses convert.typeOf / runtime checks if it needs to inspect.
 		declType = parser.Type{}
 	}
-	if err := catchEnv.Define(st.CatchName, caught.Copy(), declType, false); err != nil {
+	catchEnv := borrowBlockEnv(env, st.CatchBody.NumSlots)
+	if err := catchEnv.DefineAt(st.CatchSlot, st.CatchName, caught.Copy(), declType, false); err != nil {
+		releaseBlockEnv(catchEnv)
 		return blockResult{}, &runtimeError{Msg: err.Error(), File: st.CatchFile, Line: st.CatchLine, Col: st.CatchCol}
 	}
-	return i.execStmts(st.CatchBody.Stmts, catchEnv)
+	res, err = i.execStmts(st.CatchBody.Stmts, catchEnv)
+	releaseBlockEnv(catchEnv)
+	return res, err
 }
 
 // evalBool evaluates an expression that must yield a bool; otherwise it

@@ -144,6 +144,9 @@ flat lookup view, not authoritative.
 | [`math`](math.md)`.max(a, b)`                         | Larger of two numbers; mixed int/float promotes to float.                                                                           |
 | [`math`](math.md)`.min(a, b)`                         | Smaller of two numbers; mixed int/float promotes to float.                                                                          |
 | [`math`](math.md)`.pow(x, y)`                         | `x` raised to `y`; always float. Errors on NaN/Inf-producing inputs.                                                                |
+| [`math`](math.md)`.rand()`                            | Float in `[0, 1)` from the shared seedable (non-crypto) source.                                                                     |
+| [`math`](math.md)`.randInt(lo, hi)`                   | Int in `[lo, hi]` inclusive; errors if `lo > hi`.                                                                                   |
+| [`math`](math.md)`.randSeed(n)`                       | Reseed the shared source for reproducible runs (also drives `lists.shuffle`, `uuid`).                                               |
 | [`math`](math.md)`.round(x)`                          | Round to nearest int (half away from zero).                                                                                         |
 | [`math`](math.md)`.sqrt(x)`                           | Square root; always float. Errors on negative input.                                                                                |
 | [`os`](os.md)`.flag(name)`                            | Value following `name` in `os.ARGS`, or `""` if absent / at end. Exact-match (no `--foo=bar` parsing).                              |

@@ -1017,7 +1017,9 @@ func codeThirtyNineChar(ch as string) {
     return $pats[$idx];
 }
 
-# codeOneTwentyEightPatterns is the Code 128 module-pattern table (values 0..106).
+# codeOneTwentyEightPatterns is the Code 128 module-pattern table (values
+# 0..106, 11 modules each; the encoder appends the 2-module termination bar
+# after the stop pattern, entry 106).
 func codeOneTwentyEightPatterns() {
     return ["11011001100", "11001101100", "11001100110", "10010011000", "10010001100",
         "10001001100", "10011001000", "10011000100", "10001100100", "11001001000",
@@ -1040,7 +1042,7 @@ func codeOneTwentyEightPatterns() {
         "11011110110", "11110110110", "10101111000", "10100011110", "10001011110",
         "10111101000", "10111100010", "11110101000", "11110100010", "10111011110",
         "10111101110", "11101011110", "11110101110", "11010000100", "11010010000",
-        "11010011100", "1100011101011"];
+        "11010011100", "11000111010"];
 }
 
 # --- renderers (exported) ---------------------------------------------------

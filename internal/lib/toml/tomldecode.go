@@ -72,10 +72,19 @@ func decodeToml(src string) (interpreter.Value, error) {
 	return d.run()
 }
 
+// maxNestingDepth caps container recursion in parseValue and the segment
+// count of a dotted key (inlineAssign recurses per segment, and headers /
+// dotted keys build one tree level per segment). Each nesting level costs Go
+// stack frames, and a Go stack overflow is fatal (not a catchable Jennifer
+// error), so deeply-nested untrusted input could otherwise kill the whole
+// process. 1000 is far beyond any legitimate document.
+const maxNestingDepth = 1000
+
 type decoder struct {
-	src  string
-	pos  int
-	line int // 0-based; +1 for messages
+	src   string
+	pos   int
+	line  int // 0-based; +1 for messages
+	depth int // current container nesting, gated in parseValue
 }
 
 func (d *decoder) errf(format string, a ...interface{}) error {
@@ -326,6 +335,9 @@ func (d *decoder) parseKey() ([]string, error) {
 			return nil, err
 		}
 		segs = append(segs, seg)
+		if len(segs) > maxNestingDepth {
+			return nil, d.errf("key nesting exceeds %d segments", maxNestingDepth)
+		}
 		d.skipInlineWS()
 		if d.peek() == '.' {
 			d.advance()
@@ -375,9 +387,21 @@ func (d *decoder) parseValue() (interpreter.Value, error) {
 		s, err := d.parseLiteralString()
 		return interpreter.StringVal(s), err
 	case c == '[':
-		return d.parseArray()
+		if d.depth >= maxNestingDepth {
+			return interpreter.Value{}, d.errf("nesting exceeds %d levels", maxNestingDepth)
+		}
+		d.depth++
+		v, err := d.parseArray()
+		d.depth--
+		return v, err
 	case c == '{':
-		return d.parseInlineTable()
+		if d.depth >= maxNestingDepth {
+			return interpreter.Value{}, d.errf("nesting exceeds %d levels", maxNestingDepth)
+		}
+		d.depth++
+		v, err := d.parseInlineTable()
+		d.depth--
+		return v, err
 	case c == 't' || c == 'f':
 		return d.parseBool()
 	case c == '+' || c == '-' || c >= '0' && c <= '9' || c == 'i' || c == 'n':

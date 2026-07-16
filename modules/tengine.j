@@ -92,6 +92,13 @@ def struct Verb {
     pos as int
 };
 
+# Nesting cap for exec's recursion: control blocks, template / block includes,
+# and range bodies all re-enter exec one level deeper. A template that includes
+# itself (directly or through a partner) would otherwise recurse until the
+# interpreter's stack dies - a fatal crash, not a catchable error. 256 levels
+# is far beyond any legitimate page.
+def const MAX_NESTING as int init 256;
+
 # --- set construction (exported) --------------------------------------------
 
 /**
@@ -193,12 +200,17 @@ export func render(set as Set, entry as string, data as json.Value) {
     if (not setHas($set, $entry)) {
         throw Error{ kind: "tengine", message: "tengine: no such template: " + $entry, file: "", line: 0, col: 0 };
     }
-    return exec($set, setGet($set, $entry), $data, $data, emptyVars());
+    return exec($set, setGet($set, $entry), $data, $data, emptyVars(), 0);
 }
 
 # exec renders a template source against the current node (`.`), the root (`$`),
-# and the variable environment, returning the output.
-func exec(set as Set, src as string, node as json.Value, root as json.Value, vars as map of string to json.Value) {
+# and the variable environment, returning the output. `depth` counts nesting
+# levels (control blocks, template / block includes, range bodies) and trips
+# MAX_NESTING so an include cycle throws instead of overflowing the stack.
+func exec(set as Set, src as string, node as json.Value, root as json.Value, vars as map of string to json.Value, depth as int) {
+    if ($depth > MAX_NESTING) {
+        throw Error{ kind: "tengine", message: "tengine: nesting exceeds " + convert.toString(MAX_NESTING) + " levels (template include cycle?)", file: "", line: 0, col: 0 };
+    }
     def out as string init "";
     def rest as string init $src;
     def env as map of string to json.Value init $vars;
@@ -219,7 +231,7 @@ func exec(set as Set, src as string, node as json.Value, root as json.Value, var
         def kind as string init actionKind($action);
         if ($kind == "if" or $kind == "range" or $kind == "with" or $kind == "block") {
             def bp as BlockParts init takeBlock($tail);
-            $out = $out + execControl($set, $kind, $action, $bp, $node, $root, $env);
+            $out = $out + execControl($set, $kind, $action, $bp, $node, $root, $env, $depth);
             $rest = $bp.remainder;
         } elseif ($kind == "assign") {
             $env = execAssign($action, $node, $root, $env);
@@ -235,7 +247,7 @@ func exec(set as Set, src as string, node as json.Value, root as json.Value, var
             if (not setHas($set, $na.name)) {
                 throw Error{ kind: "tengine", message: "tengine: no such template: " + $na.name, file: "", line: 0, col: 0 };
             }
-            $out = $out + exec($set, setGet($set, $na.name), $argNode, $argNode, emptyVars());
+            $out = $out + exec($set, setGet($set, $na.name), $argNode, $argNode, emptyVars(), $depth + 1);
             $rest = $tail;
         } elseif ($kind == "comment" or $kind == "end" or $kind == "else") {
             $rest = $tail;
@@ -259,24 +271,24 @@ func execAssign(action as string, node as json.Value, root as json.Value, vars a
 
 # execControl renders one control action (if / with / range / block), returning
 # the produced output.
-func execControl(set as Set, kind as string, action as string, bp as BlockParts, node as json.Value, root as json.Value, vars as map of string to json.Value) {
+func execControl(set as Set, kind as string, action as string, bp as BlockParts, node as json.Value, root as json.Value, vars as map of string to json.Value, depth as int) {
     if ($kind == "if") {
         if (isTruthy(evalExprString(pipelineOf($action), $node, $root, $vars))) {
-            return exec($set, $bp.thenPart, $node, $root, $vars);
+            return exec($set, $bp.thenPart, $node, $root, $vars, $depth + 1);
         }
-        return exec($set, $bp.elsePart, $node, $root, $vars);
+        return exec($set, $bp.elsePart, $node, $root, $vars, $depth + 1);
     }
     if ($kind == "with") {
         def val as json.Value init evalExprString(pipelineOf($action), $node, $root, $vars);
         if (isTruthy($val)) {
-            return exec($set, $bp.thenPart, $val, $root, $vars);
+            return exec($set, $bp.thenPart, $val, $root, $vars, $depth + 1);
         }
-        return exec($set, $bp.elsePart, $node, $root, $vars);
+        return exec($set, $bp.elsePart, $node, $root, $vars, $depth + 1);
     }
     if ($kind == "range") {
         def rv as RangeVars init parseRange(pipelineOf($action));
         def val as json.Value init evalExprString($rv.source, $node, $root, $vars);
-        return execRange($set, $val, $bp, $node, $root, $vars, $rv);
+        return execRange($set, $val, $bp, $node, $root, $vars, $rv, $depth);
     }
     # block: render the set's named override if present, else the inline default
     def na as NameArg init parseNameArg($action);
@@ -285,27 +297,27 @@ func execControl(set as Set, kind as string, action as string, bp as BlockParts,
         $argNode = resolveTerm($na.arg, $node, $root, $vars);
     }
     if (setHas($set, $na.name)) {
-        return exec($set, setGet($set, $na.name), $argNode, $argNode, emptyVars());
+        return exec($set, setGet($set, $na.name), $argNode, $argNode, emptyVars(), $depth + 1);
     }
-    return exec($set, $bp.thenPart, $argNode, $argNode, emptyVars());
+    return exec($set, $bp.thenPart, $argNode, $argNode, emptyVars(), $depth + 1);
 }
 
 # execRange renders a range body once per element (list) or value (map, insertion
 # order), rebinding `.` and any `$i, $e` bindings; an empty collection renders the
 # else part.
-func execRange(set as Set, val as json.Value, bp as BlockParts, node as json.Value, root as json.Value, vars as map of string to json.Value, rv as RangeVars) {
+func execRange(set as Set, val as json.Value, bp as BlockParts, node as json.Value, root as json.Value, vars as map of string to json.Value, rv as RangeVars, depth as int) {
     def t as string init json.typeOf($val);
     def out as string init "";
     if ($t == "list") {
         def n as int init json.length($val);
         if ($n == 0) {
-            return exec($set, $bp.elsePart, $node, $root, $vars);
+            return exec($set, $bp.elsePart, $node, $root, $vars, $depth + 1);
         }
         def i as int init 0;
         while ($i < $n) {
             def elem as json.Value init json.get($val, "/" + convert.toString($i));
             def env as map of string to json.Value init bindLoop($vars, $rv, numVal($i), $elem);
-            $out = $out + exec($set, $bp.thenPart, $elem, $root, $env);
+            $out = $out + exec($set, $bp.thenPart, $elem, $root, $env, $depth + 1);
             $i = $i + 1;
         }
         return $out;
@@ -313,16 +325,16 @@ func execRange(set as Set, val as json.Value, bp as BlockParts, node as json.Val
     if ($t == "map") {
         def keys as list of string init json.keys($val);
         if (len($keys) == 0) {
-            return exec($set, $bp.elsePart, $node, $root, $vars);
+            return exec($set, $bp.elsePart, $node, $root, $vars, $depth + 1);
         }
         for (def k in $keys) {
             def elem as json.Value init json.get($val, "/" + $k);
             def env as map of string to json.Value init bindLoop($vars, $rv, strVal($k), $elem);
-            $out = $out + exec($set, $bp.thenPart, $elem, $root, $env);
+            $out = $out + exec($set, $bp.thenPart, $elem, $root, $env, $depth + 1);
         }
         return $out;
     }
-    return exec($set, $bp.elsePart, $node, $root, $vars);
+    return exec($set, $bp.elsePart, $node, $root, $vars, $depth + 1);
 }
 
 # bindLoop returns a copy of the environment with the range's index / element

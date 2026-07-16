@@ -17,6 +17,10 @@ so the accessors below are the only way inside. `convert.typeOf` reports
 | Call | Returns | Notes |
 | ---- | ------- | ----- |
 | `toml.decode(text)` | `toml.Value` | Parse a TOML document into an opaque handle. |
+
+`toml.decode` rejects container nesting (and dotted-key segment counts)
+deeper than 1000 levels with a normal (catchable) decode error, so
+hostile deeply-nested input can't exhaust the interpreter's stack.
 | `toml.encode(v)` | `string` | Render a `toml.Value` (or a native `map` / `list` / scalar) to TOML text. |
 | `toml.encodePretty(v)` | `string` | Same, with a blank line separating `[table]` / `[[array]]` sections. |
 | `toml.typeOf(v[, ptr])` | `string` | Node type: `null` / `bool` / `int` / `float` / `string` / `list` / `map` / `datetime`. |

@@ -34,10 +34,17 @@ func decodeFn(args []interpreter.Value) (interpreter.Value, error) {
 	return v, nil
 }
 
+// maxNestingDepth caps container recursion in parseValue. Each nesting level
+// costs Go stack frames, and a Go stack overflow is fatal (not a catchable
+// Jennifer error), so deeply-nested untrusted input could otherwise kill the
+// whole process. 1000 is far beyond any legitimate document.
+const maxNestingDepth = 1000
+
 // decoder is a recursive-descent JSON reader over a byte-indexed string.
 type decoder struct {
-	s   string
-	pos int
+	s     string
+	pos   int
+	depth int // current container nesting, gated in parseValue
 }
 
 // errf builds an error tagged with the line/column of the current position.
@@ -71,9 +78,21 @@ func (d *decoder) parseValue() (interpreter.Value, error) {
 	}
 	switch c := d.s[d.pos]; {
 	case c == '{':
-		return d.parseObject()
+		if d.depth >= maxNestingDepth {
+			return interpreter.Null(), d.errf("nesting exceeds %d levels", maxNestingDepth)
+		}
+		d.depth++
+		v, err := d.parseObject()
+		d.depth--
+		return v, err
 	case c == '[':
-		return d.parseArray()
+		if d.depth >= maxNestingDepth {
+			return interpreter.Null(), d.errf("nesting exceeds %d levels", maxNestingDepth)
+		}
+		d.depth++
+		v, err := d.parseArray()
+		d.depth--
+		return v, err
 	case c == '"':
 		s, err := d.parseString()
 		if err != nil {

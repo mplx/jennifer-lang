@@ -10,6 +10,22 @@ import (
 	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
+// The shared source must not be seeded with a compile-time constant: every
+// fresh process would repeat the identical "random" stream, making uuids,
+// session ids, and generated passwords predictable across runs. Cross-process
+// repetition can't be observed inside one test binary, so assert the seeding
+// primitive directly: entropySeed() must draw from an entropy source, i.e.
+// consecutive calls yield differing values.
+func TestEntropySeedVaries(t *testing.T) {
+	seen := map[int64]bool{}
+	for i := 0; i < 8; i++ {
+		seen[entropySeed()] = true
+	}
+	if len(seen) < 2 {
+		t.Fatalf("entropySeed() returned one constant value across 8 calls (%v); the shared RNG would repeat its stream every run", seen)
+	}
+}
+
 // randInt over ranges whose width exceeds 2^63 must not panic (Int63n
 // rejects a non-positive span) and must return a value inside [lo, hi].
 // Covers both wide-range branches: uspan == 0 (the full int64 range) and

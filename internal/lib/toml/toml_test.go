@@ -311,6 +311,36 @@ func TestDecodeErrors(t *testing.T) {
 	}
 }
 
+// Nesting beyond the decoder's depth cap must surface as a normal, catchable
+// decode error. Unbounded recursion exhausts the Go stack, which is fatal and
+// uncatchable - a DoS wherever untrusted TOML is decoded.
+func TestDecodeDepthCap(t *testing.T) {
+	deepArr := "x = " + strings.Repeat("[", maxNestingDepth+1) + strings.Repeat("]", maxNestingDepth+1)
+	if _, err := decodeToml(deepArr); err == nil || !strings.Contains(err.Error(), "nesting") {
+		t.Errorf("deep array: expected nesting-depth error, got %v", err)
+	}
+	deepTbl := "x = " + strings.Repeat("{a = ", maxNestingDepth+1) + "1" + strings.Repeat("}", maxNestingDepth+1)
+	if _, err := decodeToml(deepTbl); err == nil || !strings.Contains(err.Error(), "nesting") {
+		t.Errorf("deep inline table: expected nesting-depth error, got %v", err)
+	}
+	// A dotted key recurses per segment in inlineAssign and builds a
+	// per-segment-deep tree from headers/key-values; cap it the same way.
+	deepKey := "x = {" + strings.Repeat("a.", maxNestingDepth+1) + "b = 1}"
+	if _, err := decodeToml(deepKey); err == nil || !strings.Contains(err.Error(), "nesting") {
+		t.Errorf("deep dotted key: expected nesting-depth error, got %v", err)
+	}
+	// A document exactly at the cap still decodes.
+	okArr := "x = " + strings.Repeat("[", maxNestingDepth) + strings.Repeat("]", maxNestingDepth)
+	if _, err := decodeToml(okArr); err != nil {
+		t.Errorf("depth-%d document should decode, got %v", maxNestingDepth, err)
+	}
+	// Truncated deep input (openers only, the cheap-to-build attack shape)
+	// must error normally instead of crashing the process.
+	if _, err := decodeToml("x = " + strings.Repeat("[", 5_000_000)); err == nil {
+		t.Error("truncated deep input: expected error, got nil")
+	}
+}
+
 // TestDecodeTruncatedDatetimes verifies a short date-time token errors instead
 // of slicing past the buffer (a crash on untrusted input).
 func TestDecodeTruncatedDatetimes(t *testing.T) {

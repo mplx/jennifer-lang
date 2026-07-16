@@ -1708,6 +1708,60 @@ produces `jennifer` / `jennifer-tiny`; `grep -rn 'mplx/jennifer-lang'` is empty;
 the old GitHub URL redirects to the org; the AUR package builds from the new
 source; pkg.go.dev serves the module under `jennifer-lang.dev/jennifer`.
 
+### M19.9 - Audit-driven correctness + hardening pass
+
+**In progress.** A systematic sweep through the findings of a full
+bug-and-performance audit of the interpreter (`internal/`) and the module
+library (`modules/`), worked in severity order: criticals first, then the
+value-semantics / type-safety holes, then module correctness, performance
+(the O(N^2) accumulation patterns), and hardening long-tail. Every fix
+lands with a regression test (Go test for interpreter code, `_test.j`
+overlay coverage for modules) and both-toolchain builds.
+
+Shipped so far:
+
+- **RNG entropy seeding.** The shared `math` random source was seeded with
+  a compile-time constant, so every fresh process produced the identical
+  "random" stream - the same `math.rand` sequence, `lists.shuffle`
+  permutation, `uuid.generate` UUIDs (and therefore predictable
+  session ids and generated passwords) on every run. The source is now
+  seeded from OS entropy at startup (CSPRNG bytes, wall-clock fallback);
+  `math.randSeed` remains the deterministic opt-in. The previously
+  undocumented `rand` / `randInt` / `randSeed` surface is now in
+  `docs/libraries/math.md` and the cheatsheet.
+- **`json.decode` / `toml.decode` nesting caps.** Both decoders recursed
+  without bound, so deeply-nested untrusted input (e.g. ten million `[`s
+  fed to a `web` service body) killed the whole process with an
+  uncatchable Go stack overflow. Container nesting (and TOML dotted-key
+  segment counts) past 1000 levels now raises a normal, catchable decode
+  error.
+- **Catch-variable binding.** The `try`/`catch` handler bound its catch
+  variable name-only into an unsized frame; the first `def` in the catch
+  body grew the slot slice over it, so every later read of the catch
+  variable returned `null` (and `.field` access on it errored) - the
+  error-handling construct corrupted its own binding. The catch variable
+  now binds at its resolved slot in a pre-sized pooled frame, the same
+  shape `for`-each uses for its iteration variable.
+- **`tengine` recursion guard.** A template that included itself (directly
+  or through a partner) recursed until the process died. Nesting is now
+  capped at 256 levels and past it the engine throws a catchable
+  `Error{kind: "tengine"}` - hostile author templates fail cleanly.
+- **Code 128 stop pattern.** `barcode.encode` emitted every Code 128
+  symbol with a doubled termination bar (15-module stop, final bar 4 wide
+  instead of 2), which no scanner reads. The pattern table now holds the
+  standard 11-module stop and the encoder appends the termination bar
+  once; a reference test pins the exact run widths of a known symbol.
+
+Remaining phases (tracked to completion under this milestone): the
+interpreter value-semantics and declared-type holes, module-boundary
+identity fixes, the wire-protocol byte/rune + quadratic-buffering sweep
+(redis / memcache / pop / imap), the `http.j` client hardening that
+propagates to its dependent modules, web/session security tightening, and
+a deliberate batch of pre-1.0 strictness changes (floored `%`, duplicate
+map-literal keys, int overflow, mixed-comparison precision, method/global
+name clashes, `$CONST` reads) - each of those with an explicit break note
+here when it lands.
+
 ## M20 - system libraries
 
 Go **system libraries**: cryptographic primitives, plus formats too heavy

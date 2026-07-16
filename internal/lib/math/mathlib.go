@@ -11,10 +11,13 @@
 package mathlib
 
 import (
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"math"
 	mathrand "math/rand"
 	"sync"
+	"time"
 
 	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
@@ -231,13 +234,25 @@ func roundFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 
 // Non-crypto pseudo-random helpers. Shared seeded source; protected with a
 // mutex so concurrent interpreter instances don't race even though Jennifer
-// itself has no concurrency primitives. The default source is
-// time-of-startup-seeded by Go's math/rand global init; randSeed() makes
-// it deterministic.
+// itself has no concurrency primitives. The default source is seeded from
+// OS entropy at startup so every process gets a distinct stream; randSeed()
+// is the deterministic opt-in for reproducible runs.
 var (
 	randMu  sync.Mutex
-	randSrc = mathrand.New(mathrand.NewSource(1))
+	randSrc = mathrand.New(mathrand.NewSource(entropySeed()))
 )
+
+// entropySeed returns a startup seed for the shared source: 8 bytes from
+// the OS CSPRNG, falling back to the wall clock if that read fails. The
+// stream itself stays math/rand (seedable, non-crypto - documented); only
+// the default seed is entropy so fresh processes don't repeat each other.
+func entropySeed() int64 {
+	var b [8]byte
+	if _, err := cryptorand.Read(b[:]); err == nil {
+		return int64(binary.LittleEndian.Uint64(b[:]))
+	}
+	return time.Now().UnixNano()
+}
 
 // randFn returns a float in [0, 1).
 func randFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {

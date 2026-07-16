@@ -89,6 +89,27 @@ func testLinearSymbol() {
     }
 }
 
+# Code 128 reference symbol: "A" in set B is value 33; the checksum is
+# (104 + 33*1) % 103 = 34. Start B / 33 / 34 are 11-module patterns and the
+# stop is 13 modules (the 11-module stop char plus the 2-module termination
+# bar), 46 modules total. The symbol must end with the 2-wide termination
+# bar; a doubled termination makes the final bar 4 wide and unscannable.
+func testCodeOneTwentyEightReference() {
+    def o as Options init defaults();
+    def sym as Symbol init encode("A", "code128", $o);
+    def want as list of int init [2, 1, 1, 2, 1, 4,
+        1, 1, 1, 3, 2, 3,
+        1, 3, 1, 1, 2, 3,
+        2, 3, 3, 1, 1, 1,
+        2];
+    testing.assertEqual($sym.bars, $want);
+    def total as int init 0;
+    for (def w in $sym.bars) {
+        $total = $total + $w;
+    }
+    testing.assertEqual($total, 46);
+}
+
 func testPngSignature() {
     def o as Options init defaults();
     def qr as Symbol init encode("HI", "qr", $o);

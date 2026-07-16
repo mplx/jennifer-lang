@@ -35,6 +35,34 @@ io.printf("%d\n", math.round(2.5));            # 3 (half away from zero)
 `min`/`max` follow the same numeric-promotion rule as `+`: same-type
 arguments return that type; any `float` involved produces a `float`.
 
+## Randomness
+
+| Call                    | Returns | Notes                                          |
+| ----------------------- | ------- | ---------------------------------------------- |
+| `math.rand()`           | float   | uniform in `[0, 1)`                            |
+| `math.randInt(lo, hi)`  | int     | uniform in `[lo, hi]` inclusive; errors if `lo > hi` |
+| `math.randSeed(n)`      | null    | reseeds the shared source deterministically    |
+
+The library keeps one shared pseudo-random source. It is seeded from OS
+entropy at startup, so every run produces a different stream; call
+`math.randSeed(n)` when you need reproducible output (tests, demos,
+simulations). The same source drives `lists.shuffle` and `uuid.generate`,
+so one `randSeed` call makes all of them deterministic together.
+
+The source is **not cryptographically secure** - it is Go's `math/rand`,
+seedable and predictable once observed. Don't derive long-lived secrets
+from it; a dedicated `crypto` library is the planned home for
+crypto-grade randomness.
+
+```jennifer
+use io;
+use math;
+
+math.randSeed(42);                              # reproducible from here on
+io.printf("%f\n", math.rand());                 # same value every run
+io.printf("%d\n", math.randInt(1, 6));          # die roll, seeded
+```
+
 ## Constants
 
 | Name      | Kind  | Value                |

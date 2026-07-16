@@ -89,6 +89,30 @@ try {
 	}
 }
 
+// The catch variable must survive catch-body defs. It occupies slot 0 of the
+// handler frame; a name-only binding into a fresh env leaves the slot slice
+// empty, so the first catch-body `def` (slot 1) grows the slice over slot 0
+// and every later slot-resolved `$e` read hits a zeroed binding (null).
+func TestCatchVariableSurvivesHandlerDefs(t *testing.T) {
+	out, err := run(t, `
+use io;
+try {
+    throw Error{kind: "demo", message: "boom", file: "", line: 0, col: 0};
+} catch (e) {
+    def x as int init 1;
+    def y as string init "two";
+    io.printf("msg=%s x=%d y=%s\n", $e.message, $x, $y);
+}
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	want := "msg=boom x=1 y=two\n"
+	if out != want {
+		t.Errorf("got %q, want %q", out, want)
+	}
+}
+
 func TestCatchDispatchOnKind(t *testing.T) {
 	out, err := run(t, `
 use io;

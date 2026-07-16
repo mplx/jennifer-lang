@@ -172,6 +172,30 @@ func TestDecodeErrors(t *testing.T) {
 	}
 }
 
+// Nesting beyond the decoder's depth cap must surface as a normal, catchable
+// decode error. Unbounded recursion exhausts the Go stack, which is fatal and
+// uncatchable - a remote DoS wherever untrusted JSON is decoded (web.bodyJson).
+func TestDecodeDepthCap(t *testing.T) {
+	deepArr := strings.Repeat("[", maxNestingDepth+1) + strings.Repeat("]", maxNestingDepth+1)
+	if _, err := decodeFn([]interpreter.Value{interpreter.StringVal(deepArr)}); err == nil || !strings.Contains(err.Error(), "nesting") {
+		t.Errorf("deep array: expected nesting-depth error, got %v", err)
+	}
+	deepObj := strings.Repeat(`{"k":`, maxNestingDepth+1) + "1" + strings.Repeat("}", maxNestingDepth+1)
+	if _, err := decodeFn([]interpreter.Value{interpreter.StringVal(deepObj)}); err == nil || !strings.Contains(err.Error(), "nesting") {
+		t.Errorf("deep object: expected nesting-depth error, got %v", err)
+	}
+	// A document exactly at the cap still decodes.
+	okArr := strings.Repeat("[", maxNestingDepth) + strings.Repeat("]", maxNestingDepth)
+	if _, err := decodeFn([]interpreter.Value{interpreter.StringVal(okArr)}); err != nil {
+		t.Errorf("depth-%d document should decode, got %v", maxNestingDepth, err)
+	}
+	// Truncated deep input (openers only, the cheap-to-build attack shape)
+	// must error normally instead of crashing the process.
+	if _, err := decodeFn([]interpreter.Value{interpreter.StringVal(strings.Repeat("[", 5_000_000))}); err == nil {
+		t.Error("truncated deep input: expected error, got nil")
+	}
+}
+
 func TestRoundTrip(t *testing.T) {
 	// decode(encode(v)) preserves kind for each value kind with a JSON image
 	vals := []interpreter.Value{
