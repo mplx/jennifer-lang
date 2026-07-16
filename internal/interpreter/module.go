@@ -62,7 +62,6 @@ func retagStructs(v Value, from, to string, isOwn func(string) bool) Value {
 		if v.StructNS == from && isOwn(v.StructName) {
 			nv.StructNS = to
 		}
-		nv.shared = nil
 		return nv
 	case KindList:
 		nv := v
@@ -71,7 +70,6 @@ func retagStructs(v Value, from, to string, isOwn func(string) bool) Value {
 			nv.List[i] = retagStructs(v.List[i], from, to, isOwn)
 		}
 		nv.ElemTyp = retagType(v.ElemTyp, from, to, isOwn)
-		nv.shared = nil
 		return nv
 	case KindMap:
 		nv := v
@@ -81,7 +79,6 @@ func retagStructs(v Value, from, to string, isOwn func(string) bool) Value {
 		}
 		nv.KeyTyp = retagType(v.KeyTyp, from, to, isOwn)
 		nv.ValTyp = retagType(v.ValTyp, from, to, isOwn)
-		nv.shared = nil
 		return nv
 	default:
 		return v

@@ -165,22 +165,18 @@ type Value struct {
 	ValTyp     *parser.Type  // KindMap:  value type
 	Task       *TaskState    // KindTask: shared handle - copying a task copies the pointer
 	Obj        *Value        // KindObject: wrapped opaque payload (e.g. json.Value's decoded tree); StructNS/StructName carry the owning type
-
-	// shared is the aliasing marker for compound backings.
-	// nil for freshly-constructed compounds and for scalars; set by
-	// Share() to a *bool = true when the Value gets read via
-	// evalExpr(VarExpr) (any variable reference is a potential alias
-	// creator). Mutation sites call Ensure() to detach - if shared is
-	// non-nil AND *shared is true, Ensure DeepCopies into a private
-	// backing; otherwise it's an O(1) pass-through.
-	//
-	// The flag is one-directional: once set to true it never flips
-	// back. That's pessimistic but correct: a Value that was ever
-	// aliased will detach on next mutation even if the alias has
-	// since gone out of scope. Refcounted COW is a possible future
-	// optimisation.
-	shared *bool
 }
+
+// Value semantics rest entirely on eager deep copies at every binding site:
+// execDefine / execAssign (via eagerCopy), parameter binding (bindParamValue),
+// and the spawn snapshot (DeepCopy) all take a private copy, and library
+// builtins Copy() before they mutate. No two live bindings ever share a
+// compound backing, so the mutation sites (execAppend / execIndexAssign /
+// execFieldAssign) can mutate a binding's own backing in place - which is what
+// keeps append-in-a-loop amortised O(N). A copy-on-write marker was tried here
+// and removed: it was inert (a value receiver plus by-value Environment reads
+// meant the flag never reached the stored binding, so it never detached). The
+// write-through alternative is recorded in docs/technical/rejected.md.
 
 func Null() Value              { return Value{Kind: KindNull} }
 func IntVal(n int64) Value     { return Value{Kind: KindInt, Int: n} }
@@ -279,47 +275,6 @@ func MapVal(keyT, valT parser.Type, entries []MapEntry) Value {
 	return Value{Kind: KindMap, Map: entries, KeyTyp: &kt, ValTyp: &vt}
 }
 
-// Share marks v as an aliased view of its compound backing
-// and returns v unchanged (same slice headers, no allocation). Called
-// from evalExpr for VarExpr so any variable reference records that
-// the underlying data might now have multiple readers. A future
-// mutation goes through Ensure and pays the deep-copy cost only if
-// the shared flag is set.
-//
-// For scalars and KindTask (which shares state by design), Share is
-// a no-op. The scalar fast path is a single range compare
-// (`KindBytes <= Kind <= KindStruct`) so the Go inliner can fold the
-// call at every VarExpr eval site, eliminating the function-call
-// overhead for the common scalar-variable read.
-func (v Value) Share() Value {
-	if v.Kind < KindBytes || v.Kind > KindStruct {
-		return v
-	}
-	if v.shared == nil {
-		t := true
-		v.shared = &t
-	} else {
-		*v.shared = true
-	}
-	return v
-}
-
-// Ensure is the mutation-site detach. If v was Shared
-// (sharedTag non-nil and *shared true), return a DeepCopy with a
-// private backing that the caller can safely mutate. Otherwise
-// return v as-is - the common append/rebind loop where nothing else
-// references the value.
-//
-// The Ensure/DeepCopy protocol replaces the previous
-// "binding.Value.Copy()" at every mutation site, cutting the
-// append-in-a-loop pattern from O(N^2) to amortised O(N).
-func (v Value) Ensure() Value {
-	if v.shared != nil && *v.shared {
-		return v.DeepCopy()
-	}
-	return v
-}
-
 // Copy returns a deep clone of v (kept as the public
 // deep-copy alias). Libraries and other callers whose pattern is
 // "Copy then mutate freely" (e.g. lists.shuffle, lists.reverse)
@@ -329,12 +284,10 @@ func (v Value) Copy() Value {
 	return v.DeepCopy()
 }
 
-// DeepCopy is the historical Copy() behaviour: recursively clone list
-// elements, map entries, struct fields, and bytes so no shared
-// backings remain. Called by Ensure at mutation time and by
-// snapshotForSpawn's value-semantics capture across goroutine
-// boundaries. The returned Value's shared marker is nil - owned by
-// nobody else.
+// DeepCopy recursively clones list elements, map entries, struct fields, and
+// bytes so no backing slices / maps are shared with the source. It is the
+// engine behind Copy() (every eager copy at a binding site) and behind
+// snapshotForSpawn's value-semantics capture across goroutine boundaries.
 func (v Value) DeepCopy() Value {
 	switch v.Kind {
 	case KindList:

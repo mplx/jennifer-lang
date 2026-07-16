@@ -54,23 +54,6 @@ func (c *Collector) tableAllocs(w io.Writer) {
 	fmt.Fprintln(w, "Jennifer allocation profile (value-semantics copies)")
 	fmt.Fprintln(w)
 
-	detaches := c.eventsSorted(c.detach)
-	fmt.Fprintln(w, "COW detachments - an Ensure() that copied a shared backing:")
-	if len(detaches) == 0 {
-		fmt.Fprintln(w, "  (none)")
-	} else {
-		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
-		fmt.Fprintln(tw, "COUNT\t  POSITION")
-		var total int64
-		for _, e := range detaches {
-			total += e.count
-			fmt.Fprintf(tw, "%d\t  %s\n", e.count, e.pos())
-		}
-		tw.Flush()
-		fmt.Fprintf(w, "  %d detachments across %d sites\n", total, len(detaches))
-	}
-
-	fmt.Fprintln(w)
 	eagers := c.eventsSorted(c.eager)
 	fmt.Fprintln(w, "Eager copies - a def / assignment / parameter binding that deep-copied a compound value:")
 	if len(eagers) == 0 {

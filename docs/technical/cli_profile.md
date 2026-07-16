@@ -58,14 +58,11 @@ to output.
 ## Allocation profile (`--allocs`)
 
 Because Jennifer is value-semantic, copies are where hidden cost hides.
-`--allocs` reports three copy paths per source position:
+`--allocs` reports two copy paths per source position:
 
 ```text
 $ jennifer profile --allocs examples/profile.j
 Jennifer allocation profile (value-semantics copies)
-
-COW detachments - an Ensure() that copied a shared backing:
-  (none)
 
 Eager copies - a def / assignment / parameter binding that deep-copied a compound value:
   COUNT  POSITION
@@ -74,16 +71,18 @@ Eager copies - a def / assignment / parameter binding that deep-copied a compoun
      50  examples/profile.j:69:9
      ...
   453 copies across 6 sites
+
+Spawn-frame deep copies - a scope snapshot captured at spawn launch:
+  (none)
 ```
 
 | Copy path             | What it is                                                                                                       |
 | --------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **Eager copies**      | A `def` / assignment / parameter binding that deep-copies a compound value (`Value.Copy()`). Where the real allocation cost lives. |
-| **COW detachments**   | An `Ensure()` that copied a *shared* backing at a mutation site. The interpreter copies eagerly at every store and keeps the append / index hot loop unshared, so a mutation target almost never holds a shared value - these stay at or near **zero** for ordinary `.j` code (the counter is kept for correctness if a future storage path defers its copy). |
+| **Eager copies**      | A `def` / assignment / parameter binding that deep-copies a compound value (`Value.Copy()`). Where the real allocation cost lives. A fresh list / map / struct literal RHS is already private, so binding it is **not** counted (no redundant copy). |
 | **Spawn-frame copies**| The scope snapshot taken when a `spawn` launches (`snapshotForSpawn`).                                            |
 
-`examples/profile.j` exercises all three - read it for the eager-vs-COW contrast
-in practice.
+`examples/profile.j` exercises both - read it to see where value semantics turn
+a store into real allocation.
 
 ## Reading a parallel profile
 
@@ -116,8 +115,8 @@ profiling machinery compiles into either binary's run path. Hook points:
   bodies each accumulate into their own snapshot root instead of racing one
   field; the collector's maps are mutex-guarded for the same reason.
 - **`evalCall`** times each method-call body for the trace timeline.
-- **`ensureCOW`** (replacing the bare `Value.Ensure()` at the four mutation
-  sites) records a COW detachment when a shared backing is actually copied.
+- **`eagerCopy`** records an eager deep copy at each value-storage site
+  (`def` / assignment / parameter binding) when the value is a compound.
 - **`evalSpawn`** times the `snapshotForSpawn` deep copy.
 
 `evalExpr` is deliberately *not* timed: a `time.Now()` around every literal read

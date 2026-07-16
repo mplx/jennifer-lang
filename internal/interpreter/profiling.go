@@ -22,9 +22,6 @@ type Profiler interface {
 	RecordStmt(file string, line, col int, self, cum time.Duration)
 	// RecordCall reports one method-call span for the trace timeline.
 	RecordCall(name, file string, line, col int, start, end time.Time)
-	// RecordDetach counts one COW detachment (an Ensure that copied a shared
-	// backing) at the mutation site.
-	RecordDetach(file string, line, col int)
 	// RecordEagerCopy counts one eager deep copy at a value-storage site
 	// (def / assignment / parameter binding), where value semantics turn a
 	// store into a real copy up front rather than deferring to Ensure.
@@ -36,30 +33,13 @@ type Profiler interface {
 
 // SetProfiler installs a profiler and selects which streams to record.
 // timeStmts drives the statement profile (default mode); timeCalls records the
-// method-call timeline (the trace form); trackAllocs records COW detachments
+// method-call timeline (the trace form); trackAllocs records eager value-copies
 // and spawn-frame copies (--allocs mode). Passing nil disables profiling.
 func (i *Interpreter) SetProfiler(p Profiler, timeStmts, timeCalls, trackAllocs bool) {
 	i.prof = p
 	i.profStmts = timeStmts
 	i.profCalls = timeCalls
 	i.profAllocs = trackAllocs
-}
-
-// ensureCOW is the profiling-aware form of Value.Ensure used at mutation
-// sites. It behaves exactly like Ensure (detach a shared backing, else return
-// the value unchanged) but, when allocation profiling is on and a real
-// detachment happens, attributes the copy to node n's source position. Because
-// Value and Interpreter share this package, the interpreter can read the
-// shared marker directly rather than needing Ensure to signal a copy.
-func (i *Interpreter) ensureCOW(v Value, n parser.Node) Value {
-	if v.shared != nil && *v.shared {
-		if i.prof != nil && i.profAllocs {
-			file, line, col := posFor(n)
-			i.prof.RecordDetach(file, line, col)
-		}
-		return v.DeepCopy()
-	}
-	return v
 }
 
 // isCompoundCopyKind reports whether a value of kind k gets a real deep copy

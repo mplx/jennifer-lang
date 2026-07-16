@@ -196,9 +196,9 @@ threads; desktop active, load low) - the machine the suite now prints in
 its own header, from `os.NCPU` plus a `/proc/cpuinfo` read done in
 Jennifer. The serial section is single-threaded by design; the parallel
 section fans out to `PARALLEL_WORKERS = 4` spawn tasks per workload. The
-interpreter build is the current one (shared-marker COW, lexical slot
-resolution, parse-time constant folding), so append-in-a-loop is
-amortised O(1).
+interpreter build is the current one (eager-copy value semantics, lexical
+slot resolution, parse-time constant folding), so append-in-a-loop is
+amortised O(N) with in-place growth.
 
 ### `jennifer` (standard-Go binary, default)
 

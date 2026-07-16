@@ -1265,6 +1265,21 @@ func (i *Interpreter) execStmtRaw(s parser.Stmt, env *Environment) (blockResult,
 	return blockResult{}, &runtimeError{Msg: fmt.Sprintf("unsupported statement type %T", s), File: file, Line: line, Col: col}
 }
 
+// rhsFreshLiteral reports whether an initializer / assignment RHS yields a
+// value that cannot alias any existing binding, so the binding site can store
+// it without a redundant eager deep copy. A list / map / struct literal builds
+// a brand-new container and its evaluators already Copy() every element into it
+// (evalListLit / evalMapLit / evalStructLit), so the whole value is private.
+// Var / index / field reads, const refs, and calls can all hand back a
+// reference into a live binding, so those are still eager-copied.
+func rhsFreshLiteral(e parser.Expr) bool {
+	switch e.(type) {
+	case *parser.ListLit, *parser.MapLit, *parser.StructLit:
+		return true
+	}
+	return false
+}
+
 func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error {
 	// if the declared type names a struct, verify the
 	// struct exists before any other check so an unknown name surfaces
@@ -1298,8 +1313,14 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 		// initializer expression can't alias into this binding, and stamp
 		// the declared element / key+value type onto the (possibly empty
 		// or untyped) container so subsequent `$x[i] = ...` writes can
-		// enforce the declared inner type.
-		val = stampDeclaredType(i.eagerCopy(v, st), st.VarType)
+		// enforce the declared inner type. A fresh literal RHS is already
+		// private (its evaluator copied every element), so skip the
+		// redundant whole-value copy - only the stamp is needed.
+		if rhsFreshLiteral(st.InitExpr) {
+			val = stampDeclaredType(v, st.VarType)
+		} else {
+			val = stampDeclaredType(i.eagerCopy(v, st), st.VarType)
+		}
 	} else {
 		// Spec decision: uninitialized variables get the zero value of
 		// their declared type. Constants must always be initialized (the
@@ -1445,7 +1466,14 @@ func (i *Interpreter) execAssign(st *parser.AssignStmt, env *Environment) error 
 			File: file, Line: line, Col: col,
 		}
 	}
-	val = stampDeclaredType(i.eagerCopy(val, st), b.DeclType)
+	// A fresh literal RHS is already private (its evaluator copied every
+	// element), so skip the redundant whole-value copy - only the stamp
+	// is needed. Any other RHS may alias a live binding and is eager-copied.
+	if rhsFreshLiteral(st.Value) {
+		val = stampDeclaredType(val, b.DeclType)
+	} else {
+		val = stampDeclaredType(i.eagerCopy(val, st), b.DeclType)
+	}
 	if st.Slot >= 0 {
 		if err := env.AssignAt(st.Depth, st.Slot, st.VarName, val); err != nil {
 			file, line, col := posFor(st)
@@ -1496,7 +1524,10 @@ func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environme
 	if err != nil {
 		return err
 	}
-	rootCopy := i.ensureCOW(binding.Value, st)
+	// Mutate the binding's own backing in place - no other live binding
+	// aliases it (eager copies at every store site guarantee that), so this
+	// stays amortised O(N) for append-in-a-loop.
+	rootCopy := binding.Value
 	if err := i.applyLvalueWrite(&rootCopy, steps, newVal, st); err != nil {
 		return err
 	}
@@ -1537,7 +1568,10 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 			file, line, col := posFor(st)
 			return &runtimeError{Msg: fmt.Sprintf("bytes element value %d out of range [0, 255]", newVal.Int), File: file, Line: line, Col: col}
 		}
-		rootCopy := i.ensureCOW(binding.Value, st)
+		// Mutate the binding's own backing in place - no other live binding
+		// aliases it (eager copies at every store site guarantee that), so this
+		// stays amortised O(N) for append-in-a-loop.
+		rootCopy := binding.Value
 		rootCopy.Bytes = append(rootCopy.Bytes, byte(newVal.Int))
 		if err := env.Assign(st.Target.Name, rootCopy); err != nil {
 			file, line, col := posFor(st)
@@ -1549,7 +1583,10 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: fmt.Sprintf("cannot append %s to list of declared element type %s", newVal.Kind, binding.Value.ElemTyp), File: file, Line: line, Col: col}
 	}
-	rootCopy := i.ensureCOW(binding.Value, st)
+	// Mutate the binding's own backing in place - no other live binding
+	// aliases it (eager copies at every store site guarantee that), so this
+	// stays amortised O(N) for append-in-a-loop.
+	rootCopy := binding.Value
 	rootCopy.List = append(rootCopy.List, newVal.Copy())
 	if err := env.Assign(st.Target.Name, rootCopy); err != nil {
 		file, line, col := posFor(st)
@@ -1590,7 +1627,10 @@ func (i *Interpreter) execFieldAssign(st *parser.FieldAssignStmt, env *Environme
 	if err != nil {
 		return err
 	}
-	rootCopy := i.ensureCOW(binding.Value, st)
+	// Mutate the binding's own backing in place - no other live binding
+	// aliases it (eager copies at every store site guarantee that), so this
+	// stays amortised O(N) for append-in-a-loop.
+	rootCopy := binding.Value
 	if err := i.applyLvalueWrite(&rootCopy, steps, newVal, st); err != nil {
 		return err
 	}
@@ -2288,17 +2328,12 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 			file, line, col := posFor(ex)
 			return Value{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 		}
-		// Mark the value as potentially aliased before it flows
-		// downstream. Note the current var-storage paths (execDefine,
-		// execAssign, bindParamValue) deep-copy eagerly via Value.Copy
-		// rather than lean on this marker, so the shared flag is
-		// defensive there and Ensure()'s detach branch almost never
-		// fires from Jennifer code. The live payoff of the Share/Ensure
-		// protocol is the opposite case: execAppend / execIndexAssign /
-		// execFieldAssign fetch their target via GetBinding (not
-		// evalExpr), so the append/index hot loop keeps an unshared
-		// value and mutates it in place - the O(N^2) to O(N) fix.
-		return v.Share(), nil
+		// Return the binding's value directly. It may share slice / map
+		// headers with the stored binding, but that is safe: any site that
+		// stores it into another binding (execDefine / execAssign /
+		// bindParamValue) deep-copies first, and the mutation sites fetch
+		// their target via GetBinding, not this path.
+		return v, nil
 	case *parser.ConstRefExpr:
 		// 1. User scope first (variables and `def const`).
 		b, err := env.GetBinding(ex.Name)

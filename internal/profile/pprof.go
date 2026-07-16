@@ -104,7 +104,7 @@ func label(keyIdx, strIdx int64) []byte {
 // Pprof writes a gzipped pprof Profile. For the statement profile the sample
 // values are [hits, self_ns, cum_ns]; for --allocs they are [count] under an
 // `alloc_objects` sample type (so `go tool pprof --alloc_objects` reads it),
-// with a `kind` label distinguishing COW detachments from spawn copies.
+// with a `kind` label distinguishing eager copies from spawn copies.
 func (c *Collector) Pprof(w io.Writer) error {
 	st := newStringTable()
 	var prof pbuf
@@ -149,9 +149,6 @@ func (c *Collector) Pprof(w io.Writer) error {
 			s.packedInt64(2, []int64{e.count})
 			s.msgField(3, label(st.intern("kind"), st.intern(kind)))
 			prof.msgField(2, s.buf)
-		}
-		for _, e := range c.eventsSorted(c.detach) {
-			emit(e, "detach")
 		}
 		for _, e := range c.eventsSorted(c.eager) {
 			emit(e, "eager")

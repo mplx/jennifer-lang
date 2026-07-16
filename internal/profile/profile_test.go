@@ -30,7 +30,7 @@ func TestCollectorConcurrentRecord(t *testing.T) {
 			defer wg.Done()
 			for n := 0; n < perG; n++ {
 				c.RecordStmt("a.j", 1, 1, time.Microsecond, time.Microsecond) // shared position
-				c.RecordDetach("b.j", g+1, 1)                                 // per-goroutine position
+				c.RecordEagerCopy("b.j", g+1, 1)                              // per-goroutine position
 			}
 		}(g)
 	}
@@ -69,8 +69,6 @@ func TestStatementAggregation(t *testing.T) {
 
 func TestAllocsTable(t *testing.T) {
 	c := profile.NewCollector(profile.ModeAllocs, 0)
-	c.RecordDetach("a.j", 5, 5)
-	c.RecordDetach("a.j", 5, 5)
 	c.RecordEagerCopy("a.j", 7, 9)
 	c.RecordEagerCopy("a.j", 7, 9)
 	c.RecordEagerCopy("a.j", 7, 9)
@@ -79,9 +77,6 @@ func TestAllocsTable(t *testing.T) {
 	var buf bytes.Buffer
 	c.Table(&buf)
 	out := buf.String()
-	if !strings.Contains(out, "COW detachments") || !strings.Contains(out, "a.j:5:5") {
-		t.Fatalf("allocs table missing detachments:\n%s", out)
-	}
 	if !strings.Contains(out, "Eager copies") || !strings.Contains(out, "a.j:7:9") {
 		t.Fatalf("allocs table missing eager copies:\n%s", out)
 	}
@@ -173,7 +168,7 @@ func TestPprofIsValidGzip(t *testing.T) {
 
 func TestAllocsPprofUsesAllocObjects(t *testing.T) {
 	c := profile.NewCollector(profile.ModeAllocs, 0)
-	c.RecordDetach("a.j", 5, 5)
+	c.RecordEagerCopy("a.j", 5, 5)
 	var buf bytes.Buffer
 	if err := c.Pprof(&buf); err != nil {
 		t.Fatal(err)

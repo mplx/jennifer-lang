@@ -10,8 +10,8 @@
 // gap left by `go tool pprof`, which profiles the interpreter binary, not the
 // .j program running inside it. Two modes: the default statement/call profile
 // (hit counts + wall-clock time per position) and an allocation profile
-// (--allocs) that surfaces the shared-marker COW detachments and spawn-frame
-// deep copies that value semantics turn into real work.
+// (--allocs) that surfaces the eager deep copies and spawn-frame deep copies
+// that value semantics turn into real work.
 package profile
 
 import (
@@ -27,7 +27,7 @@ const (
 	// ModeStatement records per-position hit counts and wall-clock time
 	// (self and cumulative) plus a method-call timeline for the trace form.
 	ModeStatement Mode = iota
-	// ModeAllocs records value-semantics work: COW detachments and
+	// ModeAllocs records value-semantics work: eager deep copies and
 	// spawn-frame deep copies, per position.
 	ModeAllocs
 )
@@ -47,11 +47,11 @@ type stmtSample struct {
 	cum  time.Duration // time in this statement including nested statements
 }
 
-// eventSample aggregates a counted event at a position (COW detach, spawn copy).
+// eventSample aggregates a counted event at a position (eager copy, spawn copy).
 type eventSample struct {
 	posKey
 	count int64
-	total time.Duration // 0 for pure counts (detaches)
+	total time.Duration // 0 for pure counts (eager copies)
 }
 
 // callEvent is one method-call span for the trace timeline.
@@ -77,7 +77,6 @@ type Collector struct {
 	runStart time.Time
 
 	stmts   map[posKey]*stmtSample
-	detach  map[posKey]*eventSample
 	eager   map[posKey]*eventSample
 	spawn   map[posKey]*eventSample
 	calls   []callEvent
@@ -91,7 +90,6 @@ func NewCollector(mode Mode, maxCallEvents int) *Collector {
 	return &Collector{
 		mode:    mode,
 		stmts:   map[posKey]*stmtSample{},
-		detach:  map[posKey]*eventSample{},
 		eager:   map[posKey]*eventSample{},
 		spawn:   map[posKey]*eventSample{},
 		maxCall: maxCallEvents,
@@ -140,20 +138,6 @@ func (c *Collector) RecordCall(name, file string, line, col int, start, end time
 		start: start.Sub(c.runStart),
 		end:   end.Sub(c.runStart),
 	})
-}
-
-// RecordDetach counts one COW detachment (an Ensure that copied a shared
-// backing) at a position.
-func (c *Collector) RecordDetach(file string, line, col int) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	k := posKey{file, line, col}
-	e := c.detach[k]
-	if e == nil {
-		e = &eventSample{posKey: k}
-		c.detach[k] = e
-	}
-	e.count++
 }
 
 // RecordEagerCopy counts one eager deep copy at a value-storage site (def,

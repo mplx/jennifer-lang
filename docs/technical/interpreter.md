@@ -48,35 +48,38 @@ Lists and maps are **value-typed** in Jennifer: `$ys = $xs;` behaves
 as a copy, function parameters bind by copy, and `const` is deep.
 No aliasing is observable from user code.
 
-**Shared-marker COW.** The implementation uses a lazy
-copy-on-write protocol so the common "grow a list one element at a
-time" pattern doesn't pay an O(N) deep-copy per write. `Value` gains
-a `shared *bool` marker:
+**Eager-copy value semantics.** Value semantics rest entirely on
+eager deep copies at every store site, not on copy-on-write:
 
-- `Value.Share()` is called by `evalExpr` for every `VarExpr`. It
-  points `shared` at a `*bool = true` so downstream storage of the
-  returned value (Define, Assign, param binding, list/map element
-  slot, etc.) sees the value as potentially aliased.
-- `Value.Ensure()` is called at every mutation site
-  (`execAppend`, `execIndexAssign`, `execFieldAssign`). If the flag
-  is set, Ensure DeepCopies into a fresh backing before returning.
-  Otherwise it's a pass-through - the append/assign hot loop
-  mutates in place with no allocation.
-- `Value.Copy()` is now the public deep-copy alias for library
-  callers whose pattern is "Copy then mutate freely" (e.g.
-  `lists.shuffle`, `lists.reverse`). Same historical behaviour;
-  the new name is `DeepCopy()`.
-- `snapshotForSpawn` calls `DeepCopy()` directly since goroutine-
-  boundary crossings need genuine independence.
+- Every binding site takes a private copy before storing:
+  `execDefine` / `execAssign` via `eagerCopy`, parameter binding via
+  `bindParamValue`, and `snapshotForSpawn` via `DeepCopy` for the
+  goroutine-boundary crossing. Library builtins whose pattern is
+  "copy then mutate freely" (`lists.shuffle`, `lists.reverse`, ...)
+  `Copy()` first. So no two live bindings ever share a compound
+  backing.
+- Because of that invariant the mutation sites (`execAppend`,
+  `execIndexAssign`, `execFieldAssign`) fetch the target via
+  `GetBinding` and mutate the binding's **own** backing in place -
+  no per-write copy - which keeps append-in-a-loop amortised O(N).
+- `Value.Copy()` is the public deep-copy alias; the engine is
+  `DeepCopy()`.
+- One optimisation trims a redundant copy: a fresh list / map /
+  struct literal RHS is already private (its evaluator `Copy()`s
+  every element into a brand-new container), so `execDefine` /
+  `execAssign` skip the whole-value eager copy for it
+  (`rhsFreshLiteral`) and only stamp the declared type. Var / index
+  / field reads, const refs, and calls can hand back a reference
+  into a live binding, so those are still eager-copied.
 
-The marker is one-directional: once `true` it never flips back.
-That's pessimistic but correct - a Value that was ever aliased
-detaches on next mutation even if the alias has since gone out of
-scope. Full refcounted COW would let unaliased mutations stay
-in-place at the cost of a small counter; it's a possible future
-optimisation. The current design gives the O(1) win on the write
-pattern that matters (append in a loop where the binding is the
-sole reference) without maintenance of a real refcount.
+A shared-marker copy-on-write protocol (`Value.shared *bool` +
+`Share()` / `Ensure()`) was tried here and removed. It was inert: a
+value receiver plus by-value `Environment.Get` / `GetAt` reads meant
+the flag was set on a throwaway copy and never reached the stored
+binding, so `Ensure` never detached and correctness always came from
+the eager copies above. Reintroducing it write-through (store
+`*Binding` so the marker propagates) was considered and rejected -
+see [rejected.md](rejected.md).
 
 Aliasing correctness is exercised by
 [`internal/interpreter/value_alias_test.go`](https://github.com/mplx/jennifer-lang/blob/main/internal/interpreter/value_alias_test.go) -
@@ -355,13 +358,6 @@ Two moves close out the optimization pass:
   unfolded so the runtime hits the same error at the same
   source position - the fold pass never surfaces a parse-time
   error the runtime wouldn't have raised.
-- **`Value.Share()` scalar fast path.** The mark-as-
-  shared helper is called from every `VarExpr` eval. Its inner
-  Kind switch became a range compare (`KindBytes <= Kind <=
-  KindStruct`) small enough for the Go inliner to fold the
-  call at the callsite; scalar variable reads (the common
-  case in numeric loops) skip the function call entirely.
-
 ## Execution model
 
 1. `Interpreter.Run(prog)` calls `parser.Resolve(prog)` first

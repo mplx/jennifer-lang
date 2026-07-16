@@ -1328,6 +1328,21 @@ goroutine while inner spawns launch runs clean under `go test -race`; a
 
 ### M19.2 - Value representation cleanup
 
+**Done.** The inert copy-on-write machinery is gone: `Value.shared`, `Share()`,
+`Ensure()`, `ensureCOW`, and the per-`VarExpr`-read `Share()` call are removed;
+the four mutation sites now grow the binding's own backing in place, and reads
+return the binding value directly. Value semantics rest (as they already did)
+on eager deep copies at every store site, documented on the `Value` type and in
+`docs/technical/interpreter.md`; the write-through alternative is recorded in
+`docs/technical/rejected.md`. The now-dead COW-detachment reporting was stripped
+from the `--allocs` profiler (interface, collector, table, pprof) so it no
+longer advertises a section that can never fire. A fresh list / map / struct
+literal RHS is already private, so `execDefine` / `execAssign` skip the
+redundant whole-value copy (`rhsFreshLiteral`) - proven by a profiler-backed
+test (literal binding records zero eager copies; an aliasing `def b init $a`
+records one) alongside a value-independence test; `value_alias_test.go` and the
+full suite (incl. `-race`) stay green. `Value` shrinking stays deferred.
+
 The copy-on-write marker protocol added for the append-in-a-loop optimization
 is **inert**: `Value.Share()` has a value receiver, and `Environment.Get` /
 `GetAt` return the binding's `Value` by value, so the `shared` flag is set on a

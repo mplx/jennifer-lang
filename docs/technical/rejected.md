@@ -641,3 +641,43 @@ So translation stays `i18n.tr()` (M20.4), composing with `printf` as above.
 Locale-aware *value* formatting (a number with the locale's grouping /
 decimal, a date in the locale's order) genuinely is presentation and is *not*
 rejected - it is a separate, open `printf` question for later.
+
+## Write-through copy-on-write for compound Values (M19.2)
+
+Value semantics rest on eager deep copies at every store site (`def` /
+assignment / parameter binding / spawn snapshot), so no two live bindings ever
+share a compound backing and the mutation sites can grow a binding's own
+backing in place - append-in-a-loop stays amortised O(N). An earlier attempt
+added a copy-on-write layer on top: a `Value.shared *bool` marker set by
+`Share()` on every `VarExpr` read and honoured by `Ensure()` at each mutation
+site, meaning to defer the deep copy until an actually-aliased value is
+mutated. It shipped **inert** - `Share()` has a value receiver and
+`Environment.Get` / `GetAt` return the binding's `Value` by value, so the flag
+was set on a throwaway copy and never reached the stored binding; `Ensure`
+never detached. Correctness never depended on it, and every compound read
+heap-allocated a `*bool` that went nowhere. It was removed.
+
+The **write-through** version that would make COW actually fire - store
+`*Binding` (or otherwise let the marker propagate back to the stored value) so
+a mutation site genuinely detaches an aliased backing - was considered and
+rejected:
+
+- **The eager-copy invariant already makes aliasing rare.** Because every store
+  copies, the only values that are ever aliased are transient rvalues that get
+  copied again at the next store. A binding almost never holds a value that
+  another live binding also holds, so the deferred-copy path COW optimises is
+  nearly never taken - it would add machinery for a case that eager copies have
+  already designed away.
+- **It complicates the hot path it claims to help.** Propagating the marker
+  means threading `*Binding` through `Environment` reads and every element /
+  field slot, turning simple by-value reads into pointer bookkeeping and
+  reintroducing shared mutable state the interpreter is otherwise free of.
+- **The measured win is on append-in-a-loop, which already works.** In-place
+  growth of a binding's own backing (safe precisely because nothing else
+  aliases it) gives the O(N) append without any marker at all.
+
+So Jennifer keeps eager copies plus one narrow optimisation - a fresh list /
+map / struct literal RHS is already private, so the binding site skips the
+redundant whole-value copy (`rhsFreshLiteral`). If profiling ever shows real
+aliasing-heavy workloads paying for redundant copies, refcounted COW can be
+revisited then.
