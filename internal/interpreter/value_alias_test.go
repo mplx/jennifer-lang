@@ -330,3 +330,83 @@ func TestAliasChainedFieldWrite(t *testing.T) {
 // TestSpawnDeepCopiesCapturedVars (and the test suite in
 // general). We don't duplicate that surface here - it's
 // snapshotForSpawn's job, not the shared-marker's.
+
+// TestLvalueWriteCommitsCurrentRoot - the RHS (or an index expression)
+// of a chained lvalue write may itself reassign the root variable as a
+// side effect. The write must commit onto the root's CURRENT value, not
+// a copy fetched before the RHS ran - otherwise the RHS's reassignment
+// is silently lost.
+func TestLvalueWriteCommitsCurrentRoot(t *testing.T) {
+	// Index assign: f() rewrites $g, then its return lands at [0].
+	out, err := runAlias(t, `
+		use io;
+		def g as list of int init [1, 2, 3];
+		func f() {
+		    $g = [7, 7, 7];
+		    return 42;
+		}
+		$g[0] = f();
+		io.printf("%a", $g);
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if out != "[42, 7, 7]" {
+		t.Errorf("index assign: got %q, want %q", out, "[42, 7, 7]")
+	}
+
+	// Append: f() rewrites $xs, then its return appends onto the new value.
+	out, err = runAlias(t, `
+		use io;
+		def xs as list of int init [1];
+		func f() {
+		    $xs = [5, 6];
+		    return 9;
+		}
+		$xs[] = f();
+		io.printf("%a", $xs);
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if out != "[5, 6, 9]" {
+		t.Errorf("append: got %q, want %q", out, "[5, 6, 9]")
+	}
+
+	// Field assign: f() rewrites $p, then its return lands in the field.
+	out, err = runAlias(t, `
+		use io;
+		def struct P { x as int, y as int };
+		def p as P init P{x: 1, y: 2};
+		func f() {
+		    $p = P{x: 70, y: 80};
+		    return 42;
+		}
+		$p.x = f();
+		io.printf("x=%d y=%d", $p.x, $p.y);
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if out != "x=42 y=80" {
+		t.Errorf("field assign: got %q, want %q", out, "x=42 y=80")
+	}
+
+	// Index-expression side effect: the index itself reassigns the root.
+	out, err = runAlias(t, `
+		use io;
+		def g as list of int init [1, 2, 3];
+		func idx() {
+		    $g = [10, 20, 30];
+		    return 2;
+		}
+		$g[idx()] = 99;
+		io.printf("%a", $g);
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if out != "[10, 20, 99]" {
+		t.Errorf("index side effect: got %q, want %q", out, "[10, 20, 99]")
+	}
+}

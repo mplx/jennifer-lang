@@ -1079,6 +1079,18 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 	if i.In == nil {
 		i.In = os.Stdin
 	}
+	// Spawned tasks resolve method calls, struct lookups, and namespace
+	// prefixes by name from their own goroutines (the resolver skips spawn
+	// bodies). New methods / structs / imports write those shared tables,
+	// which would be a data race against a still-running task - Go's
+	// "concurrent map read and map write" is fatal and uncatchable. Refuse
+	// the mutating input while any task is live; plain statements are fine
+	// (spawn snapshots are isolated from the live global frame).
+	if len(prog.Methods) > 0 || len(prog.Structs) > 0 || len(prog.Imports) > 0 || len(prog.ModuleImports) > 0 {
+		if i.hasLiveTasks() {
+			return Null(), fmt.Errorf("cannot define methods or structs or add imports while spawned tasks are running; task.wait() or task.discard() them first")
+		}
+	}
 	if err := i.processImports(prog, true); err != nil {
 		return Null(), err
 	}
@@ -1347,7 +1359,7 @@ func (i *Interpreter) execDefine(st *parser.DefineStmt, env *Environment) error 
 			// a wrapped null node, not a struct.
 			val = ObjectVal(st.VarType.StructNS, st.VarType.StructName, Null())
 		} else if st.VarType.Kind == parser.TypeStruct {
-			zero, err := i.zeroStructFor(st.VarType.StructNS, st.VarType.StructName, st)
+			zero, err := i.zeroStructFor(st.VarType.StructNS, st.VarType.StructName, st.VarType.ModPath, st)
 			if err != nil {
 				return err
 			}
@@ -1533,6 +1545,15 @@ func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environme
 	if err != nil {
 		return err
 	}
+	// Re-fetch the root binding: the RHS or an index expression may have
+	// reassigned the same variable as a side effect (a method call that
+	// writes the global), and committing the pre-evaluation copy would
+	// silently discard that write.
+	binding, err = env.getBindingRoot(rootVar)
+	if err != nil {
+		file, line, col := posFor(st)
+		return &runtimeError{Msg: fmt.Sprintf("undefined variable %q", rootVar.Name), File: file, Line: line, Col: col}
+	}
 	// Mutate the binding's own backing in place - no other live binding
 	// aliases it (eager copies at every store site guarantee that), so this
 	// stays amortised O(N) for append-in-a-loop.
@@ -1568,6 +1589,15 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 	if err != nil {
 		return err
 	}
+	// Re-fetch the target binding: the RHS may have reassigned the same
+	// variable as a side effect, and appending onto the pre-evaluation
+	// copy would silently discard that write. The Kind can't have changed
+	// (assignment enforces the declared type), so the checks above hold.
+	binding, err = env.getBindingRoot(st.Target)
+	if err != nil {
+		file, line, col := posFor(st)
+		return &runtimeError{Msg: fmt.Sprintf("undefined variable %q", st.Target.Name), File: file, Line: line, Col: col}
+	}
 	if binding.Value.Kind == KindBytes {
 		if newVal.Kind != KindInt {
 			file, line, col := posFor(st)
@@ -1594,9 +1624,15 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 	}
 	// Mutate the binding's own backing in place - no other live binding
 	// aliases it (eager copies at every store site guarantee that), so this
-	// stays amortised O(N) for append-in-a-loop.
+	// stays amortised O(N) for append-in-a-loop. Stamp the appended copy
+	// with the declared element type so a nested container keeps its
+	// ElemTyp/ValTyp and later writes into it stay type-checked.
 	rootCopy := binding.Value
-	rootCopy.List = append(rootCopy.List, newVal.Copy())
+	stored := newVal.Copy()
+	if rootCopy.ElemTyp != nil {
+		stored = stampDeclaredType(stored, *rootCopy.ElemTyp)
+	}
+	rootCopy.List = append(rootCopy.List, stored)
 	if err := env.assignRoot(st.Target, rootCopy); err != nil {
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
@@ -1635,6 +1671,14 @@ func (i *Interpreter) execFieldAssign(st *parser.FieldAssignStmt, env *Environme
 	steps, err := i.collectLvalueSteps(st.Target, env, st)
 	if err != nil {
 		return err
+	}
+	// Re-fetch the root binding: the RHS or an index expression may have
+	// reassigned the same variable as a side effect, and committing the
+	// pre-evaluation copy would silently discard that write.
+	binding, err = env.getBindingRoot(rootVar)
+	if err != nil {
+		file, line, col := posFor(st)
+		return &runtimeError{Msg: fmt.Sprintf("undefined variable %q", rootVar.Name), File: file, Line: line, Col: col}
 	}
 	// Mutate the binding's own backing in place - no other live binding
 	// aliases it (eager copies at every store site guarantee that), so this
@@ -1745,7 +1789,7 @@ func (i *Interpreter) lvalueWriteLeaf(parent *Value, step lvalueStep, newVal Val
 		if parent.Kind != KindStruct {
 			return &runtimeError{Msg: fmt.Sprintf("field access `.%s` requires a struct, got %s", step.field, parent.Kind), File: step.file, Line: step.line, Col: step.col}
 		}
-		def, ok := i.lookupStructDef(parent.StructNS, parent.StructName)
+		def, ok := i.lookupStructDef(parent.StructNS, parent.StructName, parent.ModPath)
 		if !ok {
 			return &runtimeError{Msg: fmt.Sprintf("internal: struct %q definition missing at assignment", parent.StructName), File: step.file, Line: step.line, Col: step.col}
 		}
@@ -1793,17 +1837,23 @@ func (p posNode) astNode()         {}
 // fully-populated value (no nil fields slot through to runtime
 // surprises later). `ns` is empty for user-defined
 // structs and set for library-provided namespaced ones.
-func (i *Interpreter) zeroStructFor(ns, name string, st parser.Node) (Value, error) {
-	// A module struct (ns is the module stem): build it inside the module's own
-	// interpreter so nested module-struct fields resolve there, then retag the
-	// module's own structs from their internal bare identity to the stem the
-	// importer sees - the same boundary crossing the `alias.Struct{...}` literal
-	// and the call path make. Library namespaced structs (in NSStructs) fall
+func (i *Interpreter) zeroStructFor(ns, name, modPath string, st parser.Node) (Value, error) {
+	// A module struct: build it inside the module's own interpreter so nested
+	// module-struct fields resolve there, then retag the module's own structs
+	// from their internal bare identity to the stem the importer sees - the
+	// same boundary crossing the `alias.Struct{...}` literal and the call
+	// path make. A non-empty modPath resolves by canonical path (unique even
+	// when two loaded modules share a stem); the stem fallback covers values
+	// that carry no ModPath. Library namespaced structs (in NSStructs) fall
 	// through to the normal path below.
 	if ns != "" {
 		if _, isLib := i.NSStructs[nsKey{NS: ns, Name: name}]; !isLib {
-			if mod := i.moduleByNS(ns); mod != nil && mod.isOwnStruct(name) {
-				v, err := mod.interp.zeroStructFor("", name, st)
+			mod := i.moduleByPath(modPath)
+			if mod == nil {
+				mod = i.moduleByNS(ns)
+			}
+			if mod != nil && mod.isOwnStruct(name) {
+				v, err := mod.interp.zeroStructFor("", name, "", st)
 				if err != nil {
 					return Value{}, err
 				}
@@ -1811,7 +1861,7 @@ func (i *Interpreter) zeroStructFor(ns, name string, st parser.Node) (Value, err
 			}
 		}
 	}
-	def, ok := i.lookupStructDef(ns, name)
+	def, ok := i.lookupStructDef(ns, name, modPath)
 	if !ok {
 		file, line, col := posFor(st)
 		if ns != "" {
@@ -1834,7 +1884,7 @@ func (i *Interpreter) zeroStructFor(ns, name string, st parser.Node) (Value, err
 					subNS = canonical
 				}
 			}
-			sub, err := i.zeroStructFor(subNS, decl.Type.StructName, st)
+			sub, err := i.zeroStructFor(subNS, decl.Type.StructName, decl.Type.ModPath, st)
 			if err != nil {
 				return Value{}, err
 			}
@@ -1850,19 +1900,33 @@ func (i *Interpreter) zeroStructFor(ns, name string, st parser.Node) (Value, err
 	return StructVal(name, fields), nil
 }
 
-// lookupStructDef finds a struct definition by (namespace, name). Bare
-// names hit the user-defined table; namespaced names hit the
-// library-registered table.
-func (i *Interpreter) lookupStructDef(ns, name string) (*parser.StructDef, bool) {
+// lookupStructDef finds a struct definition by (namespace, name, module
+// path). Bare names hit the user-defined table; namespaced names hit the
+// library-registered table; a non-empty modPath identifies a module struct
+// by its canonical path (the identity that stays unique when two loaded
+// modules share a file stem).
+func (i *Interpreter) lookupStructDef(ns, name, modPath string) (*parser.StructDef, bool) {
+	if modPath != "" {
+		// A module struct: resolve through the canonical path, never the
+		// stem - a stem lookup is ambiguous under a same-stem collision.
+		if mod := i.moduleByPath(modPath); mod != nil {
+			if def, ok := mod.interp.structs[name]; ok {
+				return def, true
+			}
+		}
+		return nil, false
+	}
 	if ns != "" {
 		if def, ok := i.NSStructs[nsKey{NS: ns, Name: name}]; ok {
 			return def, true
 		}
-		// A module struct: after resolveDeclaredStructNS its namespace is the
-		// module stem, and the definition lives in the module's own
-		// interpreter (not i.NSStructs). Consult it so a cross-module field
-		// write (`$x.field = ...`) and zero-value construction resolve, matching
-		// the `alias.Struct{...}` literal path.
+		// A module struct reached without a ModPath: after
+		// resolveDeclaredStructNS its namespace is the module stem, and the
+		// definition lives in the module's own interpreter (not i.NSStructs).
+		// Consult it so a cross-module field write (`$x.field = ...`) and
+		// zero-value construction resolve, matching the `alias.Struct{...}`
+		// literal path. Ambiguous stems return nil (the caller needs a
+		// ModPath to disambiguate).
 		if mod := i.moduleByNS(ns); mod != nil {
 			if def, ok := mod.interp.structs[name]; ok {
 				return def, true
@@ -1994,7 +2058,15 @@ func writeIndexedSlot(parent *Value, idx Value, newVal Value, st positioned) err
 			file, line, col := posOf(st)
 			return &runtimeError{Msg: fmt.Sprintf("cannot assign %s to list element of declared type %s", newVal.Kind, parent.ElemTyp), File: file, Line: line, Col: col}
 		}
-		parent.List[n] = newVal.Copy()
+		// Stamp the stored copy with the declared element type: an
+		// unstamped nested container (a fresh literal RHS) carries no
+		// ElemTyp/ValTyp of its own, and later writes into it would skip
+		// the declared-type check entirely.
+		stored := newVal.Copy()
+		if parent.ElemTyp != nil {
+			stored = stampDeclaredType(stored, *parent.ElemTyp)
+		}
+		parent.List[n] = stored
 		return nil
 	case KindMap:
 		if parent.KeyTyp != nil && !idx.MatchesDeclared(*parent.KeyTyp) {
@@ -2004,6 +2076,12 @@ func writeIndexedSlot(parent *Value, idx Value, newVal Value, st positioned) err
 		if parent.ValTyp != nil && !newVal.MatchesDeclared(*parent.ValTyp) {
 			file, line, col := posOf(st)
 			return &runtimeError{Msg: fmt.Sprintf("cannot assign %s to map value of declared type %s", newVal.Kind, parent.ValTyp), File: file, Line: line, Col: col}
+		}
+		// Stamp the stored copy with the declared value type (same
+		// reasoning as the list arm above).
+		stored := newVal.Copy()
+		if parent.ValTyp != nil {
+			stored = stampDeclaredType(stored, *parent.ValTyp)
 		}
 		// Fast path: a hashable key goes through the index. Build it lazily
 		// (once, O(n)) if this map has not been indexed yet, then every
@@ -2015,9 +2093,9 @@ func writeIndexedSlot(parent *Value, idx Value, newVal Value, st positioned) err
 			}
 			if parent.mapIndexUsable() {
 				if pos, hit := parent.mapIdx[enc]; hit {
-					parent.Map[pos].Value = newVal.Copy()
+					parent.Map[pos].Value = stored
 				} else {
-					parent.Map = append(parent.Map, MapEntry{Key: idx.Copy(), Value: newVal.Copy()})
+					parent.Map = append(parent.Map, MapEntry{Key: idx.Copy(), Value: stored})
 					parent.mapIdx[enc] = len(parent.Map) - 1
 				}
 				return nil
@@ -2028,12 +2106,12 @@ func writeIndexedSlot(parent *Value, idx Value, newVal Value, st positioned) err
 		// represent. Adding a non-hashable key disables the index for good.
 		for k := range parent.Map {
 			if parent.Map[k].Key.Equal(idx) {
-				parent.Map[k].Value = newVal.Copy()
+				parent.Map[k].Value = stored
 				return nil
 			}
 		}
 		// New key: append, preserving insertion order.
-		parent.Map = append(parent.Map, MapEntry{Key: idx.Copy(), Value: newVal.Copy()})
+		parent.Map = append(parent.Map, MapEntry{Key: idx.Copy(), Value: stored})
 		parent.mapIdx = nil
 		return nil
 	case KindBytes:
@@ -3065,6 +3143,20 @@ func (i *Interpreter) registerTask(state *TaskState) {
 	i.tasksMu.Lock()
 	i.tasks = append(i.tasks, state)
 	i.tasksMu.Unlock()
+}
+
+// hasLiveTasks reports whether any spawned task is still running.
+// Non-blocking. Used by EvalInteractive to refuse table-mutating REPL
+// input while a task's goroutine may still be reading those tables.
+func (i *Interpreter) hasLiveTasks() bool {
+	i.tasksMu.Lock()
+	defer i.tasksMu.Unlock()
+	for _, s := range i.tasks {
+		if !s.IsDone() {
+			return true
+		}
+	}
+	return false
 }
 
 // effectiveGlobal returns the env that should serve as the "global"

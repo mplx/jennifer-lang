@@ -62,7 +62,7 @@ for (def i in lists.range(0, 4)) {
 | `httpd.path(req)` | `string` | URL path, e.g. `/users/42`. |
 | `httpd.query(req, name)` | `string` | Query parameter (`""` if absent). |
 | `httpd.header(req, name)` | `string` | Request header (`""` if absent; case-insensitive name). |
-| `httpd.body(req)` | `bytes` | The request body (buffered, capped at 10 MiB). |
+| `httpd.body(req)` | `bytes` | The request body (buffered; a body over the 10 MiB cap is answered 413 by the engine). |
 | `httpd.remoteAddr(req)` | `string` | Client `host:port`. |
 | `httpd.setHeader(req, name, value)` | `null` | Set a response header (before `respond`). |
 | `httpd.respond(req, status, body)` | `null` | Send the response; `body` is a `string` or `bytes`. |
@@ -178,8 +178,11 @@ app processes on distinct ports or sockets behind one nginx `upstream {}` block.
 
 - **HTTP/1.1** over plaintext; **HTTP/2** is negotiated automatically over TLS
   by `net/http`.
-- The request body is buffered with a **10 MiB cap**; a configurable limit and
-  explicit read/idle/write timeout knobs are a planned follow-up.
+- The request body is buffered with a **10 MiB cap**; a body over the cap is
+  rejected with **413 Request Entity Too Large** before it reaches the program
+  (never silently truncated - a truncated body would defeat body-signature
+  checks). A configurable limit and explicit read/idle/write timeout knobs are
+  a planned follow-up.
 - **Routing, path parameters, middleware, cookies, and sessions** are not in
   the engine - they belong to the [`web`](../modules/web.md) framework module
   built on top of it, which does name-based handler dispatch itself (the engine

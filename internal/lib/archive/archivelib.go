@@ -23,20 +23,29 @@ import (
 	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
-// maxDecompressed caps a decompressed stream so a small "zip bomb" input cannot
-// expand to gigabytes in memory. Fixed default (configurable later).
-const maxDecompressed = 256 << 20
+// maxDecompressed caps the TOTAL decompressed payload of one unpack call,
+// summed across every entry, so a small "zip bomb" input cannot expand to
+// gigabytes in memory - a per-entry cap alone would still let an archive
+// with N entries expand to N times the cap. maxEntries bounds the member
+// count for the same reason. Vars (not consts) so tests can lower them;
+// fixed defaults (configurable later).
+var (
+	maxDecompressed int64 = 256 << 20
+	maxEntries            = 65536
+)
 
-// readCapped reads r fully but errors past maxDecompressed rather than
-// allocating without bound.
-func readCapped(r io.Reader) ([]byte, error) {
-	data, err := io.ReadAll(io.LimitReader(r, maxDecompressed+1))
+// readCapped reads r fully but errors once the shared unpack budget is
+// exhausted, rather than allocating without bound. On success it deducts
+// the bytes read from *budget, so the cap spans all entries of one call.
+func readCapped(r io.Reader, budget *int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, *budget+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > maxDecompressed {
-		return nil, fmt.Errorf("decompressed size exceeds the %d-byte limit", maxDecompressed)
+	if int64(len(data)) > *budget {
+		return nil, fmt.Errorf("total decompressed size exceeds the %d-byte limit", maxDecompressed)
 	}
+	*budget -= int64(len(data))
 	return data, nil
 }
 
@@ -225,6 +234,7 @@ func packTar(entries []entry) ([]byte, error) {
 func unpackTar(b []byte) ([]entry, error) {
 	tr := tar.NewReader(bytes.NewReader(b))
 	var entries []entry
+	budget := maxDecompressed
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -236,7 +246,10 @@ func unpackTar(b []byte) ([]entry, error) {
 		if hdr.Typeflag != tar.TypeReg {
 			continue // only regular files map to an Entry
 		}
-		data, err := readCapped(tr)
+		if len(entries) >= maxEntries {
+			return nil, fmt.Errorf("archive holds more than %d entries", maxEntries)
+		}
+		data, err := readCapped(tr, &budget)
 		if err != nil {
 			return nil, err
 		}
@@ -274,7 +287,26 @@ func unpackZip(b []byte) ([]entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Reject on the declared sizes up front (cheap - no decompression).
+	// The declared values can lie, so the readCapped budget below stays
+	// the authoritative check.
+	var declared uint64
+	fileCount := 0
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		fileCount++
+		if fileCount > maxEntries {
+			return nil, fmt.Errorf("archive holds more than %d entries", maxEntries)
+		}
+		declared += f.UncompressedSize64
+		if declared > uint64(maxDecompressed) {
+			return nil, fmt.Errorf("total decompressed size exceeds the %d-byte limit", maxDecompressed)
+		}
+	}
 	var entries []entry
+	budget := maxDecompressed
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
 			continue
@@ -283,7 +315,7 @@ func unpackZip(b []byte) ([]entry, error) {
 		if err != nil {
 			return nil, err
 		}
-		data, err := readCapped(rc)
+		data, err := readCapped(rc, &budget)
 		rc.Close()
 		if err != nil {
 			return nil, err
@@ -317,7 +349,11 @@ func gunzipBytes(b []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := readCapped(r)
+	// The outer gzip stream gets its own full budget; the tar members
+	// inside are then re-budgeted by unpackTar. Either cap tripping is a
+	// bomb either way.
+	budget := maxDecompressed
+	out, err := readCapped(r, &budget)
 	r.Close()
 	if err != nil {
 		return nil, err

@@ -6,6 +6,7 @@
 package httpdlib
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net"
@@ -301,5 +302,78 @@ func TestSetCookieMultiple(t *testing.T) {
 	defer resp.Body.Close()
 	if cookies := resp.Header["Set-Cookie"]; len(cookies) != 2 {
 		t.Fatalf("Set-Cookie count = %d, want 2 (%v)", len(cookies), cookies)
+	}
+}
+
+// respond must copy a bytes body at the boundary: the socket write happens
+// later, on the handler goroutine, so handing it the caller's backing lets a
+// post-respond `$buf[i] = ...` mutation race the write (and corrupt the
+// response). The Jennifer-visible symptom is a violation of value semantics.
+func TestRespondCopiesBytesBody(t *testing.T) {
+	ResetForTest()
+	srv, addr := startServer(t)
+	defer shutdownFn(noCtx, []Value{srv})
+
+	serveOnce(srv, func(req Value) {
+		buf := interpreter.BytesVal([]byte("hello"))
+		_, _ = respondFn(noCtx, []Value{req, interpreter.IntVal(200), buf})
+		// Simulates `$buf[0] = 88;` right after httpd.respond returns.
+		buf.Bytes[0] = 'X'
+	})
+
+	resp, err := http.Get("http://" + addr + "/")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != "hello" {
+		t.Errorf("body = %q, want %q (post-respond mutation must not reach the wire)", string(body), "hello")
+	}
+}
+
+// A request body over the buffering cap must be REJECTED (413), not silently
+// truncated: a truncated-but-complete-looking body defeats body-signature
+// verification and smuggles content past inspection. A body exactly at the
+// cap still goes through whole.
+func TestOversizeBodyRejectedNotTruncated(t *testing.T) {
+	ResetForTest()
+	srv, addr := startServer(t)
+	defer shutdownFn(noCtx, []Value{srv})
+
+	// One byte over the cap: the handler must answer 413 on its own (the
+	// pull loop never sees the request, so no serveOnce here).
+	over := bytes.Repeat([]byte("x"), int(maxBodyBytes)+1)
+	resp, err := http.Post("http://"+addr+"/", "application/octet-stream", bytes.NewReader(over))
+	if err != nil {
+		t.Fatalf("POST over-cap: %v", err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("over-cap status = %d, want %d", resp.StatusCode, http.StatusRequestEntityTooLarge)
+	}
+
+	// Exactly at the cap: handed to the program complete.
+	var gotLen int64
+	serveOnce(srv, func(req Value) {
+		b, err := bodyFn(noCtx, []Value{req})
+		if err == nil {
+			gotLen = int64(len(b.Bytes))
+		}
+		_, _ = respondFn(noCtx, []Value{req, interpreter.IntVal(200), interpreter.StringVal("ok")})
+	})
+	atCap := bytes.Repeat([]byte("y"), int(maxBodyBytes))
+	resp2, err := http.Post("http://"+addr+"/", "application/octet-stream", bytes.NewReader(atCap))
+	if err != nil {
+		t.Fatalf("POST at-cap: %v", err)
+	}
+	io.Copy(io.Discard, resp2.Body)
+	resp2.Body.Close()
+	if resp2.StatusCode != 200 {
+		t.Errorf("at-cap status = %d, want 200", resp2.StatusCode)
+	}
+	if gotLen != maxBodyBytes {
+		t.Errorf("at-cap body length seen by the program = %d, want %d", gotLen, maxBodyBytes)
 	}
 }

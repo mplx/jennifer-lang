@@ -178,6 +178,33 @@ func TestSameStemModulesCoexist(t *testing.T) {
 	}
 }
 
+// Field writes and zero-init on a same-stem module struct must resolve
+// through the module's canonical path (the identity), not the stem: a
+// stem-keyed lookup is ambiguous when two loaded modules share a basename,
+// which would break `$x.field = ...` and `def y as u.Thing;` for both.
+func TestSameStemModuleFieldWriteAndZeroInit(t *testing.T) {
+	out, err := runModuleMainTree(t, map[string]string{
+		"a/util.j": `export def struct Thing { x as int };
+			export func make() { return Thing{ x: 1 }; }`,
+		"b/util.j": `export def struct Gadget { y as int };
+			export func make() { return Gadget{ y: 2 }; }`,
+		"main.j": `import "./a/util.j" as u; import "./b/util.j" as v; use io;
+			def t as u.Thing init u.make();
+			$t.x = 5;
+			def z as u.Thing;
+			def g as v.Gadget init v.make();
+			$g.y = 7;
+			def h as v.Gadget;
+			io.printf("%d %d %d %d\n", $t.x, $z.x, $g.y, $h.y);`,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.TrimSpace(out) != "5 0 7 0" {
+		t.Errorf("got %q, want %q", strings.TrimSpace(out), "5 0 7 0")
+	}
+}
+
 // Distinct stems are fine, and importing the same module file twice (a run-once
 // cache hit) is not a collision.
 func TestModuleDistinctStemsAndReimportOK(t *testing.T) {

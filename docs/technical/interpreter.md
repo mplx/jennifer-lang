@@ -140,6 +140,14 @@ and at `execDefine` time before the init expression is evaluated, so
 the user sees `"unknown struct type"` rather than a misleading
 type-mismatch error.
 
+Module structs resolve by their canonical path, not their stem:
+`zeroStructFor` and `lookupStructDef` take the `ModPath` carried on the
+value / declared type and resolve through `moduleByPath`, falling back to
+the stem-keyed `moduleByNS` only when no path is available. This is what
+keeps field writes and zero-init working when two loaded modules share a
+file stem (`a/util.j` and `b/util.j`) - a stem-keyed lookup is ambiguous
+there and `moduleByNS` deliberately returns nil rather than guessing.
+
 ### Library-provided namespaced structs
 
 Libraries register their own struct types via

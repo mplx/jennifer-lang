@@ -1751,16 +1751,54 @@ Shipped so far:
   instead of 2), which no scanner reads. The pattern table now holds the
   standard 11-module stop and the encoder appends the termination bar
   once; a reference test pins the exact run widths of a known symbol.
+- **Lvalue writes commit the current root.** `$g[0] = f();`,
+  `$xs[] = f();`, and `$p.x = f();` fetched the root binding before
+  evaluating the right-hand side, so an RHS (or index expression) that
+  reassigned the same variable had that write silently overwritten by the
+  stale pre-evaluation copy. All three write paths re-fetch the binding
+  after evaluation, immediately before the commit.
+- **Nested stores keep their element types.** Values stored by
+  index-write or append were never stamped with the container's declared
+  element / value type, so a nested container stored that way carried no
+  inner type and later writes into it skipped the declared-type check -
+  `$grid[] = [9]; $grid[1][0] = "oops";` put a string inside a
+  `list of list of int`. Index / append stores now stamp like field
+  writes and `def` / assignment always did.
+- **REPL vs. spawn table race.** New methods, structs, or imports typed
+  at the prompt while a spawned task was still running mutated the
+  method / struct / namespace tables that task goroutines read by name -
+  a fatal "concurrent map read and map write". `EvalInteractive` now
+  rejects table-mutating input while any task is live (with a message
+  pointing at `task.wait` / `task.discard`); plain statements still
+  evaluate.
+- **Same-stem module structs.** With two imported modules sharing a file
+  stem (`a/util.j` + `b/util.j`), every struct field write and zero-init
+  on either module's structs failed: the runtime resolved struct
+  definitions by stem, which is ambiguous under a collision. Struct
+  lookups now resolve through the module's canonical path (the identity),
+  with the stem as fallback only when no path is available.
+- **`archive.unpack` aggregate cap.** The 256 MiB decompression cap was
+  per entry, so a small archive with many entries could still expand to
+  entries-times-cap and OOM. The cap now bounds the total across all
+  entries of one call (zip pre-checks declared sizes too) and the member
+  count is capped at 65536.
+- **`httpd` body handling.** `respond` stored the caller's `bytes`
+  backing and wrote it to the socket later from the handler goroutine, so
+  a post-respond mutation raced the write - the body is copied at the
+  boundary now. And a request body over the 10 MiB cap was silently
+  truncated and handed to the program looking complete (defeating
+  body-signature checks); the engine now rejects it with 413 before it
+  reaches the pull loop.
 
 Remaining phases (tracked to completion under this milestone): the
-interpreter value-semantics and declared-type holes, module-boundary
-identity fixes, the wire-protocol byte/rune + quadratic-buffering sweep
-(redis / memcache / pop / imap), the `http.j` client hardening that
-propagates to its dependent modules, web/session security tightening, and
-a deliberate batch of pre-1.0 strictness changes (floored `%`, duplicate
-map-literal keys, int overflow, mixed-comparison precision, method/global
-name clashes, `$CONST` reads) - each of those with an explicit break note
-here when it lands.
+wire-protocol byte/rune + quadratic-buffering sweep (redis / memcache /
+pop / imap), the `http.j` client hardening that propagates to its
+dependent modules, web/session security tightening, the remaining module
+correctness and performance findings, and a deliberate batch of pre-1.0
+strictness changes (floored `%`, duplicate map-literal keys, int
+overflow, mixed-comparison precision, method/global name clashes,
+`$CONST` reads) - each of those with an explicit break note here when it
+lands.
 
 ## M20 - system libraries
 

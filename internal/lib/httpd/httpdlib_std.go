@@ -171,11 +171,19 @@ func resolveReq(fnName string, id int64) (*reqState, error) {
 // the response from this goroutine.
 func makeHandler(st *serverState) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, rerr := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
+		// Read one byte past the cap so an over-limit body is detectable:
+		// it must be REJECTED with 413, never silently truncated - a
+		// truncated-but-complete-looking body defeats body-signature
+		// verification and smuggles content past inspection.
+		body, rerr := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
 		if rerr != nil {
 			// A mid-body client disconnect leaves a truncated body; answer 400
 			// here rather than hand the interpreter a silently-short request.
 			http.Error(w, "error reading request body", http.StatusBadRequest)
+			return
+		}
+		if int64(len(body)) > maxBodyBytes {
+			http.Error(w, "request body exceeds the server's limit", http.StatusRequestEntityTooLarge)
 			return
 		}
 		rs := &reqState{r: r, body: body, done: make(chan struct{}), status: 200, srv: st}

@@ -527,6 +527,22 @@ func (i *Interpreter) moduleByNS(ns string) *loadedModule {
 	return found
 }
 
+// moduleByPath returns the loaded module with the given canonical path, or
+// nil. Unlike moduleByNS this is never ambiguous: the canonical path IS the
+// module identity, so it resolves correctly even when two loaded modules
+// share a file stem. Prefer it whenever a Value / Type carries a ModPath.
+func (i *Interpreter) moduleByPath(path string) *loadedModule {
+	if path == "" {
+		return nil
+	}
+	for _, m := range i.moduleAliases {
+		if m.path == path {
+			return m
+		}
+	}
+	return nil
+}
+
 // moduleConst reads `alias.NAME`, a constant declared at the module's top
 // level, from the loaded module's global scope.
 func (i *Interpreter) moduleConst(m *loadedModule, c *parser.QualifiedConstRefExpr) (Value, error) {

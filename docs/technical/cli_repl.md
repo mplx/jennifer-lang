@@ -8,6 +8,16 @@ imports and method definitions are idempotent / re-assignable so the user
 can iterate, and the value of a trailing `ExprStmt` is returned so the loop
 can print it.
 
+One safety restriction: input that defines methods or structs, or adds
+`use` / `import` statements, is rejected while a spawned task is still
+running. Spawn bodies resolve method calls, struct lookups, and namespace
+prefixes by name from their own goroutines, so mutating those shared
+tables mid-flight would be a data race (Go's fatal "concurrent map read
+and map write"). Observe the task first - `task.wait($t)` or
+`task.discard($t)` - or let it finish; plain statements evaluate
+normally in the meantime (spawn snapshots are isolated from the live
+global frame).
+
 Both import kinds work at the prompt: `use LIB;` activates a library
 namespace, and `import "PATH.j";` loads a module (`runRepl` calls
 `EnableModules` with the current directory as the local-import base and the
