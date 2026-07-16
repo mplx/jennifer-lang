@@ -135,7 +135,7 @@ func headFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 	if n < 0 || n > len(args[0].List) {
 		return interpreter.Null(), fmt.Errorf("lists.head: count %d out of range [0, %d]", n, len(args[0].List))
 	}
-	out := args[0].Copy()
+	out := args[0] // shallow; List rebuilt below (skip the wasted deep copy)
 	out.List = append(out.List[:0:0], args[0].List[:n]...)
 	for i := range out.List {
 		out.List[i] = args[0].List[i].Copy()
@@ -161,7 +161,7 @@ func tailFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 	if n < 0 || n > total {
 		return interpreter.Null(), fmt.Errorf("lists.tail: count %d out of range [0, %d]", n, total)
 	}
-	out := args[0].Copy()
+	out := args[0] // shallow; List rebuilt below (skip the wasted deep copy)
 	out.List = make([]interpreter.Value, n)
 	for i := 0; i < n; i++ {
 		out.List[i] = args[0].List[total-n+i].Copy()
@@ -178,7 +178,10 @@ func reverseFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.
 		return interpreter.Null(), err
 	}
 	src := args[0].List
-	out := args[0].Copy()
+	// Shallow struct copy: List is fully rebuilt (with per-element copies)
+	// just below, so deep-copying args[0] first is wasted work. ElemTyp is a
+	// shared immutable type pointer - exactly what Copy() would leave.
+	out := args[0]
 	out.List = make([]interpreter.Value, len(src))
 	for i, v := range src {
 		out.List[len(src)-1-i] = v.Copy()
@@ -279,7 +282,7 @@ func concatFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 	if err := requireList("concat", args[1], "second argument"); err != nil {
 		return interpreter.Null(), err
 	}
-	out := args[0].Copy()
+	out := args[0] // shallow; List rebuilt below (skip the wasted deep copy)
 	out.List = make([]interpreter.Value, 0, len(args[0].List)+len(args[1].List))
 	for _, v := range args[0].List {
 		out.List = append(out.List, v.Copy())
@@ -318,7 +321,7 @@ func sliceFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 	if end < start || end > total {
 		return interpreter.Null(), fmt.Errorf("lists.slice: end %d out of range [%d, %d]", end, start, total)
 	}
-	out := args[0].Copy()
+	out := args[0] // shallow; List rebuilt below (skip the wasted deep copy)
 	out.List = make([]interpreter.Value, end-start)
 	for i := start; i < end; i++ {
 		out.List[i-start] = args[0].List[i].Copy()

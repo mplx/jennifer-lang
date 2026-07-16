@@ -829,6 +829,11 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 		i.methods[m.Name] = m
 	}
 	i.global = NewEnvironment(nil)
+	// Pre-size the global slot slice so top-level `def`s fill fixed slots
+	// instead of growing the slice one entry at a time (O(n^2) for n globals).
+	if prog.NumGlobals > 0 {
+		i.global.slots = make([]Binding, prog.NumGlobals)
+	}
 	// Module imports load (and their modules initialise) before this
 	// program's body runs - depth-first post-order, so an imported module
 	// is fully initialised before the code that imports it.
@@ -1500,7 +1505,7 @@ func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environme
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: "internal: index-assign target has no root variable", File: file, Line: line, Col: col}
 	}
-	binding, err := env.GetBinding(rootVar.Name)
+	binding, err := env.getBindingRoot(rootVar)
 	if err != nil {
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: fmt.Sprintf("undefined variable %q", rootVar.Name), File: file, Line: line, Col: col}
@@ -1531,7 +1536,7 @@ func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environme
 	if err := i.applyLvalueWrite(&rootCopy, steps, newVal, st); err != nil {
 		return err
 	}
-	if err := env.Assign(rootVar.Name, rootCopy); err != nil {
+	if err := env.assignRoot(rootVar, rootCopy); err != nil {
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 	}
@@ -1542,7 +1547,7 @@ func (i *Interpreter) execIndexAssign(st *parser.IndexAssignStmt, env *Environme
 // Copies the target binding, appends, commits it back. Const-target
 // rejection, type check, and per-kind validation all live here.
 func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error {
-	binding, err := env.GetBinding(st.Target.Name)
+	binding, err := env.getBindingRoot(st.Target)
 	if err != nil {
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: fmt.Sprintf("undefined variable %q", st.Target.Name), File: file, Line: line, Col: col}
@@ -1573,7 +1578,7 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 		// stays amortised O(N) for append-in-a-loop.
 		rootCopy := binding.Value
 		rootCopy.Bytes = append(rootCopy.Bytes, byte(newVal.Int))
-		if err := env.Assign(st.Target.Name, rootCopy); err != nil {
+		if err := env.assignRoot(st.Target, rootCopy); err != nil {
 			file, line, col := posFor(st)
 			return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 		}
@@ -1588,7 +1593,7 @@ func (i *Interpreter) execAppend(st *parser.AppendStmt, env *Environment) error 
 	// stays amortised O(N) for append-in-a-loop.
 	rootCopy := binding.Value
 	rootCopy.List = append(rootCopy.List, newVal.Copy())
-	if err := env.Assign(st.Target.Name, rootCopy); err != nil {
+	if err := env.assignRoot(st.Target, rootCopy); err != nil {
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 	}
@@ -1606,7 +1611,7 @@ func (i *Interpreter) execFieldAssign(st *parser.FieldAssignStmt, env *Environme
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: "internal: field-assign target has no root variable", File: file, Line: line, Col: col}
 	}
-	binding, err := env.GetBinding(rootVar.Name)
+	binding, err := env.getBindingRoot(rootVar)
 	if err != nil {
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: fmt.Sprintf("undefined variable %q", rootVar.Name), File: file, Line: line, Col: col}
@@ -1634,7 +1639,7 @@ func (i *Interpreter) execFieldAssign(st *parser.FieldAssignStmt, env *Environme
 	if err := i.applyLvalueWrite(&rootCopy, steps, newVal, st); err != nil {
 		return err
 	}
-	if err := env.Assign(rootVar.Name, rootCopy); err != nil {
+	if err := env.assignRoot(rootVar, rootCopy); err != nil {
 		file, line, col := posFor(st)
 		return &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 	}
@@ -1944,6 +1949,16 @@ func indexInto(parent *Value, idx Value, st positioned) (*Value, error) {
 		}
 		return &parent.List[n], nil
 	case KindMap:
+		// Fast path: a complete index plus a hashable key answers hit and
+		// miss in O(1). The index being usable means every key is hashable,
+		// so a hashable key absent from it is a genuine miss.
+		if enc, ok := mapKeyEncode(idx); ok && parent.mapIndexUsable() {
+			if pos, hit := parent.mapIdx[enc]; hit {
+				return &parent.Map[pos].Value, nil
+			}
+			file, line, col := posOf(st)
+			return nil, &runtimeError{Msg: fmt.Sprintf("map has no entry for key %s", idx.Display()), File: file, Line: line, Col: col}
+		}
 		for k := range parent.Map {
 			if parent.Map[k].Key.Equal(idx) {
 				return &parent.Map[k].Value, nil
@@ -1986,6 +2001,27 @@ func writeIndexedSlot(parent *Value, idx Value, newVal Value, st positioned) err
 			file, line, col := posOf(st)
 			return &runtimeError{Msg: fmt.Sprintf("cannot assign %s to map value of declared type %s", newVal.Kind, parent.ValTyp), File: file, Line: line, Col: col}
 		}
+		// Fast path: a hashable key goes through the index. Build it lazily
+		// (once, O(n)) if this map has not been indexed yet, then every
+		// update / insert is O(1) - turning `$m[$k] = $v` in a loop from
+		// O(n^2) into O(n).
+		if enc, hashable := mapKeyEncode(idx); hashable {
+			if !parent.mapIndexUsable() {
+				parent.buildMapIndex()
+			}
+			if parent.mapIndexUsable() {
+				if pos, hit := parent.mapIdx[enc]; hit {
+					parent.Map[pos].Value = newVal.Copy()
+				} else {
+					parent.Map = append(parent.Map, MapEntry{Key: idx.Copy(), Value: newVal.Copy()})
+					parent.mapIdx[enc] = len(parent.Map) - 1
+				}
+				return nil
+			}
+			// buildMapIndex declined (duplicate-key literal): fall through.
+		}
+		// Linear-scan fallback: a non-hashable key, or a map the index can't
+		// represent. Adding a non-hashable key disables the index for good.
 		for k := range parent.Map {
 			if parent.Map[k].Key.Equal(idx) {
 				parent.Map[k].Value = newVal.Copy()
@@ -1994,6 +2030,7 @@ func writeIndexedSlot(parent *Value, idx Value, newVal Value, st positioned) err
 		}
 		// New key: append, preserving insertion order.
 		parent.Map = append(parent.Map, MapEntry{Key: idx.Copy(), Value: newVal.Copy()})
+		parent.mapIdx = nil
 		return nil
 	case KindBytes:
 		// byte slot writes accept an int in [0, 255]. Out-of-range
@@ -2057,12 +2094,19 @@ func (i *Interpreter) execForEach(st *parser.ForEachStmt, env *Environment) (blo
 		// resolved slot: binding name-only would leave slot 0 empty, and the
 		// first body `def` grows the slot slice over it, shadowing the
 		// iterator with a zero binding.
-		iterEnv := NewEnvironmentSized(env, st.Body.NumSlots)
+		// Borrow the per-iteration frame from the pool instead of allocating
+		// a fresh map + slot slice every pass. Safe to release once the body
+		// returns: Jennifer has no closure that could retain the frame, and a
+		// spawn in the body captures a deep-copied snapshot, not this env.
+		iterEnv := borrowBlockEnv(env, st.Body.NumSlots)
 		if err := iterEnv.DefineAt(st.IterSlot, st.VarName, iter.Copy(), iterType, false); err != nil {
+			releaseBlockEnv(iterEnv)
 			file, line, col := posFor(st)
 			return blockResult{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 		}
-		return i.execStmts(st.Body.Stmts, iterEnv)
+		res, err := i.execStmts(st.Body.Stmts, iterEnv)
+		releaseBlockEnv(iterEnv)
+		return res, err
 	}
 
 	switch coll.Kind {
@@ -2144,8 +2188,12 @@ func (i *Interpreter) execWhile(st *parser.WhileStmt, env *Environment) (blockRe
 
 func (i *Interpreter) execFor(st *parser.ForStmt, env *Environment) (blockResult, error) {
 	// for-statements introduce their own scope: the init's binding (if any)
-	// is visible in cond/step/body, but NOT after the loop.
-	forEnv := NewEnvironment(env)
+	// is visible in cond/step/body, but NOT after the loop. Borrow the header
+	// frame from the pool (freed on every exit path via defer) so a `for`
+	// nested in a hot loop doesn't allocate a fresh frame each pass; the body
+	// block borrows its own frame under this one.
+	forEnv := borrowBlockEnv(env, 0)
+	defer releaseBlockEnv(forEnv)
 	if st.Init != nil {
 		if _, err := i.execStmt(st.Init, forEnv); err != nil {
 			return blockResult{}, err
@@ -2425,7 +2473,13 @@ func (i *Interpreter) evalMapLit(ex *parser.MapLit, env *Environment) (Value, er
 		}
 		entries = append(entries, MapEntry{Key: key.Copy(), Value: val.Copy()})
 	}
-	return Value{Kind: KindMap, Map: entries}, nil
+	out := Value{Kind: KindMap, Map: entries}
+	// Index the literal up front: `def m init {...}` skips the binding-site
+	// deep copy (rhsFreshLiteral), so this is where a literal map gets its
+	// index. buildMapIndex declines (leaves nil) for duplicate or
+	// non-hashable keys, so those keep linear-scanning.
+	out.buildMapIndex()
+	return out, nil
 }
 
 // evalStructLit constructs a struct value from a literal. The

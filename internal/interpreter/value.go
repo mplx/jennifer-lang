@@ -165,6 +165,69 @@ type Value struct {
 	ValTyp     *parser.Type  // KindMap:  value type
 	Task       *TaskState    // KindTask: shared handle - copying a task copies the pointer
 	Obj        *Value        // KindObject: wrapped opaque payload (e.g. json.Value's decoded tree); StructNS/StructName carry the owning type
+
+	// mapIdx is an unexported acceleration cache for KindMap: encoded scalar
+	// key -> position in Map. It turns the O(n) linear scan in indexInto /
+	// writeIndexedSlot into an O(1) lookup, so building a map with
+	// `$m[$k] = $v` in a loop is O(n) instead of O(n^2). It is *advisory*:
+	// used only when mapIndexUsable() confirms it is a complete 1:1 index
+	// (non-nil and len == len(Map)); otherwise every op falls back to the
+	// linear scan, which is always correct. That length stamp is what makes
+	// it safe under value semantics - a stale copy, a duplicate-key literal,
+	// or a map holding a non-hashable key all fail the check and scan. Built
+	// by DeepCopy / evalMapLit / lazily in writeIndexedSlot; never relied on.
+	mapIdx map[string]int
+}
+
+// mapKeyEncode returns a canonical string encoding for a hashable scalar map
+// key (string / int / bool / null), plus ok. It mirrors Value.Equal exactly
+// (which requires equal Kind), so distinct keys never collide. Float is
+// deliberately excluded - NaN != NaN, -0.0 == 0.0, and precision make a string
+// encoding disagree with == - as is every compound kind; those fall back to a
+// linear scan.
+func mapKeyEncode(v Value) (string, bool) {
+	switch v.Kind {
+	case KindString:
+		return "s" + v.Str, true
+	case KindInt:
+		return "i" + strconv.FormatInt(v.Int, 10), true
+	case KindBool:
+		if v.Bool {
+			return "b1", true
+		}
+		return "b0", true
+	case KindNull:
+		return "n", true
+	}
+	return "", false
+}
+
+// mapIndexUsable reports whether mapIdx is a complete, position-accurate index
+// of Map. A length mismatch (stale after a slice-only mutation, a duplicate-key
+// literal, or a non-hashable key that was never indexed) means "do not trust
+// it" - the caller linear-scans instead, which is always correct.
+func (v Value) mapIndexUsable() bool {
+	return v.mapIdx != nil && len(v.mapIdx) == len(v.Map)
+}
+
+// buildMapIndex (re)builds mapIdx from Map, or leaves it nil when any key is
+// non-hashable or two keys collide (a duplicate-key literal) - either way the
+// map keeps linear-scanning. O(n).
+func (v *Value) buildMapIndex() {
+	idx := make(map[string]int, len(v.Map))
+	for i := range v.Map {
+		enc, ok := mapKeyEncode(v.Map[i].Key)
+		if !ok {
+			v.mapIdx = nil
+			return
+		}
+		idx[enc] = i
+	}
+	if len(idx) != len(v.Map) {
+		v.mapIdx = nil
+		return
+	}
+	v.mapIdx = idx
 }
 
 // Value semantics rest entirely on eager deep copies at every binding site:
@@ -301,7 +364,12 @@ func (v Value) DeepCopy() Value {
 		for i, e := range v.Map {
 			out[i] = MapEntry{Key: e.Key.Copy(), Value: e.Value.Copy()}
 		}
-		return Value{Kind: KindMap, Map: out, KeyTyp: v.KeyTyp, ValTyp: v.ValTyp}
+		nv := Value{Kind: KindMap, Map: out, KeyTyp: v.KeyTyp, ValTyp: v.ValTyp}
+		// A deep copy owns a fresh backing, so give it a fresh index rather
+		// than sharing the source's (which the length stamp would reject
+		// anyway once the copies diverge).
+		nv.buildMapIndex()
+		return nv
 	case KindBytes:
 		// same value-semantics as lists / maps - deep copy so the
 		// callee can't surprise the caller by mutating a shared

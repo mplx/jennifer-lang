@@ -1380,6 +1380,26 @@ intact), and a compound-var read in a hot loop no longer allocates; a literal
 
 ### M19.3 - Runtime performance: maps and the call / loop hot path
 
+**Done.** Maps gained an advisory hash index (`Value.mapIdx`, encoded scalar key
+-> position) guarded by a `len(mapIdx) == len(Map)` stamp, so `$m[$k] = $v` over
+N keys is O(N) not O(N^2) while insertion order and value semantics are
+untouched - any stale / duplicate-key / non-hashable-key case fails the stamp
+and falls back to the (correct) linear scan. A 100k-key build plus a 100k
+for-each of indexed reads runs in under a second where the quadratic path took
+minutes; pinned by `map_index_test.go` (order, updates, misses, duplicate and
+non-hashable keys, value-semantics independence, 5k-key consistency). The
+call/loop batch landed too: `execForEach` and `execFor` borrow their frames from
+`envPool` instead of allocating per iteration / per loop; `DefineAt` skips the
+enclosing-scope shadow walk on the resolver-verified slot path; `Run` pre-sizes
+`i.global`'s slots from `prog.NumGlobals` (no one-at-a-time O(n^2) growth); the
+three mutation sites (`execIndexAssign` / `execAppend` / `execFieldAssign`) fetch
+and write the root binding through `(Depth, Slot)` (`getBindingRoot` /
+`assignRoot`, guarded to keep the REPL name path chain-walking); and
+`lists.reverse` / `head` / `tail` / `slice` / `concat` take a shallow struct copy
+instead of deep-copying the whole argument they immediately overwrite. Full suite
+(incl. `value_alias_test.go`, the map ordering tests, and `-race`) stays green on
+both toolchains.
+
 The biggest algorithmic issue in the runtime plus the call- and loop-overhead
 batch. None need `reflect` or break TinyGo-cleanliness.
 

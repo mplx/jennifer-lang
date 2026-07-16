@@ -166,7 +166,10 @@ func NewEnvironmentSized(parent *Environment, numSlots int) *Environment {
 // though for resolver-generated slot writes that check has already
 // happened at parse time.
 func (e *Environment) DefineAt(slot int, name string, val Value, declType parser.Type, isConst bool) error {
-	if e.existsInChain(name) {
+	// The resolver-verified slot path (slot >= 0) already rejected shadowing
+	// at parse time, so skip the O(depth) enclosing-scope walk here; only the
+	// name-based fallback (slot < 0: REPL, hand-built ASTs) still checks.
+	if slot < 0 && e.existsInChain(name) {
 		return fmt.Errorf("name %q is already defined in an enclosing scope", name)
 	}
 	b := Binding{Value: val, DeclType: declType, IsConst: isConst, Slot: slot}
@@ -223,6 +226,28 @@ func (e *Environment) GetBindingAt(depth, slot int, name string) (Binding, error
 		return Binding{}, fmt.Errorf("undefined %q", name)
 	}
 	return cur.slots[slot], nil
+}
+
+// getBindingRoot / assignRoot fetch and write the binding named by a resolved
+// root VarExpr - the target of `$x[i] = ...`, `$x[] = ...`, `$x.f = ...`. They
+// take the (Depth, Slot) fast path when the resolver stamped it (no name-map
+// hash per mutation), and fall back to the chain-walking name path otherwise
+// (REPL / hand-built ASTs, where Slot is -1). GetBindingAt / AssignAt only
+// consult the frame at Depth on a slot miss, so the guard on Slot >= 0 is what
+// keeps the unresolved path (where the binding may live in an enclosing frame)
+// correct.
+func (e *Environment) getBindingRoot(v *parser.VarExpr) (Binding, error) {
+	if v.Slot >= 0 {
+		return e.GetBindingAt(v.Depth, v.Slot, v.Name)
+	}
+	return e.GetBinding(v.Name)
+}
+
+func (e *Environment) assignRoot(v *parser.VarExpr, val Value) error {
+	if v.Slot >= 0 {
+		return e.AssignAt(v.Depth, v.Slot, v.Name, val)
+	}
+	return e.Assign(v.Name, val)
 }
 
 // AssignAt writes a new value to the binding at (depth, slot). Const

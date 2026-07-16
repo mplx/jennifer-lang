@@ -167,11 +167,33 @@ the `def struct Name { ... };` bare form.
 ### Iteration
 
 `execForEach` opens a fresh per-iteration scope so the loop variable
-binding doesn't leak out and `def`-rebindings don't accumulate. For
-lists it walks elements in order; for maps it walks keys in
-insertion order. The underlying map representation is a parallel
-slice (`[]MapEntry`) rather than a Go `map[K]V` precisely to make
-this iteration deterministic and testable.
+binding doesn't leak out and `def`-rebindings don't accumulate. It
+borrows that frame from `envPool` (like `execBlock`) rather than
+allocating a fresh map + slot slice each pass; `execFor` pools its
+header frame the same way. For lists it walks elements in order; for
+maps it walks keys in insertion order. The underlying map
+representation is an ordered slice (`[]MapEntry`) rather than a Go
+`map[K]V` precisely to make this iteration deterministic and testable.
+
+**Map hash index.** Because `Map` is an ordered slice, a naive
+`indexInto` / `writeIndexedSlot` linear-scans it with `Value.Equal`
+per entry, so building a map with `$m[$k] = $v` over N keys is
+O(N^2). Each map `Value` carries an unexported side index
+`mapIdx map[string]int` (encoded scalar key -> position) that turns
+lookup, update, and the existence check on insert into O(1), so the
+build is O(N). The index is *advisory*: it is consulted only when
+`mapIndexUsable()` confirms it is complete - non-nil and
+`len(mapIdx) == len(Map)` - and every operation falls back to the
+linear scan otherwise, which is always correct. That length stamp is
+what makes the index safe under value semantics: a map copied by
+value shares the slice header until it diverges, a duplicate-key
+literal has no 1:1 index, and a non-hashable key (float, or any
+compound) is never indexed - all three fail the stamp and scan. Only
+hashable scalar keys (string / int / bool / null) are encoded, mirroring
+`Value.Equal` exactly so distinct keys never collide; float is excluded
+(NaN, -0.0, precision). The index is (re)built by `DeepCopy` (every
+binding-boundary copy owns a fresh one), by `evalMapLit`, and lazily on
+the first indexed write.
 
 ## Environment
 
