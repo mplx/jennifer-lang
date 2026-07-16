@@ -4,6 +4,7 @@
 package parser
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -381,5 +382,36 @@ func TestParseAppendFormRejectsRead(t *testing.T) {
 				t.Errorf("error %q does not contain %q", err.Error(), c.want)
 			}
 		})
+	}
+}
+
+// The most-negative int literal (magnitude 2^63, one past MaxInt64) is valid
+// only when negated: -9223372036854775808 is math.MinInt64. The bare magnitude
+// stays a range error, and the hex form negates too.
+func TestMostNegativeIntLiteral(t *testing.T) {
+	for _, src := range []string{
+		"def a as int init -9223372036854775808;",
+		"def a as int init -0x8000000000000000;",
+	} {
+		prog, err := Parse(src)
+		if err != nil {
+			t.Fatalf("parse %q: %v", src, err)
+		}
+		def := prog.TopLevel[0].(*DefineStmt)
+		lit, ok := def.InitExpr.(*IntLit)
+		if !ok {
+			t.Fatalf("%q: init is %T, want *IntLit", src, def.InitExpr)
+		}
+		if lit.Value != math.MinInt64 {
+			t.Errorf("%q: Value = %d, want MinInt64", src, lit.Value)
+		}
+	}
+	// The bare (un-negated) magnitude is still out of range.
+	if _, err := Parse("def a as int init 9223372036854775808;"); err == nil {
+		t.Error("bare 9223372036854775808 should be a range error")
+	}
+	// A magnitude past 2^63 is out of range even negated.
+	if _, err := Parse("def a as int init -9223372036854775809;"); err == nil {
+		t.Error("-9223372036854775809 should be a range error")
 	}
 }

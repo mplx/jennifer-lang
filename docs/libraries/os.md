@@ -106,7 +106,8 @@ def struct os.Result {                  # not actually written by users -
     stderr   as string
 };
 
-def struct os.Process { pid as int };   # opaque handle for a spawned child.
+def struct os.Process { pid as int };   # opaque handle for a spawned child
+                                        # (a monotonic internal id, not the OS pid).
 ```
 
 `os.run(argv)` is the synchronous form. `argv` is a `list of string`

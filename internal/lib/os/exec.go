@@ -40,11 +40,25 @@ type processState struct {
 	done     chan struct{} // closed when cmd.Wait() returns
 	exitCode int64
 	waitErr  error
+	// outStr / errStr hold the captured output once the process is reaped;
+	// the reaper drains the buffers into these and drops the *bytes.Buffer so
+	// a terminated handle no longer pins a live growable buffer for the
+	// program's life. os.wait reads these (idempotent, unchanged result).
+	outStr string
+	errStr string
 }
 
 var (
 	handlesMu sync.Mutex
-	handles   = map[int64]*processState{}
+	// handles is keyed by a monotonic internal id, NOT the OS pid. Keying by
+	// pid was a correctness bug: once the reaper Wait()s a child the OS can
+	// recycle its pid, so a later os.spawn would overwrite the entry and
+	// os.wait / poll / kill on the old handle would hit the wrong process. A
+	// never-reused id makes each os.Process refer to exactly its own child for
+	// the handle's whole life. (Matches net / fs / httpd, which also hand out
+	// opaque integer handles into a registry.)
+	handles = map[int64]*processState{}
+	nextID  int64
 )
 
 // argvFromList unwraps a Jennifer `list of string` into a Go []string.
@@ -162,9 +176,10 @@ func spawnFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 	if err := cmd.Start(); err != nil {
 		return interpreter.Null(), fmt.Errorf("os.spawn: %v", err)
 	}
-	pid := int64(cmd.Process.Pid)
 	handlesMu.Lock()
-	handles[pid] = state
+	nextID++
+	id := nextID
+	handles[id] = state
 	handlesMu.Unlock()
 	go func() {
 		err := cmd.Wait()
@@ -173,10 +188,17 @@ func spawnFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 		if cmd.ProcessState != nil {
 			state.exitCode = int64(cmd.ProcessState.ExitCode())
 		}
+		// Drain the buffers into strings and drop them (idempotent os.wait
+		// returns these). Ordered before close(done) under the lock, so a
+		// waiter that unblocks on <-done sees the drained strings.
+		state.outStr = state.stdout.String()
+		state.errStr = state.stderr.String()
+		state.stdout = nil
+		state.stderr = nil
 		close(state.done)
 		handlesMu.Unlock()
 	}()
-	return makeProcess(pid), nil
+	return makeProcess(id), nil
 }
 
 // waitFn implements `os.wait(p) -> os.Result`. Blocks until the
@@ -198,7 +220,9 @@ func waitFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 		return interpreter.Null(), fmt.Errorf("os.wait: unknown process handle (pid %d)", pid)
 	}
 	<-state.done
-	return makeResult(state.exitCode, state.stdout.String(), state.stderr.String()), nil
+	// The reaper has drained the buffers into outStr / errStr by the time
+	// done is closed, so read those (stdout / stderr are now nil).
+	return makeResult(state.exitCode, state.outStr, state.errStr), nil
 }
 
 // pollFn implements `os.poll(p) -> bool`. Pure predicate, no side

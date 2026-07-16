@@ -8,6 +8,7 @@ package convert
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"unicode/utf8"
 
@@ -103,7 +104,17 @@ func toIntFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 	case interpreter.KindInt:
 		return v, nil
 	case interpreter.KindFloat:
-		return interpreter.IntVal(int64(v.Float)), nil
+		// Truncate toward zero, but reject the values int64 cannot hold - a
+		// bare int64(f) is platform-defined garbage for NaN / Inf / out of
+		// range, which contradicts convert's canonical-only contract.
+		f := v.Float
+		if math.IsNaN(f) {
+			return interpreter.Null(), fmt.Errorf("toInt(): value is not a number")
+		}
+		if math.IsInf(f, 0) || f >= 9223372036854775808.0 || f < -9223372036854775808.0 {
+			return interpreter.Null(), fmt.Errorf("toInt(): %g does not fit in an int", f)
+		}
+		return interpreter.IntVal(int64(f)), nil
 	case interpreter.KindString:
 		n, err := strconv.ParseInt(v.Str, 10, 64)
 		if err != nil {

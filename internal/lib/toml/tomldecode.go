@@ -863,9 +863,11 @@ func classifyNumber(tok string, d *decoder) (interpreter.Value, error) {
 	}
 	n, err := strconv.ParseInt(body, 10, 64)
 	if err != nil {
-		// A leading-zero decimal or other malformed integer.
-		if f, ferr := strconv.ParseFloat(body, 64); ferr == nil {
-			return interpreter.FloatVal(f), nil
+		// TOML 1.0 integers are 64-bit signed; a value past that range is a
+		// decode error, not a silent lossy-float downgrade. (`json` keeps its
+		// deliberate integral-past-int64 -> float fallback; TOML does not.)
+		if ne, ok := err.(*strconv.NumError); ok && ne.Err == strconv.ErrRange {
+			return interpreter.Value{}, d.errf("integer %q is out of range for a 64-bit signed TOML integer", tok)
 		}
 		return interpreter.Value{}, d.errf("invalid integer %q", tok)
 	}

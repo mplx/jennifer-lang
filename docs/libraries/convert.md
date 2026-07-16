@@ -67,6 +67,7 @@ things worth being precise about:
 
 - `convert.toInt("abc")` - parse failure (string doesn't represent a valid integer).
 - `convert.toInt(null)` - no conversion defined.
+- `convert.toInt(f)` for a NaN, +/-Infinity, or out-of-int64-range float - the value has no representable integer (truncation would be garbage).
 - `convert.toBool("maybe")` - strings: only `"true"` and `"false"` accepted.
 - `convert.toBool(123)`, `convert.toBool(-1)` - ints: only `0` and `1` accepted.
 - `convert.toBool(1.5)` - floats: only `0.0` and `1.0` accepted.

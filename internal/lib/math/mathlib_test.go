@@ -42,3 +42,43 @@ func TestRandIntWideRanges(t *testing.T) {
 		})
 	}
 }
+
+// floor / ceil / round must reject values int64 cannot hold (NaN, +/-Inf,
+// out of range) rather than returning platform-defined garbage from a bare
+// int64(f) cast - math's strict stance.
+func TestFloorCeilRoundRejectUnrepresentable(t *testing.T) {
+	bad := []interpreter.Value{
+		interpreter.FloatVal(1e300),
+		interpreter.FloatVal(-1e300),
+		interpreter.FloatVal(math.Inf(1)),
+		interpreter.FloatVal(math.Inf(-1)),
+		interpreter.FloatVal(math.NaN()),
+		interpreter.FloatVal(9223372036854775808.0), // exactly 2^63
+	}
+	for _, fn := range []struct {
+		name string
+		f    func(interpreter.BuiltinCtx, []interpreter.Value) (interpreter.Value, error)
+	}{{"floor", floorFn}, {"ceil", ceilFn}, {"round", roundFn}} {
+		for _, v := range bad {
+			if _, err := fn.f(interpreter.BuiltinCtx{}, []interpreter.Value{v}); err == nil {
+				t.Errorf("%s(%g) should error, got nil", fn.name, v.Float)
+			}
+		}
+	}
+	// A representable value still works.
+	if r, err := floorFn(interpreter.BuiltinCtx{}, []interpreter.Value{interpreter.FloatVal(3.7)}); err != nil || r.Int != 3 {
+		t.Errorf("floor(3.7) = %+v, err %v; want 3", r, err)
+	}
+}
+
+// abs(MinInt64) has no representable result (|-2^63| = 2^63 > MaxInt64), so it
+// must error rather than return the wrong (still-negative) value.
+func TestAbsMinInt64Errors(t *testing.T) {
+	if _, err := absFn(interpreter.BuiltinCtx{}, []interpreter.Value{interpreter.IntVal(math.MinInt64)}); err == nil {
+		t.Error("abs(MinInt64) should error, got nil")
+	}
+	// A normal negative still flips.
+	if r, err := absFn(interpreter.BuiltinCtx{}, []interpreter.Value{interpreter.IntVal(-5)}); err != nil || r.Int != 5 {
+		t.Errorf("abs(-5) = %+v, err %v; want 5", r, err)
+	}
+}

@@ -1429,6 +1429,27 @@ ordering tests) still passes.
 
 ### M19.4 - Resource lifecycle and numeric strictness
 
+**Done.** `os.spawn` handles are now keyed by a monotonic internal id, not the
+OS pid, so a recycled pid can never make a later spawn overwrite an earlier
+handle or make `os.wait` / `poll` / `kill` hit the wrong process (pinned by a
+distinct-handles test); the reaper also drains the captured buffers into strings
+and drops the live `*bytes.Buffer`s so a terminated handle stops pinning them
+for the program's life (idempotent `os.wait` and `poll`-after-`wait` are
+preserved - literal delete-on-reap would break both, so the persistent-handle
+contract stays and an explicit release stays a possible future add). Numeric
+strictness: `convert.toInt` and `math.floor` / `ceil` / `round` reject NaN,
++/-Inf, and out-of-int64-range floats with positioned errors instead of an
+unchecked `int64(f)` cast, `math.abs(MinInt64)` errors (its magnitude does not
+fit), and the `toml` decoder makes an integer past int64 a decode error rather
+than a lossy-float downgrade (`json` keeps its deliberate fallback). The
+most-negative int literal `-9223372036854775808` (and `-0x8000000000000000`)
+now parses to `MinInt64` - folded at the unary-minus site with `ParseUint` +
+a 2^63 range check - while the bare magnitude stays a range error. The
+uncapped-allocation sinks were already capped ahead of this milestone
+(`net`/`fs` `maxReadBytes`/`maxHandleRead`, `compress`/`archive`
+`maxDecompressed`). All fixes carry regression tests; full suite green on both
+toolchains.
+
 - **`os.spawn` handle lifecycle.** `internal/lib/os/exec.go` keys process
   handles by OS PID and never deletes them: every `processState` (with buffered
   stdout / stderr) is retained for the interpreter's life, and after the reaper

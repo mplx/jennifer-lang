@@ -292,10 +292,21 @@ func TestDecodeErrors(t *testing.T) {
 		"[unclosed",
 		"a = 1\na = 2",
 		"key = @nope",
+		// TOML 1.0 integers are 64-bit signed; overflow is a decode error,
+		// not a silent lossy-float downgrade.
+		"big = 9223372036854775808",           // MaxInt64 + 1
+		"big = 99999999999999999999999999999", // far past int64
+		"big = -9223372036854775809",          // MinInt64 - 1
 	}
 	for _, src := range bad {
 		if _, err := decodeToml(src); err == nil {
 			t.Errorf("expected error decoding %q", src)
+		}
+	}
+	// The boundaries themselves still decode.
+	for _, src := range []string{"n = 9223372036854775807", "n = -9223372036854775808"} {
+		if _, err := decodeToml(src); err != nil {
+			t.Errorf("boundary %q should decode, got %v", src, err)
 		}
 	}
 }

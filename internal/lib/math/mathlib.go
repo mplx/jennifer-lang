@@ -66,6 +66,12 @@ func absFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Valu
 	v := args[0]
 	switch v.Kind {
 	case interpreter.KindInt:
+		if v.Int == math.MinInt64 {
+			// -MinInt64 overflows back to MinInt64 (still negative); the true
+			// magnitude does not fit in a signed int64, so error rather than
+			// return a wrong (negative) result.
+			return interpreter.Null(), fmt.Errorf("abs(): |%d| does not fit in an int", v.Int)
+		}
 		if v.Int < 0 {
 			return interpreter.IntVal(-v.Int), nil
 		}
@@ -160,6 +166,21 @@ func powFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Valu
 	return interpreter.FloatVal(r), nil
 }
 
+// floatToInt converts an integral float to int64, rejecting the values int64
+// cannot hold: NaN, +/-Inf, and magnitudes at or beyond 2^63. Keeps math's
+// strict stance - a mathematically-undefined result errors rather than yielding
+// the platform-defined garbage a bare int64(f) conversion produces. fn names
+// the caller for the error text.
+func floatToInt(fn string, f float64) (interpreter.Value, error) {
+	if math.IsNaN(f) {
+		return interpreter.Null(), fmt.Errorf("%s(): result is not a number", fn)
+	}
+	if math.IsInf(f, 0) || f >= 9223372036854775808.0 || f < -9223372036854775808.0 {
+		return interpreter.Null(), fmt.Errorf("%s(): result %g does not fit in an int", fn, f)
+	}
+	return interpreter.IntVal(int64(f)), nil
+}
+
 // floorFn rounds toward negative infinity. Accepts int (identity) or float
 // (returns int).
 func floorFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
@@ -173,7 +194,7 @@ func floorFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 	if v.Kind != interpreter.KindFloat {
 		return interpreter.Null(), fmt.Errorf("floor(): requires int or float, got %s", v.Kind)
 	}
-	return interpreter.IntVal(int64(math.Floor(v.Float))), nil
+	return floatToInt("floor", math.Floor(v.Float))
 }
 
 // ceilFn rounds toward positive infinity. Accepts int (identity) or float
@@ -189,7 +210,7 @@ func ceilFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 	if v.Kind != interpreter.KindFloat {
 		return interpreter.Null(), fmt.Errorf("ceil(): requires int or float, got %s", v.Kind)
 	}
-	return interpreter.IntVal(int64(math.Ceil(v.Float))), nil
+	return floatToInt("ceil", math.Ceil(v.Float))
 }
 
 // roundFn rounds half-away-from-zero (Go's math.Round). Accepts int
@@ -205,7 +226,7 @@ func roundFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 	if v.Kind != interpreter.KindFloat {
 		return interpreter.Null(), fmt.Errorf("round(): requires int or float, got %s", v.Kind)
 	}
-	return interpreter.IntVal(int64(math.Round(v.Float))), nil
+	return floatToInt("round", math.Round(v.Float))
 }
 
 // Non-crypto pseudo-random helpers. Shared seeded source; protected with a

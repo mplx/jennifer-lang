@@ -5,6 +5,7 @@ package parser
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -1628,6 +1629,17 @@ func (p *parser) parseQualifiedTail(prefix lexer.Token) (Expr, error) {
 // allowed: `-~x` is `-(~x)`.
 func (p *parser) parseUnaryMinus() (Expr, error) {
 	if t, ok := p.match(lexer.TOKEN_MINUS); ok {
+		// The most-negative int literal, e.g. -9223372036854775808 (=
+		// math.MinInt64) and its 0x/0o/0b forms, has magnitude 2^63 - one past
+		// MaxInt64 - so it exists only as a *negated* literal; parsePrimaryAtom's
+		// ParseInt would reject the bare magnitude. Fold the sign here for that
+		// one case; every other magnitude takes the normal path (fits, or a
+		// truly out-of-range magnitude still errors in parsePrimaryAtom).
+		if p.peek().Type == lexer.TOKEN_INT {
+			if lit := p.foldMostNegativeInt(); lit != nil {
+				return lit, nil
+			}
+		}
 		operand, err := p.parseUnaryMinus()
 		if err != nil {
 			return nil, err
@@ -1642,6 +1654,25 @@ func (p *parser) parseUnaryMinus() (Expr, error) {
 		return &UnaryExpr{pos: pos{File: t.File, Line: t.Line, Col: t.Col}, Op: OpBitNot, Operand: operand}, nil
 	}
 	return p.parsePrimary()
+}
+
+// foldMostNegativeInt consumes the pending TOKEN_INT and returns an
+// IntLit(math.MinInt64) when its magnitude is exactly 2^63 (the only value that
+// is out of range as a positive literal but in range once negated). Returns nil
+// without consuming for any other magnitude, so the caller's normal path runs.
+func (p *parser) foldMostNegativeInt() Expr {
+	t := p.peek()
+	lex := t.Lexeme
+	base := 10
+	if strings.HasPrefix(lex, "0x") || strings.HasPrefix(lex, "0o") || strings.HasPrefix(lex, "0b") {
+		base = 0
+	}
+	u, err := strconv.ParseUint(lex, base, 64)
+	if err != nil || u != 1<<63 {
+		return nil
+	}
+	p.advance()
+	return &IntLit{pos: pos{File: t.File, Line: t.Line, Col: t.Col}, Value: math.MinInt64}
 }
 
 // parsePrimary parses an atom (literal, var ref, call, grouped expr,

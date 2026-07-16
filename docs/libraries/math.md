@@ -23,14 +23,14 @@ io.printf("%d\n", math.round(2.5));            # 3 (half away from zero)
 
 | Call             | Returns          | Notes                                         |
 | ---------------- | ---------------- | --------------------------------------------- |
-| `math.abs(x)`    | same type as `x` | int → int, float → float                      |
+| `math.abs(x)`    | same type as `x` | int → int, float → float; errors on `math.abs(MinInt64)` (no representable result) |
 | `math.min(a, b)` | int or float     | int+int → int; mixed → float                  |
 | `math.max(a, b)` | int or float     | same rule as `min`                            |
 | `math.sqrt(x)`   | float            | errors on negative input                      |
 | `math.pow(x, y)` | float            | errors if the result would be NaN or Infinity |
-| `math.floor(x)`  | int              | toward `-∞`; accepts int (identity)           |
-| `math.ceil(x)`   | int              | toward `+∞`                                   |
-| `math.round(x)`  | int              | half-away-from-zero (`math.round(2.5)` = `3`) |
+| `math.floor(x)`  | int              | toward `-∞`; accepts int (identity); errors if the result does not fit in a 64-bit int (NaN / Inf / out of range) |
+| `math.ceil(x)`   | int              | toward `+∞`; same int-range error as `floor`  |
+| `math.round(x)`  | int              | half-away-from-zero (`math.round(2.5)` = `3`); same int-range error as `floor` |
 
 `min`/`max` follow the same numeric-promotion rule as `+`: same-type
 arguments return that type; any `float` involved produces a `float`.

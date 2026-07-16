@@ -140,6 +140,58 @@ func TestSpawnWaitRoundTrip(t *testing.T) {
 	}
 }
 
+// Handles are keyed by a monotonic internal id, not the OS pid, so two spawned
+// processes never share a handle even if the OS recycles a pid between them.
+// Each handle waits its own child and returns that child's output - no overwrite.
+func TestSpawnHandlesAreDistinctAndOwnTheirProcess(t *testing.T) {
+	skipIfNotLinux(t)
+	p1, err := spawnFn(interpreter.BuiltinCtx{}, []interpreter.Value{stringList("/bin/echo", "one")})
+	if err != nil {
+		t.Fatalf("spawn1 err: %v", err)
+	}
+	id1, _ := extractPid("t", p1)
+	// Let the first child fully terminate so the OS is free to recycle its pid.
+	r1, err := waitFn(interpreter.BuiltinCtx{}, []interpreter.Value{p1})
+	if err != nil {
+		t.Fatalf("wait1 err: %v", err)
+	}
+	p2, err := spawnFn(interpreter.BuiltinCtx{}, []interpreter.Value{stringList("/bin/echo", "two")})
+	if err != nil {
+		t.Fatalf("spawn2 err: %v", err)
+	}
+	id2, _ := extractPid("t", p2)
+	if id1 == id2 {
+		t.Fatalf("handles collided: id1=%d id2=%d", id1, id2)
+	}
+	// The first handle still resolves to the first child's result, and the
+	// second to the second child's - neither overwrote the other.
+	r1b, err := waitFn(interpreter.BuiltinCtx{}, []interpreter.Value{p1})
+	if err != nil {
+		t.Fatalf("wait1b err: %v", err)
+	}
+	r2, err := waitFn(interpreter.BuiltinCtx{}, []interpreter.Value{p2})
+	if err != nil {
+		t.Fatalf("wait2 err: %v", err)
+	}
+	if !r1.Equal(r1b) {
+		t.Errorf("first handle not stable after a second spawn: %+v vs %+v", r1, r1b)
+	}
+	stdoutOf := func(r interpreter.Value) string {
+		for _, f := range r.Fields {
+			if f.Name == "stdout" {
+				return f.Value.Str
+			}
+		}
+		return ""
+	}
+	if !strings.Contains(stdoutOf(r1), "one") {
+		t.Errorf("handle 1 stdout = %q, want 'one'", stdoutOf(r1))
+	}
+	if !strings.Contains(stdoutOf(r2), "two") {
+		t.Errorf("handle 2 stdout = %q, want 'two'", stdoutOf(r2))
+	}
+}
+
 func TestWaitIsIdempotent(t *testing.T) {
 	skipIfNotLinux(t)
 	p, err := spawnFn(interpreter.BuiltinCtx{}, []interpreter.Value{stringList("/bin/echo", "x")})
