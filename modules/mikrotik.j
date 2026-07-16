@@ -118,7 +118,12 @@ func readN(socket as net.Conn, n as int) {
         if (len($chunk) == 0) {
             fail("connection closed mid-sentence");
         }
-        $out = appendBytes($out, $chunk);
+        # Append in place to keep the read accumulation O(N), not O(N^2).
+        def k as int init 0;
+        while ($k < len($chunk)) {
+            $out[] = $chunk[$k];
+            $k = $k + 1;
+        }
     }
     return $out;
 }

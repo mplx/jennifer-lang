@@ -60,46 +60,61 @@ func zplBarcode(f as Field, h as int, dpi as int) {
     if ($f.moduleWidth > 0.0) {
         $by = "^BY" + convert.toString(mmToDots($f.moduleWidth, $dpi));
     }
+    # Data going onto an alphanumeric symbology's ^FD field may contain ZPL
+    # metacharacters (^ ~ _); emit ^FH so the escaped hex runs are decoded, and
+    # escape the data. Numeric-only symbologies (EAN / ITF) need neither.
+    def esc as string init "^FH^FD" + zplEscape($data);
     if ($btype == "code128") {
-        return $by + "^BCN," + $hs + "," + $hri + ",N,N^FD" + $data + "^FS";
+        return $by + "^BCN," + $hs + "," + $hri + ",N,N" + $esc + "^FS";
     }
     if ($btype == "ean13") {
-        return "^BEN," + $hs + "," + $hri + ",N^FD" + $data + "^FS";
+        return $by + "^BEN," + $hs + "," + $hri + ",N^FD" + $data + "^FS";
     }
     if ($btype == "ean8") {
-        return "^B8N," + $hs + "," + $hri + ",N^FD" + $data + "^FS";
+        return $by + "^B8N," + $hs + "," + $hri + ",N^FD" + $data + "^FS";
     }
     if ($btype == "itf") {
         return $by + "^B2N," + $hs + "," + $hri + ",N," + $chk + "^FD" + $data + "^FS";
     }
     if ($btype == "code39") {
-        return $by + "^B3N," + $chk + "," + $hs + "," + $hri + ",N^FD" + $data + "^FS";
+        return $by + "^B3N," + $chk + "," + $hs + "," + $hri + ",N" + $esc + "^FS";
     }
     if ($btype == "gs1-128") {
         # ^BC mode D = UCC/EAN (GS1-128); parenthesised AI data is parsed.
-        return $by + "^BCN," + $hs + "," + $hri + ",N,N,D^FD" + $data + "^FS";
+        return $by + "^BCN," + $hs + "," + $hri + ",N,N,D" + $esc + "^FS";
     }
     if ($btype == "datamatrix") {
         # ^BX: module height in dots, quality 200 = ECC200.
-        return "^BXN," + $hs + ",200^FD" + $data + "^FS";
+        return "^BXN," + $hs + ",200" + $esc + "^FS";
     }
     def lvl as string init "M";
     if (not ($f.errorLevel == "")) {
         $lvl = $f.errorLevel;
     }
-    return "^BQN,2,5^FD" + $lvl + "A," + $data + "^FS";
+    # QR magnification (1..10) comes from the module size in dots (`h`), so the
+    # symbol honours BarcodeOptions.height / DPI instead of a hard-coded 5.
+    def mag as int init $h;
+    if ($mag < 1) {
+        $mag = 1;
+    }
+    if ($mag > 10) {
+        $mag = 10;
+    }
+    return "^BQN,2," + convert.toString($mag) + "^FH^FD" + $lvl + "A," + zplEscape($data) + "^FS";
 }
 
-# zplOrient maps a rotation in degrees to a ZPL field orientation letter.
+# zplOrient maps a rotation in degrees to a ZPL field orientation letter. The
+# API contract (and the cab dialect) rotate counter-clockwise, so 90 -> B
+# (bottom-up) and 270 -> R (rotated); ZPL's own letters read clockwise.
 func zplOrient(rotation as int) {
     if ($rotation == 90) {
-        return "R";
+        return "B";
     }
     if ($rotation == 180) {
         return "I";
     }
     if ($rotation == 270) {
-        return "B";
+        return "R";
     }
     return "N";
 }

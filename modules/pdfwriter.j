@@ -25,6 +25,7 @@ use lists;
 use convert;
 use compress;
 use time;
+use encoding;
 
 /**
  * A PDF document: an ordered list of pages and the document metadata
@@ -114,14 +115,99 @@ export func page(width as int, height as int) {
     return Page{ width: $width, height: $height, content: "", fonts: [] };
 }
 
-# escapeString escapes the characters special inside a PDF literal string.
-func escapeString(s as string) {
-    def out as string init strings.replace($s, "\\", "\\\\");
-    $out = strings.replace($out, "(", "\\(");
-    $out = strings.replace($out, ")", "\\)");
-    $out = strings.replace($out, "\r", "\\r");
-    $out = strings.replace($out, "\n", "\\n");
+# hexByte renders a byte as two uppercase hex digits.
+func hexByte(b as int) {
+    def one as bytes;
+    $one[] = $b;
+    return strings.upper(encoding.toText($one, "hex"));
+}
+
+# pdfName escapes a dictionary key as a PDF name token: any byte outside the
+# regular-character set (whitespace, delimiters, `#`) becomes `#xx`, so a key
+# with a space / `/` / `(` can't produce a malformed dictionary.
+func pdfName(key as string) {
+    def raw as bytes init convert.bytesFromString($key, "utf-8");
+    def out as list of string init [];
+    def i as int init 0;
+    while ($i < len($raw)) {
+        def b as int init $raw[$i];
+        if ($b <= 32 or $b >= 127 or $b == 35 or $b == 47 or $b == 40 or $b == 41 or $b == 60 or $b == 62 or $b == 91 or $b == 93 or $b == 123 or $b == 125 or $b == 37) {
+            $out[] = "#" + hexByte($b);
+        } else {
+            $out[] = convert.fromCodepoint($b);
+        }
+        $i = $i + 1;
+    }
+    return strings.join($out, "");
+}
+
+# utfSixteenBe encodes a string as UTF-16BE with a leading BOM (surrogate pairs
+# for supplementary code points) - the PDF text-string form for non-Latin text.
+func utfSixteenBe(s as string) {
+    def out as bytes;
+    $out[] = 0xFE;
+    $out[] = 0xFF;
+    for (def ch in strings.chars($s)) {
+        def cp as int init convert.toCodepoint($ch);
+        if ($cp < 0x10000) {
+            $out[] = ($cp >> 8) & 0xff;
+            $out[] = $cp & 0xff;
+        } else {
+            def v as int init $cp - 0x10000;
+            def hi as int init 0xD800 + (($v >> 10) & 0x3FF);
+            def lo as int init 0xDC00 + ($v & 0x3FF);
+            $out[] = ($hi >> 8) & 0xff;
+            $out[] = $hi & 0xff;
+            $out[] = ($lo >> 8) & 0xff;
+            $out[] = $lo & 0xff;
+        }
+    }
     return $out;
+}
+
+# infoValue renders a document-info value: a WinAnsi literal `(...)` for ASCII
+# text, else a UTF-16BE hex string `<FEFF...>` so non-Latin metadata isn't
+# emitted as raw UTF-8 mojibake.
+func infoValue(v as string) {
+    if (encoding.isAscii(convert.bytesFromString($v, "utf-8"))) {
+        return "(" + escapeString($v) + ")";
+    }
+    return "<" + encoding.toText(utfSixteenBe($v), "hex") + ">";
+}
+
+# octalTriple renders a byte as three octal digits for a PDF `\ddd` escape.
+func octalTriple(b as int) {
+    return convert.toString(($b >> 6) & 7) + convert.toString(($b >> 3) & 7) + convert.toString($b & 7);
+}
+
+# escapeString transcodes text to WinAnsi (windows-1252) bytes to match the
+# font's /WinAnsiEncoding, then PDF-escapes it: high / control bytes become
+# octal `\ddd` runs (a raw UTF-8 emission would render as mojibake). A character
+# outside WinAnsi throws (from encoding.encode).
+func escapeString(s as string) {
+    def raw as bytes init encoding.encode($s, "windows-1252");
+    def out as list of string init [];
+    def i as int init 0;
+    while ($i < len($raw)) {
+        def b as int init $raw[$i];
+        if ($b == 92) {
+            $out[] = "\\\\";
+        } elseif ($b == 40) {
+            $out[] = "\\(";
+        } elseif ($b == 41) {
+            $out[] = "\\)";
+        } elseif ($b == 13) {
+            $out[] = "\\r";
+        } elseif ($b == 10) {
+            $out[] = "\\n";
+        } elseif ($b < 32 or $b >= 127) {
+            $out[] = "\\" + octalTriple($b);
+        } else {
+            $out[] = convert.fromCodepoint($b);
+        }
+        $i = $i + 1;
+    }
+    return strings.join($out, "");
 }
 
 /**
@@ -357,8 +443,14 @@ export func render(doc as Document) {
     def f as int init 0;
     while ($f < $numFonts) {
         $offsets[] = len($buf);
+        # Symbol and ZapfDingbats carry their own built-in encodings; forcing
+        # /WinAnsiEncoding on them remaps their glyphs, so omit /Encoding there.
+        def enc as string init " /Encoding /WinAnsiEncoding";
+        if ($fontNames[$f] == "Symbol" or $fontNames[$f] == "ZapfDingbats") {
+            $enc = "";
+        }
         $buf = appendStr($buf, convert.toString($fontBase + $f) + " 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /" +
-            $fontNames[$f] + " /Encoding /WinAnsiEncoding >>\nendobj\n");
+            $fontNames[$f] + $enc + " >>\nendobj\n");
         $f = $f + 1;
     }
 
@@ -366,7 +458,7 @@ export func render(doc as Document) {
     if ($hasInfo) {
         def dict as string init "";
         for (def key in $doc.info) {
-            $dict = $dict + "/" + $key + " (" + escapeString($doc.info[$key]) + ") ";
+            $dict = $dict + "/" + pdfName($key) + " " + infoValue($doc.info[$key]) + " ";
         }
         $offsets[] = len($buf);
         $buf = appendStr($buf, convert.toString($infoNum) + " 0 obj\n<< " + $dict + ">>\nendobj\n");

@@ -280,10 +280,24 @@ func decodeLabel(ace as string) {
 # prefix.
 func labelToAscii(label as string) {
     def lower as string init strings.lower($label);
-    if (isAsciiStr($lower)) {
-        return $lower;
+    def alabel as string init $lower;
+    if (not isAsciiStr($lower)) {
+        $alabel = "xn--" + encodeLabel(codePoints($lower));
     }
-    return "xn--" + encodeLabel(codePoints($lower));
+    # DNS labels are at most 63 octets; a longer A-label is invalid.
+    if (len($alabel) > 63) {
+        throw Error{kind: "idna", message: "idna: A-label exceeds 63 octets: " + $alabel, file: "", line: 0, col: 0};
+    }
+    return $alabel;
+}
+
+# normalizeDots maps the three Unicode full-stop variants (ideographic U+3002,
+# fullwidth U+FF0E, halfwidth U+FF61) to an ASCII dot, so a domain written with
+# them splits into labels correctly.
+func normalizeDots(s as string) {
+    def out as string init strings.replace($s, convert.fromCodepoint(0x3002), ".");
+    $out = strings.replace($out, convert.fromCodepoint(0xFF0E), ".");
+    return strings.replace($out, convert.fromCodepoint(0xFF61), ".");
 }
 
 # labelToUnicode reverses labelToAscii: an `xn--` label is Punycode-decoded,
@@ -303,7 +317,7 @@ func labelToUnicode(label as string) {
  */
 export func toAscii(domain as string) {
     def out as list of string init [];
-    for (def label in strings.split($domain, ".")) {
+    for (def label in strings.split(normalizeDots($domain), ".")) {
         $out[] = labelToAscii($label);
     }
     return strings.join($out, ".");

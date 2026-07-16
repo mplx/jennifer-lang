@@ -170,20 +170,33 @@ export func parse(source as string) {
         if ($p.isModule) {
             $module = buildModule($p);
         } else {
-            def tail as string init strings.trimLeft(strings.substring($source, $raw.after, len($source)));
+            # Match against a bounded window past the doc comment, not the whole
+            # remaining source: a per-block `substring(... len(source))` copy is
+            # O(doc-count * file-size). A declaration line fits comfortably here.
+            def tailEnd as int init $raw.after + 512;
+            if ($tailEnd > len($source)) {
+                $tailEnd = len($source);
+            }
+            def rawTail as string init strings.substring($source, $raw.after, $tailEnd);
+            def tail as string init strings.trimLeft($rawTail);
+            # The construct sits after the whitespace trimmed above; advance the
+            # reported line past those newlines so it points at the documented
+            # construct rather than the comment's closing line.
+            def gap as int init len($rawTail) - len($tail);
+            def line as int init $raw.line + countNewlines(strings.substring($rawTail, 0, $gap));
             def fm as regex.Match init regex.find("^(export\\s+)?func\\s+([A-Za-z]+)\\s*\\(([^)]*)\\)", $tail);
             def sm as regex.Match init regex.find("^(export\\s+)?def\\s+struct\\s+([A-Za-z]+)\\s*\\{([^}]*)\\}", $tail);
             def cm as regex.Match init regex.find("^(export\\s+)?def\\s+const\\s+([A-Za-z][A-Za-z_]*)\\s+as\\s+([A-Za-z][A-Za-z. ]*?)\\s+init", $tail);
             if (not ($fm.start == -1)) {
                 $funcs[] = buildFunc($p, $fm.groups[1], not ($fm.groups[0] == ""));
-                $diags = lists.concat($diags, crossCheck("param", $fm.groups[1], $raw.line, $p.params, declNames($fm.groups[2])));
+                $diags = lists.concat($diags, crossCheck("param", $fm.groups[1], $line, $p.params, declNames($fm.groups[2])));
             } elseif (not ($sm.start == -1)) {
                 $structs[] = buildStruct($p, $sm.groups[1], not ($sm.groups[0] == ""));
-                $diags = lists.concat($diags, crossCheck("field", $sm.groups[1], $raw.line, $p.params, declNames($sm.groups[2])));
+                $diags = lists.concat($diags, crossCheck("field", $sm.groups[1], $line, $p.params, declNames($sm.groups[2])));
             } elseif (not ($cm.start == -1)) {
                 $consts[] = buildConst($p, $cm.groups[1], not ($cm.groups[0] == ""), strings.trim($cm.groups[2]));
             } else {
-                $diags[] = Diagnostic{ severity: "warning", line: $raw.line, message: "doc comment precedes no documentable construct (orphaned)" };
+                $diags[] = Diagnostic{ severity: "warning", line: $line, message: "doc comment precedes no documentable construct (orphaned)" };
             }
         }
     }
@@ -252,7 +265,14 @@ func scanDocs(source as string) {
             def span as string init strings.substring($source, $i, $afterEnd);
             def nl as int init countNewlines($span);
             if ($isDoc) {
-                def body as string init strings.substring($source, $i + $openLen, $afterEnd - 2);
+                # Slice off the trailing `*/` only when the comment is actually
+                # terminated; an unterminated comment ends at EOF, and a blind
+                # `-2` would drop the last two characters of the file.
+                def bodyEnd as int init $afterEnd;
+                if (strings.endsWith($span, "*/")) {
+                    $bodyEnd = $afterEnd - 2;
+                }
+                def body as string init strings.substring($source, $i + $openLen, $bodyEnd);
                 $out[] = RawDoc{ body: $body, after: $afterEnd, line: $line + $nl };
             }
             $line = $line + $nl;

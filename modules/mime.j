@@ -250,6 +250,11 @@ func parseMultipart(body as string, boundary as string) {
             }
         }
     }
+    # A truncated message may end mid-part with no closing delimiter; keep the
+    # last collected part rather than silently dropping it.
+    if ($collecting and len($cur) > 0) {
+        $parts[] = parse(strings.join($cur, "\n"));
+    }
     return $parts;
 }
 
@@ -530,7 +535,10 @@ export func attachment(filename as string, contentType as string, body as string
     def hs as list of Header init [];
     $hs[] = mkHeader("Content-Type", $contentType);
     $hs[] = mkHeader("Content-Transfer-Encoding", "base64");
-    $hs[] = mkHeader("Content-Disposition", "attachment; filename=\"" + $filename + "\"");
+    # Escape `\` and `"` so a filename containing a quote can't break out of the
+    # quoted-string parameter.
+    def safeName as string init strings.replace(strings.replace($filename, "\\", "\\\\"), "\"", "\\\"");
+    $hs[] = mkHeader("Content-Disposition", "attachment; filename=\"" + $safeName + "\"");
     return Part{headers: $hs, body: $body, encoding: "base64", parts: [], boundary: ""};
 }
 
@@ -659,12 +667,17 @@ export func contentType(part as Part) {
     return typeOnly(findHeader($part.headers, "Content-Type"));
 }
 
-# needsQuoting reports whether a display name must be a quoted-string.
+# needsQuoting reports whether a display name must be a quoted-string. RFC 5322
+# lets a bare (atom) display name hold only atext characters and spaces; any
+# other character (`.` `,` `:` `;` `(` `)` `<` `>` `@` `"` ...) forces quoting.
 func needsQuoting(s as string) {
-    if (strings.contains($s, ",") or strings.contains($s, "<")) {
-        return true;
+    def atext as string init "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-/=?^_`{|}~ ";
+    for (def ch in strings.chars($s)) {
+        if (strings.indexOf($atext, $ch) < 0) {
+            return true;
+        }
     }
-    return strings.contains($s, "@") or strings.contains($s, "\"");
+    return false;
 }
 
 /**

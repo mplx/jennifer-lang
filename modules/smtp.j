@@ -142,7 +142,18 @@ func asciiOnly(s as string, what as string) {
 # asciiEnvelope makes an envelope address wire-safe: the domain is IDNA-encoded
 # to its `xn--` form, the local part must already be ASCII.
 func asciiEnvelope(addr as string) {
-    def at as int init strings.indexOf($addr, "@");
+    # Split at the LAST '@': a quoted local part may itself contain '@', so
+    # splitting at the first one would truncate the local part and mangle the
+    # domain.
+    def at as int init -1;
+    def cs as list of string init strings.chars($addr);
+    def ci as int init 0;
+    while ($ci < len($cs)) {
+        if ($cs[$ci] == "@") {
+            $at = $ci;
+        }
+        $ci = $ci + 1;
+    }
     if ($at < 0) {
         return asciiOnly($addr, "address");
     }

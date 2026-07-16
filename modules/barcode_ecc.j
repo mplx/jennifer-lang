@@ -50,6 +50,11 @@ func gfMul(gf as GF, a as int, b as int) {
 # rsGenerator builds the degree-`degree` Reed-Solomon generator polynomial
 # (coefficients high-order first, length degree+1).
 func rsGenerator(gf as GF, degree as int) {
+    # Bind the log/exp tables locally once. Passing the whole GF struct into a
+    # gfMul helper per multiplication would value-copy both ~255-entry lists
+    # every call (thousands per polynomial); indexing the local lists is free.
+    def exp as list of int init $gf.exp;
+    def log as list of int init $gf.log;
     def g as list of int init [1];
     def i as int init 0;
     while ($i < $degree) {
@@ -63,7 +68,12 @@ func rsGenerator(gf as GF, degree as int) {
         def j as int init 0;
         while ($j < len($g)) {
             $next[$j] = $next[$j] ^ $g[$j];
-            $next[$j + 1] = $next[$j + 1] ^ gfMul($gf, $g[$j], $gf.exp[$i]);
+            # inline gfMul(g[j], exp[i]); exp[i] is never zero (log[exp[i]] == i).
+            def prod as int init 0;
+            if (not ($g[$j] == 0)) {
+                $prod = $exp[($log[$g[$j]] + $i) % 255];
+            }
+            $next[$j + 1] = $next[$j + 1] ^ $prod;
             $j = $j + 1;
         }
         $g = $next;
@@ -76,6 +86,8 @@ func rsGenerator(gf as GF, degree as int) {
 # data codeword list.
 func rsEncode(gf as GF, data as list of int, ecCount as int) {
     def gen as list of int init rsGenerator($gf, $ecCount);
+    def exp as list of int init $gf.exp;
+    def log as list of int init $gf.log;
     def res as list of int init [];
     for (def d in $data) {
         $res[] = $d;
@@ -89,9 +101,15 @@ func rsEncode(gf as GF, data as list of int, ecCount as int) {
     while ($i < len($data)) {
         def coef as int init $res[$i];
         if ($coef > 0) {
+            def logCoef as int init $log[$coef];
             def j as int init 0;
             while ($j < len($gen)) {
-                $res[$i + $j] = $res[$i + $j] ^ gfMul($gf, $gen[$j], $coef);
+                # inline gfMul(gen[j], coef); coef > 0 here, so only guard gen[j].
+                def prod as int init 0;
+                if (not ($gen[$j] == 0)) {
+                    $prod = $exp[($log[$gen[$j]] + $logCoef) % 255];
+                }
+                $res[$i + $j] = $res[$i + $j] ^ $prod;
                 $j = $j + 1;
             }
         }

@@ -59,17 +59,26 @@ needs `import "http.j"`. A non-2xx status is a value to branch on, not an error.
 | `bucket.get(client, bucket, key)` | GET | `body` is the object contents; a missing object is a 404. |
 | `bucket.put(client, bucket, key, body)` | PUT | Upload / overwrite; 200 on success. |
 | `bucket.delete(client, bucket, key)` | DELETE | 204 on success. |
-| `bucket.listObjects(client, bucket)` | GET `?list-type=2` | `body` is the ListObjectsV2 XML. |
-| `bucket.objectKeys(xml)` | - | Pull the `<Key>` values out of a `listObjects` body -> `list of string`. |
+| `bucket.listObjects(client, bucket)` | GET `?list-type=2` | `body` is the ListObjectsV2 XML (first page, up to 1000 keys). |
+| `bucket.listObjectsFrom(client, bucket, token)` | GET `?list-type=2&continuation-token=...` | Fetch a further page from a continuation token. |
+| `bucket.objectKeys(xml)` | - | Pull the `<Key>` values out of a list body -> `list of string`. |
+| `bucket.isTruncated(xml)` | - | `true` when the listing has more pages. |
+| `bucket.nextContinuationToken(xml)` | - | The token for the next page, or `""` when complete. |
 
 (The list op is `listObjects`, not `list`, because `list` is a reserved type
 keyword.)
 
 ```jennifer
-def r as http.Response init bucket.listObjects($c, "mybucket");
-for (def k in bucket.objectKeys($r.body)) {
-    io.printf("%s\n", $k);
-}
+# Page through every object (S3 caps a listing at 1000 keys per page).
+def body as string init bucket.listObjects($c, "mybucket").body;
+repeat {
+    for (def k in bucket.objectKeys($body)) {
+        io.printf("%s\n", $k);
+    }
+    if (bucket.isTruncated($body)) {
+        $body = bucket.listObjectsFrom($c, "mybucket", bucket.nextContinuationToken($body)).body;
+    }
+} until (not bucket.isTruncated($body));
 ```
 
 ## Signing
@@ -92,8 +101,9 @@ independent SigV4 implementations.
   object path.
 - **Core object ops.** Multipart upload, presigned URLs, bucket create / delete,
   and ACL / policy management are not covered.
-- **`listObjects` returns the raw XML** (plus `objectKeys`); pagination
-  (continuation tokens) and full metadata parsing are follow-ons.
+- **`listObjects` returns the raw XML** (plus `objectKeys`); pagination is
+  supported through `isTruncated` / `nextContinuationToken` / `listObjectsFrom`,
+  but full metadata parsing (size, etag, last-modified) is a follow-on.
 
 ## See also
 

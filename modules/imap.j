@@ -219,6 +219,13 @@ func readResponse(conn as net.Conn, tag as string) {
         }
         def line as string init convert.stringFromBytes(byteSlice($buf, $pos, $nl), "utf-8");
         $pos = $nl + 2;
+        # An unexpected `+ ...` continuation (e.g. a SASL error mid-AUTHENTICATE)
+        # would otherwise read as an untagged line and the loop would block until
+        # timeout. Answer with an empty line so the server sends its tagged NO.
+        if (strings.startsWith($line, "+ ") or $line == "+") {
+            net.writeBytes($conn, convert.bytesFromString("\r\n", "utf-8"));
+            continue;
+        }
         def litlen as int init literalLength($line);
         if ($litlen >= 0) {
             # A literal is exactly `litlen` bytes; read by byte count.

@@ -283,7 +283,13 @@ func readN(socket as net.Conn, n as int) {
         if (len($chunk) == 0) {
             fail("connection closed mid-frame");
         }
-        $out = appendBytes($out, $chunk);
+        # Append into `out` in place: `out = appendBytes(out, chunk)` copies the
+        # whole growing buffer per read (O(N^2) over the accumulation).
+        def k as int init 0;
+        while ($k < len($chunk)) {
+            $out[] = $chunk[$k];
+            $k = $k + 1;
+        }
     }
     return $out;
 }
@@ -550,7 +556,12 @@ export func get(c as Conn, queue as string, autoAck as bool) {
     def body as bytes;
     while (len($body) < $bodySize) {
         def bf as Frame init readFrame($c.socket);
-        $body = appendBytes($body, $bf.payload);
+        # Append in place to keep multi-frame body assembly O(N), not O(N^2).
+        def k as int init 0;
+        while ($k < len($bf.payload)) {
+            $body[] = $bf.payload[$k];
+            $k = $k + 1;
+        }
     }
     return Message{ empty: false, deliveryTag: $deliveryTag, exchange: $exchange, routingKey: $routingKey, body: $body };
 }

@@ -532,7 +532,10 @@ func operandOf(c as string) {
 func cmpOp(v as Version, operand as string, op as string) {
     def o as string init strings.trim($operand);
     if (isWild($o)) {
-        return true;
+        # `*` spans every version, so `>=*` / `<=*` / `=*` match all - but strict
+        # `>*` / `<*` ask for something outside the whole range and match none
+        # (npm semantics).
+        return $op == ">=" or $op == "<=" or $op == "=";
     }
     if (isValid($o)) {
         def c as int init compare($v, parse($o));
@@ -713,7 +716,11 @@ func matchesClause(v as Version, clause as string) {
     }
     def comps as list of string init tokenize($cl);
     if (len($comps) == 0) {
-        return not isPrerelease($v);
+        # An empty clause only arises from a stray `||` (`"^1.0.0 ||"`); it
+        # matches nothing, consistent with the interval algebra (rangeToIntervals
+        # produces no interval for it). The whole-range empty/`*`/`any` case is
+        # handled in satisfies before the `||` split.
+        return false;
     }
     for (def c in $comps) {
         if (not rawComparator($v, $c)) {
@@ -752,7 +759,12 @@ export func satisfies(version as string, range as string) {
     if (not isValid($version)) {
         return false;
     }
-    def v as Version init parse($version);
+    return satisfiesVer(parse($version), $range);
+}
+
+# satisfiesVer tests an already-parsed Version against a range, so callers that
+# hold a parsed Version (maxSatisfying / minSatisfying) don't re-parse it.
+func satisfiesVer(v as Version, range as string) {
     def r as string init strings.trim($range);
     if ($r == "" or $r == "*" or $r == "any") {
         return not isPrerelease($v);
@@ -850,9 +862,9 @@ export func maxSatisfying(versions as list of string, range as string) {
     def have as bool init false;
     def bestVer as Version;
     for (def ver in $versions) {
-        if (satisfies($ver, $range)) {
+        if (isValid($ver)) {
             def parsed as Version init parse($ver);
-            if (not $have or compare($parsed, $bestVer) > 0) {
+            if (satisfiesVer($parsed, $range) and (not $have or compare($parsed, $bestVer) > 0)) {
                 $bestVer = $parsed;
                 $chosen = $ver;
                 $have = true;
@@ -874,9 +886,9 @@ export func minSatisfying(versions as list of string, range as string) {
     def have as bool init false;
     def lowVer as Version;
     for (def ver in $versions) {
-        if (satisfies($ver, $range)) {
+        if (isValid($ver)) {
             def parsed as Version init parse($ver);
-            if (not $have or compare($parsed, $lowVer) < 0) {
+            if (satisfiesVer($parsed, $range) and (not $have or compare($parsed, $lowVer) < 0)) {
                 $lowVer = $parsed;
                 $chosen = $ver;
                 $have = true;
@@ -1303,7 +1315,17 @@ export func minVersion(range as string) {
         } elseif (len($iv.lo.prerelease) > 0 and not pinnedAt($iv.pins, tupleStr($iv.lo))) {
             $cand = releaseCore($iv.lo);
         }
-        if (not $have or compare($cand, $floor) < 0) {
+        # Only take a candidate that actually lies within the interval's upper
+        # bound: for a release-empty interval (`>1.2.3 <1.2.4`) the bumped patch
+        # candidate can overshoot hi, and this interval then contributes no floor.
+        def withinHi as bool init true;
+        def cmpHi as int init compare($cand, $iv.hi);
+        if ($iv.hiIncl) {
+            $withinHi = $cmpHi <= 0;
+        } else {
+            $withinHi = $cmpHi < 0;
+        }
+        if ($withinHi and (not $have or compare($cand, $floor) < 0)) {
             $floor = $cand;
             $have = true;
         }
@@ -1336,8 +1358,15 @@ export func intersects(rangeA as string, rangeB as string) {
                 if (intervalHasRelease($iv)) {
                     return true;
                 }
-                def t as string init tupleStr($iv.lo);
-                if (pinnedAt($a.pins, $t) and pinnedAt($b.pins, $t)) {
+                # An interval whose only content is prereleases above lo (e.g.
+                # `>1.2.3 <1.2.4-rc.5`) pins those at the NEXT tuple, not lo's:
+                # `1.2.4-rc.x` has tuple 1.2.4, not 1.2.3. Check both.
+                def tLo as string init tupleStr($iv.lo);
+                def tNext as string init tupleStr(incPatch(releaseCore($iv.lo)));
+                if (pinnedAt($a.pins, $tLo) and pinnedAt($b.pins, $tLo)) {
+                    return true;
+                }
+                if (pinnedAt($a.pins, $tNext) and pinnedAt($b.pins, $tNext)) {
                     return true;
                 }
             }

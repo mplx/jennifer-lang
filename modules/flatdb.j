@@ -22,6 +22,7 @@
 use json;
 use fs;
 use strings;
+use uuid;
 
 /**
  * The value the caller holds: the file path plus the decoded document. A module
@@ -152,7 +153,10 @@ export func remove(db as DB, pointer as string) {
  */
 export func save(db as DB) {
     def text as string init json.encode($db.data);
-    def tmp as string init $db.path + ".tmp";
+    # Uniquify the temp name: a fixed `.tmp` sibling lets two concurrent saves
+    # share one path, so one could rename while the other is mid-write and
+    # publish a torn file - defeating the crash-atomic guarantee.
+    def tmp as string init $db.path + ".tmp." + uuid.generate("v4");
     fs.writeString($tmp, $text);
     fs.rename($tmp, $db.path);
 }

@@ -177,20 +177,41 @@ func acceptFor(key as string) {
 }
 
 # readHandshakeResponse reads bytes until the CRLFCRLF header terminator.
+# It reads a byte at a time (the terminator must not be over-read into the first
+# frame, and readN blocks for exactly its count), but accumulates into a byte
+# buffer and decodes once - a growing `string +` per byte would be O(N^2).
 func readHandshakeResponse(socket as net.Conn) {
-    def out as string init "";
+    def buf as bytes;
     def done as bool init false;
     repeat {
         def one as bytes init readN($socket, 1);
-        $out = $out + convert.fromCodepoint($one[0]);
-        if (len($out) >= 4 and strings.endsWith($out, "\r\n\r\n")) {
+        $buf[] = $one[0];
+        def m as int init len($buf);
+        # `\r\n\r\n` is 13,10,13,10.
+        if ($m >= 4 and $buf[$m - 1] == 10 and $buf[$m - 2] == 13 and $buf[$m - 3] == 10 and $buf[$m - 4] == 13) {
             $done = true;
         }
-        if (len($out) > 8192) {
+        if ($m > 8192) {
             fail("handshake response too large");
         }
     } until ($done);
-    return $out;
+    return convert.stringFromBytes($buf, "utf-8");
+}
+
+# statusCodeOf extracts the numeric status code (the token after the first
+# space) from an HTTP status line, so a code check can't be fooled by "101"
+# appearing elsewhere on the line.
+func statusCodeOf(statusLine as string) {
+    def sp as int init strings.indexOf($statusLine, " ");
+    if ($sp < 0) {
+        return "";
+    }
+    def rest as string init strings.substring($statusLine, $sp + 1, len($statusLine));
+    def spTwo as int init strings.indexOf($rest, " ");
+    if ($spTwo < 0) {
+        return strings.trim($rest);
+    }
+    return strings.substring($rest, 0, $spTwo);
 }
 
 # headerValue finds a header's value (case-insensitive name) in the response
@@ -226,7 +247,7 @@ func handshake(socket as net.Conn, t as Target, key as string) {
     net.writeBytes($socket, convert.bytesFromString($req, "utf-8"));
     def resp as string init readHandshakeResponse($socket);
     def lines as list of string init strings.split($resp, "\r\n");
-    if (not strings.contains($lines[0], "101")) {
+    if (not (statusCodeOf($lines[0]) == "101")) {
         fail("handshake rejected: " + $lines[0]);
     }
     if (not (headerValue($lines, "sec-websocket-accept") == acceptFor($key))) {

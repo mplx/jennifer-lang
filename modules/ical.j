@@ -125,6 +125,26 @@ export func add(cal as Calendar, ev as Event) {
 
 # --- date-time (private) ----------------------------------------------------
 
+# valueColon returns the index of the value-separating colon, scanning the
+# name/parameter section while tracking double-quote state so a colon inside a
+# quoted parameter value is not mistaken for the separator. Returns -1 when
+# there is no unquoted colon.
+func valueColon(line as string) {
+    def cs as list of string init strings.chars($line);
+    def inQuote as bool init false;
+    def i as int init 0;
+    while ($i < len($cs)) {
+        def ch as string init $cs[$i];
+        if ($ch == "\"") {
+            $inQuote = not $inQuote;
+        } elseif ($ch == ":" and not $inQuote) {
+            return $i;
+        }
+        $i = $i + 1;
+    }
+    return -1;
+}
+
 # formatDateTime renders an instant as a UTC iCalendar DATE-TIME (`...Z`),
 # normalising to UTC first so a non-UTC time.Time still emits a correct value.
 func formatDateTime(t as time.Time) {
@@ -207,7 +227,7 @@ export func parse(text as string) {
         if ($line == "") {
             continue;
         }
-        def colon as int init strings.indexOf($line, ":");
+        def colon as int init valueColon($line);
         if ($colon < 0) {
             continue;
         }

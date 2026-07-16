@@ -170,7 +170,14 @@ func renderJson(level as string, message as string, fields as map of string to s
     $rec["level"] = $level;
     $rec["msg"] = $message;
     for (def k in $fields) {
-        $rec[$k] = $fields[$k];
+        # A caller field colliding with a reserved key would otherwise overwrite
+        # the record's own time/level/msg (defeating level-based alerting);
+        # prefix it instead so the value survives without shadowing.
+        if ($k == "time" or $k == "level" or $k == "msg") {
+            $rec["field." + $k] = $fields[$k];
+        } else {
+            $rec[$k] = $fields[$k];
+        }
     }
     return json.encode($rec);
 }
@@ -222,6 +229,11 @@ func syslogLine(logger as Logger, level as string, message as string, fields as 
     return "<" + convert.toString($pri) + ">1 " + time.iso($t) + " " + $host + " " + $app + " - - - " + $msg;
 }
 
+# sendSyslog opens a fresh UDP socket per record. A persistent socket would need
+# mutable module state or a mutable handle on the value-semantic Logger, neither
+# of which the module model allows, so this is a documented cost: high-volume
+# syslog logging pays one socket setup/teardown syscall pair per line. For hot
+# paths, prefer the file or console sink (or batch upstream).
 func sendSyslog(logger as Logger, line as string) {
     def sock as net.UDPSocket init net.listenUDP(":0");
     net.sendTo($sock, $logger.target, convert.bytesFromString($line, "utf-8"));

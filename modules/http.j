@@ -116,16 +116,18 @@ func dechunk(body as bytes) {
     while ($pos < $n) {
         def lineEnd as int init findCRLF($body, $pos);
         if ($lineEnd < 0) {
-            return $out;
+            # A chunk-size line with no CRLF means the connection dropped
+            # mid-stream: fail loudly rather than return a silent partial body.
+            throw Error{kind: "http", message: "truncated body: chunk size line has no CRLF", file: "", line: 0, col: 0};
         }
         def size as int init hexToInt(strings.trim(bytesToStr($body, $pos, $lineEnd)));
         if ($size == 0) {
-            return $out;
+            return $out;   # terminal 0-length chunk: complete
         }
         def dataStart as int init $lineEnd + 2;
         def dataEnd as int init $dataStart + $size;
         if ($dataEnd > $n) {
-            $dataEnd = $n;
+            throw Error{kind: "http", message: "truncated body: chunk declares more bytes than received", file: "", line: 0, col: 0};
         }
         def j as int init $dataStart;
         while ($j < $dataEnd) {
@@ -134,7 +136,8 @@ func dechunk(body as bytes) {
         }
         $pos = $dataEnd + 2;
     }
-    return $out;
+    # Ran out of input without ever seeing the terminal 0-length chunk.
+    throw Error{kind: "http", message: "truncated body: missing terminal chunk", file: "", line: 0, col: 0};
 }
 
 # --- request / response (private) ----------------------------------
@@ -243,15 +246,33 @@ func rejectInjection(u as Url, headers as map of string to string) {
 }
 
 # buildRequest renders the full request text for a method / URL / headers / body.
+# hasHeaderCI reports whether headers holds a key equal to lname (already
+# lowercased), matching case-insensitively per RFC 7230.
+func hasHeaderCI(headers as map of string to string, lname as string) {
+    for (def k in $headers) {
+        if (strings.lower($k) == $lname) {
+            return true;
+        }
+    }
+    return false;
+}
+
 func buildRequest(method as string, u as Url, headers as map of string to string, body as string) {
     rejectInjection($u, $headers);
     def out as string init $method + " " + $u.path + " HTTP/1.1\r\n";
     $out = $out + "Host: " + hostHeader($u) + "\r\n";
     $out = $out + "Connection: close\r\n";
-    if (not maps.has($headers, "User-Agent")) {
+    if (not hasHeaderCI($headers, "user-agent")) {
         $out = $out + "User-Agent: jennifer-http\r\n";
     }
     for (def k in $headers) {
+        # Skip the framing headers the client owns: re-emitting a caller's Host /
+        # Connection / Content-Length yields a duplicate that strict servers
+        # reject and that enables request smuggling. Compared case-insensitively.
+        def lk as string init strings.lower($k);
+        if ($lk == "host" or $lk == "connection" or $lk == "content-length") {
+            continue;
+        }
         $out = $out + $k + ": " + $headers[$k] + "\r\n";
     }
     if (len($body) > 0) {
@@ -272,7 +293,16 @@ func parseHeaders(lines as list of string) {
         if ($colon > 0) {
             def raw as string init strings.substring($line, 0, $colon);
             def name as string init strings.lower(strings.trim($raw));
-            $headers[$name] = strings.trim(strings.substring($line, $colon + 1, len($line)));
+            def value as string init strings.trim(strings.substring($line, $colon + 1, len($line)));
+            # Repeated headers (e.g. two Set-Cookie lines) would otherwise
+            # last-wins-collapse, silently dropping all but one. Join them with
+            # ", " so no value is lost (RFC 7230 comma-folding; a caller that
+            # needs individual Set-Cookie values must re-split).
+            if (maps.has($headers, $name)) {
+                $headers[$name] = $headers[$name] + ", " + $value;
+            } else {
+                $headers[$name] = $value;
+            }
         }
         $i = $i + 1;
     }

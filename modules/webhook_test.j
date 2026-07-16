@@ -32,6 +32,11 @@ func testVerifyValid() {
     testing.assertTrue(verify(PAYLOAD, SIG, SECRET));
 }
 
+func testVerifyCaseInsensitive() {
+    # The hex digest and `sha256=` prefix are case-insensitive.
+    testing.assertTrue(verify(PAYLOAD, strings.upper(SIG), SECRET));
+}
+
 func testVerifyWrongSecret() {
     testing.assertFalse(verify(PAYLOAD, SIG, "wrong"));
 }

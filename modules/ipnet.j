@@ -52,6 +52,15 @@ func parseDecimal(s as string) {
     if (len($s) == 0) {
         fail("empty number");
     }
+    # Reject leading zeros: many host stacks read a leading-zero octet as octal,
+    # so accepting "010" as decimal 10 lets an allow-list disagree with the
+    # kernel (an SSRF / allow-list-bypass vector). Cap the length too.
+    if (len($s) > 1 and strings.startsWith($s, "0")) {
+        fail("leading zeros are not allowed: '" + $s + "'");
+    }
+    if (len($s) > 10) {
+        fail("number too long: '" + $s + "'");
+    }
     def v as int init 0;
     for (def ch in strings.chars($s)) {
         def d as int init strings.indexOf("0123456789", $ch);
@@ -129,6 +138,11 @@ func parseSix(s as string) {
         def rightS as string init strings.substring($s, $dbl + 2, len($s));
         if (strings.contains($rightS, "::")) {
             fail("multiple '::' in IPv6 address: " + $s);
+        }
+        # An embedded IPv4 is only the final 32 bits (RFC 4291): it may appear in
+        # the tail, never in the head before '::'.
+        if (strings.contains($leftS, ".")) {
+            fail("embedded IPv4 must be the last component: " + $s);
         }
         def headG as list of int init [];
         if (not ($leftS == "")) {

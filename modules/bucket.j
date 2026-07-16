@@ -229,13 +229,71 @@ export func delete(client as Client, bucketName as string, key as string) {
 
 /**
  * List a bucket's objects (S3 ListObjectsV2). The response body is the S3 XML
- * listing; pass it to `bucket.objectKeys` to pull out the keys.
+ * listing; pass it to `bucket.objectKeys` to pull out the keys. S3 returns at
+ * most 1000 keys per page: check `bucket.isTruncated` on the body and, if true,
+ * call `bucket.listObjectsFrom` with `bucket.nextContinuationToken` to fetch the
+ * next page (loop until not truncated).
  * @param client {Client} the client
  * @param bucketName {string} the bucket
  * @return {http.Response} the response (body = ListBucketResult XML on 200)
  */
 export func listObjects(client as Client, bucketName as string) {
     return doRequest($client, "GET", "/" + $bucketName, "list-type=2", "");
+}
+
+# tokenEncode percent-encodes a continuation token for the query string (S3
+# tokens are opaque base64-ish strings that can carry `+` / `/` / `=`).
+func tokenEncode(s as string) {
+    def hexdig as string init "0123456789ABCDEF";
+    def unreserved as string init "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~";
+    def raw as bytes init convert.bytesFromString($s, "utf-8");
+    def out as list of string init [];
+    def i as int init 0;
+    while ($i < len($raw)) {
+        def b as int init $raw[$i];
+        def ch as string init convert.fromCodepoint($b);
+        if (strings.indexOf($unreserved, $ch) >= 0) {
+            $out[] = $ch;
+        } else {
+            $out[] = "%" + strings.substring($hexdig, ($b >> 4) & 15, (($b >> 4) & 15) + 1) + strings.substring($hexdig, $b & 15, ($b & 15) + 1);
+        }
+        $i = $i + 1;
+    }
+    return strings.join($out, "");
+}
+
+/**
+ * Fetch one further page of a ListObjectsV2 listing, starting after `token` (the
+ * value from `bucket.nextContinuationToken` on the previous page's body).
+ * @param client {Client} the client
+ * @param bucketName {string} the bucket
+ * @param token {string} the continuation token from the previous page
+ * @return {http.Response} the response (body = ListBucketResult XML on 200)
+ */
+export func listObjectsFrom(client as Client, bucketName as string, token as string) {
+    return doRequest($client, "GET", "/" + $bucketName, "list-type=2&continuation-token=" + tokenEncode($token), "");
+}
+
+/**
+ * Report whether a ListObjectsV2 XML body was truncated (more pages remain).
+ * @param xml {string} the body from a list call
+ * @return {bool} true when another page is available
+ */
+export func isTruncated(xml as string) {
+    return regex.find("<IsTruncated>\\s*true\\s*</IsTruncated>", $xml).start >= 0;
+}
+
+/**
+ * Extract the continuation token to fetch the next page, or "" when none.
+ * @param xml {string} the body from a list call
+ * @return {string} the next continuation token, or "" if the listing is complete
+ */
+export func nextContinuationToken(xml as string) {
+    def m as regex.Match init regex.find("<NextContinuationToken>([^<]*)</NextContinuationToken>", $xml);
+    if ($m.start == -1) {
+        return "";
+    }
+    return unescapeXml($m.groups[0]);
 }
 
 /**

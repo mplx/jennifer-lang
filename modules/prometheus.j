@@ -383,10 +383,22 @@ func parseResult(node as json.Value) {
  * @return {Result} the parsed result set
  * @throws {Error} kind "prometheus" when the server reports a query error
  */
+# decodeBody decodes a Prometheus HTTP response, mapping a non-JSON body (a 502
+# HTML page or an auth portal) to a prometheus-kind error, not a raw json one.
+func decodeBody(resp as http.Response) {
+    def node as json.Value;
+    try {
+        $node = json.decode($resp.body);
+    } catch (e) {
+        throw Error{ kind: "prometheus", message: "prometheus: non-JSON response (HTTP " + convert.toString($resp.status) + ")", file: "", line: 0, col: 0 };
+    }
+    return $node;
+}
+
 export func query(base as string, promql as string) {
     def url as string init joinBase($base, "/api/v1/query") + "?query=" + urlEncode($promql);
     def resp as http.Response init http.get($url, {});
-    return parseResult(json.decode($resp.body));
+    return parseResult(decodeBody($resp));
 }
 
 /**
@@ -405,5 +417,5 @@ export func queryRange(base as string, promql as string, start as string, end as
     def url as string init joinBase($base, "/api/v1/query_range") + "?query=" + urlEncode($promql) +
         "&start=" + urlEncode($start) + "&end=" + urlEncode($end) + "&step=" + urlEncode($step);
     def resp as http.Response init http.get($url, {});
-    return parseResult(json.decode($resp.body));
+    return parseResult(decodeBody($resp));
 }
