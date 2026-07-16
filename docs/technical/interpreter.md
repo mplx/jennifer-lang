@@ -542,8 +542,17 @@ the module stem, recursing into list / map / task element types so a
 collection element type matches the identity `retagStructs` gives the
 values), construct one (`points.Point{...}` in `evalStructLit`), read its
 fields, and pass it back - all type-checking - while `a.Point` and `b.Point`
-stay distinct `(namespace, name)` pairs. The retag copies only compound
-values at the boundary (module calls are not a hot path). Declared-type
+stay distinct `(namespace, name)` pairs. Struct identity is keyed by the
+module's **canonical path**, carried in the `ModPath` field on both `Value` and
+`parser.Type` (empty for library / user structs) and compared by `Value.Equal` /
+`MatchesDeclared`; `StructNS` holds the file **stem** purely for display, so two
+module files sharing a basename (`a/util.j`, `b/util.j`, or `@mplx/benchmark` vs
+`@claude/benchmark`) are genuinely distinct types while both still render as
+`benchmark.Point`. The boundary retag threads `(StructNS, ModPath)` so a foreign
+struct that only shares the stem is left untouched, and method parameter types
+are stamped alongside `def` types so a `func f(s as mod.Struct)` param carries
+the same identity the passed value does. The retag copies only compound values
+at the boundary (module calls are not a hot path). Declared-type
 stamping happens once, single-threaded, before execution:
 `resolveDeclaredTypesOnce` (run from `Run` after `loadModuleImports`) walks
 every declared type - top-level, method bodies, and spawn bodies - stamps it,

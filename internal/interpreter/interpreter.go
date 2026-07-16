@@ -126,6 +126,10 @@ type Interpreter struct {
 	// (stem, name) identity the entry program sees when meta.callMain crosses
 	// the boundary. Empty on the entry program.
 	moduleNS string
+	// modulePath is this sub-interpreter's canonical path, the struct-identity
+	// half of the retag (StructNS is the stem for display, ModPath is the path
+	// for identity). Empty on the entry program.
+	modulePath string
 
 	// spawned task registry. Every `spawn { ... }` appends its
 	// TaskState here; the CLI scans the slice on shutdown to surface
@@ -741,13 +745,13 @@ func (i *Interpreter) CallHostWith(name string, args ...Value) (Value, error) {
 	}
 	retagged := make([]Value, len(args))
 	for idx, a := range args {
-		retagged[idx] = retagStructs(a, "", i.moduleNS, i.isOwnStructName)
+		retagged[idx] = retagStructs(a, "", i.moduleNS, "", i.modulePath, i.isOwnStructName)
 	}
 	res, err := host.CallByNameWith(name, retagged...)
 	if err != nil {
 		return res, err
 	}
-	return retagStructs(res, i.moduleNS, "", i.isOwnStructName), nil
+	return retagStructs(res, i.moduleNS, "", i.modulePath, "", i.isOwnStructName), nil
 }
 
 // isOwnStructName reports whether name is a struct declared in this
@@ -1803,7 +1807,7 @@ func (i *Interpreter) zeroStructFor(ns, name string, st parser.Node) (Value, err
 				if err != nil {
 					return Value{}, err
 				}
-				return retagStructs(v, "", mod.ns, mod.isOwnStruct), nil
+				return retagStructs(v, "", mod.ns, "", mod.path, mod.isOwnStruct), nil
 			}
 		}
 	}
@@ -2496,6 +2500,7 @@ func (i *Interpreter) evalStructLit(ex *parser.StructLit, env *Environment) (Val
 	// user-defined struct table as before.
 	var def *parser.StructDef
 	var resolvedNS string
+	var resolvedModPath string
 	if mod, ok := i.moduleAliases[ex.NS]; ok {
 		// `alias.Struct{...}` - construct an importer-visible module struct.
 		d, exists := mod.interp.structs[ex.Name]
@@ -2509,6 +2514,7 @@ func (i *Interpreter) evalStructLit(ex *parser.StructLit, env *Environment) (Val
 		}
 		def = d
 		resolvedNS = mod.ns
+		resolvedModPath = mod.path
 	} else if ex.NS != "" {
 		canonical, err := i.resolveNamespacePrefix(ex.NS)
 		if err != nil {
@@ -2563,7 +2569,9 @@ func (i *Interpreter) evalStructLit(ex *parser.StructLit, env *Environment) (Val
 		out = append(out, StructField{Name: decl.Name, Value: stampDeclaredType(v.Copy(), decl.Type)})
 	}
 	if resolvedNS != "" {
-		return NamespacedStructVal(resolvedNS, ex.Name, out), nil
+		sv := NamespacedStructVal(resolvedNS, ex.Name, out)
+		sv.ModPath = resolvedModPath // module identity (empty for a library struct)
+		return sv, nil
 	}
 	return StructVal(ex.Name, out), nil
 }

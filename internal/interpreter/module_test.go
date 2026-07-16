@@ -105,6 +105,95 @@ func TestModuleCycleRejected(t *testing.T) {
 	}
 }
 
+// runModuleMainTree is runModuleMain but the file map keys may contain
+// subdirectories (e.g. "a/util.j"), so two modules can share a basename while
+// living in different directories.
+func runModuleMainTree(t *testing.T, files map[string]string) (string, error) {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range files {
+		full := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", name, err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	var buf bytes.Buffer
+	setup := func(s *interpreter.Interpreter) {
+		s.Out = &buf
+		iolib.Install(s)
+	}
+	in := interpreter.New()
+	setup(in)
+	in.EnableModules(dir, nil, moduleProgram, setup)
+	prog, err := moduleProgram(filepath.Join(dir, "main.j"))
+	if err != nil {
+		t.Fatalf("parse main: %v", err)
+	}
+	runErr := in.Run(prog)
+	return buf.String(), runErr
+}
+
+// Two module files sharing a basename (both `util.j`) are distinct types keyed
+// by their canonical path, so importing both under different aliases works: each
+// module's struct round-trips through its own methods, and the two `Thing`
+// types never cross-satisfy each other.
+func TestSameStemModulesCoexist(t *testing.T) {
+	files := map[string]string{
+		"a/util.j": `export def struct Thing { x as int };
+			export func make() { return Thing{ x: 1 }; }
+			export func getx(t as Thing) { return $t.x; }`,
+		"b/util.j": `export def struct Thing { y as int };
+			export func make() { return Thing{ y: 2 }; }
+			export func gety(t as Thing) { return $t.y; }`,
+	}
+	// Happy path: each module's struct passes back into its own method.
+	ok := make(map[string]string, len(files))
+	for k, v := range files {
+		ok[k] = v
+	}
+	ok["main.j"] = `import "./a/util.j" as u; import "./b/util.j" as v; use io;
+		def a as u.Thing init u.make();
+		def b as v.Thing init v.make();
+		io.printf("%d %d\n", u.getx($a), v.gety($b));`
+	out, err := runModuleMainTree(t, ok)
+	if err != nil {
+		t.Fatalf("same-stem modules should coexist: %v", err)
+	}
+	if strings.TrimSpace(out) != "1 2" {
+		t.Errorf("got %q, want %q", strings.TrimSpace(out), "1 2")
+	}
+
+	// The two Thing types are distinct: u's Thing must not satisfy v's Thing.
+	bad := make(map[string]string, len(files))
+	for k, v := range files {
+		bad[k] = v
+	}
+	bad["main.j"] = `import "./a/util.j" as u; import "./b/util.j" as v;
+		def a as v.Thing init u.make();`
+	if _, err := runModuleMainTree(t, bad); err == nil {
+		t.Error("assigning u.Thing to a v.Thing variable should be a type error")
+	}
+}
+
+// Distinct stems are fine, and importing the same module file twice (a run-once
+// cache hit) is not a collision.
+func TestModuleDistinctStemsAndReimportOK(t *testing.T) {
+	out, err := runModuleMainTree(t, map[string]string{
+		"a/one.j": `export func v() { return 1; }`,
+		"b/two.j": `export func v() { return 2; }`,
+		"main.j":  `import "./a/one.j" as o; import "./b/two.j" as t; import "./a/one.j" as oo; use io; io.printf("%d\n", o.v() + t.v() + oo.v());`,
+	})
+	if err != nil {
+		t.Fatalf("distinct stems / reimport should be fine: %v", err)
+	}
+	if strings.TrimSpace(out) != "4" {
+		t.Errorf("got %q, want 4", strings.TrimSpace(out))
+	}
+}
+
 func TestModuleParseErrorPositioned(t *testing.T) {
 	_, err := runModuleMain(t, map[string]string{
 		"bad.j":  `def x as `, // truncated - parse error inside the module

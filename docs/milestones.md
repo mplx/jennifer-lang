@@ -1480,21 +1480,40 @@ and the handle table does not grow without bound; `convert.toInt(NaN)` /
 `math.floor(1e300)` error; `math.abs(MinInt64)` errors; `-9223372036854775808`
 parses; a too-large toml integer is a decode error.
 
-### M19.5 - Module struct identity: reject stem collisions
+### M19.5 - Module struct identity: keyed by canonical path
 
-Module struct values are tagged by the imported file's **stem** (`moduleStem`),
-so two modules whose files share a stem
-(`import "a/util.j" as u1; import "b/util.j" as u2;`) produce values with
-identical `(namespace, name)` identity, and `moduleByNS` resolves a stem to
-whichever module Go's nondeterministic map iteration hits first - a same-named
-struct from an unrelated module passes the other's type check. **Detect stem
-collisions at import time and error** (the "fail loud" choice), rather than
-re-keying struct identity by canonical path (a larger change kept in reserve;
-record it in `docs/technical/rejected.md`).
+**Done.** Module struct values were tagged only by the imported file's **stem**
+(`moduleStem`), so two modules whose files share a basename
+(`import "a/util.j" as u1; import "b/util.j" as u2;`, or the M19.7-era
+`import "@mplx/benchmark/" / "@claude/benchmark/"`) produced values with an
+identical `(namespace, name)` identity, and `moduleByNS` resolved the stem
+nondeterministically - a same-named struct from an unrelated module passed the
+other's type check.
 
-**Acceptance.** Importing two modules with the same file stem is a positioned
-error at load; single-stem programs are unaffected; the module test suite still
-passes.
+The original plan here was to **fail loud** (reject a stem collision at import
+time), but that is far too restrictive for real projects (one import would claim
+a basename project-wide) and would make the `@scope/package` case impossible, so
+the design was changed to do it properly: **struct identity is keyed by the
+module's canonical (resolved) path, not the basename.** `Value` and
+`parser.Type` gained a `ModPath` field (the module's canonical path, empty for
+library / user structs) that `Value.Equal` and `MatchesDeclared` compare
+alongside `StructNS`; `StructNS` stays the file **stem** purely for display, so
+error messages and `%v` still read `benchmark.Point`. The boundary retag
+(`retagStructs` / `retagType`) threads the path so a foreign struct that merely
+shares a stem is never mis-tagged, and method **parameter** types are now
+stamped (`resolveDeclaredTypesOnce`) so a `func f(s as mod.Struct)` param carries
+the identity the passed value does. Two imports that resolve to the *same* file
+stay the same type (path-resolved before comparison, so `./x.j` and `../y/x.j`
+collapse); different files are different types. No import errors, no collision to
+reject. Pinned by a same-stem-modules-coexist test (each module's struct
+round-trips through its own methods; the two types do not cross-satisfy) plus
+distinct-stem / re-import tests; full suite, all 53 overlays, the `web`
+cross-boundary integration, and `-race` stay green on both toolchains.
+
+**Acceptance.** Two module files sharing a basename import cleanly under distinct
+aliases and are distinct types that never cross-satisfy; re-importing the same
+file is the same type; single-stem programs and the module test suite are
+unaffected.
 
 ### M19.6 - `.j` code coverage
 
@@ -1552,11 +1571,12 @@ independently of the system search path.
   `--sysmoddir` / `JENNIFER_SYSMODDIR`. A missing vendor root, or a missing
   `@scope/package`, is a positioned error naming the resolved path and pointing
   at the installer.
-- **Identity keyed by `@scope/package`.** A vendored module's struct identity is
-  tagged by its `@scope/package` prefix, not the bare file stem, so two decks
-  that share a stem (`@a/util`, `@b/util`) stay distinct - the vendored-tree
-  answer to the same stem-collision hazard [M19.5](#m195---module-struct-identity-reject-stem-collisions)
-  rejects at the system level.
+- **Identity already handled by M19.5.** Because struct identity is keyed by the
+  resolved canonical path
+  ([M19.5](#m195---module-struct-identity-keyed-by-canonical-path)), two decks
+  that share a stem (`@a/util`, `@b/util`) resolve to different vendor paths and
+  are already distinct types - this resolver just has to produce the right
+  canonical path per scope; no extra identity work.
 - **Path safety.** `@` is legal only as the very first character of the path; a
   `..` segment may not escape the package root; the resolved path must stay
   inside `vendor/scope/package/`.

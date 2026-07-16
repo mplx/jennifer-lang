@@ -92,9 +92,14 @@ type Type struct {
 	KeyType    *Type  // TypeMap:  key type
 	ValType    *Type  // TypeMap:  value type
 	StructName string // TypeStruct: name of the struct definition
-	StructNS   string // TypeStruct: optional library namespace prefix.
-	//                  Empty for user-defined structs (`def struct Name`);
-	//                  set for library-registered structs (`os.Result`).
+	StructNS   string // TypeStruct: display namespace prefix (library name or a
+	//                  module's file stem). Empty for user-defined structs
+	//                  (`def struct Name`); set for library-registered structs
+	//                  (`os.Result`) and stamped module structs.
+	ModPath string // TypeStruct: module identity (the module's canonical path)
+	//                stamped onto a module-struct type by resolveDeclaredStructNS;
+	//                empty for library / user structs. Keeps two same-stem module
+	//                types distinct while StructNS stays the readable stem.
 	// Resolved is an interpreter annotation, not parser output: set once
 	// resolveDeclaredStructNS has stamped a declared type's namespace
 	// (importer alias -> module stem, or library alias -> canonical). It makes
@@ -160,7 +165,7 @@ func (t Type) Equal(o Type) bool {
 		}
 		return t.KeyType.Equal(*o.KeyType) && t.ValType.Equal(*o.ValType)
 	case TypeStruct:
-		return t.StructName == o.StructName && t.StructNS == o.StructNS
+		return t.StructName == o.StructName && t.StructNS == o.StructNS && t.ModPath == o.ModPath
 	case TypeTask:
 		if (t.Element == nil) != (o.Element == nil) {
 			return false

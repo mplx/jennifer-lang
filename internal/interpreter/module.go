@@ -51,34 +51,37 @@ func (m *loadedModule) isOwnStruct(name string) bool {
 // identity `(module-stem, name)` importers see, so a value keeps a consistent
 // type on each side of the boundary. Library / other-module structs (a
 // different namespace) are left untouched.
-func retagStructs(v Value, from, to string, isOwn func(string) bool) Value {
+func retagStructs(v Value, fromNS, toNS, fromMod, toMod string, isOwn func(string) bool) Value {
 	switch v.Kind {
 	case KindStruct:
 		nv := v
 		nv.Fields = make([]StructField, len(v.Fields))
 		for i, f := range v.Fields {
-			nv.Fields[i] = StructField{Name: f.Name, Value: retagStructs(f.Value, from, to, isOwn)}
+			nv.Fields[i] = StructField{Name: f.Name, Value: retagStructs(f.Value, fromNS, toNS, fromMod, toMod, isOwn)}
 		}
-		if v.StructNS == from && isOwn(v.StructName) {
-			nv.StructNS = to
+		// Match on (StructNS, ModPath): a foreign struct that merely shares
+		// the stem has a different ModPath, so it is left untouched.
+		if v.StructNS == fromNS && v.ModPath == fromMod && isOwn(v.StructName) {
+			nv.StructNS = toNS
+			nv.ModPath = toMod
 		}
 		return nv
 	case KindList:
 		nv := v
 		nv.List = make([]Value, len(v.List))
 		for i := range v.List {
-			nv.List[i] = retagStructs(v.List[i], from, to, isOwn)
+			nv.List[i] = retagStructs(v.List[i], fromNS, toNS, fromMod, toMod, isOwn)
 		}
-		nv.ElemTyp = retagType(v.ElemTyp, from, to, isOwn)
+		nv.ElemTyp = retagType(v.ElemTyp, fromNS, toNS, fromMod, toMod, isOwn)
 		return nv
 	case KindMap:
 		nv := v
 		nv.Map = make([]MapEntry, len(v.Map))
 		for i := range v.Map {
-			nv.Map[i] = MapEntry{Key: v.Map[i].Key, Value: retagStructs(v.Map[i].Value, from, to, isOwn)}
+			nv.Map[i] = MapEntry{Key: v.Map[i].Key, Value: retagStructs(v.Map[i].Value, fromNS, toNS, fromMod, toMod, isOwn)}
 		}
-		nv.KeyTyp = retagType(v.KeyTyp, from, to, isOwn)
-		nv.ValTyp = retagType(v.ValTyp, from, to, isOwn)
+		nv.KeyTyp = retagType(v.KeyTyp, fromNS, toNS, fromMod, toMod, isOwn)
+		nv.ValTyp = retagType(v.ValTyp, fromNS, toNS, fromMod, toMod, isOwn)
 		return nv
 	default:
 		return v
@@ -91,17 +94,18 @@ func retagStructs(v Value, from, to string, isOwn func(string) bool) Value {
 // retagStructs for the *type* metadata a list or map carries alongside its
 // elements, so a `list of mod.Struct` handed back into the module reads as
 // `list of Struct` (and vice versa) rather than failing the param-type check.
-func retagType(t *parser.Type, from, to string, isOwn func(string) bool) *parser.Type {
+func retagType(t *parser.Type, fromNS, toNS, fromMod, toMod string, isOwn func(string) bool) *parser.Type {
 	if t == nil {
 		return nil
 	}
 	nt := *t
-	if t.Kind == parser.TypeStruct && t.StructNS == from && isOwn(t.StructName) {
-		nt.StructNS = to
+	if t.Kind == parser.TypeStruct && t.StructNS == fromNS && t.ModPath == fromMod && isOwn(t.StructName) {
+		nt.StructNS = toNS
+		nt.ModPath = toMod
 	}
-	nt.Element = retagType(t.Element, from, to, isOwn)
-	nt.KeyType = retagType(t.KeyType, from, to, isOwn)
-	nt.ValType = retagType(t.ValType, from, to, isOwn)
+	nt.Element = retagType(t.Element, fromNS, toNS, fromMod, toMod, isOwn)
+	nt.KeyType = retagType(t.KeyType, fromNS, toNS, fromMod, toMod, isOwn)
+	nt.ValType = retagType(t.ValType, fromNS, toNS, fromMod, toMod, isOwn)
 	return &nt
 }
 
@@ -231,7 +235,7 @@ func (i *Interpreter) callModuleMethod(m *loadedModule, c *parser.QualifiedCallE
 		}
 		// Cross the boundary inward: a module struct the consumer holds is
 		// tagged `(module-stem, name)`; inside the module it is bare.
-		args[idx] = retagStructs(v, m.ns, "", m.isOwnStruct)
+		args[idx] = retagStructs(v, m.ns, "", m.path, "", m.isOwnStruct)
 	}
 	v, err := m.interp.CallByNameWith(c.Callee, args...)
 	if err != nil {
@@ -244,13 +248,15 @@ func (i *Interpreter) callModuleMethod(m *loadedModule, c *parser.QualifiedCallE
 	}
 	// Cross the boundary outward: give the module's own structs their
 	// namespaced identity so the consumer can name and re-pass them.
-	return retagStructs(v, "", m.ns, m.isOwnStruct), nil
+	return retagStructs(v, "", m.ns, "", m.path, m.isOwnStruct), nil
 }
 
-// stampModuleStructType verifies `alias.Struct` names an exported struct of
-// the module and rewrites the declared type's namespace from the importer's
-// alias to the module's own stem, so it matches the identity a module value
-// carries once it crosses the boundary.
+// stampModuleStructType verifies `alias.Struct` names an exported struct of the
+// module and rewrites the declared type from the importer's alias to the
+// module's identity: StructNS to the stem (display) and ModPath to the module's
+// canonical path (identity), so it matches the identity a module value carries
+// once it crosses the boundary - and stays distinct from a same-stem struct in
+// another module.
 func (i *Interpreter) stampModuleStructType(t *parser.Type, mod *loadedModule, at parser.Node) error {
 	file, line, col := posFor(at)
 	if !mod.isOwnStruct(t.StructName) {
@@ -260,6 +266,7 @@ func (i *Interpreter) stampModuleStructType(t *parser.Type, mod *loadedModule, a
 		return &runtimeError{Msg: fmt.Sprintf("%s.%s: struct %q is not exported from module %q", t.StructNS, t.StructName, t.StructName, t.StructNS), File: file, Line: line, Col: col}
 	}
 	t.StructNS = mod.ns
+	t.ModPath = mod.path
 	return nil
 }
 
@@ -355,7 +362,17 @@ func (i *Interpreter) resolveDeclaredTypesOnce(prog *parser.Program) {
 		i.declTypesStmt(s)
 	}
 	for _, m := range prog.Methods {
-		if m == nil || m.Body == nil {
+		if m == nil {
+			continue
+		}
+		// Stamp parameter types so a `func f(s as mod.Struct)` param carries the
+		// module's (stem, path) identity and matches the value passed in - the
+		// arg check at the call site is the only place a module-struct param is
+		// compared, and it happens in the module's own interpreter.
+		for pi := range m.Params {
+			_ = i.resolveDeclaredStructNS(&m.Params[pi].Type, m)
+		}
+		if m.Body == nil {
 			continue
 		}
 		for _, s := range m.Body.Stmts {
@@ -484,12 +501,20 @@ func (i *Interpreter) moduleByNS(ns string) *loadedModule {
 	if ns == "" {
 		return nil
 	}
+	// Return a match only when the stem identifies exactly one module. Two
+	// modules can now share a stem (they are distinguished by canonical path),
+	// so a bare-stem lookup is ambiguous - fall through to nil (forcing the
+	// alias) rather than pick one arbitrarily.
+	var found *loadedModule
 	for _, m := range i.moduleAliases {
 		if m.ns == ns {
-			return m
+			if found != nil && found.path != m.path {
+				return nil
+			}
+			found = m
 		}
 	}
-	return nil
+	return found
 }
 
 // moduleConst reads `alias.NAME`, a constant declared at the module's top
@@ -504,7 +529,7 @@ func (i *Interpreter) moduleConst(m *loadedModule, c *parser.QualifiedConstRefEx
 		file, line, col := posFor(c)
 		return Value{}, &runtimeError{Msg: fmt.Sprintf("%s.%s: %q is not exported from module %q", c.Prefix, c.Name, c.Name, c.Prefix), File: file, Line: line, Col: col}
 	}
-	return retagStructs(b.Value, "", m.ns, m.isOwnStruct), nil
+	return retagStructs(b.Value, "", m.ns, "", m.path, m.isOwnStruct), nil
 }
 
 // checkModuleDeclarationsOnly enforces the module top-level grammar: a module
@@ -664,7 +689,8 @@ func (i *Interpreter) loadModule(importPath string, at parser.Node) (*loadedModu
 	sub.baseDir = filepath.Dir(canonical)
 	sub.isModule = true                  // enables `export`; a script (CLI Run) rejects it
 	sub.host = i.Host()                  // entry program, so meta.callMain reaches its handlers
-	sub.moduleNS = moduleStem(canonical) // stem, for meta.callMain struct retagging
+	sub.moduleNS = moduleStem(canonical) // stem, for meta.callMain struct retagging (display)
+	sub.modulePath = canonical           // canonical path, the struct-identity half
 
 	reg.stack = append(reg.stack, canonical)
 	runErr := sub.Run(modProg) // loads sub's imports (post-order), then runs its body

@@ -159,7 +159,8 @@ type Value struct {
 	Bytes      []byte        // KindBytes: byte data
 	Fields     []StructField // KindStruct: declaration-ordered field values
 	StructName string        // KindStruct: name of the struct definition this value belongs to
-	StructNS   string        // KindStruct: library namespace prefix; empty for user-defined structs
+	StructNS   string        // KindStruct: display namespace prefix (library name, or a module's file stem); empty for user-defined structs
+	ModPath    string        // KindStruct: module identity - the module's canonical path; empty for library / user structs. Two module files that share a stem stay distinct types because their ModPath differs, while StructNS keeps the readable stem for display.
 	ElemTyp    *parser.Type  // KindList: element type
 	KeyTyp     *parser.Type  // KindMap:  key type
 	ValTyp     *parser.Type  // KindMap:  value type
@@ -391,7 +392,7 @@ func (v Value) DeepCopy() Value {
 		for i, f := range v.Fields {
 			out[i] = StructField{Name: f.Name, Value: f.Value.Copy()}
 		}
-		return Value{Kind: KindStruct, StructNS: v.StructNS, StructName: v.StructName, Fields: out}
+		return Value{Kind: KindStruct, StructNS: v.StructNS, ModPath: v.ModPath, StructName: v.StructName, Fields: out}
 	case KindObject:
 		// opaque, immutable payload; deep-copy the wrapped tree so value
 		// semantics hold even though there are no mutation paths on it.
@@ -595,7 +596,7 @@ func (v Value) MatchesDeclared(t parser.Type) bool {
 		// opaque KindObject types (json.Value): they register like a
 		// namespaced struct for parsing / declaration and carry the same
 		// ns+name, but their runtime kind is KindObject.
-		return (v.Kind == KindStruct || v.Kind == KindObject) && v.StructName == t.StructName && v.StructNS == t.StructNS
+		return (v.Kind == KindStruct || v.Kind == KindObject) && v.StructName == t.StructName && v.StructNS == t.StructNS && v.ModPath == t.ModPath
 	case parser.TypeList:
 		if v.Kind != KindList {
 			return false
@@ -694,7 +695,7 @@ func (v Value) Equal(o Value) bool {
 			// same (namespace, name) and every field's value matches in
 			// declaration order. The namespace tag keeps a library
 			// `os.Result` distinct from a user-defined `Result`.
-			if v.StructName != o.StructName || v.StructNS != o.StructNS {
+			if v.StructName != o.StructName || v.StructNS != o.StructNS || v.ModPath != o.ModPath {
 				return false
 			}
 			if len(v.Fields) != len(o.Fields) {
