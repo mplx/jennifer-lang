@@ -63,6 +63,33 @@ PASS testGreeting (0 ms)
 | `--format=tap`    | TAP version 14 - CI-friendly, with a YAML diagnostic block per failure.                       |
 | `--format=junit`  | JUnit XML - for CI dashboards that consume it.                                                |
 | `--isolated`      | Run each test in a fresh interpreter subprocess: clean state per test, coarser reporting (a pass/fail line, no in-process kind / position). |
+| `--coverage[=FMT]`| Also report statement coverage: which executable positions in the tested file(s) ran. `text` (default) prints a per-file and total percentage plus the never-executed positions; `json` emits a machine-readable form. Runs in-process (so it overrides `--isolated`). |
+
+## Coverage
+
+`--coverage` reuses the [profiler](cli_profile.md)'s per-position hit data (no
+second counting path): the tests run with statement profiling live, and the
+report intersects the recorded hits with every executable statement position
+statically walked from the AST. Coverage is scoped to the tested program's
+files, so an imported module that merely ran does not skew it. A module overlay
+(`MODULE_test.j`) reports the module file and the test file separately.
+
+```text
+$ jennifer test --coverage mathlib_test.j
+... test report ...
+
+Coverage (statements):
+  .../mathlib.j       12/14  (85.7%)
+    uncovered: 33:5, 41:9
+  .../mathlib_test.j  8/8  (100.0%)
+  total: 20/22 (90.9%)
+```
+
+`--coverage=json` puts the machine-readable report on **stdout** (files, per-file
+`covered` / `total` / `percent` / `uncovered` positions, and the grand total);
+the human test report moves to **stderr** so a tool can parse stdout directly -
+the same "machine format owns stdout" rule `jennifer profile --format=pprof`
+uses.
 
 The same run in TAP:
 

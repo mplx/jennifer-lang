@@ -20,6 +20,7 @@ import (
 	testinglib "github.com/mplx/jennifer-lang/internal/lib/testing"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
+	"github.com/mplx/jennifer-lang/internal/profile"
 )
 
 // Exit codes mirror `jennifer lint`: 0 all pass, 1 one or more failed, 2 the
@@ -45,7 +46,15 @@ func runTest(args []string) int {
 		return testExitPass
 	}
 
-	in, code := loadForTest(opts.path)
+	// --coverage installs a statement profiler and runs in-process (the
+	// per-test subprocesses of --isolated each have their own counters, so the
+	// two don't compose - coverage always runs in-process).
+	var cov *profile.Collector
+	if opts.coverage {
+		cov = profile.NewCollector(profile.ModeStatement, 0)
+	}
+
+	in, prog, code := loadForTestProg(opts.path, cov)
 	if in == nil {
 		return code
 	}
@@ -66,7 +75,7 @@ func runTest(args []string) int {
 
 	recs := make([]testinglib.Record, 0, len(tests))
 	for _, name := range tests {
-		if opts.isolated {
+		if opts.isolated && !opts.coverage {
 			recs = append(recs, runIsolatedTest(opts.path, name))
 		} else {
 			recs = append(recs, runInProcessTest(in, name, hasSetUp, hasTearDown))
@@ -78,7 +87,22 @@ func runTest(args []string) int {
 		fmt.Fprintf(os.Stderr, "jennifer test: %s\n", err.Error())
 		return testExitFailure
 	}
-	fmt.Print(report)
+	// A machine-readable coverage report owns stdout (like `profile --format=
+	// pprof`), so the human test report moves to stderr and the JSON parses.
+	if opts.coverage && opts.coverageFormat == "json" {
+		fmt.Fprint(os.Stderr, report)
+	} else {
+		fmt.Print(report)
+	}
+
+	if opts.coverage {
+		creport, err := renderCoverage(prog, cov.StatementHits(), opts.coverageFormat)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "jennifer test: %s\n", err.Error())
+			return testExitFailure
+		}
+		fmt.Print(creport)
+	}
 
 	for _, r := range recs {
 		if !r.Passed {
@@ -92,21 +116,30 @@ func runTest(args []string) int {
 // hoisted and reachable by name. Returns the ready interpreter, or nil plus an
 // exit code on failure.
 func loadForTest(path string) (*interpreter.Interpreter, int) {
+	in, _, code := loadForTestProg(path, nil)
+	return in, code
+}
+
+// loadForTestProg is loadForTest plus two coverage hooks: it installs the given
+// statement profiler (if non-nil) before running, so hits are captured from the
+// file's top-level init onward, and it returns the parsed program so a caller
+// can enumerate the executable positions (the coverage denominator).
+func loadForTestProg(path string, cov *profile.Collector) (*interpreter.Interpreter, *parser.Program, int) {
 	src, label, absPath, baseDir, ok := loadProgramSource(path)
 	if !ok {
-		return nil, testExitFailure
+		return nil, nil, testExitFailure
 	}
 	tokens, err := lexer.TokenizeWithFile(src, absPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %s\n", label, err.Error())
 		printErrorContext(src, absPath, err)
-		return nil, testExitFailure
+		return nil, nil, testExitFailure
 	}
 	tokens, err = preproc.Process(tokens, baseDir, absPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %s\n", label, err.Error())
 		printErrorContext(src, absPath, err)
-		return nil, testExitFailure
+		return nil, nil, testExitFailure
 	}
 	// White-box module overlay: running `jennifer test MODULE_test.j`
 	// splices the sibling `MODULE.j` in front of the test file, so the test
@@ -117,7 +150,7 @@ func loadForTest(path string) (*interpreter.Interpreter, int) {
 	if base := overlayBaseFor(absPath); base != "" {
 		baseToks, ok := tokenizeForSplice(base)
 		if !ok {
-			return nil, testExitFailure
+			return nil, nil, testExitFailure
 		}
 		tokens = spliceTokens(baseToks, tokens)
 		moduleContext = true
@@ -126,7 +159,7 @@ func loadForTest(path string) (*interpreter.Interpreter, int) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %s\n", label, err.Error())
 		printErrorContext(src, absPath, err)
-		return nil, testExitFailure
+		return nil, nil, testExitFailure
 	}
 	in := interpreter.New()
 	installLibraries(in)
@@ -139,12 +172,16 @@ func loadForTest(path string) (*interpreter.Interpreter, int) {
 	if moduleContext {
 		in.SetModuleContext(true)
 	}
+	if cov != nil {
+		// Statement profiling captures the coverage hits from top-level init on.
+		in.SetProfiler(cov, true, false, false)
+	}
 	if err := in.Run(prog); err != nil {
 		fmt.Fprintf(os.Stderr, "%s: setting up test file: %s\n", label, err.Error())
 		printErrorContext(src, absPath, err)
-		return nil, testExitFailure
+		return nil, nil, testExitFailure
 	}
-	return in, testExitPass
+	return in, prog, testExitPass
 }
 
 // overlayBaseFor returns the module file a `_test.j` overlay tests: for
@@ -300,22 +337,29 @@ func hasMethod(in *interpreter.Interpreter, name string) bool {
 }
 
 type testOptions struct {
-	path     string
-	format   string
-	filter   *regexp.Regexp
-	isolated bool
-	single   string
-	showHelp bool
+	path           string
+	format         string
+	filter         *regexp.Regexp
+	isolated       bool
+	single         string
+	showHelp       bool
+	coverage       bool
+	coverageFormat string
 }
 
 func parseTestArgs(args []string) (testOptions, bool) {
-	opts := testOptions{format: "text"}
+	opts := testOptions{format: "text", coverageFormat: "text"}
 	var positionals []string
 	for _, a := range args {
 		switch {
 		case a == "-h" || a == "--help":
 			opts.showHelp = true
 			return opts, true
+		case a == "--coverage":
+			opts.coverage = true
+		case strings.HasPrefix(a, "--coverage="):
+			opts.coverage = true
+			opts.coverageFormat = strings.TrimPrefix(a, "--coverage=")
 		case strings.HasPrefix(a, "--format="):
 			opts.format = strings.TrimPrefix(a, "--format=")
 		case strings.HasPrefix(a, "--filter="):
@@ -343,6 +387,12 @@ func parseTestArgs(args []string) (testOptions, bool) {
 		fmt.Fprintf(os.Stderr, "jennifer test: unknown --format %q (want text, tap, or junit)\n", opts.format)
 		return opts, false
 	}
+	switch opts.coverageFormat {
+	case "text", "json":
+	default:
+		fmt.Fprintf(os.Stderr, "jennifer test: unknown --coverage format %q (want text or json)\n", opts.coverageFormat)
+		return opts, false
+	}
 	if len(positionals) != 1 {
 		fmt.Fprintln(os.Stderr, "jennifer test: expected exactly one source file")
 		testUsage(os.Stderr)
@@ -353,13 +403,15 @@ func parseTestArgs(args []string) (testOptions, bool) {
 }
 
 func testUsage(w *os.File) {
-	fmt.Fprintln(w, "usage: jennifer test [--filter=REGEX] [--format=text|tap|junit] [--isolated] <file.j>")
+	fmt.Fprintln(w, "usage: jennifer test [--filter=REGEX] [--format=text|tap|junit] [--isolated] [--coverage[=text|json]] <file.j>")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Discover and run the test methods in a Jennifer source file.")
-	fmt.Fprintln(w, "  default          run methods whose name starts with `test`")
-	fmt.Fprintln(w, "  --filter=REGEX   run methods matching the regex instead")
-	fmt.Fprintln(w, "  --format=FMT     text (default), tap, or junit report")
-	fmt.Fprintln(w, "  --isolated       run each test in a fresh interpreter subprocess")
+	fmt.Fprintln(w, "  default            run methods whose name starts with `test`")
+	fmt.Fprintln(w, "  --filter=REGEX     run methods matching the regex instead")
+	fmt.Fprintln(w, "  --format=FMT       text (default), tap, or junit report")
+	fmt.Fprintln(w, "  --isolated         run each test in a fresh interpreter subprocess")
+	fmt.Fprintln(w, "  --coverage[=FMT]   also report statement coverage: text (default) or json")
+	fmt.Fprintln(w, "                     (json owns stdout; the test report moves to stderr)")
 	fmt.Fprintln(w, "  setUp / tearDown methods, if present, run around each test")
 	fmt.Fprintln(w, "Exit: 0 all pass, 1 failures, 2 runner error.")
 }

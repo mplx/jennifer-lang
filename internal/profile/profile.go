@@ -99,6 +99,28 @@ func NewCollector(mode Mode, maxCallEvents int) *Collector {
 // Mode reports the collector's mode.
 func (c *Collector) Mode() Mode { return c.mode }
 
+// Position is a source location where a statement executed. Exposed so a
+// coverage consumer can reuse the statement-profile hit data.
+type Position struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
+	Col  int    `json:"col"`
+}
+
+// StatementHits returns every position that recorded at least one statement
+// execution, mapped to its hit count - the coverage numerator, a second reader
+// of the same per-position data the statement profile renders (no separate
+// counting path). Empty unless statement profiling was active.
+func (c *Collector) StatementHits() map[Position]int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[Position]int64, len(c.stmts))
+	for k, s := range c.stmts {
+		out[Position{File: k.file, Line: k.line, Col: k.col}] = s.hits
+	}
+	return out
+}
+
 // Start marks the profile's zero time; call events are timestamped relative to
 // it. The interpreter calls this once before executing top-level statements.
 func (c *Collector) Start(t time.Time) {

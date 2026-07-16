@@ -1517,6 +1517,23 @@ unaffected.
 
 ### M19.6 - `.j` code coverage
 
+**Done.** `jennifer test --coverage[=text|json]` reports statement coverage by
+reusing the profiler's per-position hit data (no second counting path):
+`loadForTestProg` installs a statement profiler before running so hits are
+captured from top-level init through every test method, and `renderCoverage`
+intersects those hits with the executable positions statically walked from the
+AST (`statementPositions`, which mirrors `execStmt`'s per-statement recording so
+the sets line up). It is scoped to the tested program's files - an imported
+module that merely ran does not skew it - and reports per-file plus a total; a
+module overlay shows the module and test files separately. `text` (default)
+prints percentages and names the never-executed positions; `json` emits a
+parseable report that owns stdout (the human test report moves to stderr, the
+`profile --format=pprof` rule). The plain `jennifer test` path is unchanged
+(`loadForTest` is now a thin wrapper passing a nil collector). Pinned by
+render-logic unit tests and end-to-end CLI tests (partial coverage names the
+uncovered lines; json parses on stdout; the plain run emits no coverage), and an
+HTML view is left as a later `htmlwriter` consumer.
+
 Teach `jennifer test` to report which lines of the code under test actually
 ran. The profiler (`jennifer profile`) already records per-position hit
 counts, so the raw signal exists; this milestone surfaces it as coverage: a
