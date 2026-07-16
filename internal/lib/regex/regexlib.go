@@ -116,18 +116,36 @@ func takeStringArg(fnName string, args []Value, idx int, role string) (string, e
 
 // -------- byte -> rune index translation --------
 
-// byteToRuneIndex returns the rune index at byte offset off in s.
-// off is expected to align on a rune boundary; if it doesn't
-// (invalid UTF-8 in the match position - shouldn't happen with
-// RE2 output but defensive), the current rune count is returned.
-func byteToRuneIndex(s string, off int) int {
+// runeTracker converts ascending byte offsets in s to rune indices in
+// amortized O(len(s)) total, by counting runes only over the slice since the
+// last offset. A single tracker threaded through all matches of a findAll turns
+// an O(N*M) rescan-from-start into O(N). Offsets within and across matches are
+// ascending; a rare non-monotonic offset falls back to a full recount.
+type runeTracker struct {
+	s        string
+	lastByte int
+	lastRune int
+}
+
+func newRuneTracker(s string) *runeTracker { return &runeTracker{s: s} }
+
+func (t *runeTracker) at(off int) int {
 	if off <= 0 {
 		return 0
 	}
-	if off >= len(s) {
-		return utf8.RuneCountInString(s)
+	if off < t.lastByte {
+		// Non-monotonic (defensive): recount from the start.
+		if off >= len(t.s) {
+			return utf8.RuneCountInString(t.s)
+		}
+		return utf8.RuneCountInString(t.s[:off])
 	}
-	return utf8.RuneCountInString(s[:off])
+	if off > len(t.s) {
+		off = len(t.s)
+	}
+	t.lastRune += utf8.RuneCountInString(t.s[t.lastByte:off])
+	t.lastByte = off
+	return t.lastRune
 }
 
 // -------- Match construction --------
@@ -137,14 +155,14 @@ func byteToRuneIndex(s string, off int) int {
 // submatchIndex is the [start_byte, end_byte, group1_start,
 // group1_end, ...] slice from FindStringSubmatchIndex; can be
 // nil for no match, in which case a sentinel is returned.
-func buildMatch(re *regexp.Regexp, s string, submatch []string, indices []int) Value {
+func buildMatch(re *regexp.Regexp, s string, submatch []string, indices []int, tr *runeTracker) Value {
 	if submatch == nil || indices == nil {
 		return sentinelMatch()
 	}
 	startByte := indices[0]
 	endByte := indices[1]
-	startRune := byteToRuneIndex(s, startByte)
-	endRune := byteToRuneIndex(s, endByte)
+	startRune := tr.at(startByte)
+	endRune := tr.at(endByte)
 
 	// Positional groups. Slot 0 in submatch is the full match;
 	// callers see groups 1..N, so skip index 0.
@@ -241,7 +259,7 @@ func findFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	// One execution: the submatch strings are slices of s at the returned
 	// indices, so there is no need for a second FindStringSubmatch pass.
 	indices := re.FindStringSubmatchIndex(s)
-	return buildMatch(re, s, submatchFromIndex(s, indices), indices), nil
+	return buildMatch(re, s, submatchFromIndex(s, indices), indices, newRuneTracker(s)), nil
 }
 
 // submatchFromIndex reconstructs the FindStringSubmatch string slice from a
@@ -278,8 +296,11 @@ func findAllFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	}
 	allIdx := re.FindAllStringSubmatchIndex(s, -1)
 	results := make([]Value, len(allIdx))
+	// One tracker for the whole scan: match offsets are ascending, so byte->
+	// rune conversion stays amortized O(len(s)) instead of O(matches*len(s)).
+	tr := newRuneTracker(s)
 	for i := range allIdx {
-		results[i] = buildMatch(re, s, submatchFromIndex(s, allIdx[i]), allIdx[i])
+		results[i] = buildMatch(re, s, submatchFromIndex(s, allIdx[i]), allIdx[i], tr)
 	}
 	return interpreter.ListVal(
 		parser.NamespacedStructType(LibraryName, "Match"),

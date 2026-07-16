@@ -184,6 +184,10 @@ func FindVendorRoot(explicit, startDir string) string {
 
 // resolveModule walks the search path, requiring exactly one match.
 func resolveModule(importPath, native string, searchDirs []string) (string, error) {
+	// Collect matches by canonical path, deduping as we go: duplicate,
+	// aliased, or symlinked search dirs that resolve to the same file are not
+	// an ambiguity, only two genuinely distinct files are.
+	seen := map[string]bool{}
 	var matches []string
 	for _, dir := range searchDirs {
 		cand := filepath.Join(dir, native)
@@ -192,7 +196,10 @@ func resolveModule(importPath, native string, searchDirs []string) (string, erro
 			if err != nil {
 				return "", err
 			}
-			matches = append(matches, c)
+			if !seen[c] {
+				seen[c] = true
+				matches = append(matches, c)
+			}
 		}
 	}
 	switch len(matches) {
@@ -216,5 +223,14 @@ func canonical(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve %q: %v", path, err)
 	}
-	return filepath.Clean(abs), nil
+	cleaned := filepath.Clean(abs)
+	// Resolve symlinks so one file reached via a symlinked directory and via
+	// its real path collapse to one identity (the run-once / cycle /
+	// struct-identity key). EvalSymlinks needs the path to exist; a Local /
+	// Absolute import to a missing file falls back to the cleaned absolute
+	// path, and the loader raises the positioned not-found error.
+	if resolved, err := filepath.EvalSymlinks(cleaned); err == nil {
+		return resolved, nil
+	}
+	return cleaned, nil
 }

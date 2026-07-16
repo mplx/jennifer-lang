@@ -221,8 +221,38 @@ func waitFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 	}
 	<-state.done
 	// The reaper has drained the buffers into outStr / errStr by the time
-	// done is closed, so read those (stdout / stderr are now nil).
+	// done is closed, so read those (stdout / stderr are now nil). The handle
+	// stays in the registry so os.wait / os.poll remain idempotent; a
+	// long-running spawner drops handles it is done with via os.release.
 	return makeResult(state.exitCode, state.outStr, state.errStr), nil
+}
+
+// releaseFn implements `os.release(p) -> bool`. Drops the process handle from
+// the registry, freeing its captured output. The process must have finished
+// (os.wait / os.poll true); releasing a live handle is an error. Returns
+// whether the handle existed. A server spawning a child per job calls this once
+// it has read the result, so the registry does not grow without bound.
+func releaseFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("os.release expects 1 argument (process handle), got %d", len(args))
+	}
+	pid, err := extractPid("os.release", args[0])
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	handlesMu.Lock()
+	defer handlesMu.Unlock()
+	state, ok := handles[pid]
+	if !ok {
+		return interpreter.BoolVal(false), nil
+	}
+	select {
+	case <-state.done:
+		delete(handles, pid)
+		return interpreter.BoolVal(true), nil
+	default:
+		return interpreter.Null(), fmt.Errorf("os.release: process is still running (wait or kill it first)")
+	}
 }
 
 // pollFn implements `os.poll(p) -> bool`. Pure predicate, no side

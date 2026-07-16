@@ -103,6 +103,19 @@ func (r *resolver) resolveProgram(p *Program) error {
 	p.NumGlobals = globals.count
 	r.pop()
 
+	// A method may not share its name with a top-level variable / constant:
+	// the no-shadowing rule applies both directions (a bare `foo` reference
+	// would be ambiguous between the global binding and the method).
+	for _, m := range p.Methods {
+		if _, clash := globals.slots[m.Name]; clash {
+			file, line, col := posFor(m)
+			return &ParseError{
+				Msg:  fmt.Sprintf("method %q shares its name with a top-level variable or constant", m.Name),
+				File: file, Line: line, Col: col,
+			}
+		}
+	}
+
 	// Method bodies get their own scope chain rooted on the callFrame
 	// (params in slot 0..N-1) with globals shadow-visible for
 	// name-based reads.
@@ -245,6 +258,36 @@ func (r *resolver) isMethod(name string) bool {
 	return ok
 }
 
+// resolveTarget resolves a mutation lvalue (the target of an index / append /
+// field assignment). It mirrors resolveExpr but lets the root VarExpr be a
+// constant: the runtime raises the clearer "cannot mutate constant (const is
+// deep)" error there, so the `$CONST`-read rejection does not preempt it. Index
+// sub-expressions are ordinary reads and resolve through resolveExpr.
+func (r *resolver) resolveTarget(e Expr) error {
+	switch ex := e.(type) {
+	case *VarExpr:
+		depth, slot, _, ok := r.lookup(ex.Name)
+		if !ok {
+			file, line, col := posFor(ex)
+			return &ParseError{
+				Msg:  fmt.Sprintf("undefined variable %q", ex.Name),
+				File: file, Line: line, Col: col,
+			}
+		}
+		ex.Depth = depth
+		ex.Slot = slot
+		return nil
+	case *IndexExpr:
+		if err := r.resolveTarget(ex.Target); err != nil {
+			return err
+		}
+		return r.resolveExpr(ex.Index)
+	case *FieldAccessExpr:
+		return r.resolveTarget(ex.Target)
+	}
+	return r.resolveExpr(e)
+}
+
 func (r *resolver) resolveStmt(s Stmt) error {
 	switch st := s.(type) {
 	case *DefineStmt:
@@ -252,17 +295,17 @@ func (r *resolver) resolveStmt(s Stmt) error {
 	case *AssignStmt:
 		return r.resolveAssign(st)
 	case *IndexAssignStmt:
-		if err := r.resolveExpr(st.Target); err != nil {
+		if err := r.resolveTarget(st.Target); err != nil {
 			return err
 		}
 		return r.resolveExpr(st.Value)
 	case *AppendStmt:
-		if err := r.resolveExpr(st.Target); err != nil {
+		if err := r.resolveTarget(st.Target); err != nil {
 			return err
 		}
 		return r.resolveExpr(st.Value)
 	case *FieldAssignStmt:
-		if err := r.resolveExpr(st.Target); err != nil {
+		if err := r.resolveTarget(st.Target); err != nil {
 			return err
 		}
 		return r.resolveExpr(st.Value)
@@ -383,16 +426,20 @@ func (r *resolver) resolveStmt(s Stmt) error {
 	case *ThrowStmt:
 		return r.resolveExpr(st.Value)
 	case *TryStmt:
-		// The try body runs in the enclosing env at runtime (execTry
-		// calls execStmts(st.Body.Stmts, env) rather than execBlock).
-		// The resolver walks its stmts directly in the current scope
-		// to match. Body-local defs land in the enclosing frame.
+		// The try body is its own block scope (its own runtime frame at
+		// execTry). Its `def`s do not leak into the enclosing frame, so a
+		// `def` skipped by a throw is out of scope afterward - a later
+		// reference is an undefined-variable error, not a zeroed null read.
+		bodyFrame := &scopeFrame{slots: map[string]slotInfo{}}
+		r.push(bodyFrame)
 		for _, bs := range st.Body.Stmts {
 			if err := r.resolveStmt(bs); err != nil {
+				r.pop()
 				return err
 			}
 		}
-		st.Body.NumSlots = 0
+		st.Body.NumSlots = bodyFrame.count
+		r.pop()
 		// Catch handler runs in a fresh runtime frame (catchEnv);
 		// the caught value takes slot 0.
 		frame := &scopeFrame{slots: map[string]slotInfo{}}
@@ -479,11 +526,20 @@ func (r *resolver) resolveExpr(e Expr) error {
 	}
 	switch ex := e.(type) {
 	case *VarExpr:
-		depth, slot, _, ok := r.lookup(ex.Name)
+		depth, slot, isConst, ok := r.lookup(ex.Name)
 		if !ok {
 			file, line, col := posFor(ex)
 			return &ParseError{
 				Msg:  fmt.Sprintf("undefined variable %q", ex.Name),
+				File: file, Line: line, Col: col,
+			}
+		}
+		// `$NAME` where NAME is a constant: the `$` sigil is for mutable
+		// variables only. Constants are referenced bare.
+		if isConst {
+			file, line, col := posFor(ex)
+			return &ParseError{
+				Msg:  fmt.Sprintf("constant %q is referenced with `$`; drop the sigil (constants are referenced bare)", ex.Name),
 				File: file, Line: line, Col: col,
 			}
 		}

@@ -52,7 +52,7 @@ func parseFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 	if err != nil {
 		return interpreter.Null(), fmt.Errorf("time.parse: %v", err)
 	}
-	return makeTime(t), nil
+	return makeTime(t)
 }
 
 // isoFn implements `time.iso($t)`. Returns an RFC 3339 string with
@@ -81,7 +81,7 @@ func fromIsoFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.
 	if err != nil {
 		return interpreter.Null(), fmt.Errorf("time.fromIso: %v", err)
 	}
-	return makeTime(t), nil
+	return makeTime(t)
 }
 
 // formatISO produces an RFC 3339 string. Includes the fractional

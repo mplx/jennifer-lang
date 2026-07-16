@@ -181,8 +181,15 @@ app processes on distinct ports or sockets behind one nginx `upstream {}` block.
 - The request body is buffered with a **10 MiB cap**; a body over the cap is
   rejected with **413 Request Entity Too Large** before it reaches the program
   (never silently truncated - a truncated body would defeat body-signature
-  checks). A configurable limit and explicit read/idle/write timeout knobs are
-  a planned follow-up.
+  checks). A configurable limit is a planned follow-up.
+- **Admission control.** At most 256 requests buffer a body / stay in flight at
+  once; further connections wait for a slot, so buffered memory is bounded
+  (~slots x 10 MiB) rather than growing with the connection count.
+- **Must respond.** Every accepted request must be answered with
+  `httpd.respond` (or `serveFile` / `serveDir`). A request left unanswered -
+  e.g. the program threw between `accept` and `respond` - is answered **500**
+  by the engine after a 60-second safety timeout, so the handler goroutine and
+  client connection don't leak.
 - **Routing, path parameters, middleware, cookies, and sessions** are not in
   the engine - they belong to the [`web`](../modules/web.md) framework module
   built on top of it, which does name-based handler dispatch itself (the engine

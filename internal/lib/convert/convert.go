@@ -151,6 +151,12 @@ func toFloatFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.
 		if err != nil {
 			return interpreter.Null(), fmt.Errorf("toFloat(%q): not a valid float", v.Str)
 		}
+		// strconv.ParseFloat accepts "NaN" / "Inf" / "Infinity"; Jennifer's
+		// float model forbids those values (the whole numeric stdlib assumes
+		// they cannot exist), so reject them rather than smuggle one in.
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return interpreter.Null(), fmt.Errorf("toFloat(%q): NaN and Infinity are not representable", v.Str)
+		}
 		return interpreter.FloatVal(f), nil
 	case interpreter.KindBool:
 		if v.Bool {

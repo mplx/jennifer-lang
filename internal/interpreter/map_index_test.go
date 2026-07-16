@@ -35,6 +35,24 @@ func runMap(t *testing.T, src string) string {
 	return buf.String()
 }
 
+// runMapErr runs src and returns its run error (nil on success) without failing
+// the test - for asserting that a program is rejected.
+func runMapErr(t *testing.T, src string) (string, error) {
+	t.Helper()
+	prog, err := parser.Parse(src)
+	if err != nil {
+		return "", err
+	}
+	in := interpreter.New()
+	var buf bytes.Buffer
+	in.Out = &buf
+	iolib.Install(in)
+	mapslib.Install(in)
+	listslib.Install(in)
+	runErr := in.Run(prog)
+	return buf.String(), runErr
+}
+
 // The index must not change map semantics: insertion order is preserved whether
 // the map is built by literal or by keyed writes, an update lands in place (no
 // reorder), and reads return the right values.
@@ -95,16 +113,19 @@ io.printf("%t %t %t %t\n", maps.has($a, "y"), maps.has($a, "z"), maps.has($b, "z
 	}
 }
 
-// A duplicate-key literal has no clean 1:1 index, so it must fall back to the
-// linear scan and still read the first match (unchanged behaviour).
-func TestMapIndexDuplicateKeyLiteralFallsBack(t *testing.T) {
-	out := runMap(t, `
-use io;
-def m as map of string to int init {"a": 1, "a": 2};
-io.printf("%d\n", $m["a"]);
-`)
-	if got := strings.TrimSpace(out); got != "1" {
-		t.Errorf("duplicate-key literal: got %q, want first match 1", got)
+// A duplicate key in a map literal is a positioned error: a two-entry map where
+// only the first is reachable is a corrupt value, not a well-formed one.
+func TestMapLiteralDuplicateKeyErrors(t *testing.T) {
+	if _, err := runMapErr(t, `def m as map of string to int init {"a": 1, "a": 2};`); err == nil {
+		t.Error("expected a duplicate-key error for a string-keyed literal")
+	}
+	if _, err := runMapErr(t, `def m as map of int to int init {1: 1, 2: 2, 1: 3};`); err == nil {
+		t.Error("expected a duplicate-key error for an int-keyed literal")
+	}
+	// Distinct keys still build fine.
+	out := runMap(t, `use io; def m as map of string to int init {"a": 1, "b": 2}; io.printf("%d", $m["b"]);`)
+	if strings.TrimSpace(out) != "2" {
+		t.Errorf("distinct keys: got %q, want 2", strings.TrimSpace(out))
 	}
 }
 

@@ -103,6 +103,18 @@ io.printf("%t\n", ansi.red("x") == "x");`)
 	if !strings.Contains(on, "false") {
 		t.Errorf("FORCE_COLOR should emit escapes even off a TTY: %q", on)
 	}
+	// FORCE_COLOR=0 must force OFF (interpret the value, not just its presence):
+	// CI commonly sets FORCE_COLOR=0 and must get plain output.
+	t.Setenv("FORCE_COLOR", "0")
+	zero, err := runWithAnsiModule(t, `use io;
+import "ansi.j" as ansi;
+io.printf("%t\n", ansi.red("x") == "x");`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(zero, "true") {
+		t.Errorf("FORCE_COLOR=0 should force plain output: %q", zero)
+	}
 }
 
 func TestAnsiModuleUnknownColorThrows(t *testing.T) {

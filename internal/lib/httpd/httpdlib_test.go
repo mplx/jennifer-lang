@@ -377,3 +377,31 @@ func TestOversizeBodyRejectedNotTruncated(t *testing.T) {
 		t.Errorf("at-cap body length seen by the program = %d, want %d", gotLen, maxBodyBytes)
 	}
 }
+
+// A request that is accepted but never answered (the program threw between
+// accept and respond) must not park the handler goroutine and client forever:
+// the engine answers 500 after respondTimeout and unparks.
+func TestUnansweredRequestTimesOut(t *testing.T) {
+	ResetForTest()
+	old := respondTimeout
+	respondTimeout = 150 * time.Millisecond
+	defer func() { respondTimeout = old }()
+
+	srv, addr := startServer(t)
+	defer shutdownFn(noCtx, []Value{srv})
+
+	// Accept the request but deliberately never respond.
+	go func() {
+		_, _ = acceptFn(noCtx, []Value{srv})
+	}()
+
+	resp, err := http.Get("http://" + addr + "/")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("unanswered request status = %d, want 500", resp.StatusCode)
+	}
+}

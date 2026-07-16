@@ -60,6 +60,7 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "wait", waitFn)
 	in.RegisterNamespaced(LibraryName, "poll", pollFn)
 	in.RegisterNamespaced(LibraryName, "kill", killFn)
+	in.RegisterNamespaced(LibraryName, "release", releaseFn)
 	in.RegisterNamespaced(LibraryName, "isTerminal", isTerminalFn)
 	in.RegisterNamespaced(LibraryName, "cwd", cwdFn)
 	in.RegisterNamespaced(LibraryName, "homeDir", homeDirFn)

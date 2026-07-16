@@ -88,6 +88,37 @@ func TestFileIncludeSplices(t *testing.T) {
 	}
 }
 
+// Trivia (comments, blank lines) inside an INCLUDED file must be stripped the
+// same as in the top-level file, so a nested `include /* note */ "x.j";` (or a
+// comment before a statement) does not break the include recognizer one level
+// deep.
+func TestIncludedFileTriviaStripped(t *testing.T) {
+	dir := writeTmp(t, map[string]string{
+		"leaf.j": `def leaf as int init 3;`,
+		"mid.j": `# a comment before an include
+		include /* pinned */ "leaf.j";
+		def mid as int init 4;`,
+		"main.j": `func app() { include "mid.j"; io.printf($leaf); io.printf($mid); }`,
+	})
+	mainPath := filepath.Join(dir, "main.j")
+	src, _ := os.ReadFile(mainPath)
+	toks, err := lexer.TokenizeWithFile(string(src), mainPath)
+	if err != nil {
+		t.Fatalf("lex: %v", err)
+	}
+	out, err := Process(toks, dir, mainPath)
+	if err != nil {
+		t.Fatalf("preproc: %v", err)
+	}
+	// No trivia tokens should survive in the spliced output.
+	for _, tk := range out {
+		switch tk.Type {
+		case lexer.TOKEN_COMMENT_LINE, lexer.TOKEN_COMMENT_BLOCK, lexer.TOKEN_BLANK_LINE:
+			t.Errorf("trivia token %v survived the splice", tk.Type)
+		}
+	}
+}
+
 func TestNestedFileImports(t *testing.T) {
 	dir := writeTmp(t, map[string]string{
 		"a.j":    `def a as int init 1;`,

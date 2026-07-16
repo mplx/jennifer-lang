@@ -47,12 +47,9 @@ func hasFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Valu
 	if err := requireMap("has", args[0], "first argument"); err != nil {
 		return interpreter.Null(), err
 	}
-	for _, e := range args[0].Map {
-		if e.Key.Equal(args[1]) {
-			return interpreter.BoolVal(true), nil
-		}
-	}
-	return interpreter.BoolVal(false), nil
+	// Index-aware: O(1) when the map's hash index is usable, O(n) fallback
+	// otherwise (so a has() in a loop is O(n), not O(n^2)).
+	return interpreter.BoolVal(args[0].LookupKey(args[1]) >= 0), nil
 }
 
 func requireMap(name string, v interpreter.Value, argpos string) error {
@@ -103,12 +100,14 @@ func deleteFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 	if err := requireMap("delete", args[0], "first argument"); err != nil {
 		return interpreter.Null(), err
 	}
-	for i, e := range args[0].Map {
-		if e.Key.Equal(args[1]) {
-			out := args[0].Copy()
-			out.Map = append(out.Map[:i:i], out.Map[i+1:]...)
-			return out, nil
-		}
+	// Index-aware lookup, then rebuild without the entry. The copy's index is
+	// rebuilt by DeepCopy; positions shift after removal, so drop the stale
+	// index (buildMapIndex on next indexed use, or the linear fallback).
+	if i := args[0].LookupKey(args[1]); i >= 0 {
+		out := args[0].Copy()
+		out.Map = append(out.Map[:i:i], out.Map[i+1:]...)
+		out.DropMapIndex()
+		return out, nil
 	}
 	return interpreter.Null(), fmt.Errorf("maps.delete: map has no entry for key %s", args[1].Display())
 }
@@ -127,18 +126,10 @@ func mergeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 		return interpreter.Null(), err
 	}
 	out := args[0].Copy()
+	// Index-aware upsert keeps merge O(A+B) instead of O(A*B) (a linear scan
+	// of `out` per entry of `b`).
 	for _, be := range args[1].Map {
-		replaced := false
-		for i := range out.Map {
-			if out.Map[i].Key.Equal(be.Key) {
-				out.Map[i].Value = be.Value.Copy()
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			out.Map = append(out.Map, interpreter.MapEntry{Key: be.Key.Copy(), Value: be.Value.Copy()})
-		}
+		out.UpsertKey(be.Key.Copy(), be.Value.Copy())
 	}
 	return out, nil
 }

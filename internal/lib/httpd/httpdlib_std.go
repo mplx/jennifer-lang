@@ -53,6 +53,13 @@ const maxBodyBytes = 10 << 20 // 10 MiB
 // headers (Slowloris protection).
 const readHeaderTimeout = 15 * time.Second
 
+// respondTimeout bounds how long a handler goroutine parks waiting for the
+// program to answer an accepted request. If the program never responds (e.g.
+// it threw between accept and respond), the handler answers 500 and unparks so
+// the goroutine and client connection don't leak until server shutdown. It is
+// a generous safety net, not a per-request SLA. A var so tests can lower it.
+var respondTimeout = 60 * time.Second
+
 // -------- Registries --------
 
 // serverState holds one live listening server and the channel the handler
@@ -64,7 +71,15 @@ type serverState struct {
 	reqs      chan *reqState
 	closing   chan struct{}
 	closeOnce sync.Once
+	// sem bounds how many requests may buffer a body concurrently, capping
+	// worst-case buffered memory at maxInFlight * maxBodyBytes rather than
+	// growing with the connection count.
+	sem chan struct{}
 }
+
+// maxInFlight caps concurrent in-flight (body-buffered) requests. Bounds
+// worst-case buffered RSS to maxInFlight * maxBodyBytes.
+const maxInFlight = 256
 
 type respHeader struct{ key, value string }
 
@@ -171,6 +186,18 @@ func resolveReq(fnName string, id int64) (*reqState, error) {
 // the response from this goroutine.
 func makeHandler(st *serverState) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Admission control: bound how many requests buffer a body (and stay
+		// in flight) concurrently, so N connections can't each buffer up to
+		// maxBodyBytes before backpressure (~N * 10 MiB of RSS). Wait for a
+		// slot or bail on shutdown; the slot is held for the whole handler and
+		// released when the response is written / the request times out.
+		select {
+		case st.sem <- struct{}{}:
+			defer func() { <-st.sem }()
+		case <-st.closing:
+			http.Error(w, "server shutting down", http.StatusServiceUnavailable)
+			return
+		}
 		// Read one byte past the cap so an over-limit body is detectable:
 		// it must be REJECTED with 413, never silently truncated - a
 		// truncated-but-complete-looking body defeats body-signature
@@ -202,6 +229,22 @@ func makeHandler(st *serverState) http.Handler {
 		case <-st.closing:
 			http.Error(w, "server shutting down", http.StatusServiceUnavailable)
 			return
+		case <-time.After(respondTimeout):
+			// The program accepted this request but never answered it (e.g. it
+			// threw between accept and respond). Claim the response so a late
+			// respond can't double-write, then answer 500 and unpark -
+			// otherwise this handler goroutine and the client connection leak
+			// until server shutdown.
+			rs.mu.Lock()
+			claimed := !rs.responded
+			rs.responded = true
+			rs.mu.Unlock()
+			if claimed {
+				http.Error(w, "handler did not respond in time", http.StatusInternalServerError)
+				return
+			}
+			// The program responded within the timeout race window; fall
+			// through and write its response (rs.done is closed / closing).
 		}
 
 		// Response I/O happens here, on the handler goroutine only.
@@ -211,10 +254,9 @@ func makeHandler(st *serverState) http.Handler {
 		headers := rs.respHeaders
 		rs.mu.Unlock()
 
-		if useFile {
-			http.ServeFile(w, r, filePath)
-			return
-		}
+		// Apply the handler's headers first, so a Cache-Control / CORS /
+		// Set-Cookie set before serveFile / serveDir is preserved (ServeFile
+		// adds its own headers without clearing these).
 		for _, h := range headers {
 			// Set-Cookie is the canonical multi-value response header: a handler
 			// may emit several. Add() keeps each; Set() (used for every other
@@ -224,6 +266,10 @@ func makeHandler(st *serverState) http.Handler {
 			} else {
 				w.Header().Set(h.key, h.value)
 			}
+		}
+		if useFile {
+			http.ServeFile(w, r, filePath)
+			return
 		}
 		w.WriteHeader(status)
 		if len(respBody) > 0 {
@@ -294,6 +340,7 @@ func newServer(ln net.Listener) *serverState {
 		addr:    ln.Addr().String(),
 		reqs:    make(chan *reqState),
 		closing: make(chan struct{}),
+		sem:     make(chan struct{}, maxInFlight),
 	}
 	st.srv = &http.Server{
 		Handler:           makeHandler(st),

@@ -36,6 +36,7 @@ function - see
 | `os.wait(p)`       | `os.Result`  | Block until `$p` terminates; return captured streams + exit code. Idempotent.       |
 | `os.poll(p)`       | bool         | Non-blocking: true once `$p` has exited (a following `os.wait` returns immediately). |
 | `os.kill(p)`       | null         | Send SIGTERM to `$p`.                                                               |
+| `os.release(p)`    | bool         | Drop a **finished** handle from the registry (frees its captured output); errors if `$p` is still running. Returns whether the handle existed. |
 | `os.isTerminal(stream)` | bool    | Is `stream` (`"stdout"` / `"stderr"` / `"stdin"`) an interactive terminal? See "Terminal detection". |
 | `os.cwd()`         | string       | Absolute path of the current working directory. Errors only if it can't be determined. |
 | `os.homeDir()`     | string       | The current user's home directory (`$HOME` on Unix, `%USERPROFILE%` on Windows). Errors if unresolved. |
@@ -141,6 +142,19 @@ io.printf("done: exit=%d\n", $r.exitCode);
 returns the same `os.Result` immediately. `os.kill($p)` sends
 SIGTERM; a subsequent `os.wait` returns whatever the OS reports for
 the terminated child.
+
+Because a handle (and its captured output) stays live for idempotent
+`os.wait`, a long-running program that spawns many children should
+`os.release($p)` each handle once it has read the result - it drops the
+entry from the process registry so it does not grow without bound.
+Releasing a still-running process is an error (`os.wait` or `os.kill`
+it first); releasing an already-released handle returns `false`.
+
+```jennifer
+def r as os.Result init os.wait($p);
+# ... use $r ...
+os.release($p);   # free the handle in a per-job server loop
+```
 
 **No shell parsing.** `argv` is always a list - Jennifer never
 concatenates a command string and hands it to a shell. If you

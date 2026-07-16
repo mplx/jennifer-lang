@@ -92,6 +92,38 @@ func TestFromUnixRoundTrip(t *testing.T) {
 	}
 }
 
+// An instant outside the representable int64-nanosecond range must be rejected
+// rather than silently wrapping to a wrong era. `time.parse("9999-...")` used to
+// read back as ~1816.
+func TestOutOfRangeInstantRejected(t *testing.T) {
+	msg := expectErr(t, `use time; def t as time.Time init time.parse("9999-12-31", "%Y-%m-%d");`)
+	if !strings.Contains(msg, "representable range") {
+		t.Errorf("far-future parse: got %q", msg)
+	}
+	// A huge fromUnix value overflows UnixNano too.
+	msg = expectErr(t, `use time; def t as time.Time init time.fromUnix(99999999999);`)
+	if !strings.Contains(msg, "representable range") {
+		t.Errorf("far-future fromUnix: got %q", msg)
+	}
+	// A normal date still parses.
+	got := runProg(t, `use io; use time; def t as time.Time init time.parse("2024-06-15", "%Y-%m-%d"); io.printf("%d", time.year($t));`)
+	if got != "2024" {
+		t.Errorf("normal parse: got %q, want 2024", got)
+	}
+}
+
+// Unix seconds / millis floor toward negative infinity, so a pre-epoch instant
+// is not off by one (Go integer division truncates toward zero).
+func TestPreEpochUnixFloors(t *testing.T) {
+	// -1.5 seconds: floored Unix seconds is -2 (not -1), millis is -1500.
+	got := runProg(t, `use io; use time;
+def t as time.Time init time.fromUnixNanos(0 - 1500000000);
+io.printf("%d %d", time.unix($t), time.unixMillis($t));`)
+	if got != "-2 -1500" {
+		t.Errorf("pre-epoch floor: got %q, want %q", got, "-2 -1500")
+	}
+}
+
 // TestCalendarAccessors: known epoch + 1 second has year=1970, month=1,
 // day=1, hour=0, minute=0, second=1, weekday=4 (Thursday is ISO 4).
 func TestCalendarAccessors(t *testing.T) {

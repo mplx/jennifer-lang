@@ -136,8 +136,9 @@ type Interpreter struct {
 	// unobserved error tasks (the "loud-fail" stance). The mutex
 	// protects the slice itself, not the individual TaskStates (those
 	// coordinate via their own `done` channels).
-	tasksMu sync.Mutex
-	tasks   []*TaskState
+	tasksMu       sync.Mutex
+	tasks         []*TaskState
+	taskCompactAt int // registry length that triggers pruning observed tasks
 
 	// Profiling (optional dev feature; nil = off, the only cost on the hot
 	// path being a nil check). Set via SetProfiler; the concrete collector
@@ -2191,9 +2192,16 @@ func (i *Interpreter) execForEach(st *parser.ForEachStmt, env *Environment) (blo
 		return res, err
 	}
 
+	// Iterate a snapshot of the collection's header so the loop is
+	// independent of in-loop mutation to the same binding: an in-place
+	// element write or an append (which may or may not reallocate the
+	// backing) must not change what the current loop yields. Without the
+	// snapshot, iteration behaviour would depend on Go slice capacity.
 	switch coll.Kind {
 	case KindList:
-		for _, elem := range coll.List {
+		snapshot := make([]Value, len(coll.List))
+		copy(snapshot, coll.List)
+		for _, elem := range snapshot {
 			res, err := emit(elem)
 			if err != nil {
 				return blockResult{}, err
@@ -2206,7 +2214,9 @@ func (i *Interpreter) execForEach(st *parser.ForEachStmt, env *Environment) (blo
 			}
 		}
 	case KindMap:
-		for _, entry := range coll.Map {
+		snapshot := make([]MapEntry, len(coll.Map))
+		copy(snapshot, coll.Map)
+		for _, entry := range snapshot {
 			res, err := emit(entry.Key)
 			if err != nil {
 				return blockResult{}, err
@@ -2380,7 +2390,12 @@ func (i *Interpreter) execThrow(st *parser.ThrowStmt, env *Environment) error {
 // (return/break/continue) flow through unchanged so the surrounding
 // method / loop sees them.
 func (i *Interpreter) execTry(st *parser.TryStmt, env *Environment) (blockResult, error) {
-	res, err := i.execStmts(st.Body.Stmts, env)
+	// Run the body in its own frame (the resolver scopes body defs there), so
+	// a `def` skipped by a throw is out of scope afterward rather than leaving
+	// a zeroed slot in the enclosing frame that reads as null.
+	bodyEnv := borrowBlockEnv(env, st.Body.NumSlots)
+	res, err := i.execStmts(st.Body.Stmts, bodyEnv)
+	releaseBlockEnv(bodyEnv)
 	if err == nil {
 		return res, nil
 	}
@@ -2553,10 +2568,30 @@ func (i *Interpreter) evalListLit(ex *parser.ListLit, env *Environment) (Value, 
 // reader can spot.
 func (i *Interpreter) evalMapLit(ex *parser.MapLit, env *Environment) (Value, error) {
 	entries := make([]MapEntry, 0, len(ex.Keys))
+	// A duplicate key makes a corrupt two-entry map (only the first reachable),
+	// so reject it. Hashable keys go through a seen-set; the rare non-hashable
+	// key (a list / map) falls back to an Equal scan of prior such keys.
+	seen := make(map[string]bool, len(ex.Keys))
+	var nonHashable []Value
 	for k, keyExpr := range ex.Keys {
 		key, err := i.evalExpr(keyExpr, env)
 		if err != nil {
 			return Value{}, err
+		}
+		if enc, hashable := mapKeyEncode(key); hashable {
+			if seen[enc] {
+				file, line, col := posFor(keyExpr)
+				return Value{}, &runtimeError{Msg: fmt.Sprintf("duplicate key %s in map literal", key.Display()), File: file, Line: line, Col: col}
+			}
+			seen[enc] = true
+		} else {
+			for _, prev := range nonHashable {
+				if prev.Equal(key) {
+					file, line, col := posFor(keyExpr)
+					return Value{}, &runtimeError{Msg: fmt.Sprintf("duplicate key %s in map literal", key.Display()), File: file, Line: line, Col: col}
+				}
+			}
+			nonHashable = append(nonHashable, key)
 		}
 		val, err := i.evalExpr(ex.Values[k], env)
 		if err != nil {
@@ -2941,22 +2976,49 @@ func (i *Interpreter) evalComparison(op parser.BinaryOp, lv, rv Value, file stri
 			return BoolVal(a >= b), nil
 		}
 	}
-	a, aok := lv.AsFloat()
-	b, bok := rv.AsFloat()
-	if !aok || !bok {
+	// Mixed int/float: compare exactly. Converting the int to float64 would
+	// lose precision above 2^53 (e.g. 9007199254740993 > 9007199254740992.0
+	// must be true), so route through compareIntFloat.
+	if lv.Kind == KindInt && rv.Kind == KindFloat {
+		return i.orderResult(op, compareIntFloat(lv.Int, rv.Float), file, line, col)
+	}
+	if lv.Kind == KindFloat && rv.Kind == KindInt {
+		return i.orderResult(op, -compareIntFloat(rv.Int, lv.Float), file, line, col)
+	}
+	if !lv.isNumeric() || !rv.isNumeric() {
 		return Value{}, &runtimeError{Msg: fmt.Sprintf("operator %s requires numeric operands, got %s and %s", op, lv.Kind, rv.Kind), File: file, Line: line, Col: col}
 	}
+	// Any remaining numeric combination is same-kind (handled above) or would
+	// have matched a fast path; fall back to float compare for completeness.
+	a, _ := lv.AsFloat()
+	b, _ := rv.AsFloat()
+	return i.orderResult(op, floatSign(a, b), file, line, col)
+}
+
+// orderResult turns the sign of (lhs - rhs) into the boolean an ordering
+// operator asks for.
+func (i *Interpreter) orderResult(op parser.BinaryOp, sign int, file string, line, col int) (Value, error) {
 	switch op {
 	case parser.OpLt:
-		return BoolVal(a < b), nil
+		return BoolVal(sign < 0), nil
 	case parser.OpGt:
-		return BoolVal(a > b), nil
+		return BoolVal(sign > 0), nil
 	case parser.OpLe:
-		return BoolVal(a <= b), nil
+		return BoolVal(sign <= 0), nil
 	case parser.OpGe:
-		return BoolVal(a >= b), nil
+		return BoolVal(sign >= 0), nil
 	}
 	return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown comparison %s", op), File: file, Line: line, Col: col}
+}
+
+func floatSign(a, b float64) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
 }
 
 func (i *Interpreter) evalArithmetic(op parser.BinaryOp, lv, rv Value, file string, line, col int) (Value, error) {
@@ -2970,14 +3032,30 @@ func (i *Interpreter) evalArithmetic(op parser.BinaryOp, lv, rv Value, file stri
 	if lv.Kind == KindInt && rv.Kind == KindInt {
 		switch op {
 		case parser.OpAdd:
-			return IntVal(lv.Int + rv.Int), nil
+			s, ovf := addOverflow(lv.Int, rv.Int)
+			if ovf {
+				return Value{}, &runtimeError{Msg: fmt.Sprintf("integer overflow: %d + %d", lv.Int, rv.Int), File: file, Line: line, Col: col}
+			}
+			return IntVal(s), nil
 		case parser.OpSub:
-			return IntVal(lv.Int - rv.Int), nil
+			d, ovf := subOverflow(lv.Int, rv.Int)
+			if ovf {
+				return Value{}, &runtimeError{Msg: fmt.Sprintf("integer overflow: %d - %d", lv.Int, rv.Int), File: file, Line: line, Col: col}
+			}
+			return IntVal(d), nil
 		case parser.OpMul:
-			return IntVal(lv.Int * rv.Int), nil
+			p, ovf := mulOverflow(lv.Int, rv.Int)
+			if ovf {
+				return Value{}, &runtimeError{Msg: fmt.Sprintf("integer overflow: %d * %d", lv.Int, rv.Int), File: file, Line: line, Col: col}
+			}
+			return IntVal(p), nil
 		case parser.OpFloorDiv:
 			if rv.Int == 0 {
 				return Value{}, &runtimeError{Msg: "integer division by zero", File: file, Line: line, Col: col}
+			}
+			// MinInt64 / -1 overflows (its magnitude has no positive image).
+			if lv.Int == minInt64 && rv.Int == -1 {
+				return Value{}, &runtimeError{Msg: fmt.Sprintf("integer overflow: %d // %d", lv.Int, rv.Int), File: file, Line: line, Col: col}
 			}
 			// Go's `/` on ints is truncate-toward-zero. Python-style `div`
 			// (floor) only differs when signs differ; align with Python here.
@@ -2990,7 +3068,7 @@ func (i *Interpreter) evalArithmetic(op parser.BinaryOp, lv, rv Value, file stri
 			if rv.Int == 0 {
 				return Value{}, &runtimeError{Msg: "integer modulo by zero", File: file, Line: line, Col: col}
 			}
-			return IntVal(lv.Int % rv.Int), nil
+			return IntVal(flooredMod(lv.Int, rv.Int)), nil
 		}
 	}
 	// Mixed or float operands: promote both to float (modulo is rejected for
@@ -3021,6 +3099,60 @@ func (i *Interpreter) evalArithmetic(op parser.BinaryOp, lv, rv Value, file stri
 		return Value{}, &runtimeError{Msg: "operator % requires int operands, got float", File: file, Line: line, Col: col}
 	}
 	return Value{}, &runtimeError{Msg: fmt.Sprintf("unknown binary operator %s", op), File: file, Line: line, Col: col}
+}
+
+// int64 bounds as untyped constants, so the overflow helpers stay clear of a
+// `math` import (kept out for TinyGo binary size, like floorDiv).
+const (
+	minInt64 = -1 << 63
+	maxInt64 = 1<<63 - 1
+)
+
+// addOverflow / subOverflow / mulOverflow return their result and whether it
+// overflowed int64, so integer arithmetic can raise a positioned error instead
+// of silently wrapping (the language's "undefined results error" stance).
+func addOverflow(a, b int64) (int64, bool) {
+	s := a + b
+	// Same-sign operands whose sum flips sign overflowed.
+	if (a > 0 && b > 0 && s < 0) || (a < 0 && b < 0 && s >= 0) {
+		return 0, true
+	}
+	return s, false
+}
+
+func subOverflow(a, b int64) (int64, bool) {
+	d := a - b
+	if (a >= 0 && b < 0 && d < 0) || (a < 0 && b > 0 && d >= 0) {
+		return 0, true
+	}
+	return d, false
+}
+
+func mulOverflow(a, b int64) (int64, bool) {
+	if a == 0 || b == 0 {
+		return 0, false
+	}
+	// MinInt64 * -1 has no positive image; guard before the p/a probe (which
+	// would itself divide MinInt64 by -1 and panic).
+	if (a == minInt64 && b == -1) || (b == minInt64 && a == -1) {
+		return 0, true
+	}
+	p := a * b
+	if p/a != b {
+		return 0, true
+	}
+	return p, false
+}
+
+// flooredMod is the remainder consistent with floored `//`, so the identity
+// (a // b) * b + (a % b) == a holds for negative operands (Python semantics).
+// Callers guarantee b != 0.
+func flooredMod(a, b int64) int64 {
+	r := a % b
+	if r != 0 && ((r < 0) != (b < 0)) {
+		r += b
+	}
+	return r
 }
 
 // floorDiv computes math.Floor(a/b) without importing math (TinyGo size).
@@ -3141,6 +3273,21 @@ func (i *Interpreter) runSpawn(state *TaskState, ex *parser.SpawnExpr, spawnEnv 
 // The registry feeds the exit-time loud-fail scan (UnwaitedTaskErrors).
 func (i *Interpreter) registerTask(state *TaskState) {
 	i.tasksMu.Lock()
+	// Prune already-observed tasks (irrelevant to the exit-time loud-fail
+	// scan) so a long-running spawner - a server that spawns per request /
+	// accept - doesn't grow the registry without bound. The threshold grows
+	// with the live-task count after each prune, keeping this amortized O(1)
+	// per spawn even when few tasks are prunable.
+	if len(i.tasks) >= i.taskCompactAt {
+		kept := i.tasks[:0]
+		for _, t := range i.tasks {
+			if t != nil && !t.Observed.Load() {
+				kept = append(kept, t)
+			}
+		}
+		i.tasks = kept
+		i.taskCompactAt = 2*len(i.tasks) + 16
+	}
 	i.tasks = append(i.tasks, state)
 	i.tasksMu.Unlock()
 }
@@ -3223,7 +3370,7 @@ func (i *Interpreter) snapshotForSpawn(env *Environment) *Environment {
 	if root != nil {
 		for name, b := range root.vars {
 			globalSnap.vars[name] = Binding{
-				Value:    b.Value.Copy(),
+				Value:    slotValue(root, b).Copy(),
 				DeclType: b.DeclType,
 				IsConst:  b.IsConst,
 			}
@@ -3236,7 +3383,7 @@ func (i *Interpreter) snapshotForSpawn(env *Environment) *Environment {
 				continue
 			}
 			localSnap.vars[name] = Binding{
-				Value:    b.Value.Copy(),
+				Value:    slotValue(cur, b).Copy(),
 				DeclType: b.DeclType,
 				IsConst:  b.IsConst,
 			}

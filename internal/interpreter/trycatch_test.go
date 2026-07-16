@@ -113,6 +113,31 @@ try {
 	}
 }
 
+// The try body is its own block scope: a `def` inside it is not visible after
+// the try, so a `def` skipped by a throw reads as an undefined-variable error
+// (at parse time) rather than a silent null. A def used within the body works.
+func TestTryBodyDefIsBlockScoped(t *testing.T) {
+	// Referencing a try-body def after the try is a parse-time undefined error.
+	if _, err := run(t, `
+use io;
+try { throw Error{kind: "x", message: "m", file: "", line: 0, col: 0}; def x as int init 5; } catch (e) {}
+io.printf("%v", $x);
+`); err == nil {
+		t.Error("expected an undefined-variable error for a try-body def read after the try")
+	}
+	// A def used within the try body works normally.
+	out, err := run(t, `
+use io;
+try { def x as int init 5; io.printf("%d", $x); } catch (e) { io.printf("bad"); }
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "5" {
+		t.Errorf("try-body def use: got %q, want 5", out)
+	}
+}
+
 func TestCatchDispatchOnKind(t *testing.T) {
 	out, err := run(t, `
 use io;

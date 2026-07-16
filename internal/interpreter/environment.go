@@ -273,8 +273,11 @@ func (e *Environment) AssignAt(depth, slot int, name string, val Value) error {
 	}
 	b.Value = val
 	cur.slots[slot] = b
-	// Mirror into the name map so name-based reads see the update.
-	cur.vars[name] = b
+	// The slot is authoritative for a slot-backed binding; name-based readers
+	// (Get / GetBinding / snapshotForSpawn) consult the slot when Slot >= 0, so
+	// we no longer mirror the whole Binding into cur.vars on this hot write
+	// path (every `$i = $i + 1;` in a resolved loop). The vars entry from
+	// DefineAt stays as the name -> (Slot, metadata) record.
 	return nil
 }
 
@@ -318,6 +321,11 @@ func (e *Environment) Assign(name string, val Value) error {
 func (e *Environment) Get(name string) (Value, error) {
 	for cur := e; cur != nil; cur = cur.parent {
 		if b, ok := cur.vars[name]; ok {
+			// The slot is authoritative for a slot-backed binding (AssignAt no
+			// longer mirrors writes into vars).
+			if b.Slot >= 0 && b.Slot < len(cur.slots) {
+				return cur.slots[b.Slot].Value, nil
+			}
 			return b.Value, nil
 		}
 	}
@@ -329,10 +337,26 @@ func (e *Environment) Get(name string) (Value, error) {
 func (e *Environment) GetBinding(name string) (Binding, error) {
 	for cur := e; cur != nil; cur = cur.parent {
 		if b, ok := cur.vars[name]; ok {
+			// Fill the current value from the authoritative slot when this is a
+			// slot-backed binding (the vars copy's Value may be stale).
+			if b.Slot >= 0 && b.Slot < len(cur.slots) {
+				b.Value = cur.slots[b.Slot].Value
+			}
 			return b, nil
 		}
 	}
 	return Binding{}, fmt.Errorf("undefined %q", name)
+}
+
+// slotValue returns the authoritative current value of a binding taken from a
+// frame's vars map: the slot value when it is slot-backed (AssignAt writes only
+// the slot), otherwise the vars copy. Used where a name-based iteration of vars
+// needs live values (the spawn snapshot).
+func slotValue(frame *Environment, b Binding) Value {
+	if b.Slot >= 0 && b.Slot < len(frame.slots) {
+		return frame.slots[b.Slot].Value
+	}
+	return b.Value
 }
 
 func (e *Environment) existsInChain(name string) bool {

@@ -211,6 +211,46 @@ func TestWaitIsIdempotent(t *testing.T) {
 	}
 }
 
+// os.release drops a finished handle from the registry so a long-running
+// spawner does not leak. A live handle can't be released; a released handle is
+// gone (a following wait errors).
+func TestReleaseDropsFinishedHandle(t *testing.T) {
+	skipIfNotLinux(t)
+	p, err := spawnFn(interpreter.BuiltinCtx{}, []interpreter.Value{stringList("/bin/echo", "x")})
+	if err != nil {
+		t.Fatalf("spawn err: %v", err)
+	}
+	if _, err := waitFn(interpreter.BuiltinCtx{}, []interpreter.Value{p}); err != nil {
+		t.Fatalf("wait err: %v", err)
+	}
+	rel, err := releaseFn(interpreter.BuiltinCtx{}, []interpreter.Value{p})
+	if err != nil || rel.Kind != interpreter.KindBool || !rel.Bool {
+		t.Fatalf("release = %+v, err %v; want true", rel, err)
+	}
+	// The handle is gone now; wait on it errors.
+	if _, err := waitFn(interpreter.BuiltinCtx{}, []interpreter.Value{p}); err == nil {
+		t.Error("wait on a released handle should error")
+	}
+	// Releasing an unknown handle just returns false.
+	if rel, err := releaseFn(interpreter.BuiltinCtx{}, []interpreter.Value{p}); err != nil || rel.Bool {
+		t.Errorf("release of a released handle = %+v, err %v; want false", rel, err)
+	}
+}
+
+// Releasing a still-running process is an error (wait or kill it first).
+func TestReleaseLiveProcessErrors(t *testing.T) {
+	skipIfNotLinux(t)
+	p, err := spawnFn(interpreter.BuiltinCtx{}, []interpreter.Value{stringList("/bin/sh", "-c", "sleep 2")})
+	if err != nil {
+		t.Fatalf("spawn err: %v", err)
+	}
+	if _, err := releaseFn(interpreter.BuiltinCtx{}, []interpreter.Value{p}); err == nil {
+		t.Error("release of a live process should error")
+	}
+	_, _ = killFn(interpreter.BuiltinCtx{}, []interpreter.Value{p})
+	_, _ = waitFn(interpreter.BuiltinCtx{}, []interpreter.Value{p})
+}
+
 func TestPollBeforeAndAfterExit(t *testing.T) {
 	skipIfNotLinux(t)
 	p, err := spawnFn(interpreter.BuiltinCtx{}, []interpreter.Value{

@@ -1835,6 +1835,29 @@ Shipped so far:
   see trailing blank lines (they leave the file un-exhausted yet carry no
   record) and so threw; loop on `readRecord(...).done` instead. `hasMore`
   remains as a coarse `not eof` check.
+- **Pre-1.0 strictness rulings (six coordinated breaks).** A batch of
+  semantics tightenings, each shipped with tests and the operator / scoping
+  docs updated:
+  - **`%` is now floored** (Python semantics), consistent with `//`, so the
+    div/mod identity holds for negative operands: `-7 % 3 == 2`,
+    `7 % -3 == -2` (was C/Go truncation: `-1` and `1`). Both the runtime and
+    constant folding changed together.
+  - **Integer arithmetic overflow is a positioned error**, not a silent
+    wrap: `9223372036854775807 + 1` (and `-`, `*`, `MinInt64 // -1`) errors.
+    Overflowing literal operations are left unfolded so the runtime raises at
+    the correct position.
+  - **A duplicate key in a map literal is an error** (`{"a":1,"a":2}`) rather
+    than a corrupt two-entry map where only the first was reachable.
+  - **Mixed `int`/`float` comparison is exact** (including `==`): the int is
+    no longer promoted to a lossy `float64`, so
+    `9007199254740993 == 9007199254740992.0` is `false` and the `>` /`<`
+    orderings are correct above 2^53.
+  - **A method may not share its name with a top-level variable or constant**
+    (`def foo ...; func foo() {}` is a parse error) - the no-shadowing rule
+    now applies both directions across the def/func namespace.
+  - **Reading a constant with the `$` sigil is a parse error** (`$MAX`); the
+    sigil is reserved for mutable variables. A `$CONST[...]` mutation attempt
+    still reports the clearer "cannot mutate constant" error.
 
 Remaining phases (tracked to completion under this milestone): the
 remaining module correctness and performance findings (mediums and lows),

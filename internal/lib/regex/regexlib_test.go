@@ -115,6 +115,29 @@ func TestFindAllReturnsList(t *testing.T) {
 	}
 }
 
+// findAll over a multibyte subject must report rune indices correctly for
+// every match: the amortized byte->rune tracker (shared across matches) must
+// give the same result as a per-match rescan.
+func TestFindAllMultibyteRuneIndices(t *testing.T) {
+	out, err := runProg(t, `
+		use io;
+		use regex;
+		def ms as list of regex.Match init regex.findAll("x", "áx-éx-íx");
+		for (def m in $ms) {
+			io.printf("%d,%d ", $m.start, $m.end);
+		}
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// "áx-éx-íx": runes á=0 x=1 -=2 é=3 x=4 -=5 í=6 x=7. The three x's are at
+	// rune indices 1, 4, 7 (byte indices would be 2, 6, 10).
+	want := "1,2 4,5 7,8 "
+	if out != want {
+		t.Errorf("got %q, want %q", out, want)
+	}
+}
+
 // TestReplace exercises the standard replace-all path.
 func TestReplace(t *testing.T) {
 	out, err := runProg(t, `

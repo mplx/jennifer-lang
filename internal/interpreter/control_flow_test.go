@@ -63,6 +63,38 @@ for (def x in $xs) {
 	}
 }
 
+// A for-each iterates a stable snapshot of the collection: an in-loop element
+// write (and an in-loop append, which may or may not reallocate the backing)
+// must not change what the current loop yields. Iteration behaviour must not
+// depend on Go slice capacity.
+func TestForEachIteratesSnapshot(t *testing.T) {
+	// In-place element write during iteration: the loop still yields 1 2 3.
+	out, err := run(t, `
+use io;
+def xs as list of int init [1, 2, 3];
+for (def x in $xs) { $xs[2] = 99; io.printf("%d ", $x); }
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "1 2 3 " {
+		t.Errorf("element-write during iteration: got %q, want %q", out, "1 2 3 ")
+	}
+	// An in-loop append (reallocates) must not change iteration either, and
+	// must not extend it.
+	out, err = run(t, `
+use io;
+def xs as list of int init [1, 2, 3];
+for (def x in $xs) { $xs[] = 0; $xs[2] = 99; io.printf("%d ", $x); }
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "1 2 3 " {
+		t.Errorf("append during iteration: got %q, want %q", out, "1 2 3 ")
+	}
+}
+
 // `break` from the inner loop must not escape to the outer one - the
 // outer loop completes its iterations normally.
 func TestBreakOnlyExitsInnermostLoop(t *testing.T) {

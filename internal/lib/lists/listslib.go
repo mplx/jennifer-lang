@@ -392,14 +392,26 @@ func rangeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 			step = -1
 		}
 	}
+	// Advance with overflow detection: near MaxInt64 / MinInt64, `v += step`
+	// can wrap around and stay on the correct side of `end`, looping forever.
 	var data []interpreter.Value
 	if step > 0 {
-		for v := start; v < end; v += step {
+		for v := start; v < end; {
 			data = append(data, interpreter.IntVal(v))
+			next := v + step
+			if next < v { // wrapped past MaxInt64
+				break
+			}
+			v = next
 		}
 	} else {
-		for v := start; v > end; v += step {
+		for v := start; v > end; {
 			data = append(data, interpreter.IntVal(v))
+			next := v + step
+			if next > v { // wrapped past MinInt64
+				break
+			}
+			v = next
 		}
 	}
 	return interpreter.ListVal(parser.PrimitiveType(parser.TypeInt), data), nil

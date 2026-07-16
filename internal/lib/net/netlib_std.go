@@ -30,6 +30,12 @@ import (
 // backs partial-length reads and the sticky-EOF idiom the
 // fs handles established.
 type connState struct {
+	// mu guards the mutable fields below (c / r swap on startTLS, sticky) so a
+	// spawned reader task and a main-task startTLS don't race on them. It is
+	// held only for the short field-access critical sections, never across a
+	// blocking read/write, so a concurrent net.setDeadline can still interrupt
+	// an in-flight read.
+	mu     sync.Mutex
 	c      stdnet.Conn
 	r      *bufio.Reader
 	sticky bool
@@ -62,6 +68,11 @@ var (
 // multi-gigabyte up-front allocation (or a makeslice panic). Read in chunks for
 // more.
 const maxReadBytes = 256 << 20
+
+// eofProbeTimeout bounds net.eof's non-blocking EOF probe: a closed peer's
+// pending FIN surfaces immediately (well inside this window); on an open idle
+// connection the probe times out and eof reports false rather than blocking.
+const eofProbeTimeout = 20 * time.Millisecond
 
 // ResetForTest wipes all three registries between runs. Exported
 // so the _test package can drive it.
@@ -282,11 +293,11 @@ func startTLSFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if hErr := tlsConn.Handshake(); hErr != nil {
 		return interpreter.Null(), fmt.Errorf("net.startTLS: %v", hErr)
 	}
-	connsMu.Lock()
+	s.mu.Lock()
 	s.c = tlsConn
 	s.r = bufio.NewReader(tlsConn)
 	s.sticky = false
-	connsMu.Unlock()
+	s.mu.Unlock()
 	return makeConn(id), nil
 }
 
@@ -361,10 +372,18 @@ func readBytesFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 		return interpreter.Null(), err
 	}
 	buf := make([]byte, n)
-	read, rerr := s.r.Read(buf)
+	// Snapshot the reader pointer under the lock (a concurrent startTLS may
+	// swap it); do the blocking read outside the lock so net.setDeadline can
+	// still interrupt it.
+	s.mu.Lock()
+	r := s.r
+	s.mu.Unlock()
+	read, rerr := r.Read(buf)
 	if rerr != nil {
 		if errors.Is(rerr, io.EOF) {
+			s.mu.Lock()
 			s.sticky = true
+			s.mu.Unlock()
 			return interpreter.BytesVal(buf[:read]), nil
 		}
 		// A deadline set by net.setDeadline surfaces as a timeout error.
@@ -425,7 +444,10 @@ func setDeadlineFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if err != nil {
 		return interpreter.Null(), err
 	}
-	if derr := s.c.SetDeadline(when); derr != nil {
+	s.mu.Lock()
+	c := s.c
+	s.mu.Unlock()
+	if derr := c.SetDeadline(when); derr != nil {
 		return interpreter.Null(), fmt.Errorf("net.setDeadline: %v", derr)
 	}
 	return interpreter.Null(), nil
@@ -447,7 +469,10 @@ func writeBytesFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if err != nil {
 		return interpreter.Null(), err
 	}
-	if _, werr := s.c.Write(data); werr != nil {
+	s.mu.Lock()
+	c := s.c
+	s.mu.Unlock()
+	if _, werr := c.Write(data); werr != nil {
 		return interpreter.Null(), fmt.Errorf("net.writeBytes: %v", werr)
 	}
 	return interpreter.Null(), nil
@@ -465,11 +490,33 @@ func eofFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if err != nil {
 		return interpreter.Null(), err
 	}
+	s.mu.Lock()
 	if s.sticky {
+		s.mu.Unlock()
 		return interpreter.BoolVal(true), nil
 	}
-	if _, peekErr := s.r.Peek(1); errors.Is(peekErr, io.EOF) {
+	r, c := s.r, s.c
+	s.mu.Unlock()
+	// Buffered data means definitely not EOF, decided without any I/O.
+	if r.Buffered() > 0 {
+		return interpreter.BoolVal(false), nil
+	}
+	// Otherwise probe *without blocking indefinitely on the peer*: a bare
+	// Peek(1) blocks until the peer sends or closes, so `while (not
+	// net.eof($c))` would deadlock any protocol where it is the local side's
+	// turn to write. A short read deadline makes Peek return io.EOF when the
+	// peer has closed (the pending FIN surfaces at once, well inside the
+	// window) or a timeout ("no data yet", not EOF) on an open, idle
+	// connection. The probe deadline is then cleared; callers re-arm their own
+	// deadline before the next read (net.setDeadline), as the streaming
+	// clients already do.
+	_ = c.SetReadDeadline(time.Now().Add(eofProbeTimeout))
+	_, peekErr := r.Peek(1)
+	_ = c.SetReadDeadline(time.Time{})
+	if errors.Is(peekErr, io.EOF) {
+		s.mu.Lock()
 		s.sticky = true
+		s.mu.Unlock()
 		return interpreter.BoolVal(true), nil
 	}
 	return interpreter.BoolVal(false), nil

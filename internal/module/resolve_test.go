@@ -130,6 +130,47 @@ func TestResolveModuleDuplicateIsError(t *testing.T) {
 	}
 }
 
+// A search path that lists the same directory more than once (a duplicate, or
+// an alias like `-I "$SYSMODDIR"`) must not make every import ambiguous: the
+// same file found twice is one file.
+func TestResolveDuplicateSearchDirNotAmbiguous(t *testing.T) {
+	root := t.TempDir()
+	d := filepath.Join(root, "d")
+	mustMkdir(t, d)
+	mustWrite(t, filepath.Join(d, "m.j"), "")
+
+	got, err := Resolve("m.j", "/x", []string{d, d}, "")
+	if err != nil {
+		t.Fatalf("duplicate search dir should resolve, got %v", err)
+	}
+	if want := filepath.Join(d, "m.j"); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// A file reached via a symlinked directory and via its real path is one module
+// identity (canonical() resolves symlinks), so it is not ambiguous.
+func TestResolveSymlinkedDirSameIdentity(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	mustMkdir(t, real)
+	mustWrite(t, filepath.Join(real, "m.j"), "")
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	got, err := Resolve("m.j", "/x", []string{real, link}, "")
+	if err != nil {
+		t.Fatalf("symlinked + real dir should resolve to one identity, got %v", err)
+	}
+	// Both resolve to the real file (symlinks resolved).
+	realResolved, _ := filepath.EvalSymlinks(filepath.Join(real, "m.j"))
+	if got != realResolved {
+		t.Errorf("got %q, want %q", got, realResolved)
+	}
+}
+
 func TestResolveModuleNotFound(t *testing.T) {
 	if _, err := Resolve("missing.j", "/x", []string{t.TempDir()}, ""); err == nil {
 		t.Fatal("expected a not-found error")
