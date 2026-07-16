@@ -27,8 +27,8 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/version"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/version"
 )
 
 // LibraryName is the Jennifer name programs `use` to enable these

@@ -13,7 +13,7 @@ package timelib
 import (
 	"fmt"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // maxOffsetSeconds caps |offset| at 26 hours to keep the value in a

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // Package-level stdin state. The interpreter is single-instance per

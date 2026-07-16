@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mplx/jennifer-lang/internal/profile"
+	"jennifer-lang.dev/jennifer/internal/profile"
 )
 
 // TestCollectorConcurrentRecord hammers a single Collector from many

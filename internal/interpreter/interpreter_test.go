@@ -8,15 +8,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/lib/convert"
-	"github.com/mplx/jennifer-lang/internal/lib/io"
-	"github.com/mplx/jennifer-lang/internal/lib/lists"
-	"github.com/mplx/jennifer-lang/internal/lib/maps"
-	"github.com/mplx/jennifer-lang/internal/lib/math"
-	"github.com/mplx/jennifer-lang/internal/lib/os"
-	"github.com/mplx/jennifer-lang/internal/lib/strings"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/lib/convert"
+	"jennifer-lang.dev/jennifer/internal/lib/io"
+	"jennifer-lang.dev/jennifer/internal/lib/lists"
+	"jennifer-lang.dev/jennifer/internal/lib/maps"
+	"jennifer-lang.dev/jennifer/internal/lib/math"
+	"jennifer-lang.dev/jennifer/internal/lib/os"
+	"jennifer-lang.dev/jennifer/internal/lib/strings"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // run lexes/parses/installs the io library/runs a program and returns captured stdout.

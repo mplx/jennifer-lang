@@ -94,7 +94,7 @@ No convenience wrappers like `hash.md5String(s)` ship. Stance #1
 "one way per thing": strings become bytes through
 `convert.bytesFromString`, the digest stays as bytes, and the user
 hex-encodes through `encoding.hex`. The example
-[`examples/hash.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/hash.j) carries a tiny inline
+[`examples/hash.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/hash.j) carries a tiny inline
 `bytesToHex` helper for printing until `encoding` ships.
 
 ## Errors

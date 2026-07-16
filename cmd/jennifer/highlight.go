@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/lexer"
 )
 
 // ANSI SGR foreground codes for each token category. Foreground-only (no

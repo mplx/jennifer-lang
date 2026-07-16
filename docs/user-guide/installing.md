@@ -22,14 +22,14 @@ Windows** builds ship the standard `jennifer` only - see
 ### Debian / Ubuntu (`.deb`)
 
 Pick the right `.deb` for your architecture from the latest
-[Releases page](https://github.com/mplx/jennifer-lang/releases),
+[Releases page](https://github.com/jennifer-language/jennifer/releases),
 verify the checksum, and install:
 
 ```sh
 # Replace X.Y.Z with the release version, e.g. 0.14.0
 ARCH=$(dpkg --print-architecture)   # amd64 or arm64
-curl -LO "https://github.com/mplx/jennifer-lang/releases/download/X.Y.Z/jennifer_X.Y.Z_${ARCH}.deb"
-curl -LO "https://github.com/mplx/jennifer-lang/releases/download/X.Y.Z/jennifer_X.Y.Z_${ARCH}.deb.sha256"
+curl -LO "https://github.com/jennifer-language/jennifer/releases/download/X.Y.Z/jennifer_X.Y.Z_${ARCH}.deb"
+curl -LO "https://github.com/jennifer-language/jennifer/releases/download/X.Y.Z/jennifer_X.Y.Z_${ARCH}.deb.sha256"
 sha256sum -c "jennifer_X.Y.Z_${ARCH}.deb.sha256"
 sudo dpkg -i "jennifer_X.Y.Z_${ARCH}.deb"
 ```
@@ -66,11 +66,11 @@ upgrade.
 ### Linux (tarball)
 
 For distros without a native package, grab the per-arch tarball
-from the [Releases page](https://github.com/mplx/jennifer-lang/releases):
+from the [Releases page](https://github.com/jennifer-language/jennifer/releases):
 
 ```sh
 # Replace X.Y.Z and ARCH with the release version + your arch
-curl -LO "https://github.com/mplx/jennifer-lang/releases/download/X.Y.Z/jennifer-X.Y.Z-linux-${ARCH}.tar.gz"
+curl -LO "https://github.com/jennifer-language/jennifer/releases/download/X.Y.Z/jennifer-X.Y.Z-linux-${ARCH}.tar.gz"
 tar -xzf "jennifer-X.Y.Z-linux-${ARCH}.tar.gz"
 cd "jennifer-X.Y.Z-linux-${ARCH}"
 ./jennifer version
@@ -108,7 +108,7 @@ sudo update-mime-database /usr/local/share/mime || true
 **Linux is the only supported platform.** As a convenience, best-effort
 **unsupported** binaries for macOS (Intel + Apple Silicon) and Windows
 (64- and 32-bit) are attached to each
-[release](https://github.com/mplx/jennifer-lang/releases), named
+[release](https://github.com/jennifer-language/jennifer/releases), named
 `...-UNSUPPORTED`. Read the caveats before relying on them:
 
 - **Best-effort, may be absent.** They come from a pipeline step that is

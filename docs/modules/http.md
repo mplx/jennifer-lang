@@ -22,7 +22,7 @@ def sent as http.Response init http.post("https://api.example.com/items",
     "application/json", "{\"name\":\"ada\"}", {"Authorization": "Bearer xyz"});
 ```
 
-Runnable: [`examples/modules/http_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/http_demo.j).
+Runnable: [`examples/modules/http_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/http_demo.j).
 
 ## Surface
 

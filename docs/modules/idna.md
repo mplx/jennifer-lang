@@ -14,7 +14,7 @@ io.printf("%s\n", idna.toAscii("münchen.de"));            # xn--mnchen-3ya.de
 io.printf("%s\n", idna.toUnicode("xn--mnchen-3ya.de"));   # münchen.de
 ```
 
-Runnable: [`examples/modules/idna_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/idna_demo.j).
+Runnable: [`examples/modules/idna_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/idna_demo.j).
 
 ## Surface
 

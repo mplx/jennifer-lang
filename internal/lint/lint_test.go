@@ -6,9 +6,9 @@ package lint_test
 import (
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/lexer"
-	"github.com/mplx/jennifer-lang/internal/lint"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/lint"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // lintSrc lints src with the given checks enabled and returns the findings. It

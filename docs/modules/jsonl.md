@@ -15,7 +15,7 @@ def text as string init jsonl.encode($rows);   # {"a":1}\n[2,3]\n
 def back as list of json.Value init jsonl.decode($text);
 ```
 
-Runnable: [`examples/modules/jsonl_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/jsonl_demo.j).
+Runnable: [`examples/modules/jsonl_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/jsonl_demo.j).
 
 ## In-memory
 

@@ -20,7 +20,7 @@ io.printf("%s\n", ansi.rgb("truecolor orange", 255, 128, 0));
 io.printf("%s\n", ansi.underline(ansi.cyan("nested + underlined")));
 ```
 
-Runnable: [`examples/modules/ansi_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/ansi_demo.j).
+Runnable: [`examples/modules/ansi_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/ansi_demo.j).
 
 ## Surface
 

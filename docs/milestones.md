@@ -1273,7 +1273,7 @@ M19.1-M19.5 are a correctness / performance hardening pass over the
 interpreter core and libraries (races, dead code, algorithmic complexity,
 resource bounds, module identity); M19.6 is the coverage tool; M19.7 lands the
 `@scope/package` vendored-module resolver; M19.8 is the one-time relocation to
-the `jennifer-lang` org and a host-independent vanity module path. None of this
+the `jennifer-language` org and a host-independent vanity module path. None of this
 work needs `reflect` or breaks TinyGo-cleanliness. The smallest,
 localized crash / correctness fixes (out-of-range `httpd.respond` status,
 truncated-toml-date-time panic, `io.sprintf("%d", MinInt64)`, `math.randInt`
@@ -1650,14 +1650,19 @@ positioned error; `./`, `/`, and bare-name imports are byte-for-byte unchanged;
 `@a/bitcoin` and `@b/bitcoin` structs do not cross-satisfy each other's type
 checks; a `..`-escape path is rejected.
 
-### M19.8 - Relocation: `jennifer-lang` org + vanity module path
+### M19.8 - Relocation: `jennifer-language` org + vanity module path
 
 A one-time project relocation, no language or interpreter behavior change. The
 repository moves from the personal `github.com/mplx/jennifer-lang` to a
-`jennifer-lang` GitHub org, and - separately - the Go module path moves **off**
+`jennifer-language` GitHub org, and - separately - the Go module path moves **off**
 GitHub to a vanity import path (`jennifer-lang.dev/jennifer`) served by a
 `go-import` meta page, so the module identity no longer depends on where the
-code is hosted. Purely mechanical, but it touches nearly every file (112 `.go`
+code is hosted. Names are settled: the domain `jennifer-lang.dev` is registered,
+and the org is `jennifer-language` because `jennifer-lang` and `jenniferlang`
+were already taken on GitHub. The domain (`-lang`) and org (`-language`) spelling
+differing is deliberate and invisible in use - the canonical module path is the
+domain, and the org is only the git host the meta page points at. Purely
+mechanical, but it touches nearly every file (112 `.go`
 imports, ~60 docs, CI, packaging), so it gets a milestone to keep the sweep
 complete and reviewable, and it lands **before the first post-org release** so
 downstream references (AUR, doc links) migrate exactly once. Two distinct
@@ -1669,13 +1674,13 @@ targets - keep them separate:
   `.go` files) is rewritten. A one-file `go-import` meta page at
   `jennifer-lang.dev/jennifer` maps the vanity path to the org repo
   (`<meta name="go-import" content="jennifer-lang.dev/jennifer git
-  https://github.com/jennifer-lang/jennifer">`, plus a `go-source` tag for
+  https://github.com/jennifer-language/jennifer">`, plus a `go-source` tag for
   pkg.go.dev deep links), served from the same site that hosts the mdBook docs.
   The path is now host-independent: a future repo move never touches `go.mod`
   again.
 - **Human-facing URLs -> the org repo.** Clone URLs, issue links, and every
   `github.com/mplx/jennifer-lang/blob/main/...` deep link move to
-  `github.com/jennifer-lang/jennifer` (flagship repo named `jennifer`, not
+  `github.com/jennifer-language/jennifer` (flagship repo named `jennifer`, not
   doubled - the `rust-lang/rust` shape). These point at GitHub, **not** the
   vanity domain (the `.dev` host only serves the `go-import` page and the docs).
   GitHub's transfer redirect keeps old links working, but every canonical URL

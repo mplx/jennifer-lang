@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/profile"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/profile"
 )
 
 // statementPositions walks a parsed program and returns every executable

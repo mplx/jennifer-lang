@@ -19,7 +19,7 @@ package netlib
 import (
 	"fmt"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // unavailable is the shared error every stub returns. Named so the

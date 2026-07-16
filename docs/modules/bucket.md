@@ -23,7 +23,7 @@ def obj as http.Response init bucket.get($c, "mybucket", "hello.txt");
 io.printf("%d\n%s\n", $obj.status, $obj.body);
 ```
 
-Runnable: [`examples/modules/bucket_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/bucket_demo.j).
+Runnable: [`examples/modules/bucket_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/bucket_demo.j).
 
 ## Client
 

@@ -22,7 +22,7 @@ def r as http.Response init gotify.push($g, "Deploy", "build 1234 is live", 5);
 io.printf("pushed -> %d\n", $r.status);      # 200 on success
 ```
 
-Runnable: [`examples/modules/gotify_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/gotify_demo.j).
+Runnable: [`examples/modules/gotify_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/gotify_demo.j).
 
 ## Surface
 

@@ -17,7 +17,7 @@ def id as string init mikrotik.run($s, "/ip/address/add", {});   # (with attrs)
 mikrotik.close($s);
 ```
 
-Runnable: [`examples/modules/mikrotik_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/mikrotik_demo.j).
+Runnable: [`examples/modules/mikrotik_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/mikrotik_demo.j).
 
 ## Why the API, not SSH
 

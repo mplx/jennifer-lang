@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // -------- Registries --------

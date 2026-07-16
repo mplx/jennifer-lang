@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/lexer"
 )
 
 // Suppression directives are read off the raw token stream: the parser

@@ -15,7 +15,7 @@ import (
 	"strings"
 	stdtime "time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // formatFn implements `time.format($t, layout)`.

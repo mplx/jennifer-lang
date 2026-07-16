@@ -26,7 +26,7 @@ for (def raw in imap.fetchAll($opts, "INBOX")) {
 }
 ```
 
-Runnable: [`examples/modules/imap_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/imap_demo.j).
+Runnable: [`examples/modules/imap_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/imap_demo.j).
 
 ## Surface
 

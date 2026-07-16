@@ -2,9 +2,9 @@ Source: jennifer
 Section: devel
 Priority: optional
 Maintainer: developer@mplx.eu <developer@mplx.eu>
-Homepage: https://github.com/mplx/jennifer-lang
-Vcs-Browser: https://github.com/mplx/jennifer-lang
-Vcs-Git: https://github.com/mplx/jennifer-lang.git
+Homepage: https://github.com/jennifer-language/jennifer
+Vcs-Browser: https://github.com/jennifer-language/jennifer
+Vcs-Git: https://github.com/jennifer-language/jennifer.git
 Standards-Version: 4.6.2
 
 Package: jennifer

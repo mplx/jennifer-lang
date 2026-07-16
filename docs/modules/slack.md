@@ -16,7 +16,7 @@ def m as slack.Message init slack.section(
 slack.sendMessage("https://hooks.slack.com/services/T/B/xxx", $m);
 ```
 
-Runnable: [`examples/modules/slack_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/slack_demo.j).
+Runnable: [`examples/modules/slack_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/slack_demo.j).
 
 ## Plain messages
 

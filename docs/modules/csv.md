@@ -17,7 +17,7 @@ def recs as list of map of string to string init csv.toRecords($rows);
 io.printf("%s\n", $recs[0]["note"]);                      # hi
 ```
 
-Runnable: [`examples/modules/csv_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/csv_demo.j).
+Runnable: [`examples/modules/csv_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/csv_demo.j).
 
 ## Surface
 

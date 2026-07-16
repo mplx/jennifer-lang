@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // envPool recycles short-lived Environment frames (block bodies + method

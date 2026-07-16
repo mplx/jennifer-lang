@@ -25,7 +25,7 @@ io.printf("%s\n", memcache.get($mc, "greeting"));   # hello
 memcache.quit($mc);
 ```
 
-Runnable: [`examples/modules/memcache_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/memcache_demo.j).
+Runnable: [`examples/modules/memcache_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/memcache_demo.j).
 
 ## Surface
 

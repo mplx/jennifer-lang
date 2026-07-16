@@ -7,7 +7,7 @@ import (
 	stdos "os"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 func TestGetEnvReadsSetVariable(t *testing.T) {

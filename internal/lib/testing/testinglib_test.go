@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	testinglib "github.com/mplx/jennifer-lang/internal/lib/testing"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	testinglib "jennifer-lang.dev/jennifer/internal/lib/testing"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // runProg parses + runs a Jennifer program with io + testing

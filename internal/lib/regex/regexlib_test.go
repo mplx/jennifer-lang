@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	mapslib "github.com/mplx/jennifer-lang/internal/lib/maps"
-	regexlib "github.com/mplx/jennifer-lang/internal/lib/regex"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	mapslib "jennifer-lang.dev/jennifer/internal/lib/maps"
+	regexlib "jennifer-lang.dev/jennifer/internal/lib/regex"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // runProg drives one Jennifer scenario with io + regex installed.

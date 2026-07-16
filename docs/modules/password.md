@@ -24,7 +24,7 @@ io.printf("%s  valid=%t  %s\n", $pw,
           password.complexity($pw).label);
 ```
 
-Runnable: [`examples/modules/password_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/password_demo.j).
+Runnable: [`examples/modules/password_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/password_demo.j).
 
 ## The policy schema
 

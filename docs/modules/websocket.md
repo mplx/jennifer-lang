@@ -18,7 +18,7 @@ def m as websocket.Message init websocket.receive($ws);   # m.kind "text", m.tex
 websocket.close($ws);
 ```
 
-Runnable: [`examples/modules/websocket_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/websocket_demo.j).
+Runnable: [`examples/modules/websocket_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/websocket_demo.j).
 
 ## Connecting
 

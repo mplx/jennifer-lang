@@ -12,8 +12,8 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // execSupported reports whether the host's Go runtime actually

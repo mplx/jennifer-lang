@@ -17,7 +17,7 @@ def svg as string init barcode.svg($qr, $opts);   # embed in HTML / email
 def png as bytes init barcode.png($qr, $opts);     # a monochrome PNG
 ```
 
-Runnable: [`examples/modules/barcode_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/barcode_demo.j).
+Runnable: [`examples/modules/barcode_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/barcode_demo.j).
 
 ## Encoding
 

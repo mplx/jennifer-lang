@@ -29,7 +29,7 @@ if (ratelimit.allow($mc, "ip:203.0.113.7", 100, 60)) {
 }
 ```
 
-Runnable: [`examples/modules/ratelimit_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/ratelimit_demo.j).
+Runnable: [`examples/modules/ratelimit_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/ratelimit_demo.j).
 
 ## Surface
 

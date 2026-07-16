@@ -34,8 +34,8 @@ import (
 	gohash "hash"
 	"sync"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // LibraryName is the namespace prefix and `use` name.

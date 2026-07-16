@@ -25,7 +25,7 @@ def zpl as string init label.render($l, label.zpl(203));
 # label.send("192.168.1.50", 9100, $zpl);                 # to a printer's raw port
 ```
 
-Runnable: [`examples/modules/label_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/label_demo.j).
+Runnable: [`examples/modules/label_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/label_demo.j).
 
 ## Stage 1 - build (device-independent, millimetres)
 

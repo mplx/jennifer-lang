@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // noCtx is a zero BuiltinCtx; the httpd builtins ignore it.

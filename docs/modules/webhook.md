@@ -18,7 +18,7 @@ def sig as string init webhook.sign("{\"event\":\"push\"}", "topsecret");
 def ok as bool init webhook.verify("{\"event\":\"push\"}", $sig, "topsecret");
 ```
 
-Runnable: [`examples/modules/webhook_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/webhook_demo.j).
+Runnable: [`examples/modules/webhook_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/webhook_demo.j).
 
 ## Functions
 

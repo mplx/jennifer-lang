@@ -22,7 +22,7 @@ if [[ "$origin_url" != *aur.archlinux.org* ]]; then
     exit 1
 fi
 
-repo="mplx/jennifer-lang"
+repo="jennifer-language/jennifer"
 
 echo "==> Resolving the newest release (including pre-releases)..."
 # Capture the response first, then match from a here-string. Piping curl

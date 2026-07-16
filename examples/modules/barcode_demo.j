@@ -15,7 +15,7 @@ use os;
 use fs;
 import "../../modules/barcode.j" as barcode;
 
-def text as string init "https://github.com/mplx/jennifer-lang/";
+def text as string init "https://github.com/jennifer-language/jennifer/";
 if (len(os.ARGS) > 1) { $text = os.ARGS[1]; }
 
 def o as barcode.Options init barcode.defaults();

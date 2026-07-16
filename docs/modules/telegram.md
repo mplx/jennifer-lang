@@ -17,7 +17,7 @@ telegram.sendMessage($bot, 12345678, "hello from Jennifer");
 def updates as list of telegram.Update init telegram.getUpdates($bot, 0, 30);
 ```
 
-Runnable: [`examples/modules/telegram_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/telegram_demo.j).
+Runnable: [`examples/modules/telegram_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/telegram_demo.j).
 
 ## The bot
 

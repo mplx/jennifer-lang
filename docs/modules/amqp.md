@@ -21,7 +21,7 @@ if (not $m.empty) {
 amqp.close($c);
 ```
 
-Runnable: [`examples/modules/amqp_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/amqp_demo.j).
+Runnable: [`examples/modules/amqp_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/amqp_demo.j).
 
 ## Connecting
 

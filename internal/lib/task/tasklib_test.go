@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	tasklib "github.com/mplx/jennifer-lang/internal/lib/task"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	tasklib "jennifer-lang.dev/jennifer/internal/lib/task"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // runProg drives one Phase 3 end-to-end scenario: parse, run,

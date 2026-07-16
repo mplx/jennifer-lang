@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	listslib "github.com/mplx/jennifer-lang/internal/lib/lists"
-	mapslib "github.com/mplx/jennifer-lang/internal/lib/maps"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	listslib "jennifer-lang.dev/jennifer/internal/lib/lists"
+	mapslib "jennifer-lang.dev/jennifer/internal/lib/maps"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // runMap runs src with io/maps/lists installed and returns stdout.

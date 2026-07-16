@@ -26,7 +26,7 @@ def db as redis.Session init redis.connect(redis.Options{host: "127.0.0.1",
 resque.enqueue($db, "email", "SendWelcome", ["user@example.com", "en"]);
 ```
 
-Runnable: [`examples/modules/resque_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/resque_demo.j).
+Runnable: [`examples/modules/resque_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/resque_demo.j).
 
 ## Surface
 

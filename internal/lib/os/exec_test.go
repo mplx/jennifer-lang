@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // stringList builds a Jennifer list-of-string Value (with no element

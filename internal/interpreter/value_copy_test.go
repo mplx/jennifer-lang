@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	listslib "github.com/mplx/jennifer-lang/internal/lib/lists"
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/profile"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	listslib "jennifer-lang.dev/jennifer/internal/lib/lists"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/profile"
 )
 
 // allocsTable runs src under the allocation profiler and returns the rendered

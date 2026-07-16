@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/lexer"
 )
 
 // tokenTypes returns the type slice for comparison.

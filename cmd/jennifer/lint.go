@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/lexer"
-	"github.com/mplx/jennifer-lang/internal/lint"
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/preproc"
+	"jennifer-lang.dev/jennifer/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/lint"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/preproc"
 )
 
 // Exit codes, mirroring gofmt -l / shellcheck: 0 clean, 1 findings at or

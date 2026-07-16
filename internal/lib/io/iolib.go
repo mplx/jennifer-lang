@@ -11,7 +11,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // LibraryName is the Jennifer name programs `use` to enable these functions.

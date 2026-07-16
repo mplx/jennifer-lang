@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	listslib "github.com/mplx/jennifer-lang/internal/lib/lists"
-	tasklib "github.com/mplx/jennifer-lang/internal/lib/task"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	listslib "jennifer-lang.dev/jennifer/internal/lib/lists"
+	tasklib "jennifer-lang.dev/jennifer/internal/lib/task"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // A spawn nested inside a spawn body snapshots its captured scope on a

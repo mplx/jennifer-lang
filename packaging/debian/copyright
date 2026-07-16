@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: jennifer
 Upstream-Contact: developer@mplx.eu
-Source: https://github.com/mplx/jennifer-lang
+Source: https://github.com/jennifer-language/jennifer
 
 Files: *
 Copyright: 2026 developer@mplx.eu

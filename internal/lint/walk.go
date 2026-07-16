@@ -3,7 +3,7 @@
 
 package lint
 
-import "github.com/mplx/jennifer-lang/internal/parser"
+import "jennifer-lang.dev/jennifer/internal/parser"
 
 // The parser exposes no generic visitor, so the linter carries its own. Two
 // traversals live here: a flat walker (walker) for checks that match node

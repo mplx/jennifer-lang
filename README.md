@@ -69,14 +69,14 @@ the same workload set live in
 
 **Linux** is the supported platform. Best-effort **unsupported** macOS
 and Windows binaries (the standard `jennifer` build only, no TinyGo) are
-attached to each [release](https://github.com/mplx/jennifer-lang/releases);
+attached to each [release](https://github.com/jennifer-language/jennifer/releases);
 read the caveats in
 [docs/user-guide/installing.md](docs/user-guide/installing.md#macos--windows-unsupported)
 before relying on them.
 
 ```sh
 # Debian / Ubuntu - pick the .deb for your arch from the Releases
-# page (https://github.com/mplx/jennifer-lang/releases) and:
+# page (https://github.com/jennifer-language/jennifer/releases) and:
 sudo dpkg -i jennifer_X.Y.Z_amd64.deb
 
 # Arch (AUR) - prebuilt binary, fast install:
@@ -159,7 +159,7 @@ io.printf("%d\n", $x + $x);
 ## Documentation
 
 The full docs are served as an mdBook at
-[mplx.github.io/jennifer-lang](https://mplx.github.io/jennifer-lang/)
+[jennifer-lang.dev](https://jennifer-lang.dev/)
 (published from `main` on every push). The same content also reads
 fine inside the GitHub file tree:
 

@@ -25,7 +25,7 @@ io.printf("visits: %d\n", redis.incr($db, "visits"));
 redis.quit($db);
 ```
 
-Runnable: [`examples/modules/redis_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/redis_demo.j).
+Runnable: [`examples/modules/redis_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/redis_demo.j).
 
 ## Surface
 

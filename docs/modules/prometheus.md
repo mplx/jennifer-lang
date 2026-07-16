@@ -25,7 +25,7 @@ io.printf("%s", prometheus.render([$m]));
 # http_requests_total{code="200",method="get"} 42.0
 ```
 
-Runnable: [`examples/modules/prometheus_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/prometheus_demo.j).
+Runnable: [`examples/modules/prometheus_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/prometheus_demo.j).
 
 ## Exposition
 

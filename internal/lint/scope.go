@@ -3,7 +3,7 @@
 
 package lint
 
-import "github.com/mplx/jennifer-lang/internal/parser"
+import "jennifer-lang.dev/jennifer/internal/parser"
 
 // scope.go carries a scope-aware traversal mirroring the resolver's frame
 // model (internal/parser/resolver.go): a frame per method-params, block,

@@ -27,7 +27,7 @@ def opts as smtp.Options init smtp.Options{host: "mail.example.com", port: 587,
 smtp.send($opts, "me@example.com", ["you@example.com"], mime.encode($msg));
 ```
 
-Runnable: [`examples/modules/smtp_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/smtp_demo.j).
+Runnable: [`examples/modules/smtp_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/smtp_demo.j).
 
 ## Surface
 

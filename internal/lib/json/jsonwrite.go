@@ -21,7 +21,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // ----- constructors --------------------------------------------------------

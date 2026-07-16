@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	metalib "github.com/mplx/jennifer-lang/internal/lib/meta"
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/version"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	metalib "jennifer-lang.dev/jennifer/internal/lib/meta"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/version"
 )
 
 func runOne(t *testing.T, src string) string {

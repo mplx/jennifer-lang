@@ -17,7 +17,7 @@ def m as discord.Message init discord.embed(
 discord.sendMessage("https://discord.com/api/webhooks/1/xxx", $m);
 ```
 
-Runnable: [`examples/modules/discord_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/discord_demo.j).
+Runnable: [`examples/modules/discord_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/discord_demo.j).
 
 ## Plain messages
 

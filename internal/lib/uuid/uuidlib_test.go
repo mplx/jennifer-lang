@@ -8,7 +8,7 @@ import (
 	"testing"
 	stdtime "time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 func TestGenerateV4(t *testing.T) {

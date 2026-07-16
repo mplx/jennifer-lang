@@ -144,7 +144,7 @@ cat > "$CHANGELOG" <<EOF
 jennifer ($VERSION) unstable; urgency=low
 
   * Upstream release $VERSION. See
-    https://github.com/mplx/jennifer-lang/releases for full notes.
+    https://github.com/jennifer-language/jennifer/releases for full notes.
 
  -- developer@mplx.eu <developer@mplx.eu>  $(date -R)
 EOF

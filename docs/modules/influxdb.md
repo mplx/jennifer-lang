@@ -16,7 +16,7 @@ influxdb.write($db, [$p]);
 def r as influxdb.Result init influxdb.query($db, "SELECT last(\"value\") FROM cpu");
 ```
 
-Runnable: [`examples/modules/influxdb_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/influxdb_demo.j).
+Runnable: [`examples/modules/influxdb_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/influxdb_demo.j).
 
 ## Client
 

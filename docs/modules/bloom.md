@@ -17,7 +17,7 @@ bloom.mightContain($f, "alice");   # true
 bloom.mightContain($f, "carol");   # almost always false
 ```
 
-Runnable: [`examples/modules/bloom_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/bloom_demo.j).
+Runnable: [`examples/modules/bloom_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/bloom_demo.j).
 
 ## Surface
 

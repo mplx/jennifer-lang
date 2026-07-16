@@ -21,7 +21,7 @@ def form as multipart.Built init multipart.build($parts);
 def back as list of multipart.Part init multipart.parse($form.contentType, $form.body);
 ```
 
-Runnable: [`examples/modules/multipart_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/multipart_demo.j).
+Runnable: [`examples/modules/multipart_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/multipart_demo.j).
 
 ## Parts
 

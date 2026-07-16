@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	fslib "github.com/mplx/jennifer-lang/internal/lib/fs"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	tasklib "github.com/mplx/jennifer-lang/internal/lib/task"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	fslib "jennifer-lang.dev/jennifer/internal/lib/fs"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	tasklib "jennifer-lang.dev/jennifer/internal/lib/task"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // runProg parses + runs a Jennifer program with io + task + fs

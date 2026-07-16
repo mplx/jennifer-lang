@@ -241,7 +241,7 @@ Testing: a co-located `MODULE_test.j` is a white-box overlay - `jennifer
 test MODULE_test.j` splices `MODULE.j` in first, so its `test*` methods
 reach the module's private names by bare identifier. For black-box tests,
 `import` the module and exercise its exported surface. See the runnable
-[`examples/modules/`](https://github.com/mplx/jennifer-lang/tree/main/examples/modules)
+[`examples/modules/`](https://github.com/jennifer-language/jennifer/tree/main/examples/modules)
 chain.
 
 ### `include` vs `import`

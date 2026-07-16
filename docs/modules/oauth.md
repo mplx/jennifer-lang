@@ -25,7 +25,7 @@ def tok as oauth.Token init oauth.deviceWait($cfg, $dev);   # blocks until appro
 # use the token, e.g. for IMAP: sasl.bearer("me@gmail.com", $tok.accessToken)
 ```
 
-Runnable: [`examples/modules/oauth_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/oauth_demo.j).
+Runnable: [`examples/modules/oauth_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/oauth_demo.j).
 
 ## Surface
 

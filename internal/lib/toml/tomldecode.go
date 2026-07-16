@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // datetime form tags stored on a toml.Datetime node's `form` field.

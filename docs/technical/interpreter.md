@@ -82,7 +82,7 @@ the eager copies above. Reintroducing it write-through (store
 see [rejected.md](rejected.md).
 
 Aliasing correctness is exercised by
-[`internal/interpreter/value_alias_test.go`](https://github.com/mplx/jennifer-lang/blob/main/internal/interpreter/value_alias_test.go) -
+[`internal/interpreter/value_alias_test.go`](https://github.com/jennifer-language/jennifer/blob/main/internal/interpreter/value_alias_test.go) -
 every "shared then mutated" corner case (nested lists, structs
 containing lists, function-argument mutation, chained lvalues,
 etc.). Anyone changing the mutation logic must add coverage there.
@@ -546,7 +546,7 @@ stay distinct `(namespace, name)` pairs. Struct identity is keyed by the
 module's **canonical path**, carried in the `ModPath` field on both `Value` and
 `parser.Type` (empty for library / user structs) and compared by `Value.Equal` /
 `MatchesDeclared`; `StructNS` holds the file **stem** purely for display, so two
-module files sharing a basename (`a/util.j`, `b/util.j`, or `@mplx/benchmark` vs
+module files sharing a basename (`a/util.j`, `b/util.j`, or `@jennifer/benchmark` vs
 `@claude/benchmark`) are genuinely distinct types while both still render as
 `benchmark.Point`. The boundary retag threads `(StructNS, ModPath)` so a foreign
 struct that only shares the stem is left untouched, and method parameter types

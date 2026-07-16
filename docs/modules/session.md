@@ -27,7 +27,7 @@ $data["user"] = "ada";
 session.save($mc, $id, $data, 1800);
 ```
 
-Runnable: [`examples/modules/session_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/session_demo.j).
+Runnable: [`examples/modules/session_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/session_demo.j).
 
 ## Surface
 

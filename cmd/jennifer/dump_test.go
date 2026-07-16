@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/lexer"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // TestAstJSONIsValid covers the AST JSON emitter end to end: parse a

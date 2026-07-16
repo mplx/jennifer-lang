@@ -18,7 +18,7 @@ def cal as ical.Calendar init ical.add(ical.calendar(), $ev);
 def text as string init ical.encode($cal);   # BEGIN:VCALENDAR ... END:VCALENDAR
 ```
 
-Runnable: [`examples/modules/ical_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/ical_demo.j).
+Runnable: [`examples/modules/ical_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/ical_demo.j).
 
 ## Types
 

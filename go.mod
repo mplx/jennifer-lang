@@ -1,4 +1,4 @@
-module github.com/mplx/jennifer-lang
+module jennifer-lang.dev/jennifer
 
 go 1.26.3
 

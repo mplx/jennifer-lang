@@ -6,8 +6,8 @@ package lint
 import (
 	"sort"
 
-	"github.com/mplx/jennifer-lang/internal/lexer"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // Config holds the tunable thresholds for the checks that have one. The

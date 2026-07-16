@@ -15,7 +15,7 @@ io.printf("%s\n", $cfg["PORT"]);     # 8080
 dotenv.load(".env");                  # or set them in the environment
 ```
 
-Runnable: [`examples/modules/dotenv_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/dotenv_demo.j).
+Runnable: [`examples/modules/dotenv_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/dotenv_demo.j).
 
 ## Functions
 

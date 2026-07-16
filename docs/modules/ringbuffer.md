@@ -17,7 +17,7 @@ ringbuffer.first($rb);             # "b" (oldest)
 $rb = ringbuffer.pop($rb);         # buffer is now [c, d]
 ```
 
-Runnable: [`examples/modules/ringbuffer_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/ringbuffer_demo.j).
+Runnable: [`examples/modules/ringbuffer_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/ringbuffer_demo.j).
 
 ## Surface
 

@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 func ctx() interpreter.BuiltinCtx { return interpreter.BuiltinCtx{} }

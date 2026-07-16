@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
+	oslib "jennifer-lang.dev/jennifer/internal/lib/os"
 )
 
 // runServe implements `jennifer serve <file.j> [--watch] [-I dir] [--sysmoddir dir]`:

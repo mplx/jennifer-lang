@@ -13,9 +13,9 @@ def p as string init sasl.plain("me@example.com", "secret");     # SASL PLAIN
 def b as string init sasl.bearer("me@gmail.com", accessToken);   # SASL XOAUTH2
 ```
 
-Runnable: [`examples/modules/sasl_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/sasl_demo.j)
+Runnable: [`examples/modules/sasl_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/sasl_demo.j)
 (and it is exercised end to end by the mail clients' demos, e.g.
-[`smtp_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/smtp_demo.j)).
+[`smtp_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/smtp_demo.j)).
 
 ## Surface
 

@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // LibraryName is the namespace prefix (`toml.decode`, `toml.get`, ...).

@@ -29,7 +29,7 @@ for (def raw in pop.fetchAll($opts)) {
 }
 ```
 
-Runnable: [`examples/modules/pop_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/pop_demo.j).
+Runnable: [`examples/modules/pop_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/pop_demo.j).
 
 ## Surface
 

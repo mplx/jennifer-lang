@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // get walks a decoded tree by JSON Pointer, failing the test on any error.

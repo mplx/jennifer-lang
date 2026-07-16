@@ -13,8 +13,8 @@ import (
 	"fmt"
 	stdtime "time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	mathlib "github.com/mplx/jennifer-lang/internal/lib/math"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	mathlib "jennifer-lang.dev/jennifer/internal/lib/math"
 )
 
 // LibraryName is the namespace prefix (`uuid.`) and the `use` name.

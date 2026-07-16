@@ -59,6 +59,16 @@ jobs:
       - name: Build the book
         run: mdbook build
 
+      - name: Add the go-import vanity page
+        # The Go module path is jennifer-lang.dev/jennifer, so `go get` fetches
+        # https://jennifer-lang.dev/jennifer?go-get=1 and reads the go-import
+        # meta tag. Copy the static page into the Pages output so the apex
+        # serves it at /jennifer alongside the docs. Runs after `mdbook build`
+        # (which cleans book-output) and before the artifact upload.
+        run: |
+          mkdir -p book-output/jennifer
+          cp site/jennifer/index.html book-output/jennifer/index.html
+
       - name: Render the PDF
         # Print the whole book (book-output/print.html) to a single PDF via
         # headless Chrome. GitHub's ubuntu-latest image ships Google Chrome

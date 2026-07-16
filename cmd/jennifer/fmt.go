@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/lexer"
 )
 
 // runFmt formats path's source to stdout per docs/user-guide/style-guide.md. The

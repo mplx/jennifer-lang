@@ -15,7 +15,7 @@ $c = vcard.addEmail($c, "ada@example.com");
 def text as string init vcard.encode($c);   # BEGIN:VCARD ... END:VCARD
 ```
 
-Runnable: [`examples/modules/vcard_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/vcard_demo.j).
+Runnable: [`examples/modules/vcard_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/vcard_demo.j).
 
 ## Types
 

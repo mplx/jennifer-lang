@@ -13,7 +13,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // maxHandleRead caps a single caller-requested fs.readBytes so a huge `n` cannot

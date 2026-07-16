@@ -14,7 +14,7 @@ def ip as ipnet.Address init ipnet.parseAddress("192.168.1.42");
 def inside as bool init ipnet.contains($net, $ip);   # true
 ```
 
-Runnable: [`examples/modules/ipnet_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/ipnet_demo.j).
+Runnable: [`examples/modules/ipnet_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/ipnet_demo.j).
 
 ## Types
 

@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	mathlib "github.com/mplx/jennifer-lang/internal/lib/math"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	mathlib "jennifer-lang.dev/jennifer/internal/lib/math"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // LibraryName is the Jennifer name programs `use` to enable these

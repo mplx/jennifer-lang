@@ -15,7 +15,7 @@ def fire as time.Time init cron.next($s, time.now());
 io.printf("next run: %s\n", time.iso($fire));
 ```
 
-Runnable: [`examples/modules/cron_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/cron_demo.j).
+Runnable: [`examples/modules/cron_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/cron_demo.j).
 
 ## Functions
 

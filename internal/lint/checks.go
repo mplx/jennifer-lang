@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // checkUnusedLocal (L101) flags a local `def` binding that is never read.

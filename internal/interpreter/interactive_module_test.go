@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/lexer"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/preproc"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/lexer"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/preproc"
 )
 
 // evalRepl mirrors the REPL's per-input pipeline (lex -> preproc -> parse ->

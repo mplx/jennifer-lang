@@ -12,9 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/lexer"
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/preproc"
+	"jennifer-lang.dev/jennifer/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/preproc"
 )
 
 // printDevUsage lists the development subcommands in the top-level usage

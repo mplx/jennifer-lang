@@ -10,12 +10,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/lexer"
-	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/preproc"
-	"github.com/mplx/jennifer-lang/internal/profile"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/lexer"
+	oslib "jennifer-lang.dev/jennifer/internal/lib/os"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/preproc"
+	"jennifer-lang.dev/jennifer/internal/profile"
 )
 
 // profileMaxCallEvents bounds the method-call timeline recorded for

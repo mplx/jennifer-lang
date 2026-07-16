@@ -43,7 +43,7 @@ Extract the interpreter core out from under `internal/` and expose a
 documented Go-side surface so external programs can embed Jennifer. Today
 `internal/interpreter`, `internal/parser`, `internal/lexer`, and
 `internal/lib/*` are unreachable from any module that isn't
-`github.com/mplx/jennifer-lang` - Go's `internal/` visibility rule is not a
+`jennifer-lang.dev/jennifer` - Go's `internal/` visibility rule is not a
 convention, it's a compile-time barrier. No submodule / require / replace
 workaround exists; embedding is impossible without a restructure.
 
@@ -222,13 +222,13 @@ constraints.
   exists, and `jvc` is just the manager layered over that resolver. Nothing is
   global; each app owns its decks beside it.
 - **The one remaining language-surface question: inline version selectors.**
-  M19.7 resolves `import "@mplx/supercms/" as cms;` (the trailing `/` expands to
+  M19.7 resolves `import "@jennifer/supercms/" as cms;` (the trailing `/` expands to
   the package-named entry `supercms/supercms.j`) against whatever is installed.
-  `jvc` supplies the *default* - plain `import @mplx/supercms;` takes
+  `jvc` supplies the *default* - plain `import @jennifer/supercms;` takes
   the version `jvc` resolved (declared in `deck.toml`, pinned in the lockfile),
   version-transparent, which is what almost every script wants. The opt-in for
   side-by-side versions is a **per-import selector** matched against the installed
-  set (never triggering a fetch): `@mplx/supercms=1.2.3` (exact), `>=1.2.3` / `~`
+  set (never triggering a fetch): `@jennifer/supercms=1.2.3` (exact), `>=1.2.3` / `~`
   / `^` (a `semver` constraint over what is installed), or `#cefa234` (a git
   commit); one script can pin `=1.x` while another pins `=2.x`, and two versions
   in one file take distinct `as` aliases. An unsatisfiable selector errors

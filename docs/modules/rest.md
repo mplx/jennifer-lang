@@ -27,7 +27,7 @@ def created as rest.Response init rest.postJson($api, "/users",
 io.printf("created -> %d\n", $created.status);
 ```
 
-Runnable: [`examples/modules/rest_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/rest_demo.j).
+Runnable: [`examples/modules/rest_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/rest_demo.j).
 
 ## Surface
 

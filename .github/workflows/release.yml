@@ -375,7 +375,7 @@ jobs:
             echo
             echo "### What's new"
             echo
-            echo "There is no per-release changelog yet; see the [milestones](https://github.com/mplx/jennifer-lang/blob/main/docs/milestones.md) for what has shipped and what is planned."
+            echo "There is no per-release changelog yet; see the [milestones](https://github.com/jennifer-language/jennifer/blob/main/docs/milestones.md) for what has shipped and what is planned."
             echo
             if [ -f artifacts/test-reports/coverage-total.txt ]; then
               echo "### Test results"

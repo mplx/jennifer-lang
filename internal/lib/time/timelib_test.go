@@ -9,9 +9,9 @@ import (
 	"testing"
 	stdtime "time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // frozenAt swaps the package clock to return a fixed Time for the

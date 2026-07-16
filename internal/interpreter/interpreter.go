@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // BuiltinCtx is the I/O context the interpreter passes to every builtin.

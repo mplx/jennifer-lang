@@ -15,7 +15,7 @@ import (
 	"fmt"
 	stdtime "time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // ----- constructors --------------------------------------------------------

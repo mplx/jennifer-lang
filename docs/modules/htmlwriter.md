@@ -18,7 +18,7 @@ def p as html.Node init html.element("p", [], $kids);
 io.printf("%s\n", html.render($p));          # <p>hi &amp; bye</p>
 ```
 
-Runnable: [`examples/modules/htmlwriter_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/htmlwriter_demo.j).
+Runnable: [`examples/modules/htmlwriter_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/htmlwriter_demo.j).
 
 ## The node model
 

@@ -6,7 +6,7 @@ package jsonlib
 import (
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // TestNumberGrammarConformance pins the decoder to the json.org number

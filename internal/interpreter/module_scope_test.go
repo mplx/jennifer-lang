@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	listslib "github.com/mplx/jennifer-lang/internal/lib/lists"
-	tasklib "github.com/mplx/jennifer-lang/internal/lib/task"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	listslib "jennifer-lang.dev/jennifer/internal/lib/lists"
+	tasklib "jennifer-lang.dev/jennifer/internal/lib/task"
 )
 
 // runScopedModuleMain is like runModuleMain but installs the libraries the

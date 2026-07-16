@@ -16,7 +16,7 @@ io.printf("%s\n", markdown.toHtml("# Hi\n\nA **bold** word."));
 io.printf("%s\n", markdown.toAnsi("- one\n- two"));   # styled on a TTY
 ```
 
-Runnable: [`examples/modules/markdown_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/markdown_demo.j).
+Runnable: [`examples/modules/markdown_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/markdown_demo.j).
 
 ## Surface
 

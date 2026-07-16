@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/lexer"
-	testinglib "github.com/mplx/jennifer-lang/internal/lib/testing"
-	"github.com/mplx/jennifer-lang/internal/module"
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/preproc"
-	"github.com/mplx/jennifer-lang/internal/profile"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/lexer"
+	testinglib "jennifer-lang.dev/jennifer/internal/lib/testing"
+	"jennifer-lang.dev/jennifer/internal/module"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/preproc"
+	"jennifer-lang.dev/jennifer/internal/profile"
 )
 
 // Exit codes mirror `jennifer lint`: 0 all pass, 1 one or more failed, 2 the

@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // convert.toInt truncates a float toward zero but must reject the values int64

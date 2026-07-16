@@ -15,7 +15,7 @@ def r as ntp.Result init ntp.query("pool.ntp.org");
 io.printf("server time: %s  offset: %d ms\n", time.iso($r.serverTime), time.milliseconds($r.offset));
 ```
 
-Runnable: [`examples/modules/ntp_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/ntp_demo.j).
+Runnable: [`examples/modules/ntp_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/ntp_demo.j).
 
 ## Result
 

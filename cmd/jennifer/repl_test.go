@@ -6,7 +6,7 @@ package main
 import (
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/lexer"
 )
 
 func TestInputComplete(t *testing.T) {

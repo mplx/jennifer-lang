@@ -7,15 +7,15 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/lib/convert"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	listslib "github.com/mplx/jennifer-lang/internal/lib/lists"
-	mapslib "github.com/mplx/jennifer-lang/internal/lib/maps"
-	mathlib "github.com/mplx/jennifer-lang/internal/lib/math"
-	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
-	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/lib/convert"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	listslib "jennifer-lang.dev/jennifer/internal/lib/lists"
+	mapslib "jennifer-lang.dev/jennifer/internal/lib/maps"
+	mathlib "jennifer-lang.dev/jennifer/internal/lib/math"
+	oslib "jennifer-lang.dev/jennifer/internal/lib/os"
+	stringslib "jennifer-lang.dev/jennifer/internal/lib/strings"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // newReplInterp builds an interpreter wired with the standard libraries and

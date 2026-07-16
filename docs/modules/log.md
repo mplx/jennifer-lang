@@ -15,7 +15,7 @@ log.info($lg, "user logged in", $f);
 # time=2026-... level=info msg="user logged in" user=ada id=42
 ```
 
-Runnable: [`examples/modules/log_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/log_demo.j).
+Runnable: [`examples/modules/log_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/log_demo.j).
 
 ## Loggers
 

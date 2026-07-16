@@ -10,15 +10,15 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/lexer"
-	metalib "github.com/mplx/jennifer-lang/internal/lib/meta"
-	"github.com/mplx/jennifer-lang/internal/lib/os"
-	"github.com/mplx/jennifer-lang/internal/module"
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/preproc"
-	"github.com/mplx/jennifer-lang/internal/stdlib"
-	"github.com/mplx/jennifer-lang/internal/version"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/lexer"
+	metalib "jennifer-lang.dev/jennifer/internal/lib/meta"
+	"jennifer-lang.dev/jennifer/internal/lib/os"
+	"jennifer-lang.dev/jennifer/internal/module"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/preproc"
+	"jennifer-lang.dev/jennifer/internal/stdlib"
+	"jennifer-lang.dev/jennifer/internal/version"
 )
 
 func main() {

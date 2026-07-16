@@ -20,8 +20,8 @@ import (
 	"io"
 	"sync"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // maxDecompressed caps a decompressed stream so a small "zip bomb" input cannot

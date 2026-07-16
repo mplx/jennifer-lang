@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/profile"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/profile"
 )
 
 // renderCoverage over a fully-hit program is 100%, over an unhit one is 0%, and

@@ -17,7 +17,7 @@ def doc as pdf.Document init pdf.addPage(pdf.document(), $p);
 fs.writeBytes("out.pdf", pdf.render($doc));
 ```
 
-Runnable: [`examples/modules/pdfwriter_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/pdfwriter_demo.j).
+Runnable: [`examples/modules/pdfwriter_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/pdfwriter_demo.j).
 
 ## Coordinates and units
 

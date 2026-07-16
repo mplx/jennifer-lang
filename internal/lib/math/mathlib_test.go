@@ -7,7 +7,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // randInt over ranges whose width exceeds 2^63 must not panic (Int63n

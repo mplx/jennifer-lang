@@ -19,7 +19,7 @@ def code as string init totp.generate("JBSWY3DPEHPK3PXP", $o);
 def ok as bool init totp.verify("JBSWY3DPEHPK3PXP", $code, $o);
 ```
 
-Runnable: [`examples/modules/totp_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/totp_demo.j).
+Runnable: [`examples/modules/totp_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/totp_demo.j).
 
 ## Options
 

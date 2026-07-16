@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 func mapOf(pairs ...interpreter.Value) interpreter.Value {

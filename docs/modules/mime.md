@@ -19,7 +19,7 @@ def back as mime.Part init mime.parse(mime.encode($msg));
 io.printf("%s\n", mime.body($back));      # Hello, café.
 ```
 
-Runnable: [`examples/modules/mime_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/mime_demo.j).
+Runnable: [`examples/modules/mime_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/mime_demo.j).
 
 ## The `Part` model
 

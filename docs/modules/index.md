@@ -119,7 +119,7 @@ names stay module-private. Each file states its own `use` imports
 Every module that ships in this repository carries a co-located
 white-box test overlay (`NAME_test.j`) run with `jennifer test`, and a
 runnable demo under `examples/modules/`. See
-[`modules/README.md`](https://github.com/mplx/jennifer-lang/blob/main/modules/README.md)
+[`modules/README.md`](https://github.com/jennifer-language/jennifer/blob/main/modules/README.md)
 for the contributor checklist.
 
 ## See also

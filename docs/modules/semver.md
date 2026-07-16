@@ -17,7 +17,7 @@ io.printf("rc < release: %t\n", semver.lt($v, semver.parse("1.4.2")));   # true
 io.printf("next minor: %s\n", semver.toString(semver.incMinor($v)));      # 1.5.0
 ```
 
-Runnable: [`examples/modules/semver_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/semver_demo.j).
+Runnable: [`examples/modules/semver_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/semver_demo.j).
 
 ## The `Version` struct
 

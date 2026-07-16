@@ -16,7 +16,7 @@ statsd.gauge($c, "queue.depth", 7);      # web.queue.depth:7|g
 statsd.close($c);
 ```
 
-Runnable: [`examples/modules/statsd_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/statsd_demo.j).
+Runnable: [`examples/modules/statsd_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/statsd_demo.j).
 
 ## Client
 

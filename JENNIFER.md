@@ -12,12 +12,12 @@ Go/TinyGo). Source files use the `.j` extension. Run a program with
 
 **Full documentation** - guides, the complete library reference, and an
 alphabetical cheatsheet of every builtin - is hosted at
-<https://mplx.github.io/jennifer-lang/>. If an assistant has web access, fetch
+<https://jennifer-lang.dev/>. If an assistant has web access, fetch
 the exact signature of any function there. Source and issues:
-<https://github.com/mplx/jennifer-lang>.
+<https://github.com/jennifer-language/jennifer>.
 
 > This file mirrors the authoritative spec. If something here conflicts with the
-> [hosted docs](https://mplx.github.io/jennifer-lang/), the docs win - tell the
+> [hosted docs](https://jennifer-lang.dev/), the docs win - tell the
 > maintainer.
 
 ---
@@ -273,9 +273,9 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   interpreter identity, and test primitives.
 
 For the exact signature of any function, see the hosted library reference -
-the [cheatsheet](https://mplx.github.io/jennifer-lang/libraries/cheatsheet.html)
+the [cheatsheet](https://jennifer-lang.dev/libraries/cheatsheet.html)
 (every builtin in one table) or the
-[per-library pages](https://mplx.github.io/jennifer-lang/libraries/index.html)
+[per-library pages](https://jennifer-lang.dev/libraries/index.html)
 (e.g. `.../libraries/json.html`).
 
 ## Module library (Jennifer-coded, brought in with `import`)
@@ -787,7 +787,7 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   fallback) + `encoding`. **Default `jennifer` binary only** (`net`).
 
 Full per-module reference: the hosted
-[module docs](https://mplx.github.io/jennifer-lang/modules/index.html).
+[module docs](https://jennifer-lang.dev/modules/index.html).
 
 ## Two complete programs
 

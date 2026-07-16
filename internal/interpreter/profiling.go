@@ -6,7 +6,7 @@ package interpreter
 import (
 	"time"
 
-	"github.com/mplx/jennifer-lang/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
 // Profiler receives instrumentation events from the evaluator when profiling

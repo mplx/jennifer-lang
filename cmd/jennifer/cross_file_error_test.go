@@ -9,17 +9,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	"github.com/mplx/jennifer-lang/internal/lexer"
-	"github.com/mplx/jennifer-lang/internal/lib/convert"
-	"github.com/mplx/jennifer-lang/internal/lib/io"
-	listslib "github.com/mplx/jennifer-lang/internal/lib/lists"
-	mapslib "github.com/mplx/jennifer-lang/internal/lib/maps"
-	"github.com/mplx/jennifer-lang/internal/lib/math"
-	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
-	stringslib "github.com/mplx/jennifer-lang/internal/lib/strings"
-	"github.com/mplx/jennifer-lang/internal/parser"
-	"github.com/mplx/jennifer-lang/internal/preproc"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/lib/convert"
+	"jennifer-lang.dev/jennifer/internal/lib/io"
+	listslib "jennifer-lang.dev/jennifer/internal/lib/lists"
+	mapslib "jennifer-lang.dev/jennifer/internal/lib/maps"
+	"jennifer-lang.dev/jennifer/internal/lib/math"
+	oslib "jennifer-lang.dev/jennifer/internal/lib/os"
+	stringslib "jennifer-lang.dev/jennifer/internal/lib/strings"
+	"jennifer-lang.dev/jennifer/internal/parser"
+	"jennifer-lang.dev/jennifer/internal/preproc"
 )
 
 // positionedErr mirrors the CLI's positioned interface so the test can

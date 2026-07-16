@@ -31,7 +31,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
 )
 
 // parseListenAddr splits a listen address into a net.Listen network + address.

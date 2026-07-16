@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mplx/jennifer-lang/internal/interpreter"
-	convertlib "github.com/mplx/jennifer-lang/internal/lib/convert"
-	iolib "github.com/mplx/jennifer-lang/internal/lib/io"
-	mapslib "github.com/mplx/jennifer-lang/internal/lib/maps"
-	oslib "github.com/mplx/jennifer-lang/internal/lib/os"
-	regexlib "github.com/mplx/jennifer-lang/internal/lib/regex"
+	"jennifer-lang.dev/jennifer/internal/interpreter"
+	convertlib "jennifer-lang.dev/jennifer/internal/lib/convert"
+	iolib "jennifer-lang.dev/jennifer/internal/lib/io"
+	mapslib "jennifer-lang.dev/jennifer/internal/lib/maps"
+	oslib "jennifer-lang.dev/jennifer/internal/lib/os"
+	regexlib "jennifer-lang.dev/jennifer/internal/lib/regex"
 )
 
 // runWithAnsiModule runs mainSrc with the real modules/ansi.j on the module

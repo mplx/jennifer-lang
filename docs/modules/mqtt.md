@@ -27,7 +27,7 @@ io.printf("%s -> %s\n", $m.topic, convert.stringFromBytes($m.payload, "utf-8"));
 mqtt.disconnect($c);
 ```
 
-Runnable: [`examples/modules/mqtt_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/mqtt_demo.j).
+Runnable: [`examples/modules/mqtt_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/mqtt_demo.j).
 
 ## Surface
 

@@ -54,10 +54,10 @@ io.printf("ran for %d ms\n", time.milliseconds($gap));
 ## Write Jennifer with your editor and an AI assistant
 
 Syntax highlighting ships in
-[editors/](https://github.com/mplx/jennifer-lang/tree/main/editors) (a
+[editors/](https://github.com/jennifer-language/jennifer/tree/main/editors) (a
 Vim / Neovim drop-in, a TextMate grammar for VS Code / Sublime / Zed, a
 highlight.js definition). And because Jennifer is new, we ship
-[`JENNIFER.md`](https://github.com/mplx/jennifer-lang/blob/main/JENNIFER.md):
+[`JENNIFER.md`](https://github.com/jennifer-language/jennifer/blob/main/JENNIFER.md):
 drop it into your project and point an AI coding assistant at it ("we
 code in Jennifer, see JENNIFER.md, let's go") so it writes correct `.j`
 from the start. See [Editor & AI support](user-guide/tooling.md).
@@ -92,7 +92,7 @@ semver applies and breaking changes need a major bump.
 ## Source
 
 Source, issues, and pull requests live at
-<https://github.com/mplx/jennifer-lang>.
+<https://github.com/jennifer-language/jennifer>.
 
 License: LGPL-3.0-only.
 

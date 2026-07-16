@@ -19,7 +19,7 @@ def out as string init tengine.render($set, "base",
 # out == "<h1>Hi</h1><p>a&lt;b</p>"
 ```
 
-Runnable: [`examples/modules/tengine_demo.j`](https://github.com/mplx/jennifer-lang/blob/main/examples/modules/tengine_demo.j).
+Runnable: [`examples/modules/tengine_demo.j`](https://github.com/jennifer-language/jennifer/blob/main/examples/modules/tengine_demo.j).
 
 ## Data model
 
