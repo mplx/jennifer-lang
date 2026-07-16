@@ -33,11 +33,16 @@ use fs;
  * @return {string} the JSONL text
  */
 export func encode(records as list of json.Value) {
-    def out as string init "";
-    for (def rec in $records) {
-        $out = $out + json.encode($rec) + "\n";
+    # Collect encoded records and join once (with a trailing newline): an
+    # accumulating `+` over a growing log would be O(N^2) in the output size.
+    if (len($records) == 0) {
+        return "";
     }
-    return $out;
+    def parts as list of string init [];
+    for (def rec in $records) {
+        $parts[] = json.encode($rec);
+    }
+    return strings.join($parts, "\n") + "\n";
 }
 
 /**
@@ -113,31 +118,45 @@ export func openReader(path as string) {
 }
 
 /**
- * Whether the reader has more input (false once the file is exhausted). Guard
- * `readRecord` with this.
+ * One streaming read: a decoded record, or `done` set once the stream is
+ * exhausted. `done` is the reliable end signal - a raw `not eof` check is not,
+ * because trailing blank lines leave the file un-exhausted yet carry no record.
+ * @field value {json.Value} the decoded record (undefined when `done`)
+ * @field done {bool} true once no further record remains
+ */
+export def struct Record {
+    value as json.Value,
+    done as bool
+};
+
+/**
+ * Whether the reader is not yet at end-of-file. This is a coarse check: it can
+ * report `true` when only trailing blank lines remain, which carry no record.
+ * Prefer looping on `readRecord(...).done` - the reliable end signal.
  * @param reader {Reader} the reader
- * @return {bool} true if a further read may return a record
+ * @return {bool} true if the file still has unread bytes
  */
 export func hasMore(reader as Reader) {
     return not fs.eof($reader.file);
 }
 
 /**
- * Read and decode the next record, skipping blank lines. Mirrors `fs.readLine`:
- * it throws `Error{kind: "jsonl"}` when the stream is exhausted, so guard it with
- * `hasMore`.
+ * Read and decode the next record, skipping blank lines. Returns a `Record`:
+ * `{value, done: false}` for a record, or `{done: true}` once the stream is
+ * exhausted (including when only trailing blank lines remained). Loop until
+ * `done` rather than guarding with `hasMore`, which cannot see trailing blanks.
  * @param reader {Reader} the reader
- * @return {json.Value} the next record
- * @throws {Error} kind "jsonl" when there is no further record
+ * @return {Record} the next record, or a `done` marker at end
  */
 export func readRecord(reader as Reader) {
     while (not fs.eof($reader.file)) {
         def line as string init strings.trim(fs.readLine($reader.file));
         if (not ($line == "")) {
-            return json.decode($line);
+            return Record{ value: json.decode($line), done: false };
         }
     }
-    throw Error{ kind: "jsonl", message: "readRecord: no more records (guard with hasMore)", file: "", line: 0, col: 0 };
+    def empty as json.Value init json.decode("null");
+    return Record{ value: $empty, done: true };
 }
 
 /**

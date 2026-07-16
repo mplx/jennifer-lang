@@ -82,19 +82,22 @@ func stripWS(s as string) {
 }
 
 # wrapLines folds a long unbroken string (base64) into 76-column CRLF lines.
+# The input is ASCII base64, so slicing by rune index equals slicing by column;
+# collecting the 76-char lines and joining once keeps a large attachment linear
+# (a per-character `+` was O(N^2)).
 func wrapLines(s as string) {
-    def out as string init "";
-    def cs as list of string init strings.chars($s);
-    def n as int init len($cs);
+    def n as int init len($s);
+    def lines as list of string init [];
     def i as int init 0;
     while ($i < $n) {
-        if ($i > 0 and $i % 76 == 0) {
-            $out = $out + "\r\n";
+        def end as int init $i + 76;
+        if ($end > $n) {
+            $end = $n;
         }
-        $out = $out + $cs[$i];
-        $i = $i + 1;
+        $lines[] = strings.substring($s, $i, $end);
+        $i = $end;
     }
-    return $out;
+    return strings.join($lines, "\r\n");
 }
 
 # --- transfer encoding (private) -----------------------------------

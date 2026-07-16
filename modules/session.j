@@ -32,7 +32,26 @@ def const PREFIX as string init "sess:";
 
 # --- helpers (private) ---------------------------------------------
 
+# checkId rejects a session id that could break out of the cache key and inject
+# memcache protocol commands. Session ids arrive from a client cookie, so an id
+# with a space, CR, LF, or any character outside `[A-Za-z0-9-]` (or longer than
+# memcached's 250-byte key limit) is refused before it reaches the wire.
+func checkId(id as string) {
+    def n as int init len($id);
+    if ($n == 0 or $n > 250) {
+        throw Error{kind: "session", message: "invalid session id: must be 1 to 250 characters", file: "", line: 0, col: 0};
+    }
+    for (def c in strings.chars($id)) {
+        def cp as int init convert.toCodepoint($c);
+        def ok as bool init ($cp >= 97 and $cp <= 122) or ($cp >= 65 and $cp <= 90) or ($cp >= 48 and $cp <= 57) or $cp == 45;
+        if (not $ok) {
+            throw Error{kind: "session", message: "invalid session id: only letters, digits, and '-' are allowed", file: "", line: 0, col: 0};
+        }
+    }
+}
+
 func cacheKey(id as string) {
+    checkId($id);
     return PREFIX + $id;
 }
 

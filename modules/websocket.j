@@ -381,6 +381,10 @@ export func receive(c as Conn) {
     net.setDeadline($c.socket, $c.timeoutMs);
     def acc as bytes;
     def dataOpcode as int init OP_TEXT;
+    # `started` marks that a data message is being reassembled, so a control
+    # frame (ping / pong) interleaved between fragments does not abandon the
+    # partial message: RFC 6455 allows control frames between data fragments.
+    def started as bool init false;
     def done as bool init false;
     def control as Message;
     def isControl as bool init false;
@@ -389,14 +393,20 @@ export func receive(c as Conn) {
         if ($f.opcode == OP_PING) {
             net.writeBytes($c.socket, encodeFrame(OP_PONG, $f.payload));
         } elseif ($f.opcode == OP_PONG) {
-            $control = Message{ kind: "pong", text: "", data: $f.payload };
-            $isControl = true;
-            $done = true;
+            # A pong interleaved in a fragmented message is ignored so
+            # reassembly continues; only a standalone pong surfaces as a
+            # message.
+            if (not $started) {
+                $control = Message{ kind: "pong", text: "", data: $f.payload };
+                $isControl = true;
+                $done = true;
+            }
         } elseif ($f.opcode == OP_CLOSE) {
             $control = Message{ kind: "close", text: "", data: $f.payload };
             $isControl = true;
             $done = true;
         } else {
+            $started = true;
             if (not ($f.opcode == OP_CONT)) {
                 $dataOpcode = $f.opcode;
             }

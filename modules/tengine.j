@@ -166,7 +166,7 @@ export func add(set as Set, name as string, src as string) {
         }
         def pre as string init strings.substring($rest, 0, $i);
         def afterOpen as string init strings.substring($rest, $i + 2, len($rest));
-        def j as int init strings.indexOf($afterOpen, "}}");
+        def j as int init closeActionIndex($afterOpen);
         if ($j < 0) {
             throw Error{ kind: "tengine", message: "tengine: unterminated action in " + $name, file: "", line: 0, col: 0 };
         }
@@ -222,7 +222,7 @@ func exec(set as Set, src as string, node as json.Value, root as json.Value, var
         }
         $out = $out + strings.substring($rest, 0, $i);
         def afterOpen as string init strings.substring($rest, $i + 2, len($rest));
-        def j as int init strings.indexOf($afterOpen, "}}");
+        def j as int init closeActionIndex($afterOpen);
         if ($j < 0) {
             throw Error{ kind: "tengine", message: "tengine: unterminated action", file: "", line: 0, col: 0 };
         }
@@ -373,7 +373,7 @@ func takeBlock(src as string) {
             $thenPart = $thenPart + $pre;
         }
         def afterOpen as string init strings.substring($rest, $i + 2, len($rest));
-        def j as int init strings.indexOf($afterOpen, "}}");
+        def j as int init closeActionIndex($afterOpen);
         if ($j < 0) {
             throw Error{ kind: "tengine", message: "tengine: unterminated action", file: "", line: 0, col: 0 };
         }
@@ -502,6 +502,102 @@ func lookup(base as json.Value, dotted as string) {
 }
 
 # tokenize splits an expression into terms, honoring quotes and parentheses.
+# closeActionIndex returns the rune index within `s` (the text right after a
+# `{{`) of the `}}` that ends the action, or -1 if it is unterminated. A `}}`
+# inside a quoted string does not count; when the action is a `{{/* ... */}}`
+# comment the scan runs to the `*/}}` terminator, so a `}}` inside the comment
+# body is ignored too. This replaces a naive `indexOf("}}")` that cut on the
+# first `}}` regardless of quoting or comments.
+func closeActionIndex(s as string) {
+    def cs as list of string init strings.chars($s);
+    def n as int init len($cs);
+    # Detect a comment: skip leading whitespace and an optional `-` trim marker,
+    # then look for `/*`.
+    def k as int init 0;
+    while ($k < $n and ($cs[$k] == " " or $cs[$k] == "\t" or $cs[$k] == "\r" or $cs[$k] == "\n" or $cs[$k] == "-")) {
+        $k = $k + 1;
+    }
+    if ($k + 1 < $n and $cs[$k] == "/" and $cs[$k + 1] == "*") {
+        # Comment body: find `*/`, then the `}}` after it (allowing a trailing
+        # `-` trim marker and whitespace in between).
+        def i as int init $k + 2;
+        while ($i + 1 < $n) {
+            if ($cs[$i] == "*" and $cs[$i + 1] == "/") {
+                def j as int init $i + 2;
+                while ($j < $n and ($cs[$j] == " " or $cs[$j] == "\t" or $cs[$j] == "-")) {
+                    $j = $j + 1;
+                }
+                if ($j + 1 < $n and $cs[$j] == "}" and $cs[$j + 1] == "}") {
+                    return $j;
+                }
+            }
+            $i = $i + 1;
+        }
+        return -1;
+    }
+    # Non-comment: the first top-level `}}` outside a quoted string.
+    def quote as string init "";
+    def i as int init 0;
+    while ($i < $n) {
+        def c as string init $cs[$i];
+        if (len($quote) > 0) {
+            if ($c == $quote) {
+                $quote = "";
+            }
+            $i = $i + 1;
+        } elseif ($c == "\"" or $c == "'") {
+            $quote = $c;
+            $i = $i + 1;
+        } elseif ($c == "}" and $i + 1 < $n and $cs[$i + 1] == "}") {
+            return $i;
+        } else {
+            $i = $i + 1;
+        }
+    }
+    return -1;
+}
+
+# splitPipes splits a pipeline on top-level `|`, ignoring a `|` inside a quoted
+# string or parentheses (so `printf "%s|%s"` and a literal `"a|b"` stay one
+# stage). Replaces a naive `strings.split(pipeline, "|")`.
+func splitPipes(s as string) {
+    def out as list of string init [];
+    def cur as string init "";
+    def cs as list of string init strings.chars($s);
+    def n as int init len($cs);
+    def i as int init 0;
+    def quote as string init "";
+    def depth as int init 0;
+    while ($i < $n) {
+        def c as string init $cs[$i];
+        if (len($quote) > 0) {
+            $cur = $cur + $c;
+            if ($c == $quote) {
+                $quote = "";
+            }
+        } elseif ($c == "\"" or $c == "'") {
+            $quote = $c;
+            $cur = $cur + $c;
+        } elseif ($c == "(") {
+            $depth = $depth + 1;
+            $cur = $cur + $c;
+        } elseif ($c == ")") {
+            if ($depth > 0) {
+                $depth = $depth - 1;
+            }
+            $cur = $cur + $c;
+        } elseif ($c == "|" and $depth == 0) {
+            $out[] = $cur;
+            $cur = "";
+        } else {
+            $cur = $cur + $c;
+        }
+        $i = $i + 1;
+    }
+    $out[] = $cur;
+    return $out;
+}
+
 func tokenize(expr as string) {
     def toks as list of string init [];
     def cur as string init "";
@@ -690,7 +786,7 @@ func compareOrder(a as json.Value, b as json.Value) {
 
 # evalPipeline evaluates a `term | func | func` pipeline to a value.
 func evalPipeline(pipeline as string, node as json.Value, root as json.Value, vars as map of string to json.Value) {
-    def segs as list of string init strings.split($pipeline, "|");
+    def segs as list of string init splitPipes($pipeline);
     def val as json.Value init evalExprString(strings.trim($segs[0]), $node, $root, $vars);
     def k as int init 1;
     while ($k < len($segs)) {
@@ -1150,7 +1246,7 @@ func trimMarkers(src as string) {
         }
         def pre as string init strings.substring($rest, 0, $i);
         def afterOpen as string init strings.substring($rest, $i + 2, len($rest));
-        def j as int init strings.indexOf($afterOpen, "}}");
+        def j as int init closeActionIndex($afterOpen);
         if ($j < 0) {
             throw Error{ kind: "tengine", message: "tengine: unterminated action", file: "", line: 0, col: 0 };
         }

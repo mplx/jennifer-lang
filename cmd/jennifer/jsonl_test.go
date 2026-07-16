@@ -18,6 +18,7 @@ import (
 func TestJsonlFileAndStreaming(t *testing.T) {
 	dir := t.TempDir()
 	dataFile := filepath.Join(dir, "data.jsonl")
+	blankFile := filepath.Join(dir, "blank.jsonl")
 	jsonlMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "jsonl.j"))
 	if err != nil {
 		t.Fatal(err)
@@ -25,7 +26,9 @@ func TestJsonlFileAndStreaming(t *testing.T) {
 	prog := fmt.Sprintf(`import %q as jsonl;
 use json;
 use testing;
+use fs;
 def const PATH as string init %q;
+def const BLANKPATH as string init %q;
 
 func testWriteReadAppend() {
     jsonl.writeFile(PATH, [json.decode("{\"a\":1}"), json.decode("{\"a\":2}")]);
@@ -40,29 +43,50 @@ func testStreaming() {
     def r as jsonl.Reader init jsonl.openReader(PATH);
     def n as int init 0;
     def sum as int init 0;
-    while (jsonl.hasMore($r)) {
-        def rec as json.Value init jsonl.readRecord($r);
+    while (true) {
+        def rec as jsonl.Record init jsonl.readRecord($r);
+        if ($rec.done) {
+            break;
+        }
         $n = $n + 1;
-        $sum = $sum + json.asInt(json.get($rec, "/a"));
+        $sum = $sum + json.asInt(json.get($rec.value, "/a"));
     }
     jsonl.closeReader($r);
     testing.assertEqual($n, 3);
     testing.assertEqual($sum, 6);
 }
 
-func testReadRecordThrowsAtEnd() {
+func testReadRecordDoneAtEnd() {
     def r as jsonl.Reader init jsonl.openReader(PATH);
-    while (jsonl.hasMore($r)) { jsonl.readRecord($r); }
-    def threw as bool init false;
-    try {
-        jsonl.readRecord($r);
-    } catch (e) {
-        $threw = true;
+    while (not jsonl.readRecord($r).done) {
+    }
+    # Past the end, readRecord keeps returning done (no throw, no phantom).
+    testing.assertTrue(jsonl.readRecord($r).done);
+    jsonl.closeReader($r);
+}
+
+# A file ending in extra blank lines must not over-run the last record: a
+# hasMore-guarded loop would skip the trailing blanks then throw / phantom, but
+# looping on .done stops cleanly with the right count.
+func testTrailingBlankLines() {
+    jsonl.writeFile(BLANKPATH, [json.decode("{\"a\":10}"), json.decode("{\"a\":20}")]);
+    fs.appendString(BLANKPATH, "\n\n  \n");
+    def r as jsonl.Reader init jsonl.openReader(BLANKPATH);
+    def n as int init 0;
+    def sum as int init 0;
+    while (true) {
+        def rec as jsonl.Record init jsonl.readRecord($r);
+        if ($rec.done) {
+            break;
+        }
+        $n = $n + 1;
+        $sum = $sum + json.asInt(json.get($rec.value, "/a"));
     }
     jsonl.closeReader($r);
-    testing.assertTrue($threw);
+    testing.assertEqual($n, 2);
+    testing.assertEqual($sum, 30);
 }
-`, jsonlMod, dataFile)
+`, jsonlMod, dataFile, blankFile)
 	progPath := filepath.Join(dir, "prog.j")
 	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
 		t.Fatal(err)
@@ -73,7 +97,7 @@ func testReadRecordThrowsAtEnd() {
 		t.Fatalf("loadForTest failed: code %d", code)
 	}
 	// testWriteReadAppend must run first (it creates the file the others read).
-	for _, name := range []string{"testWriteReadAppend", "testStreaming", "testReadRecordThrowsAtEnd"} {
+	for _, name := range []string{"testWriteReadAppend", "testStreaming", "testReadRecordDoneAtEnd", "testTrailingBlankLines"} {
 		if _, err := in.CallByName(name); err != nil {
 			t.Errorf("%s failed: %v", name, err)
 		}

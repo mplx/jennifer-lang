@@ -105,3 +105,26 @@ func testHeaderLookup() {
     testing.assertEqual(header($r, "X-TEST"), "abc");     # case-insensitive
     testing.assertEqual(header($r, "missing"), "");
 }
+
+# A header value carrying CRLF must be rejected: concatenated onto the wire it
+# would inject an extra header or smuggle a second request (request splitting).
+func injectViaHeaderValue() {
+    def hdrs as map of string to string init {"X-Evil": "a\r\nX-Injected: yes"};
+    buildRequest("GET", parseUrl("http://h/p"), $hdrs, "");
+}
+
+func injectViaHeaderName() {
+    def hdrs as map of string to string init {"X\r\nInjected": "v"};
+    buildRequest("GET", parseUrl("http://h/p"), $hdrs, "");
+}
+
+func injectViaPath() {
+    def u as Url init Url{scheme: "http", host: "h", port: 80, path: "/p\r\nX-Injected: yes"};
+    buildRequest("GET", $u, {}, "");
+}
+
+func testRejectsHeaderInjection() {
+    testing.assertThrows("injectViaHeaderValue", "http");
+    testing.assertThrows("injectViaHeaderName", "http");
+    testing.assertThrows("injectViaPath", "http");
+}

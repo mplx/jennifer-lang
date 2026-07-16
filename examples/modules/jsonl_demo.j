@@ -37,10 +37,13 @@ jsonl.appendFile($path, [json.decode("{\"event\": \"purchase\", \"user\": \"ada\
 io.printf("=== streaming %s ===\n", $path);
 def reader as jsonl.Reader init jsonl.openReader($path);
 def count as int init 0;
-while (jsonl.hasMore($reader)) {
-    def rec as json.Value init jsonl.readRecord($reader);
+while (true) {
+    def rec as jsonl.Record init jsonl.readRecord($reader);
+    if ($rec.done) {
+        break;
+    }
     $count = $count + 1;
-    io.printf("  record %d: %s\n", $count, json.encode($rec));
+    io.printf("  record %d: %s\n", $count, json.encode($rec.value));
 }
 jsonl.closeReader($reader);
 io.printf("streamed %d records total\n", $count);

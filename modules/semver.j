@@ -571,11 +571,22 @@ func rawComparator(v as Version, c as string) {
         return true;
     }
     if (strings.startsWith($s, "^")) {
-        def core as Core init parseCore(rest($s, 1));
+        def operand as string init rest($s, 1);
+        def core as Core init parseCore($operand);
+        # A prerelease operand (`^1.2.3-rc.1`) keeps its prerelease as the
+        # inclusive lower bound; stripping it to the release (coreLower) would
+        # exclude the very prerelease the caret pins.
+        if (isValid($operand)) {
+            return boundedMatch($v, parse($operand), caretUpper($core));
+        }
         return boundedMatch($v, coreLower($core), caretUpper($core));
     }
     if (strings.startsWith($s, "~")) {
-        def core as Core init parseCore(rest($s, 1));
+        def operand as string init rest($s, 1);
+        def core as Core init parseCore($operand);
+        if (isValid($operand)) {
+            return boundedMatch($v, parse($operand), tildeUpper($core));
+        }
         return boundedMatch($v, coreLower($core), tildeUpper($core));
     }
     if (strings.startsWith($s, ">=")) {
@@ -995,11 +1006,22 @@ func comparatorInterval(c as string) {
         return fullInterval();
     }
     if (strings.startsWith($s, "^")) {
-        def core as Core init parseCore(rest($s, 1));
+        def operand as string init rest($s, 1);
+        def core as Core init parseCore($operand);
+        # A prerelease operand keeps its prerelease as the interval's lower
+        # bound (and pins it), so minVersion / the interval algebra return the
+        # exact prerelease the caret allows rather than the bare release.
+        if (isValid($operand)) {
+            return Interval{lo: parse($operand), loIncl: true, hi: caretUpper($core), hiIncl: false, pins: pinList($operand)};
+        }
         return Interval{lo: coreLower($core), loIncl: true, hi: caretUpper($core), hiIncl: false, pins: $none};
     }
     if (strings.startsWith($s, "~")) {
-        def core as Core init parseCore(rest($s, 1));
+        def operand as string init rest($s, 1);
+        def core as Core init parseCore($operand);
+        if (isValid($operand)) {
+            return Interval{lo: parse($operand), loIncl: true, hi: tildeUpper($core), hiIncl: false, pins: pinList($operand)};
+        }
         return Interval{lo: coreLower($core), loIncl: true, hi: tildeUpper($core), hiIncl: false, pins: $none};
     }
     if (strings.startsWith($s, ">=")) {

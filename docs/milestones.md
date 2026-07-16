@@ -1789,16 +1789,60 @@ Shipped so far:
   truncated and handed to the program looking complete (defeating
   body-signature checks); the engine now rejects it with 413 before it
   reaches the pull loop.
+- **Wire-protocol byte framing + quadratic buffering.** The `redis`,
+  `memcache`, `pop`, and `imap` clients counted / sliced their payloads by
+  rune where the protocol frames by byte (RESP bulk strings, memcache
+  values, POP bodies, IMAP `{N}` literals), corrupting any non-ASCII value
+  and desyncing the connection; the readers also grew a string buffer with
+  `+` and re-scanned it per chunk, which is O(N^2) in the message size.
+  All four now frame over a `bytes` buffer with a forward cursor and decode
+  to a string only once a payload is fully extracted - byte-exact and
+  linear.
+- **`http.j` request-splitting.** Caller-supplied header names / values and
+  the request path were concatenated raw onto the wire, so a CR / LF / NUL
+  injected extra headers or a smuggled second request. The request is now
+  built (and rejected on any control character) before a socket is opened;
+  the fix propagates to `rest` / `oauth` / `webhook` / `bucket`.
+- **`tengine` quote / comment scanning.** The action scanner cut on the
+  first `}}` and the pipeline split on the first `|`, ignoring quoted
+  strings, so `{{ if eq .a "}}" }}` and `{{ printf "%s|%s" ... }}` broke; a
+  comment's `}}`-in-body ended it early too. A quote-aware boundary scanner
+  and pipe splitter fix all three.
+- **`web` / `session` hardening.** A throwing middleware propagated to the
+  serve loop's catch-all, which read any error as a shutdown signal and
+  killed the whole server (a one-request DoS); middleware now runs under the
+  per-request try and only `httpd.accept` failing ends the loop. Session
+  ids (from client cookies) flowed unvalidated into memcache keys, allowing
+  protocol injection; they are now restricted to `[A-Za-z0-9-]`, 1-250 chars.
+- **O(N^2) accumulation.** `influxdb.write`, `csv.formatWith`, `jsonl.encode`,
+  `smtp` dot-stuffing, and `mime` base64 line-wrapping each built a large
+  output with `+` in a loop; all now collect into a `list of string` and
+  `strings.join` once.
+- **Assorted module correctness.** `websocket.receive` discarded a
+  half-reassembled fragmented message when a ping / pong interleaved (RFC
+  6455 allows control frames between fragments) - it now keeps reassembling.
+  `gpio.setup` re-exported an already-exported pin (EBUSY on real sysfs) -
+  it now guards on the pin directory. `log` text / logfmt quoting didn't
+  escape backslashes or newlines, allowing log injection - it now escapes
+  them (and neutralises newlines in the text message). `semver` caret /
+  tilde ranges with a prerelease operand (`^1.2.3-rc.1`) dropped the
+  prerelease lower bound - `satisfies` and `minVersion` now keep it.
+  `ical.parse` let a nested `VALARM`'s `SUMMARY` / `DESCRIPTION` clobber the
+  enclosing event's - sub-components are now skipped until their `END`.
+
+  **Break:** `jsonl.readRecord` now returns a `Record{value, done}` sentinel
+  instead of throwing at end-of-stream. A `hasMore`-guarded loop could not
+  see trailing blank lines (they leave the file un-exhausted yet carry no
+  record) and so threw; loop on `readRecord(...).done` instead. `hasMore`
+  remains as a coarse `not eof` check.
 
 Remaining phases (tracked to completion under this milestone): the
-wire-protocol byte/rune + quadratic-buffering sweep (redis / memcache /
-pop / imap), the `http.j` client hardening that propagates to its
-dependent modules, web/session security tightening, the remaining module
-correctness and performance findings, and a deliberate batch of pre-1.0
-strictness changes (floored `%`, duplicate map-literal keys, int
-overflow, mixed-comparison precision, method/global name clashes,
-`$CONST` reads) - each of those with an explicit break note here when it
-lands.
+remaining module correctness and performance findings (mediums and lows),
+the interpreter and library long-tail (net / fs / os lifecycle, toml
+conformance, diagnostics), and a deliberate batch of pre-1.0 strictness
+changes (floored `%`, duplicate map-literal keys, int overflow,
+mixed-comparison precision, method/global name clashes, `$CONST` reads) -
+each of those with an explicit break note here when it lands.
 
 ## M20 - system libraries
 

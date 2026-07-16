@@ -55,3 +55,35 @@ func testRoundTripEmptyMap() {
     def empty as map of string to string init {};
     testing.assertEqual(len(decodeData(encodeData($empty))), 0);
 }
+
+# A session id arrives from a client cookie; one carrying a space, CRLF, or any
+# character outside [A-Za-z0-9-] must be rejected before it is embedded in a
+# memcache key (otherwise it injects protocol commands).
+func idWithSpace() {
+    cacheKey("abc def");
+}
+func idWithCRLF() {
+    cacheKey("abc\r\nset injected 0 0 3\r\nx");
+}
+func idWithColon() {
+    cacheKey("a:b");
+}
+func idEmpty() {
+    cacheKey("");
+}
+func idTooLong() {
+    cacheKey(strings.repeat("a", 251));
+}
+
+func testRejectsUnsafeIds() {
+    testing.assertThrows("idWithSpace", "session");
+    testing.assertThrows("idWithCRLF", "session");
+    testing.assertThrows("idWithColon", "session");
+    testing.assertThrows("idEmpty", "session");
+    testing.assertThrows("idTooLong", "session");
+}
+
+func testAcceptsSafeIds() {
+    # A UUID v4 (the minted shape) and a plain alnum-dash id are accepted.
+    testing.assertEqual(cacheKey("a1B2-c3D4"), "sess:a1B2-c3D4");
+}

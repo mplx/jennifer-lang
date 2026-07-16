@@ -53,6 +53,27 @@ func testQuoteIfNeeded() {
     testing.assertEqual(quoteIfNeeded("say \"hi\""), "\"say \\\"hi\\\"\"");
 }
 
+# A backslash must be escaped (and escaped first, so it does not double up with
+# the quote escape), an embedded newline must be encoded (not left to forge a
+# second record), and an empty value must be quoted so the field stays present.
+func testQuoteEscapesBackslashAndNewline() {
+    testing.assertEqual(quoteIfNeeded("a\\b"), "\"a\\\\b\"");
+    testing.assertEqual(quoteIfNeeded("c:\\path\""), "\"c:\\\\path\\\"\"");
+    testing.assertEqual(quoteIfNeeded("line1\nline2"), "\"line1\\nline2\"");
+    testing.assertEqual(quoteIfNeeded(""), "\"\"");
+}
+
+# A field value carrying a newline must not split the rendered record into two
+# lines (classic log injection).
+func testRenderTextNoInjection() {
+    def fields as map of string to string init {"user": "eve\ninjected=evil"};
+    def line as string init renderText("info", "hello", $fields, "T");
+    testing.assertFalse(strings.contains($line, "\n"));
+    # a message newline is neutralised too
+    def m as string init renderText("info", "one\ntwo", {}, "T");
+    testing.assertFalse(strings.contains($m, "\n"));
+}
+
 func testLevelFiltering() {
     def lg as Logger init new("warn", "text");
     testing.assertFalse(shouldLog($lg, "debug"));

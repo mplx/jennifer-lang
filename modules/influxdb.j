@@ -355,15 +355,13 @@ export func write(c as Client, points as list of Point) {
     if (len($points) == 0) {
         return null;
     }
-    def body as string init "";
-    def first as bool init true;
+    # Collect the lines and join once: an accumulating `+` over the batch would
+    # be O(N^2) in the body size, and batch writes are the hot path.
+    def lines as list of string init [];
     for (def p in $points) {
-        if (not $first) {
-            $body = $body + "\n";
-        }
-        $body = $body + line($p);
-        $first = false;
+        $lines[] = line($p);
     }
+    def body as string init strings.join($lines, "\n");
     def url as string init joinBase($c.url, "/write") + "?db=" + urlEncode($c.db) + "&precision=ns";
     def resp as http.Response init http.post($url, "text/plain; charset=utf-8", $body, authHeaders($c));
     if ($resp.status >= 300) {

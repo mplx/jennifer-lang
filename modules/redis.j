@@ -7,10 +7,10 @@
  * (`+OK`, `-ERR`, `:int`, `$bulk`, `*array`) parse back into a `Reply`. Typed
  * per-command helpers (`get` / `set` / `incr` / `keys` / ...) keep the common
  * path fully typed; `command` is the generic escape hatch for anything else. A
- * `-ERR` reply throws a catchable `Error` (kind "redis"). Bulk strings are read
- * as UTF-8 text: byte-exact for ASCII / UTF-8 values, but a binary value whose
- * byte length differs from its rune length is not yet byte-exact. Needs the
- * default `jennifer` binary (uses `net`).
+ * `-ERR` reply throws a catchable `Error` (kind "redis"). The reply parser
+ * frames over bytes and counts bulk-string lengths in bytes, so a value whose
+ * byte length differs from its rune length (any non-ASCII UTF-8 text) is read
+ * byte-exact. Needs the default `jennifer` binary (uses `net`).
  * @module redis
  * @example
  * def db as redis.Session init redis.connect(redis.Options{host: "127.0.0.1", port: 6379, security: "none", user: "", password: "", db: 0});
@@ -69,10 +69,13 @@ export def struct Reply {
 };
 
 # One parse step's result: the value, the unconsumed buffer, and whether the
-# buffer held a complete value.
+# buffer held a complete value. `rest` is `bytes`: RESP bulk-string lengths are
+# byte counts, so the parser frames over bytes and only decodes a payload to a
+# string once it has been fully extracted (a rune-indexed buffer would
+# mis-slice any value whose byte length differs from its rune length).
 def struct ParseResult {
     reply as Reply,
-    rest as string,
+    rest as bytes,
     complete as bool
 };
 
@@ -94,12 +97,38 @@ func replyArray(items as list of Reply) {
     return Reply{kind: "array", str: "", num: 0, items: $items};
 }
 
-func done(reply as Reply, rest as string) {
+func done(reply as Reply, rest as bytes) {
     return ParseResult{reply: $reply, rest: $rest, complete: true};
 }
 
+# byteSlice returns buf[start:end] as a fresh bytes value.
+func byteSlice(buf as bytes, start as int, end as int) {
+    def out as bytes;
+    def i as int init $start;
+    while ($i < $end) {
+        $out[] = $buf[$i];
+        $i = $i + 1;
+    }
+    return $out;
+}
+
+# crlfIndex returns the index of the CR of the first CRLF at or after `from`,
+# or -1 if none is present yet.
+func crlfIndex(buf as bytes, from as int) {
+    def i as int init $from;
+    def n as int init len($buf);
+    while ($i + 1 < $n) {
+        if ($buf[$i] == 13 and $buf[$i + 1] == 10) {
+            return $i;
+        }
+        $i = $i + 1;
+    }
+    return -1;
+}
+
 func incomplete() {
-    return ParseResult{reply: replyNil(), rest: "", complete: false};
+    def empty as bytes;
+    return ParseResult{reply: replyNil(), rest: $empty, complete: false};
 }
 
 # --- RESP encode / decode (private, unit-tested) -------------------
@@ -116,7 +145,10 @@ func encodeCommand(args as list of string) {
 }
 
 # parseBulk parses a `$`-length bulk string from `rest`, or reports incomplete.
-func parseBulk(payload as string, rest as string) {
+# `$payload` is the (ASCII) length header; `rest` is the raw bytes after it. The
+# bulk length is a byte count, so framing and slicing are byte-indexed and the
+# payload is decoded to a string only after the full run is in hand.
+func parseBulk(payload as string, rest as bytes) {
     def n as int init convert.toInt($payload);
     if ($n < 0) {
         return done(replyNil(), $rest);
@@ -124,18 +156,19 @@ func parseBulk(payload as string, rest as string) {
     if (len($rest) < $n + 2) {
         return incomplete();
     }
-    def data as string init strings.substring($rest, 0, $n);
-    return done(replyStr("string", $data), strings.substring($rest, $n + 2));
+    def data as bytes init byteSlice($rest, 0, $n);
+    def after as bytes init byteSlice($rest, $n + 2, len($rest));
+    return done(replyStr("string", convert.stringFromBytes($data, "utf-8")), $after);
 }
 
 # parseArray parses a `*`-count array, recursing per element, from `rest`.
-func parseArray(payload as string, rest as string) {
+func parseArray(payload as string, rest as bytes) {
     def count as int init convert.toInt($payload);
     if ($count < 0) {
         return done(replyNil(), $rest);
     }
     def items as list of Reply init [];
-    def cur as string init $rest;
+    def cur as bytes init $rest;
     def i as int init 0;
     while ($i < $count) {
         def pr as ParseResult init parseComplete($cur);
@@ -149,32 +182,35 @@ func parseArray(payload as string, rest as string) {
     return done(replyArray($items), $cur);
 }
 
-# parseComplete parses one RESP value from the front of `buf`. `complete` is
-# false when `buf` does not yet hold the whole value.
-func parseComplete(buf as string) {
-    def nl as int init strings.indexOf($buf, "\r\n");
+# parseComplete parses one RESP value from the front of `buf` (raw bytes).
+# `complete` is false when `buf` does not yet hold the whole value. The control
+# framing (type byte, `\r\n`, length headers) is ASCII, so only the bulk-string
+# payloads carry arbitrary bytes - and those are handed to parseBulk unsliced.
+func parseComplete(buf as bytes) {
+    def nl as int init crlfIndex($buf, 0);
     if ($nl < 0) {
         return incomplete();
     }
-    def line as string init strings.substring($buf, 0, $nl);
-    def rest as string init strings.substring($buf, $nl + 2);
-    def typ as string init strings.substring($line, 0, 1);
-    def payload as string init strings.substring($line, 1, len($line));
-    if ($typ == "+") {
+    def typ as int init $buf[0];
+    def payload as string init convert.stringFromBytes(byteSlice($buf, 1, $nl), "utf-8");
+    def rest as bytes init byteSlice($buf, $nl + 2, len($buf));
+    if ($typ == 43) {          # '+'
         return done(replyStr("string", $payload), $rest);
     }
-    if ($typ == "-") {
+    if ($typ == 45) {          # '-'
         return done(replyStr("error", $payload), $rest);
     }
-    if ($typ == ":") {
+    if ($typ == 58) {          # ':'
         return done(replyInt(convert.toInt($payload)), $rest);
     }
-    if ($typ == "$") {
+    if ($typ == 36) {          # '$'
         return parseBulk($payload, $rest);
     }
-    if ($typ == "*") {
+    if ($typ == 42) {          # '*'
         return parseArray($payload, $rest);
     }
+    # Unknown type byte: surface the whole line as a string.
+    def line as string init convert.stringFromBytes(byteSlice($buf, 0, $nl), "utf-8");
     return done(replyStr("string", $line), $rest);
 }
 
@@ -183,7 +219,7 @@ func parseComplete(buf as string) {
 # readReply reads bytes until a complete RESP reply has arrived, then returns it.
 # `timeoutMs` re-arms a read deadline before each read (0 disables it).
 func readReply(conn as net.Conn, timeoutMs as int) {
-    def buf as string init "";
+    def buf as bytes;
     while (true) {
         def pr as ParseResult init parseComplete($buf);
         if ($pr.complete) {
@@ -196,7 +232,14 @@ func readReply(conn as net.Conn, timeoutMs as int) {
         if (len($chunk) == 0) {
             return $pr.reply;
         }
-        $buf = $buf + convert.stringFromBytes($chunk, "utf-8");
+        # Append the raw chunk into the byte buffer (never round-trip through a
+        # string mid-stream: a chunk boundary can fall inside a multi-byte
+        # sequence, and stringFromBytes on a partial rune would corrupt it).
+        def j as int init 0;
+        while ($j < len($chunk)) {
+            $buf[] = $chunk[$j];
+            $j = $j + 1;
+        }
     }
     return replyNil();
 }

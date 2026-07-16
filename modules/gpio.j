@@ -66,10 +66,15 @@ export func setup(pin as int, direction as string) {
     def dir as string init base();
     requireBase($dir);
     def pinStr as string init convert.toString($pin);
-    fs.writeString($dir + "/export", $pinStr);
+    def pd as string init pinDir($dir, $pin);
+    # Export only when the pin is not already exported: writing `export` for an
+    # already-exported pin fails with EBUSY on real sysfs, so a second setup
+    # (a re-run after a crash, or reconfiguring the direction) would throw.
+    if (not fs.exists($pd)) {
+        fs.writeString($dir + "/export", $pinStr);
+    }
     # The kernel creates gpioN on export; mkdirAll is a no-op when it already
     # exists (real sysfs) and creates it on a mock tree.
-    def pd as string init pinDir($dir, $pin);
     fs.mkdirAll($pd);
     fs.writeString($pd + "/direction", $direction);
 }

@@ -180,8 +180,32 @@ func hostHeader(u as Url) {
     return $u.host + ":" + convert.toString($u.port);
 }
 
+# hasControlChar reports whether s contains CR, LF, or NUL - the bytes that let
+# a caller-supplied value break out of its field and inject request lines.
+func hasControlChar(s as string) {
+    return strings.contains($s, "\r") or strings.contains($s, "\n") or strings.contains($s, "\0");
+}
+
+# rejectInjection throws if any part that goes onto the request line or a header
+# carries CR / LF / NUL, which would otherwise smuggle extra headers or a whole
+# second request (HTTP request splitting / header injection).
+func rejectInjection(u as Url, headers as map of string to string) {
+    if (hasControlChar($u.host) or hasControlChar($u.path)) {
+        throw Error{kind: "http", message: "request target contains a control character (CR/LF/NUL)", file: "", line: 0, col: 0};
+    }
+    for (def k in $headers) {
+        if (hasControlChar($k)) {
+            throw Error{kind: "http", message: "header name contains a control character (CR/LF/NUL)", file: "", line: 0, col: 0};
+        }
+        if (hasControlChar($headers[$k])) {
+            throw Error{kind: "http", message: "header value contains a control character (CR/LF/NUL): " + $k, file: "", line: 0, col: 0};
+        }
+    }
+}
+
 # buildRequest renders the full request text for a method / URL / headers / body.
 func buildRequest(method as string, u as Url, headers as map of string to string, body as string) {
+    rejectInjection($u, $headers);
     def out as string init $method + " " + $u.path + " HTTP/1.1\r\n";
     $out = $out + "Host: " + hostHeader($u) + "\r\n";
     $out = $out + "Connection: close\r\n";
@@ -309,11 +333,13 @@ func dial(u as Url) {
 export func requestWith(method as string, url as string,
     headers as map of string to string, body as string, timeoutMs as int) {
     def u as Url init parseUrl($url);
+    # Build (and validate) the request before opening a socket, so an injected
+    # header / path throws without dialing and nothing malformed hits the wire.
+    def wire as string init buildRequest($method, $u, $headers, $body);
     def conn as net.Conn init dial($u);
     if ($timeoutMs > 0) {
         net.setDeadline($conn, $timeoutMs);   # covers the write and the first read
     }
-    def wire as string init buildRequest($method, $u, $headers, $body);
     net.writeBytes($conn, convert.bytesFromString($wire, "utf-8"));
     def resp as Response init parseResponse(readToEOF($conn, $timeoutMs));
     net.close($conn);

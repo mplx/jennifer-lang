@@ -721,14 +721,18 @@ func ensureAnswered(req as httpd.Request, status as int, body as string) {
 }
 
 # dispatch runs the middleware chain then the handler, guaranteeing a response.
+# Both the middleware chain and the handler run under one try: a throw from
+# either is contained here and turned into a 500 by the safety net below - it
+# must never propagate to serveOn, which would read it as a shutdown signal and
+# stop the whole server (a one-request DoS).
 func dispatch(app as App, handler as string, ctx as Context, req as httpd.Request) {
-    def cont as bool init runMiddleware($app, $ctx);
-    if ($cont) {
-        try {
+    try {
+        def cont as bool init runMiddleware($app, $ctx);
+        if ($cont) {
             meta.callMain($handler, $ctx);
-        } catch (err) {
-            # handler failed - the safety net below turns it into a 500.
         }
+    } catch (err) {
+        # middleware or handler failed - the safety net below turns it into a 500.
     }
     ensureAnswered($req, 500, "500 internal server error\n");
 }
@@ -956,31 +960,43 @@ func applyCors(ctx as Context, opts as CorsOptions) {
  * @param app {App} the router
  * @param srv {httpd.Server} the already-listening server handle
  */
+# handleOne routes and answers a single accepted request. Any error it raises
+# is caught per-request in serveOn (turned into a 500), never ending the loop.
+func handleOne(app as App, req as httpd.Request) {
+    def m as string init httpd.method($req);
+    def p as string init httpd.path($req);
+    def matched as Match init matchRoute($app, $m, $p);
+    def ctx as Context init Context{ req: $req, params: $matched.params };
+    if (corsEnabled($app)) {
+        applyCors($ctx, $app.cors);
+    }
+    if (corsEnabled($app) and $m == "OPTIONS") {
+        # Preflight: the CORS headers are set; answer without routing.
+        httpd.respond($req, 204, "");
+    } elseif ($matched.found) {
+        dispatch($app, $matched.handler, $ctx, $req);
+    } elseif (not ($app.notFound == "")) {
+        dispatch($app, $app.notFound, $ctx, $req);
+    } else {
+        httpd.respond($req, 404, "404 not found\n");
+    }
+}
+
 export func serveOn(app as App, srv as httpd.Server) {
-    def running as bool init true;
-    while ($running) {
+    while (true) {
+        # Only httpd.accept failing (the server was shut down) ends the loop.
+        # A failure while handling one request must not take the server down,
+        # so request handling runs under its own catch that answers 500 and
+        # keeps serving.
         try {
             def req as httpd.Request init httpd.accept($srv);
-            def m as string init httpd.method($req);
-            def p as string init httpd.path($req);
-            def matched as Match init matchRoute($app, $m, $p);
-            def ctx as Context init Context{ req: $req, params: $matched.params };
-            if (corsEnabled($app)) {
-                applyCors($ctx, $app.cors);
+            try {
+                handleOne($app, $req);
+            } catch (reqErr) {
+                ensureAnswered($req, 500, "500 internal server error\n");
             }
-            if (corsEnabled($app) and $m == "OPTIONS") {
-                # Preflight: the CORS headers are set; answer without routing.
-                httpd.respond($req, 204, "");
-            } elseif ($matched.found) {
-                dispatch($app, $matched.handler, $ctx, $req);
-            } elseif (not ($app.notFound == "")) {
-                dispatch($app, $app.notFound, $ctx, $req);
-            } else {
-                httpd.respond($req, 404, "404 not found\n");
-            }
-        } catch (err) {
-            # httpd.accept errors once the server is shut down; end the loop.
-            $running = false;
+        } catch (acceptErr) {
+            return;
         }
     }
 }

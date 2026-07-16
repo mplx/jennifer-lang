@@ -98,26 +98,22 @@ func dotTerminated(s as string) {
 
 # parseDotBody extracts a multi-line body up to its "." terminator, undoing the
 # byte-stuffing (a body line that began with "." was sent doubled). Lines are
-# rejoined with CRLF.
+# collected and rejoined with CRLF once (an accumulating `+` would be O(N^2) in
+# the body size).
 func parseDotBody(rest as string) {
-    def out as string init "";
-    def first as bool init true;
+    def lines as list of string init [];
     for (def raw in strings.split($rest, "\n")) {
         def line as string init stripCR($raw);
         if ($line == ".") {
-            return $out;
+            return strings.join($lines, "\r\n");
         }
         def dl as string init $line;
         if (strings.startsWith($line, ".")) {
             $dl = strings.substring($line, 1, len($line));
         }
-        if (not $first) {
-            $out = $out + "\r\n";
-        }
-        $first = false;
-        $out = $out + $dl;
+        $lines[] = $dl;
     }
-    return $out;
+    return strings.join($lines, "\r\n");
 }
 
 # parseSizes reads a LIST body ("num size" per line) into the sizes in order.
@@ -146,20 +142,87 @@ func expectOK(line as string, ctx as string) {
 # forever. Re-armed before each read.
 def const TIMEOUT_MS as int init 30000;
 
+# --- byte-buffer helpers -------------------------------------------
+# POP3 message bodies carry arbitrary 8-bit / UTF-8 content framed by a "."
+# terminator line, so the readers accumulate raw bytes and decode to a string
+# only once the whole response is in hand. Decoding each 512-byte chunk
+# separately would split a multi-byte sequence across a chunk boundary and
+# corrupt the body.
+
+func emptyBytes() {
+    def e as bytes;
+    return $e;
+}
+
+# byteSlice returns buf[start:end] as a fresh bytes value.
+func byteSlice(buf as bytes, start as int, end as int) {
+    def out as bytes;
+    def i as int init $start;
+    while ($i < $end) {
+        $out[] = $buf[$i];
+        $i = $i + 1;
+    }
+    return $out;
+}
+
+# lfIndex returns the index of the first LF at or after `from`, or -1.
+func lfIndex(buf as bytes, from as int) {
+    def i as int init $from;
+    def n as int init len($buf);
+    while ($i < $n) {
+        if ($buf[$i] == 10) {
+            return $i;
+        }
+        $i = $i + 1;
+    }
+    return -1;
+}
+
+# dotBodyEnd returns the byte index where a multi-line body ends (the start of
+# the terminating "." line's `\r\n.\r\n`, or 0 for an empty body), or -1 when
+# the terminator has not yet arrived. Scanning resumes from `from` (the caller
+# rewinds it a few bytes so a terminator straddling a read boundary is still
+# found), keeping the whole read loop linear in the body size.
+func dotBodyEnd(buf as bytes, from as int) {
+    def n as int init len($buf);
+    # Empty body: the first line is ".".
+    if ($n >= 3 and $buf[0] == 46 and $buf[1] == 13 and $buf[2] == 10) {
+        return 0;
+    }
+    def i as int init $from;
+    if ($i < 0) {
+        $i = 0;
+    }
+    while ($i + 4 < $n) {
+        if ($buf[$i] == 13 and $buf[$i + 1] == 10 and $buf[$i + 2] == 46 and $buf[$i + 3] == 13 and $buf[$i + 4] == 10) {
+            return $i;
+        }
+        $i = $i + 1;
+    }
+    return -1;
+}
+
 # readLine reads one CRLF-terminated status line (single-line responses do not
-# over-read: the server sends the line and waits).
+# over-read: the server sends the line and waits). The chunk is appended into
+# the owning `buf` in place (amortised O(1) per byte); a by-value append helper
+# would copy the whole growing buffer on every read.
 func readLine(conn as net.Conn) {
-    def buf as string init "";
-    while (strings.indexOf($buf, "\n") < 0) {
+    def buf as bytes;
+    def nl as int init -1;
+    while ($nl < 0) {
         net.setDeadline($conn, TIMEOUT_MS);
         def chunk as bytes init net.readBytes($conn, 512);
         if (len($chunk) == 0) {
-            return stripCR($buf);
+            return stripCR(convert.stringFromBytes($buf, "utf-8"));
         }
-        $buf = $buf + convert.stringFromBytes($chunk, "utf-8");
+        def i as int init 0;
+        while ($i < len($chunk)) {
+            $buf[] = $chunk[$i];
+            $i = $i + 1;
+        }
+        $nl = lfIndex($buf, 0);
     }
-    def nl as int init strings.indexOf($buf, "\n");
-    return stripCR(strings.substring($buf, 0, $nl));
+    return stripCR(convert.stringFromBytes(byteSlice($buf, 0, $nl), "utf-8"));
 }
 
 # command sends one line and returns the single-line status reply.
@@ -172,27 +235,44 @@ func command(conn as net.Conn, line as string) {
 # dot-terminated body that follows, returning the un-stuffed body. A "-ERR"
 # status throws (no body follows, so it must not wait for a terminator).
 func readMultiline(conn as net.Conn, ctx as string) {
-    def buf as string init "";
-    while (strings.indexOf($buf, "\n") < 0) {
+    def buf as bytes;
+    def nl as int init -1;
+    while ($nl < 0) {
         net.setDeadline($conn, TIMEOUT_MS);
         def chunk as bytes init net.readBytes($conn, 512);
         if (len($chunk) == 0) {
             return "";
         }
-        $buf = $buf + convert.stringFromBytes($chunk, "utf-8");
+        def i as int init 0;
+        while ($i < len($chunk)) {
+            $buf[] = $chunk[$i];
+            $i = $i + 1;
+        }
+        $nl = lfIndex($buf, 0);
     }
-    def nl as int init strings.indexOf($buf, "\n");
-    expectOK(stripCR(strings.substring($buf, 0, $nl)), $ctx);
-    def rest as string init strings.substring($buf, $nl + 1);
-    while (not dotTerminated($rest)) {
+    expectOK(stripCR(convert.stringFromBytes(byteSlice($buf, 0, $nl), "utf-8")), $ctx);
+    def body as bytes init byteSlice($buf, $nl + 1, len($buf));
+    def scanFrom as int init 0;
+    while (dotBodyEnd($body, $scanFrom) < 0) {
         net.setDeadline($conn, TIMEOUT_MS);
         def chunk as bytes init net.readBytes($conn, 512);
         if (len($chunk) == 0) {
-            return parseDotBody($rest);
+            return parseDotBody(convert.stringFromBytes($body, "utf-8"));
         }
-        $rest = $rest + convert.stringFromBytes($chunk, "utf-8");
+        def prev as int init len($body);
+        def j as int init 0;
+        while ($j < len($chunk)) {
+            $body[] = $chunk[$j];
+            $j = $j + 1;
+        }
+        # Rewind the scan a few bytes so a "\r\n.\r\n" straddling this read
+        # boundary is still detected; the loop stays linear overall.
+        $scanFrom = prev - 4;
+        if ($scanFrom < 0) {
+            $scanFrom = 0;
+        }
     }
-    return parseDotBody($rest);
+    return parseDotBody(convert.stringFromBytes($body, "utf-8"));
 }
 
 func dial(opts as Options) {

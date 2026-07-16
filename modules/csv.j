@@ -148,23 +148,17 @@ export func parse(s as string) {
  * @return {string} the formatted delimiter-separated text
  */
 export func formatWith(rows as list of list of string, delim as string) {
-    def out as string init "";
-    def firstRow as bool init true;
+    # Build each row's fields and each row into lists, joining once per level:
+    # an accumulating `+` over a large table would be O(N^2) in the output size.
+    def lines as list of string init [];
     for (def row in $rows) {
-        if (not $firstRow) {
-            $out = $out + "\n";
-        }
-        $firstRow = false;
-        def firstField as bool init true;
+        def fields as list of string init [];
         for (def field in $row) {
-            if (not $firstField) {
-                $out = $out + $delim;
-            }
-            $firstField = false;
-            $out = $out + quoteField($field, $delim);
+            $fields[] = quoteField($field, $delim);
         }
+        $lines[] = strings.join($fields, $delim);
     }
-    return $out;
+    return strings.join($lines, "\n");
 }
 
 /**

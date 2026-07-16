@@ -113,18 +113,41 @@ func shouldLog(logger as Logger, level as string) {
 
 # --- record rendering (private) ---------------------------------------------
 
-# quoteIfNeeded wraps a value in double quotes (escaping any inner quote) when it
-# contains a space, quote, or `=`, so key/value pairs stay parseable.
+# quoteIfNeeded wraps a value in double quotes when it needs them - a space,
+# quote, `=`, backslash, control character, or an empty value - and escapes the
+# content so it round-trips and cannot forge a record. Backslash is escaped
+# first (before the quote / newline escapes we add), and a raw newline is
+# encoded rather than left to split the record into a forged second line.
 func quoteIfNeeded(v as string) {
-    if (strings.contains($v, " ") or strings.contains($v, "\"") or strings.contains($v, "=")) {
-        return "\"" + strings.replace($v, "\"", "\\\"") + "\"";
+    def needs as bool init len($v) == 0
+        or strings.contains($v, " ")
+        or strings.contains($v, "\"")
+        or strings.contains($v, "=")
+        or strings.contains($v, "\\")
+        or strings.contains($v, "\n")
+        or strings.contains($v, "\r")
+        or strings.contains($v, "\t");
+    if (not $needs) {
+        return $v;
     }
-    return $v;
+    def e as string init strings.replace($v, "\\", "\\\\");
+    $e = strings.replace($e, "\"", "\\\"");
+    $e = strings.replace($e, "\n", "\\n");
+    $e = strings.replace($e, "\r", "\\r");
+    $e = strings.replace($e, "\t", "\\t");
+    return "\"" + $e + "\"";
+}
+
+# escapeNewlines encodes CR / LF so an untrusted string emitted unquoted (the
+# text-format message) cannot inject a forged log line.
+func escapeNewlines(v as string) {
+    def e as string init strings.replace($v, "\r", "\\r");
+    return strings.replace($e, "\n", "\\n");
 }
 
 # renderText: `<ts> <LEVEL> <message> k=v ...`.
 func renderText(level as string, message as string, fields as map of string to string, ts as string) {
-    def s as string init $ts + " " + strings.upper($level) + " " + $message;
+    def s as string init $ts + " " + strings.upper($level) + " " + escapeNewlines($message);
     for (def k in $fields) {
         $s = $s + " " + $k + "=" + quoteIfNeeded($fields[$k]);
     }

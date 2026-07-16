@@ -79,6 +79,66 @@ task.wait($server);`, webMod, httpMod)
 	}
 }
 
+// TestWebMiddlewareThrowKeepsServing proves a throwing middleware is contained
+// to its own request (answered 500) and does NOT shut the server down: a
+// following normal request still succeeds. Before the fix, a middleware throw
+// propagated to serveOn's catch-all, which read any error as a shutdown signal.
+func TestWebMiddlewareThrowKeepsServing(t *testing.T) {
+	webMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "web.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "http.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+use httpd;
+use task;
+import %q as web;
+import %q as http;
+
+# A middleware that throws only for the /boom path; returns true otherwise.
+func guard(ctx as web.Context) {
+    if (web.path($ctx) == "/boom") {
+        throw Error{kind: "test", message: "middleware boom", file: "", line: 0, col: 0};
+    }
+    return true;
+}
+func showHome(ctx as web.Context) { web.text($ctx, 200, "home"); }
+
+def app as web.App init web.new();
+$app = web.before($app, "guard");
+$app = web.get($app, "/", "showHome");
+$app = web.get($app, "/boom", "showHome");
+
+def srv as httpd.Server init httpd.listen("127.0.0.1:0");
+def addr as string init httpd.address($srv);
+def server as task of null init spawn { web.serveOn($app, $srv); };
+
+def h as map of string to string init {};
+# The throwing middleware request is contained: it returns 500, not a dropped
+# connection.
+def boom as http.Response init http.get("http://" + $addr + "/boom", $h);
+testing.assertEqual($boom.status, 500);
+# The server is still up: a normal request afterwards still succeeds.
+def home as http.Response init http.get("http://" + $addr + "/", $h);
+testing.assertEqual($home.status, 200);
+testing.assertEqual($home.body, "home");
+
+httpd.shutdown($srv);
+task.wait($server);`, webMod, httpMod)
+
+	progPath := filepath.Join(dir, "app.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("web middleware-throw program failed with code %d", code)
+	}
+}
+
 // TestWebCookiesAndSession drives the cookie + session-id surface end to end: a
 // handler resolves the session id via web.sessionId (minting + Set-Cookie on
 // first use), counting hits in an app-owned store keyed by the id. The .j

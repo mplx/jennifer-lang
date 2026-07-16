@@ -94,20 +94,17 @@ func replyFinalCode(text as string) {
 # dotStuff prefixes an extra "." to any body line that begins with one, per the
 # RFC 5321 transparency rule, so the "." end-of-data terminator is unambiguous.
 func dotStuff(body as string) {
-    def out as string init "";
-    def first as bool init true;
+    # Collect the (possibly dot-stuffed) lines and join once: an accumulating
+    # `+` over a multi-MB body would be O(N^2) before any network I/O.
+    def lines as list of string init [];
     for (def line in strings.split($body, "\n")) {
-        if (not $first) {
-            $out = $out + "\n";
-        }
-        $first = false;
         def l as string init $line;
         if (strings.startsWith($l, ".")) {
             $l = "." + $l;
         }
-        $out = $out + $l;
+        $lines[] = $l;
     }
-    return $out;
+    return strings.join($lines, "\n");
 }
 
 # crlf normalises any line endings to CRLF.

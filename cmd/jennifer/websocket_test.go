@@ -113,6 +113,96 @@ func serveWSEcho(ln net.Listener) {
 	}
 }
 
+// fragFrame builds an unmasked server frame with an explicit FIN bit and opcode
+// (opcode 0 = continuation).
+func fragFrame(fin bool, opcode byte, payload []byte) []byte {
+	b0 := opcode
+	if fin {
+		b0 |= 0x80
+	}
+	out := []byte{b0, byte(len(payload))}
+	return append(out, payload...)
+}
+
+// serveWSFragmentedWithPong does the handshake, then on the first client data
+// frame replies with a fragmented text message ("Hello, " + "World") that has a
+// PONG control frame interleaved between the two fragments - the RFC 6455 case
+// that must not abandon the partial message.
+func serveWSFragmentedWithPong(ln net.Listener) {
+	conn, err := ln.Accept()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	r := bufio.NewReader(conn)
+	var key string
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			break
+		}
+		if strings.HasPrefix(strings.ToLower(line), "sec-websocket-key:") {
+			key = strings.TrimSpace(line[len("sec-websocket-key:"):])
+		}
+	}
+	fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"+
+		"Connection: Upgrade\r\nSec-WebSocket-Accept: "+wsAccept(key)+"\r\n\r\n")
+	// Wait for the client's first data frame (the trigger).
+	if _, _, err := readClientFrame(r); err != nil {
+		return
+	}
+	// text fragment 1 (FIN=0, opcode=text), then an interleaved PONG, then the
+	// continuation fragment (FIN=1, opcode=0).
+	conn.Write(fragFrame(false, 0x1, []byte("Hello, ")))
+	conn.Write(fragFrame(true, 0xA, []byte("keepalive"))) // PONG mid-message
+	conn.Write(fragFrame(true, 0x0, []byte("World")))
+	// Drain until close.
+	for {
+		opcode, _, err := readClientFrame(r)
+		if err != nil || opcode == 0x8 {
+			return
+		}
+	}
+}
+
+// TestWebsocketFragmentedWithInterleavedPong proves a PONG arriving between the
+// fragments of a text message does not discard the partial reassembly: the
+// client must still receive the whole "Hello, World".
+func TestWebsocketFragmentedWithInterleavedPong(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go serveWSFragmentedWithPong(ln)
+
+	wsMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "websocket.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "ws://" + ln.Addr().String() + "/"
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+import %q as websocket;
+def ws as websocket.Conn init websocket.connect(%q);
+websocket.send($ws, "go");
+def m as websocket.Message init websocket.receive($ws);
+testing.assertEqual($m.kind, "text");
+testing.assertEqual($m.text, "Hello, World");
+websocket.close($ws);`, wsMod, url)
+	progPath := filepath.Join(dir, "ws_frag.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("websocket fragmented program failed with code %d", code)
+	}
+}
+
 // TestWebsocketRoundTrip drives the websocket client through a real handshake
 // (accept-key verified by the module) plus a masked text send and a binary
 // send, each echoed by a minimal in-process server, proving the full

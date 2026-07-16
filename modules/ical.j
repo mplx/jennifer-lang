@@ -191,6 +191,10 @@ export func parse(text as string) {
     def cal as Calendar init calendar();
     def events as list of Event init [];
     def inEvent as bool init false;
+    # Depth of a nested sub-component (VALARM, ...) inside the current VEVENT.
+    # While > 0 the sub-component's properties are skipped so its DESCRIPTION /
+    # SUMMARY don't clobber the enclosing event's.
+    def skipDepth as int init 0;
     def uid as string init "";
     def summary as string init "";
     def description as string init "";
@@ -210,6 +214,7 @@ export func parse(text as string) {
         def value as string init strings.substring($line, $colon + 1, len($line));
         if ($name == "BEGIN" and strings.upper($value) == "VEVENT") {
             $inEvent = true;
+            $skipDepth = 0;
             $uid = "";
             $summary = "";
             $description = "";
@@ -217,6 +222,16 @@ export func parse(text as string) {
             $startStr = "";
             $endStr = "";
             $stampStr = "";
+            continue;
+        }
+        # A sub-component opened inside the event (BEGIN:VALARM, ...): enter skip
+        # mode so its properties don't overwrite the event's, until its END.
+        if ($inEvent and $name == "BEGIN") {
+            $skipDepth = $skipDepth + 1;
+            continue;
+        }
+        if ($inEvent and $skipDepth > 0 and $name == "END") {
+            $skipDepth = $skipDepth - 1;
             continue;
         }
         if ($name == "END" and strings.upper($value) == "VEVENT") {
@@ -235,7 +250,7 @@ export func parse(text as string) {
             }
             continue;
         }
-        if ($inEvent) {
+        if ($inEvent and $skipDepth == 0) {
             if ($name == "UID") {
                 $uid = unescapeText($value);
             } elseif ($name == "SUMMARY") {
