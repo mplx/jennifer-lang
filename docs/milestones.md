@@ -1287,6 +1287,20 @@ regression test.
 
 ### M19.1 - Interpreter concurrency-safety
 
+**Done.** Both interpreter data races fixed, each pinned by a `-race`
+stress test (nested-spawn global mutation; eight spawn workers each declaring an
+aliased module/library struct in a loop). `snapshotForSpawn` now snapshots the
+launching goroutine's own root frame via `effectiveGlobal(env)` instead of the
+live `i.global`, so a nested spawn no longer races the main goroutine's global
+writes. Declared struct types are stamped once, single-threaded, before any
+statement runs (`resolveDeclaredTypesOnce`, after `loadModuleImports`) and carry
+a `parser.Type.Resolved` marker, so the per-execution re-resolve in `execDefine`
+is a read-only no-op: a `def x as alias.Struct` reached from concurrent
+goroutines never re-stamps the shared AST node. Error timing is unchanged (the
+stamp pass is best-effort; an unresolved type still errors at execution at its
+original position), and the marker also fixes a latent bug where an aliased
+library struct re-resolved in a loop hit the "canonical is aliased" rejection.
+
 Two data races in the interpreter core that the race detector catches and that
 can crash a program using nested `spawn`. Both are small, localized fixes plus
 a `go test -race` nested-spawn stress test.

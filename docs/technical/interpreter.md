@@ -277,7 +277,12 @@ Three compounded moves cut the recursive-call cost:
   block's dynamic extent - so the pool is safe by construction.
   The two envs that outlive their creating call (`i.global`, the
   goroutine-root snapshots from `snapshotForSpawn`) stay on the
-  non-pooled `NewEnvironment` path.
+  non-pooled `NewEnvironment` path. `snapshotForSpawn` copies the
+  *launching* goroutine's own root frame - `effectiveGlobal(env)`,
+  which is `i.global` in serial code but the enclosing spawn's
+  detached global snapshot inside a spawn body - never the live
+  `i.global`, so a nested spawn snapshotting on a background
+  goroutine can't race the main goroutine's global writes.
 - **Pre-resolved callees.** `CallExpr` carries a `Method
   *MethodDef` pointer (see `internal/parser/ast.go`). During
   `Resolve` the resolver stamps the pointer when the callee names
@@ -521,10 +526,18 @@ values), construct one (`points.Point{...}` in `evalStructLit`), read its
 fields, and pass it back - all type-checking - while `a.Point` and `b.Point`
 stay distinct `(namespace, name)` pairs. The retag copies only compound
 values at the boundary (module calls are not a hot path). Declared-type
-stamping is idempotent: a `def` inside a loop re-resolves each pass, and
-because stamping rewrites an importer alias to the module stem,
-`resolveDeclaredStructNS` recognises the already-stamped stem (via
-`moduleByNS`) rather than re-treating it as an unknown namespace.
+stamping happens once, single-threaded, before execution:
+`resolveDeclaredTypesOnce` (run from `Run` after `loadModuleImports`) walks
+every declared type - top-level, method bodies, and spawn bodies - stamps it,
+and marks the AST node `parser.Type.Resolved`. The per-execution
+`resolveDeclaredStructNS` in `execDefine` early-returns on a resolved node, so a
+`def` inside a loop, or a shared method / spawn body reached from concurrent
+goroutines, re-reads the marker instead of re-stamping - no write-write race on
+the shared type node. The pass is best-effort (an unresolvable type is left for
+`execDefine` to error on at its original position), and the marker also sidesteps
+a latent idempotency gap: re-resolving an already-stamped *library* alias would
+otherwise hit the "canonical namespace is aliased" rejection. (An importer alias
+to a module stem is also recognised on any later pass via `moduleByNS`.)
 
 ## Builtins and libraries
 

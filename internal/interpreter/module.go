@@ -279,6 +279,12 @@ func (i *Interpreter) resolveDeclaredStructNS(t *parser.Type, at parser.Node) er
 	if t == nil {
 		return nil
 	}
+	// Already stamped (idempotent no-op). A shared node re-reached from a loop
+	// body or a concurrent goroutine reads this flag and returns without
+	// touching StructNS, so there is no re-stamp - and no write-write race.
+	if t.Resolved {
+		return nil
+	}
 	if t.Kind == parser.TypeStruct {
 		// A module struct is named either by the importer's alias (first pass)
 		// or, once stamped, by the module's own stem. Recognising the stem
@@ -323,7 +329,154 @@ func (i *Interpreter) resolveDeclaredStructNS(t *parser.Type, at parser.Node) er
 	if err := i.resolveDeclaredStructNS(t.KeyType, at); err != nil {
 		return err
 	}
-	return i.resolveDeclaredStructNS(t.ValType, at)
+	if err := i.resolveDeclaredStructNS(t.ValType, at); err != nil {
+		return err
+	}
+	// Mark resolved only after the whole type (and its element / key / value
+	// sub-types) resolved cleanly, so a type a best-effort pass left unstamped
+	// (an unknown or aliased-canonical name) is retried - and errors - at
+	// execution, at its original position.
+	t.Resolved = true
+	return nil
+}
+
+// resolveDeclaredTypesOnce stamps every declared struct type in the program a
+// single time, before execution begins, so the per-execution re-resolve in
+// execDefine is a guarded no-op write. Method bodies and spawn bodies are
+// shared AST that concurrent goroutines re-execute, so stamping the node here -
+// once, single-threaded, from Run before any goroutine launches - is what keeps
+// a `def x as mod.Struct` reached from two goroutines off a write-write race on
+// the shared type node. Best-effort: an unresolvable type is left unstamped for
+// execDefine to error on at execution, so error timing and position are
+// unchanged (dead code that never runs still never errors). Runs after
+// loadModuleImports because it needs i.moduleAliases populated.
+func (i *Interpreter) resolveDeclaredTypesOnce(prog *parser.Program) {
+	if prog == nil {
+		return
+	}
+	for _, s := range prog.TopLevel {
+		i.declTypesStmt(s)
+	}
+	for _, m := range prog.Methods {
+		if m == nil || m.Body == nil {
+			continue
+		}
+		for _, s := range m.Body.Stmts {
+			i.declTypesStmt(s)
+		}
+	}
+}
+
+func (i *Interpreter) declTypesBlock(b *parser.Block) {
+	if b == nil {
+		return
+	}
+	for _, s := range b.Stmts {
+		i.declTypesStmt(s)
+	}
+}
+
+func (i *Interpreter) declTypesStmt(s parser.Stmt) {
+	switch st := s.(type) {
+	case *parser.DefineStmt:
+		// Best-effort: ignore the error so an unresolvable type still errors
+		// at execution (in execDefine) at its original position.
+		_ = i.resolveDeclaredStructNS(&st.VarType, st)
+		i.declTypesExpr(st.InitExpr)
+	case *parser.AssignStmt:
+		i.declTypesExpr(st.Value)
+	case *parser.IndexAssignStmt:
+		i.declTypesExpr(st.Target)
+		i.declTypesExpr(st.Value)
+	case *parser.AppendStmt:
+		i.declTypesExpr(st.Target)
+		i.declTypesExpr(st.Value)
+	case *parser.FieldAssignStmt:
+		i.declTypesExpr(st.Target)
+		i.declTypesExpr(st.Value)
+	case *parser.IfStmt:
+		i.declTypesExpr(st.Cond)
+		i.declTypesBlock(st.Then)
+		for idx := range st.ElseIfs {
+			i.declTypesExpr(st.ElseIfs[idx])
+			i.declTypesBlock(st.ElseIfBodies[idx])
+		}
+		i.declTypesBlock(st.Else)
+	case *parser.WhileStmt:
+		i.declTypesExpr(st.Cond)
+		i.declTypesBlock(st.Body)
+	case *parser.ForStmt:
+		i.declTypesStmt(st.Init)
+		i.declTypesExpr(st.Cond)
+		i.declTypesStmt(st.Step)
+		i.declTypesBlock(st.Body)
+	case *parser.ForEachStmt:
+		i.declTypesExpr(st.Coll)
+		i.declTypesBlock(st.Body)
+	case *parser.RepeatStmt:
+		i.declTypesBlock(st.Body)
+		i.declTypesExpr(st.Cond)
+	case *parser.ReturnStmt:
+		i.declTypesExpr(st.Value)
+	case *parser.ExitStmt:
+		i.declTypesExpr(st.Code)
+	case *parser.ThrowStmt:
+		i.declTypesExpr(st.Value)
+	case *parser.TryStmt:
+		i.declTypesBlock(st.Body)
+		i.declTypesBlock(st.CatchBody)
+	case *parser.ExprStmt:
+		i.declTypesExpr(st.Expr)
+	case *parser.Block:
+		i.declTypesBlock(st)
+	}
+}
+
+// declTypesExpr descends only where a DefineStmt can hide - inside a spawn
+// body (whose statements a goroutine re-executes) and inside sub-expressions
+// that may nest a spawn.
+func (i *Interpreter) declTypesExpr(e parser.Expr) {
+	switch ex := e.(type) {
+	case nil:
+		return
+	case *parser.SpawnExpr:
+		for _, s := range ex.Body {
+			i.declTypesStmt(s)
+		}
+	case *parser.CallExpr:
+		for _, a := range ex.Args {
+			i.declTypesExpr(a)
+		}
+	case *parser.QualifiedCallExpr:
+		for _, a := range ex.Args {
+			i.declTypesExpr(a)
+		}
+	case *parser.BinaryExpr:
+		i.declTypesExpr(ex.Left)
+		i.declTypesExpr(ex.Right)
+	case *parser.UnaryExpr:
+		i.declTypesExpr(ex.Operand)
+	case *parser.LenExpr:
+		i.declTypesExpr(ex.Operand)
+	case *parser.IndexExpr:
+		i.declTypesExpr(ex.Target)
+		i.declTypesExpr(ex.Index)
+	case *parser.FieldAccessExpr:
+		i.declTypesExpr(ex.Target)
+	case *parser.ListLit:
+		for _, el := range ex.Elements {
+			i.declTypesExpr(el)
+		}
+	case *parser.MapLit:
+		for k := range ex.Keys {
+			i.declTypesExpr(ex.Keys[k])
+			i.declTypesExpr(ex.Values[k])
+		}
+	case *parser.StructLit:
+		for _, f := range ex.Fields {
+			i.declTypesExpr(f.Expr)
+		}
+	}
 }
 
 // moduleByNS returns a loaded module whose namespace (file stem) is ns, or

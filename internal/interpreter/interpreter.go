@@ -835,6 +835,11 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 	if err := i.loadModuleImports(prog, false); err != nil {
 		return err
 	}
+	// Stamp every declared struct type once, single-threaded, before any
+	// statement (and therefore any spawn) runs, so the per-execution
+	// re-resolve in execDefine is a guarded no-op and a shared type node
+	// reached from concurrent goroutines never write-races.
+	i.resolveDeclaredTypesOnce(prog)
 	if i.prof != nil {
 		i.prof.Start(time.Now())
 	}
@@ -3006,9 +3011,19 @@ func (i *Interpreter) snapshotForSpawn(env *Environment) *Environment {
 	//      spawn site, chained on top of (1).
 	// Both frames hold copies, so any post-spawn parent-goroutine writes
 	// to i.global or to the caller frame don't reach the spawn body.
+	// Snapshot the launching goroutine's OWN global frame, not the live
+	// i.global. In serial code effectiveGlobal(env) is i.global; inside a
+	// spawn body it is the enclosing spawn's detached global snapshot.
+	// Either way it is a frame this goroutine owns and this call runs
+	// synchronously on the launching goroutine, so iterating it here never
+	// races a parent goroutine still writing i.global (the "concurrent map
+	// iteration and map write" fatal a nested spawn would otherwise hit).
+	// It is also more correct: a nested spawn captures its enclosing scope,
+	// not the main goroutine's live globals.
+	root := effectiveGlobal(env)
 	globalSnap := NewEnvironment(nil)
-	if i.global != nil {
-		for name, b := range i.global.vars {
+	if root != nil {
+		for name, b := range root.vars {
 			globalSnap.vars[name] = Binding{
 				Value:    b.Value.Copy(),
 				DeclType: b.DeclType,
@@ -3017,7 +3032,7 @@ func (i *Interpreter) snapshotForSpawn(env *Environment) *Environment {
 		}
 	}
 	localSnap := NewEnvironment(globalSnap)
-	for cur := env; cur != nil && cur != i.global; cur = cur.parent {
+	for cur := env; cur != nil && cur != root; cur = cur.parent {
 		for name, b := range cur.vars {
 			if _, exists := localSnap.vars[name]; exists {
 				continue

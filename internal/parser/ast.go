@@ -95,6 +95,15 @@ type Type struct {
 	StructNS   string // TypeStruct: optional library namespace prefix.
 	//                  Empty for user-defined structs (`def struct Name`);
 	//                  set for library-registered structs (`os.Result`).
+	// Resolved is an interpreter annotation, not parser output: set once
+	// resolveDeclaredStructNS has stamped a declared type's namespace
+	// (importer alias -> module stem, or library alias -> canonical). It makes
+	// re-resolution an idempotent no-op, so a shared type node reached from
+	// concurrent spawn / method-call goroutines is only read, never re-stamped
+	// (the write-write race that would otherwise be), and distinguishes a
+	// stamped node from a user-written canonical-when-aliased name. Equal()
+	// ignores it.
+	Resolved bool
 }
 
 func (t Type) String() string {
