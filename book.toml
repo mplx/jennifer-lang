@@ -22,6 +22,8 @@ default-theme = "ayu"
 preferred-dark-theme = "ayu"
 # Widen the content column past mdBook's 750px default (see theme/custom.css).
 additional-css = ["theme/custom.css"]
+# Swaps the menu-bar title for the wordmark lockup (currentColor text tracks the theme).
+additional-js = ["theme/logo.js"]
 git-repository-url = "https://github.com/jennifer-language/jennifer"
 edit-url-template = "https://github.com/jennifer-language/jennifer/edit/main/{path}"
 # Land users on a single-file table of contents; the section index

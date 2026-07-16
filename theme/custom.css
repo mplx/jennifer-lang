@@ -26,3 +26,20 @@
 .content table {
     width: 100%;
 }
+
+/*
+ * Wordmark lockup in the menu bar. theme/logo.js swaps the book-title text for
+ * an inline SVG lockup; the mark tile carries its own colours and the
+ * 'jennifer' text is currentColor, so it inherits the menu-bar foreground and
+ * stays legible across every built-in theme.
+ */
+.menu-title.has-logo {
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+}
+.menu-title.has-logo svg {
+    height: 30px;
+    width: auto;
+    display: block;
+}

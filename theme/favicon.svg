@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-3.0-only -->
+<!-- Copyright (C) 2026 <developer@mplx.eu> -->
+<!-- Jennifer monogram. Aubergine tile #1B1420, coral J #EC5C4B. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="Jennifer">
+  <title>Jennifer</title>
+  <rect width="100" height="100" rx="26" fill="#1B1420"/>
+  <g fill="none" stroke="#EC5C4B" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M35 33 H67"/>
+    <path d="M61 33 V54 C61 70 49 74 39.5 70.5 C33 68 31 61 31.5 56.5"/>
+  </g>
+</svg>

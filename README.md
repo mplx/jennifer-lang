@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="site/logo/jennifer-wordmark-dark.svg">
+    <img src="site/logo/jennifer-wordmark.svg" alt="Jennifer" width="420">
+  </picture>
+</p>
+
 # Jennifer Programming Language
 
 Jennifer is a small, experimental, interpreted programming language.

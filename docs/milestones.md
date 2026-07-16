@@ -2026,6 +2026,45 @@ so the **query-builder-to-SQL** surface (pure string generation) is covered 100%
 offline, and live CRUD sits behind a DB-service-gated integration test rather
 than the unit overlay.
 
+### M21.6 - `font` module (TrueType / SFNT parsing)
+
+A pure-`.j` font parser: read a TrueType / SFNT file from `bytes` and expose its
+glyph outlines, metrics, and name tables. **No prerequisite** - it needs only the
+shipped `bytes` type, the bitwise operators (`& | << >>`, for the big-endian table
+offsets), and `fs` to load the file, so it could be built today. It is parked in
+the backlog as a self-contained stress-test of how far pure Jennifer stretches,
+and it is TinyGo-clean (no Go, so it runs on both binaries).
+
+Named `font`, not `truetype`, for the one-module-selectable-backend rule (design
+stance 1): the SFNT container also carries PostScript / CFF outlines, so v1 ships
+the **TrueType `glyf` backend** and the module grows a CFF backend later, detected
+on parse, rather than spawning a parallel `opentype` module.
+
+Surface: `font.parse(b) -> font.Font` (or `font.open(path)`), then
+`font.unitsPerEm(f)`, `font.name(f)`, `font.advance(f, codepoint)`,
+`font.glyphPath(f, codepoint) -> string` (an SVG path `d`, in font-unit
+coordinates), and `font.glyph(f, codepoint) -> font.Glyph` (contours of
+on / off-curve points plus advance and bounding box) for callers that want the raw
+outline. It parses the core tables - `head` (units-per-em, bounds), `cmap`
+(formats 4 and 12), `maxp` / `hhea` / `hmtx` (advances), `loca` / `glyf` (simple
+**and** composite glyphs, quadratic curves), and `name` (family) - enough to lay
+out and outline a string.
+
+**Concrete motivation:** this closes a dogfood gap. The wordmark generator
+(`scripts/genwordmark.py`) had to reach for Python's `fontTools` for the one thing
+Jennifer could not do - turn `jennifer` into vector path data from the TTF - so
+with `font` in hand that becomes `scripts/genwordmark.j`, outlining and laying out
+the wordmark entirely in Jennifer.
+
+Kept out of v1: CFF / PostScript outlines (cubic curves, the second backend),
+hinting, shaping and kerning beyond `hmtx` (GPOS / GSUB), colour / emoji tables,
+and variable-font axes. Graduates into the M18 module track when built. Discipline
+as usual: a `modules/font_test.j` overlay (parse a small committed `.ttf` fixture -
+assert units-per-em, a known glyph's advance and path `d`, and a couple of `cmap`
+lookups), `docs/modules/font.md`, a catalog row, a `SUMMARY.md` entry, a
+`modules/README.md` entry, a `JENNIFER.md` bullet, and a runnable
+`examples/modules/font_demo.j` (a word rendered to an SVG path).
+
 ---
 
 ## Requirements for 1.0.0 stable
