@@ -54,11 +54,20 @@ var algoCtor = map[string]func() gohash.Hash{
 // messages. Kept in a known order so the message stays stable.
 const algoList = `"md5", "sha1", "sha256", "sha512"`
 
+// streamState wraps a live digest with its own mutex. The registry map is
+// guarded by streamsMu, but the digest itself is mutable state that spawned
+// tasks sharing one handle can touch concurrently (Write/Sum are not safe on
+// the same Go hash.Hash), so each stream carries its own lock.
+type streamState struct {
+	mu sync.Mutex
+	h  gohash.Hash
+}
+
 // streams holds live streaming hash state keyed by integer handle.
-// `hash.finalize` removes the entry so further calls error.
+// `hash.finalize` / `hash.discard` remove the entry so further calls error.
 var (
 	streamsMu sync.Mutex // guards streams + nextID (spawned tasks share the registry)
-	streams   = map[int64]gohash.Hash{}
+	streams   = map[int64]*streamState{}
 	nextID    int64
 )
 
@@ -73,6 +82,7 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "stream", streamFn)
 	in.RegisterNamespaced(LibraryName, "update", updateFn)
 	in.RegisterNamespaced(LibraryName, "finalize", finalizeFn)
+	in.RegisterNamespaced(LibraryName, "discard", discardFn)
 }
 
 // makeStream builds the Jennifer-side `hash.Stream{id}` value.
@@ -161,7 +171,7 @@ func streamFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 	streamsMu.Lock()
 	nextID++
 	id := nextID
-	streams[id] = ctor()
+	streams[id] = &streamState{h: ctor()}
 	streamsMu.Unlock()
 	return makeStream(id), nil
 }
@@ -182,12 +192,16 @@ func updateFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 		return interpreter.Null(), fmt.Errorf("hash.update: second argument must be bytes, got %s", args[1].Kind)
 	}
 	streamsMu.Lock()
-	h, ok := streams[id]
+	st, ok := streams[id]
 	streamsMu.Unlock()
 	if !ok {
 		return interpreter.Null(), fmt.Errorf("hash.update: stream %d has already been finalized or never existed", id)
 	}
-	h.Write(args[1].Bytes)
+	// Hold the per-stream lock across Write: two spawned tasks sharing one
+	// handle would otherwise race on the Go hash.Hash internals.
+	st.mu.Lock()
+	st.h.Write(args[1].Bytes)
+	st.mu.Unlock()
 	return interpreter.Null(), nil
 }
 
@@ -202,7 +216,7 @@ func finalizeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter
 		return interpreter.Null(), err
 	}
 	streamsMu.Lock()
-	h, ok := streams[id]
+	st, ok := streams[id]
 	if ok {
 		delete(streams, id)
 	}
@@ -210,15 +224,38 @@ func finalizeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter
 	if !ok {
 		return interpreter.Null(), fmt.Errorf("hash.finalize: stream %d has already been finalized or never existed", id)
 	}
-	digest := h.Sum(nil)
+	st.mu.Lock()
+	digest := st.h.Sum(nil)
+	st.mu.Unlock()
 	return interpreter.BytesVal(digest), nil
+}
+
+// discardFn drops a live stream without computing its digest, releasing its
+// state. This is the abort path for a stream opened but abandoned (e.g. an
+// error before finalize) so it doesn't pin its buffer for the run's lifetime.
+func discardFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("hash.discard expects 1 argument (stream), got %d", len(args))
+	}
+	id, err := extractStreamID("hash.discard", args[0])
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	streamsMu.Lock()
+	_, ok := streams[id]
+	delete(streams, id)
+	streamsMu.Unlock()
+	if !ok {
+		return interpreter.Null(), fmt.Errorf("hash.discard: stream %d has already been finalized or never existed", id)
+	}
+	return interpreter.Null(), nil
 }
 
 // resetForTest clears the live-stream map and id counter so tests
 // run in isolation. Test-only.
 func resetForTest() {
 	streamsMu.Lock()
-	streams = map[int64]gohash.Hash{}
+	streams = map[int64]*streamState{}
 	nextID = 0
 	streamsMu.Unlock()
 }

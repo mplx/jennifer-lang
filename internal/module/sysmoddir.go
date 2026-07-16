@@ -71,7 +71,12 @@ func (s Sysmoddir) Validate(stat func(string) (os.FileInfo, error)) error {
 	}
 	fi, err := stat(s.Dir)
 	if err != nil {
-		return fmt.Errorf("%s module directory %q does not exist", s.Source, s.Dir)
+		// Distinguish "not there" from "there but unreadable" (EACCES etc.):
+		// reporting a permission error as "does not exist" is misleading.
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%s module directory %q does not exist", s.Source, s.Dir)
+		}
+		return fmt.Errorf("%s module directory %q is not accessible: %v", s.Source, s.Dir, err)
 	}
 	if !fi.IsDir() {
 		return fmt.Errorf("%s module directory %q is not a directory", s.Source, s.Dir)

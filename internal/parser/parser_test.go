@@ -303,6 +303,31 @@ func TestParseQualifiedConstRef(t *testing.T) {
 	}
 }
 
+// TestParseConstFieldAccess: `CONST.field` on a const struct parses as field
+// access, not a qualified constant reference (which would reject the lowercase
+// field name). Previously only the `(CONST).field` workaround parsed.
+func TestParseConstFieldAccess(t *testing.T) {
+	prog, err := Parse(`def x as int init ORIGIN.x;`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := Sprint(prog.TopLevel[0])
+	want := "Define($x as int = Field(Const(ORIGIN).x))"
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+	// A chained access keeps threading through the postfix loop.
+	prog2, err := Parse(`def y as int init DIAG.to.x;`)
+	if err != nil {
+		t.Fatalf("parse chained: %v", err)
+	}
+	got2 := Sprint(prog2.TopLevel[0])
+	want2 := "Define($y as int = Field(Field(Const(DIAG).to).x))"
+	if got2 != want2 {
+		t.Errorf("chained: got %s, want %s", got2, want2)
+	}
+}
+
 func TestParseUseWithAlias(t *testing.T) {
 	src := `use bio as b; b.translate($x);`
 	prog, err := Parse(src)

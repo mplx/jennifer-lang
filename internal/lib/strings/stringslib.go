@@ -12,6 +12,7 @@ package stringslib
 
 import (
 	"fmt"
+	"math"
 	gostrings "strings"
 	"unicode"
 	"unicode/utf8"
@@ -274,12 +275,26 @@ func repeatFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 	if n < 0 {
 		return interpreter.Null(), fmt.Errorf("repeat(): negative count %d", n)
 	}
-	// Guard against an absurd allocation (Go's strings.Repeat would panic).
-	if n > 0 && len(s) > 0 && int64(len(s))*n/n != int64(len(s)) {
-		return interpreter.Null(), fmt.Errorf("repeat(): result would overflow")
+	// Range-check before narrowing to int: on a 32-bit build (TinyGo) a count
+	// above MaxInt would silently truncate (2^32 -> 0, returning "").
+	if n > int64(math.MaxInt) {
+		return interpreter.Null(), fmt.Errorf("repeat(): count %d exceeds the platform limit", n)
+	}
+	// Cap the result size with a catchable error rather than attempting a
+	// multi-gigabyte allocation (Go's strings.Repeat would otherwise OOM/panic).
+	if n > 0 && len(s) > 0 {
+		total := int64(len(s)) * n
+		if total/n != int64(len(s)) || total > maxRepeatBytes {
+			return interpreter.Null(), fmt.Errorf("repeat(): result of %d bytes exceeds the %d-byte limit", total, int64(maxRepeatBytes))
+		}
 	}
 	return interpreter.StringVal(gostrings.Repeat(s, int(n))), nil
 }
+
+// maxRepeatBytes caps strings.repeat output so an accidental huge count is a
+// catchable error, not an out-of-memory crash. 1 GiB is far beyond any real
+// string-building need while still stopping runaway allocations.
+const maxRepeatBytes int64 = 1 << 30
 
 // substringFn returns the slice of s from rune index `start` (inclusive) to
 // rune index `end` (exclusive). The end argument is optional - omitting it

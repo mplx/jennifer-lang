@@ -139,9 +139,17 @@ io.printf("done: exit=%d\n", $r.exitCode);
 ```
 
 `os.wait` is **idempotent** - calling it again on the same handle
-returns the same `os.Result` immediately. `os.kill($p)` sends
-SIGTERM; a subsequent `os.wait` returns whatever the OS reports for
-the terminated child.
+returns the same `os.Result` immediately. If the child did not
+terminate cleanly (an I/O failure draining its streams, not a non-zero
+exit), `os.wait` raises a catchable error rather than reporting a false
+exit code 0. `os.kill($p)` sends SIGTERM (falling back to a hard kill on
+Windows, which has no SIGTERM); a subsequent `os.wait` returns whatever
+the OS reports for the terminated child.
+
+**Captured output is capped** at 16 MiB per stream for both `os.run`
+and `os.spawn`: a child that writes more has the excess dropped and a
+`\n[output truncated at 16 MiB]` marker appended, so a runaway child
+can't grow the interpreter heap without bound.
 
 Because a handle (and its captured output) stays live for idempotent
 `os.wait`, a long-running program that spawns many children should

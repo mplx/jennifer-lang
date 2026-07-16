@@ -289,18 +289,40 @@ func listenFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 		return interpreter.Null(), err
 	}
 	network, address := parseListenAddr(addr)
-	if network == "unix" {
-		// Clear a stale socket left by a prior crash; a graceful shutdown
-		// unlinks its own socket, so this only matters after an abnormal exit.
-		_ = os.Remove(address)
-	}
 	ln, err := net.Listen(network, address)
 	if err != nil {
-		return interpreter.Null(), fmt.Errorf("httpd.listen: %v", err)
+		// A unix socket path from a prior crash lingers and makes Listen fail
+		// with EADDRINUSE. Only clear it when it is provably stale: the path is
+		// a socket AND nothing is listening (a probe dial is refused). This
+		// avoids deleting a live server's socket (which would silently break it).
+		if network == "unix" && isStaleUnixSocket(address) {
+			_ = os.Remove(address)
+			ln, err = net.Listen(network, address)
+		}
+		if err != nil {
+			return interpreter.Null(), fmt.Errorf("httpd.listen: %v", err)
+		}
 	}
 	st := newServer(ln)
 	go func() { _ = st.srv.Serve(ln) }()
 	return makeServer(registerServer(st)), nil
+}
+
+// isStaleUnixSocket reports whether path is a leftover unix socket with no live
+// server behind it: the path is a socket file and a probe dial is refused. A
+// path that isn't a socket, or one that accepts a connection, is left untouched
+// so a second instance never deletes a running server's socket.
+func isStaleUnixSocket(path string) bool {
+	fi, err := os.Lstat(path)
+	if err != nil || fi.Mode()&os.ModeSocket == 0 {
+		return false
+	}
+	c, err := net.DialTimeout("unix", path, 100*time.Millisecond)
+	if err != nil {
+		return true // nobody is listening: the socket is stale
+	}
+	_ = c.Close()
+	return false // a live server owns this socket
 }
 
 func listenTLSFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
@@ -328,7 +350,12 @@ func listenTLSFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 		return interpreter.Null(), fmt.Errorf("httpd.listenTLS: %v", err)
 	}
 	st := newServer(ln)
-	st.srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
+	// Floor at TLS 1.2: 1.0/1.1 are deprecated (RFC 8996) and fail compliance
+	// scans.
+	st.srv.TLSConfig = &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
 	go func() { _ = st.srv.ServeTLS(ln, "", "") }()
 	return makeServer(registerServer(st)), nil
 }

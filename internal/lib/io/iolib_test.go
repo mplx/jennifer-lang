@@ -212,6 +212,8 @@ func TestPrintfIntModifiers(t *testing.T) {
 		{"fill=0", vals("%d|pad=5|fill=0", interpreter.IntVal(42)), "00042"},
 		{"fill=0 with negative", vals("%d|pad=5|fill=0", interpreter.IntVal(-42)), "-0042"},
 		{"fill=0 with sign=always", vals("%d|pad=5|fill=0|sign=always", interpreter.IntVal(42)), "+0042"},
+		{"fill=0 with group is columnar", vals("%d|pad=10|fill=0|group=3|sep=,", interpreter.IntVal(1234)), "00,001,234"},
+		{"fill=0 with group negative", vals("%d|pad=10|fill=0|group=3|sep=,", interpreter.IntVal(-1234)), "-0,001,234"},
 		{"pad short of value is no-op", vals("[%d|pad=2]", interpreter.IntVal(12345)), "[12345]"},
 	}
 	for _, c := range cases {

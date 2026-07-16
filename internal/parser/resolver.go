@@ -365,14 +365,13 @@ func (r *resolver) resolveStmt(s Stmt) error {
 			r.pop()
 			return err
 		}
-		st.Body.NumSlots += frame.count
-		// The interpreter still creates just one fresh env per
-		// for-header iteration; encoding the header slot into the
-		// same NumSlots keeps runtime allocation aligned. The
-		// header's Init DefineStmt got Slot 0..N-1 in `frame`;
-		// the body block's own defs got Slot 0..M-1 in the body
-		// frame. That's two frames at runtime; both are counted
-		// via their respective NumSlots.
+		// The header's Init `def`s live in `frame` (the loop's own header
+		// frame at runtime); the body block's defs live in the body frame.
+		// Record the header count separately so the interpreter pre-sizes the
+		// header frame and leaves Body.NumSlots as just the body's own slots -
+		// otherwise every iteration's body frame is oversized by the header
+		// count.
+		st.HeaderSlots = frame.count
 		frame.count = 0 // avoid double-count in tests / dumps
 		r.pop()
 		return nil

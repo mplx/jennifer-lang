@@ -6,7 +6,6 @@ package lexer
 import (
 	"fmt"
 	"strings"
-	"unicode"
 )
 
 // Lexer turns a Jennifer source string into a stream of tokens.
@@ -21,7 +20,20 @@ type Lexer struct {
 }
 
 func New(source string) *Lexer {
-	return &Lexer{src: []rune(source), pos: 0, line: 1, col: 1}
+	runes := []rune(source)
+	// Strip a single leading UTF-8 BOM (U+FEFF): BOM-writing editors would
+	// otherwise make the whole file unlexable and defeat shebang detection.
+	if len(runes) > 0 && runes[0] == '\uFEFF' {
+		runes = runes[1:]
+	}
+	return &Lexer{src: runes, pos: 0, line: 1, col: 1}
+}
+
+// isASCIIDigit reports whether r is an ASCII digit. Number literals use this
+// rather than unicode.IsDigit so non-ASCII digits (e.g. U+0663) produce a clean
+// lex error instead of surfacing later as a confusing strconv failure.
+func isASCIIDigit(r rune) bool {
+	return r >= '0' && r <= '9'
 }
 
 // NewWithFile is like New but tags every produced token with the given file name.
@@ -195,7 +207,7 @@ func (l *Lexer) Next() (Token, error) {
 		return l.readString(ch, startLine, startCol)
 	case ch == '$':
 		return l.readVarRef(startLine, startCol)
-	case unicode.IsDigit(ch):
+	case isASCIIDigit(ch):
 		return l.readNumber(startLine, startCol)
 	case isIdentStart(ch):
 		return l.readIdentifierOrKeyword(startLine, startCol)
@@ -429,13 +441,13 @@ func (l *Lexer) readNumber(startLine, startCol int) (Token, error) {
 	// Decimal int / float. `_` is accepted between digits (`1_000_000`) but
 	// not as the first / last character of the integer-or-mantissa part and
 	// never adjacent to the `.`.
-	digits, err := l.readSeparatedDigits(startLine, startCol, unicode.IsDigit, "decimal")
+	digits, err := l.readSeparatedDigits(startLine, startCol, isASCIIDigit, "decimal")
 	if err != nil {
 		return Token{}, err
 	}
-	if l.pos+1 < len(l.src) && l.src[l.pos] == '.' && unicode.IsDigit(l.src[l.pos+1]) {
+	if l.pos+1 < len(l.src) && l.src[l.pos] == '.' && isASCIIDigit(l.src[l.pos+1]) {
 		l.advance() // consume the `.`
-		fraction, err := l.readSeparatedDigits(startLine, startCol, unicode.IsDigit, "decimal")
+		fraction, err := l.readSeparatedDigits(startLine, startCol, isASCIIDigit, "decimal")
 		if err != nil {
 			return Token{}, err
 		}
@@ -498,7 +510,7 @@ func (l *Lexer) readSeparatedDigits(startLine, startCol int, isDigit func(rune) 
 }
 
 func isHexDigit(r rune) bool {
-	return unicode.IsDigit(r) || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+	return isASCIIDigit(r) || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
 }
 
 func isOctDigit(r rune) bool {

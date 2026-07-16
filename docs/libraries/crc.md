@@ -63,6 +63,7 @@ def sum as bytes init crc.finalize($s);
 | `crc.stream(algo)`         | `crc.Stream` | Allocate a fresh handle for the named algorithm.                   |
 | `crc.update($s, $bytes)`   | `null`       | Feed one chunk. Mutates the handle's state by side effect.         |
 | `crc.finalize($s)`         | `bytes`      | Compute the checksum and consume the handle. Subsequent calls error. |
+| `crc.discard($s)`          | `null`       | Drop a stream without computing its checksum, releasing its state. Subsequent calls error. |
 
 ## Errors
 

@@ -15,6 +15,7 @@ flat lookup view, not authoritative.
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | [`archive`](archive.md)`.pack(entries, fmt)`         | Bundle a `list of archive.Entry` into `bytes`; `fmt` `"tar"`/`"zip"`/`"tar.gz"`.                                                 |
 | [`archive`](archive.md)`.unpack(b, fmt)`             | Read a bundle back into a `list of archive.Entry`.                                                                                 |
+| [`compress`](compress.md)`.discard(stream)`          | Drop a streaming compressor without returning output; releases its state.                                                          |
 | [`compress`](compress.md)`.finalize(stream)`         | Close a streaming compressor; returns all compressed `bytes`.                                                                      |
 | [`compress`](compress.md)`.pack(b, algo [, level])`  | Compress `bytes`; `algo` `"gzip"`/`"zlib"`/`"deflate"`, optional level `"fast"`/`"default"`/`"best"`.                                |
 | [`compress`](compress.md)`.stream(algo [, level])`   | Start a streaming compressor -> `compress.Stream`.                                                                                 |
@@ -29,6 +30,7 @@ flat lookup view, not authoritative.
 | [`convert`](convert.md)`.typeOf(v)`                   | Runtime kind as string (`"int"`, `"float"`, `"string"`, `"bool"`, `"null"`, `"list"`, `"map"`, `"object"`).                         |
 | [`convert`](convert.md)`.objectType(v)`               | Specific registered name of an opaque object (e.g. `"json.Value"`); errors on a non-object.                                         |
 | [`crc`](crc.md)`.compute(b, algo)`                    | One-shot checksum. `algo` is `"crc32"` or `"crc64"`. Returns big-endian bytes (4 or 8).                                             |
+| [`crc`](crc.md)`.discard($s)`                         | Drop a `crc.Stream` without computing its checksum; releases its state.                                                             |
 | [`crc`](crc.md)`.finalize($s)`                        | Final checksum as big-endian bytes; consumes the handle.                                                                            |
 | [`crc`](crc.md)`.stream(algo)`                        | Allocate a `crc.Stream` for `algo`; feed chunks via `crc.update` then close with `crc.finalize`.                                    |
 | [`crc`](crc.md)`.update($s, $bytes)`                  | Feed one chunk into a `crc.Stream` (mutates by side effect).                                                                        |
@@ -64,6 +66,7 @@ flat lookup view, not authoritative.
 | [`fs`](fs.md)`.writeString(path, content)` / `.writeString($f, s)` | Whole-file overwrite (path form) or write via handle (fs.File form).                                                    |
 | [`hash`](hash.md)`.compute(b, algo)`                  | One-shot digest. `algo` is `"md5"`, `"sha1"`, `"sha256"`, or `"sha512"`. Returns raw bytes.                                         |
 | [`hash`](hash.md)`.hmac(key, message, algo)`          | Keyed-hash MAC (RFC 2104) over the same algorithms; raw bytes out. For JWT / TOTP / SigV4 / webhook signatures.                     |
+| [`hash`](hash.md)`.discard($s)`                       | Drop a `hash.Stream` without computing its digest; releases its state.                                                             |
 | [`hash`](hash.md)`.finalize($s)`                      | Final digest as bytes; consumes the handle (later calls error).                                                                     |
 | [`hash`](hash.md)`.stream(algo)`                      | Allocate a `hash.Stream` for `algo`; feed chunks via `hash.update` then close with `hash.finalize`.                                 |
 | [`hash`](hash.md)`.update($s, $bytes)`                | Feed one chunk into a `hash.Stream` (mutates by side effect).                                                                       |

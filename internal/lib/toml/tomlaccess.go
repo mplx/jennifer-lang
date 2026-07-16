@@ -135,10 +135,17 @@ func arrayIndex(tok string) (int, bool) {
 		if tok[i] < '0' || tok[i] > '9' {
 			return 0, false
 		}
+		// Reject before overflow wraps int negative and panics a slice index.
+		if n > (maxInt-9)/10 {
+			return 0, false
+		}
 		n = n*10 + int(tok[i]-'0')
 	}
 	return n, true
 }
+
+// maxInt is the platform int max, used to reject overflowing pointer indices.
+const maxInt = int(^uint(0) >> 1)
 
 func resolvePointer(fnName string, node interpreter.Value, ptr string) (interpreter.Value, error) {
 	tokens, err := parsePointer(fnName, ptr)
@@ -304,7 +311,14 @@ func parseDatetimeText(text, form string) (stdtime.Time, error) {
 	case formLocalDate:
 		return stdtime.Parse("2006-01-02", text)
 	case formLocalTime:
-		return stdtime.Parse("15:04:05.999999999", text)
+		t, err := stdtime.Parse("15:04:05.999999999", text)
+		if err != nil {
+			return stdtime.Time{}, err
+		}
+		// A time-only layout parses onto year 0, whose UnixNano overflows int64
+		// (~-6.2e19). Anchor to the Unix epoch date so the clock is preserved
+		// and the stored nanos are representable.
+		return stdtime.Date(1970, 1, 1, t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), stdtime.UTC), nil
 	default:
 		return stdtime.Time{}, fmt.Errorf("unknown datetime form %q", form)
 	}

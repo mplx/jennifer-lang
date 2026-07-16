@@ -191,15 +191,26 @@ func resolveModule(importPath, native string, searchDirs []string) (string, erro
 	var matches []string
 	for _, dir := range searchDirs {
 		cand := filepath.Join(dir, native)
-		if fi, err := os.Stat(cand); err == nil && !fi.IsDir() {
-			c, err := canonical(cand)
-			if err != nil {
-				return "", err
+		fi, err := os.Stat(cand)
+		if err != nil {
+			// A genuine not-exist just means "not here" - keep searching. Any
+			// other stat failure (EACCES on the candidate) is surfaced rather
+			// than swallowed as a misleading "module not found".
+			if !os.IsNotExist(err) {
+				return "", fmt.Errorf("module %q: cannot access %q: %v", importPath, cand, err)
 			}
-			if !seen[c] {
-				seen[c] = true
-				matches = append(matches, c)
-			}
+			continue
+		}
+		if fi.IsDir() {
+			continue
+		}
+		c, err := canonical(cand)
+		if err != nil {
+			return "", err
+		}
+		if !seen[c] {
+			seen[c] = true
+			matches = append(matches, c)
 		}
 	}
 	switch len(matches) {

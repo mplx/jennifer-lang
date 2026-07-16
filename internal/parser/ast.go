@@ -394,6 +394,11 @@ type ForStmt struct {
 	Cond Expr // must produce bool; nil means "true forever"
 	Step Stmt // *AssignStmt or nil
 	Body *Block
+	// HeaderSlots is the number of bindings the resolver placed in the loop's
+	// own header frame (the Init `def`). The interpreter pre-sizes that frame
+	// so Init doesn't grow it, and the body frame stays sized to just its own
+	// slots rather than header+body.
+	HeaderSlots int
 }
 
 func (*ForStmt) stmtNode() {}

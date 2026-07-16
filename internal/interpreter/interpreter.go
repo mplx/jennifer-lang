@@ -2283,8 +2283,9 @@ func (i *Interpreter) execFor(st *parser.ForStmt, env *Environment) (blockResult
 	// is visible in cond/step/body, but NOT after the loop. Borrow the header
 	// frame from the pool (freed on every exit path via defer) so a `for`
 	// nested in a hot loop doesn't allocate a fresh frame each pass; the body
-	// block borrows its own frame under this one.
-	forEnv := borrowBlockEnv(env, 0)
+	// block borrows its own frame under this one. Pre-size to HeaderSlots so
+	// the Init `def` binds into an existing slot instead of growing the slice.
+	forEnv := borrowBlockEnv(env, st.HeaderSlots)
 	defer releaseBlockEnv(forEnv)
 	if st.Init != nil {
 		if _, err := i.execStmt(st.Init, forEnv); err != nil {
@@ -2489,8 +2490,16 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 		// their target via GetBinding, not this path.
 		return v, nil
 	case *parser.ConstRefExpr:
-		// 1. User scope first (variables and `def const`).
-		b, err := env.GetBinding(ex.Name)
+		// 1. User scope first (variables and `def const`). Prefer the O(1) slot
+		// path when the resolver annotated this reference; fall back to the
+		// name-map walk (REPL / hand-built AST) otherwise.
+		var b Binding
+		var err error
+		if ex.Slot >= 0 {
+			b, err = env.GetBindingAt(ex.Depth, ex.Slot, ex.Name)
+		} else {
+			b, err = env.GetBinding(ex.Name)
+		}
 		if err == nil {
 			if !b.IsConst {
 				file, line, col := posFor(ex)

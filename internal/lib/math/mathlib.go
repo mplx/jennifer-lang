@@ -290,7 +290,15 @@ func randIntFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.
 	if uspan == 0 {
 		return interpreter.IntVal(int64(randSrc.Uint64())), nil
 	}
-	return interpreter.IntVal(lo + int64(randSrc.Uint64()%uspan)), nil
+	// Rejection-sample to avoid modulo bias: a raw `Uint64() % uspan` would
+	// over-weight the lowest 2^64 mod uspan values. Discard draws in the short
+	// top interval so every residue is equally likely.
+	limit := (0xFFFFFFFFFFFFFFFF/uspan)*uspan - 1
+	u := randSrc.Uint64()
+	for u > limit {
+		u = randSrc.Uint64()
+	}
+	return interpreter.IntVal(lo + int64(u%uspan)), nil
 }
 
 // randSeedFn sets the deterministic seed.

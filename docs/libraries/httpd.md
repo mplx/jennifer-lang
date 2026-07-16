@@ -151,7 +151,13 @@ server {
 
 **Unix domain socket.** No TCP port; nginx proxies over a socket file (cleaner
 permissions, a touch less overhead). The `unix:` prefix selects it, and a
-graceful `httpd.shutdown` unlinks the socket on the way out:
+graceful `httpd.shutdown` unlinks the socket on the way out. If a socket file
+lingers from a prior crash, `httpd.listen` clears it only after confirming it
+is stale (nothing is listening) - it never deletes a socket a live server is
+still using.
+
+`httpd.listenTLS` floors the negotiated protocol at TLS 1.2 (TLS 1.0 / 1.1 are
+deprecated by RFC 8996).
 
 ```jennifer
 def srv as httpd.Server init httpd.listen("unix:/run/app/app.sock");

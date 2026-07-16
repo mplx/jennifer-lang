@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"path"
+	"strings"
 	stdtime "time"
 
 	"jennifer-lang.dev/jennifer/internal/interpreter"
@@ -231,6 +233,27 @@ func packTar(entries []entry) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// checkEntryName rejects a member whose name would escape an extraction
+// directory: an absolute path or a `..` traversal. Archive paths are
+// slash-separated by spec; backslashes are normalized so a Windows-style
+// `..\..\x` is caught too. The library never touches the filesystem, but the
+// obvious extraction loop (fs.write(dir + "/" + name)) with such a name is the
+// zip-slip hole, so it's closed at the decode source.
+func checkEntryName(name string) error {
+	if name == "" {
+		return fmt.Errorf("archive entry has an empty name")
+	}
+	norm := strings.ReplaceAll(name, "\\", "/")
+	if strings.HasPrefix(norm, "/") || (len(norm) >= 2 && norm[1] == ':') {
+		return fmt.Errorf("archive entry %q has an absolute path", name)
+	}
+	clean := path.Clean(norm)
+	if clean == ".." || strings.HasPrefix(clean, "../") {
+		return fmt.Errorf("archive entry %q escapes the target directory", name)
+	}
+	return nil
+}
+
 func unpackTar(b []byte) ([]entry, error) {
 	tr := tar.NewReader(bytes.NewReader(b))
 	var entries []entry
@@ -245,6 +268,9 @@ func unpackTar(b []byte) ([]entry, error) {
 		}
 		if hdr.Typeflag != tar.TypeReg {
 			continue // only regular files map to an Entry
+		}
+		if err := checkEntryName(hdr.Name); err != nil {
+			return nil, err
 		}
 		if len(entries) >= maxEntries {
 			return nil, fmt.Errorf("archive holds more than %d entries", maxEntries)
@@ -310,6 +336,9 @@ func unpackZip(b []byte) ([]entry, error) {
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
 			continue
+		}
+		if err := checkEntryName(f.Name); err != nil {
+			return nil, err
 		}
 		rc, err := f.Open()
 		if err != nil {

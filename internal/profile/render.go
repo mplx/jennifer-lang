@@ -102,14 +102,23 @@ func (c *Collector) Trace(w io.Writer) error {
 	}
 	calls := c.callsSnapshot()
 	events := make([]event, 0, len(calls))
+	// Map raw goroutine ids to small, stable track numbers so concurrent spawn
+	// spans render on separate tracks instead of overlapping on tid 1. The main
+	// goroutine's id maps to track 1 (it records first).
+	tidOf := map[int]int{}
 	for _, ce := range calls {
+		tid, ok := tidOf[ce.gid]
+		if !ok {
+			tid = len(tidOf) + 1
+			tidOf[ce.gid] = tid
+		}
 		events = append(events, event{
 			Name: ce.name,
 			Ph:   "X",
 			Ts:   float64(ce.start.Nanoseconds()) / 1000.0,
 			Dur:  float64((ce.end - ce.start).Nanoseconds()) / 1000.0,
 			Pid:  1,
-			Tid:  1,
+			Tid:  tid,
 			Args: map[string]interface{}{"pos": fmt.Sprintf("%s:%d:%d", ce.file, ce.line, ce.col)},
 		})
 	}
