@@ -13,6 +13,11 @@ import (
 // default).
 const SysmoddirEnv = "JENNIFER_SYSMODDIR"
 
+// VendorEnv is the environment variable that overrides the vendor root for
+// `@scope/package` deck imports (below a `--vendor` flag, above the upward
+// `vendor/` walk).
+const VendorEnv = "JENNIFER_VENDOR"
+
 // compileDefaultSysmoddir is the built-in system module directory. It is a
 // var (not a const) so the build can override it the same way the version
 // string is stamped - a generated file's init(), since TinyGo ignores

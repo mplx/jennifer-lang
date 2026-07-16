@@ -222,8 +222,9 @@ constraints.
   exists, and `jvc` is just the manager layered over that resolver. Nothing is
   global; each app owns its decks beside it.
 - **The one remaining language-surface question: inline version selectors.**
-  M19.7 resolves `import "@mplx/supercms/main.j" as cms;` against whatever is
-  installed. `jvc` supplies the *default* - plain `import @mplx/supercms;` takes
+  M19.7 resolves `import "@mplx/supercms/" as cms;` (the trailing `/` expands to
+  the package-named entry `supercms/supercms.j`) against whatever is installed.
+  `jvc` supplies the *default* - plain `import @mplx/supercms;` takes
   the version `jvc` resolved (declared in `deck.toml`, pinned in the lockfile),
   version-transparent, which is what almost every script wants. The opt-in for
   side-by-side versions is a **per-import selector** matched against the installed

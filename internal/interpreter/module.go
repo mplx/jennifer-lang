@@ -20,11 +20,12 @@ import (
 // run-once, depth-first post-order init, and cycle detection all fall out
 // of the recursion.
 type moduleReg struct {
-	cache  map[string]*loadedModule
-	stack  []string                                            // canonical paths currently loading
-	search []string                                            // module search dirs (sysmoddir, then -I dirs)
-	load   func(canonicalPath string) (*parser.Program, error) // lex/preproc/parse a module file
-	setup  func(*Interpreter)                                  // install the standard library into a module interpreter
+	cache      map[string]*loadedModule
+	stack      []string                                            // canonical paths currently loading
+	search     []string                                            // module search dirs (sysmoddir, then -I dirs)
+	vendorRoot string                                              // root for `@scope/package` deck imports ("" = none)
+	load       func(canonicalPath string) (*parser.Program, error) // lex/preproc/parse a module file
+	setup      func(*Interpreter)                                  // install the standard library into a module interpreter
 }
 
 // loadedModule is one initialised module - its own interpreter (holding the
@@ -143,6 +144,15 @@ func (i *Interpreter) EnableModules(baseDir string, searchDirs []string, load fu
 		search: searchDirs,
 		load:   load,
 		setup:  setup,
+	}
+}
+
+// SetVendorRoot sets the root directory for `@scope/package` deck imports (see
+// module.FindVendorRoot). Empty leaves `@` imports erroring with guidance. Must
+// be called after EnableModules; a no-op if the module system is not enabled.
+func (i *Interpreter) SetVendorRoot(dir string) {
+	if i.modReg != nil {
+		i.modReg.vendorRoot = dir
 	}
 }
 
@@ -648,7 +658,7 @@ func rejectExportInScript(prog *parser.Program) error {
 // resolution / cycle error at the import statement.
 func (i *Interpreter) loadModule(importPath string, at parser.Node) (*loadedModule, error) {
 	reg := i.modReg
-	canonical, err := module.Resolve(importPath, i.baseDir, reg.search)
+	canonical, err := module.Resolve(importPath, i.baseDir, reg.search, reg.vendorRoot)
 	if err != nil {
 		file, line, col := posFor(at)
 		return nil, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}

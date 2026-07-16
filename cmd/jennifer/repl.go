@@ -13,6 +13,7 @@ import (
 
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 	"github.com/mplx/jennifer-lang/internal/lexer"
+	"github.com/mplx/jennifer-lang/internal/module"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 	"github.com/mplx/jennifer-lang/internal/stdlib"
@@ -55,6 +56,7 @@ func runRepl(searchDirs []string) int {
 	// installLibraries populates. Without this the REPL would accept an
 	// `import` line and silently register no namespace.
 	in.EnableModules(cwd, searchDirs, loadModuleProgram, installLibraries)
+	in.SetVendorRoot(module.FindVendorRoot("", cwd))
 
 	// Print the banner in cooked mode so newlines auto-translate. Raw
 	// mode (if we enter it) starts on the next line.

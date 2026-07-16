@@ -1563,6 +1563,28 @@ machine-readable form parses; the plain `jennifer test` path (no
 
 ### M19.7 - `@scope/package` module resolution (vendored packages)
 
+**Done.** A leading `@` is a vendored-deck reference, expanded by one function
+(`resolveVendor` in `internal/module`): the `@` swaps in the vendor root and a
+reference not ending in `.j` gets the package-named entry appended, so
+`@claude/bitcoin`, `@claude/bitcoin/`, and an explicit `@claude/bitcoin/utils.j`
+all reduce to a plain absolute path - after which resolution, the run-once
+cache, and M19.5 path identity are untouched. Because the entry is
+`<package>.j` (named after the deck), `moduleStem` gives the package name, so
+the display namespace and default alias fall out with zero special-casing
+(`import "@claude/bitcoin/"` binds `bitcoin.`); two same-package decks across
+scopes (`@a/bitcoin`, `@b/bitcoin`) are distinct types (M19.5) and collide only
+on the default alias, resolved with `as`. The vendor root comes from
+`module.FindVendorRoot` with the sysmoddir-style layering (`--vendor` flag on
+`run`, else `JENNIFER_VENDOR`, else the nearest `vendor/` above the program;
+wired into `run` / `repl` / `test` via `SetVendorRoot`). Path safety: `@` only
+at the front, no `.`/`..` segments, and the resolved file must stay inside the
+deck directory; a missing vendor root is a guided error, not a crash. The parser
+exempts `@` deck references from the `.j` requirement. Pinned by module-package
+unit tests (expansion, error cases, vendor-root discovery) and end-to-end CLI
+tests (entry / explicit-file / default-alias imports, cross-deck type
+distinctness, missing-root error); full suite, all 53 overlays, and both
+toolchains stay green. The `jvc` manager layered over this stays DRAFT#12.
+
 Today the module resolver keys on the import path's leading token: `./` (or
 `../`) is local (relative to the importing file), `/` is absolute, and a bare
 name resolves through the search path (system module dir, then each `-I DIR`).
@@ -1575,13 +1597,29 @@ project-local `vendor/SCOPE/PACKAGE/` tree; this milestone teaches the resolver
 to address that tree, so a vendored package imports unambiguously and
 independently of the system search path.
 
-- **A fourth leading-token kind: `@`.** `import "@scope/package/mod.j" as
-  alias;` resolves `scope/package/mod.j` under the **vendor root** - a form
-  distinct from the three existing ones and from the system search path. It
-  stays an ordinary string-literal path, so there is no new grammar (the inline
-  version selectors `@pkg=1.2.3` / `@pkg#commit` are `jvc`'s concern and keep
-  their own grammar in DRAFT#12); the resolver gains one branch on a leading
-  `@`.
+- **A fourth leading-token kind, expanded by one function.** `import
+  "@scope/package/" [as alias];` addresses a **deck** under the vendor root.
+  Both ends are pure path expansion, done once in `expandModule()`: a leading
+  `@` swaps in the vendor root (`@` is the `<vendorRoot>/` shortcut), and a
+  reference that does not end in `.j` gets the deck's entry file appended, so
+  `@claude/bitcoin`, `@claude/bitcoin/`, and an explicit
+  `@claude/bitcoin/utils.j` all reduce to a plain absolute path. After that
+  expansion every downstream step (resolution, run-once cache, M19.5 path
+  identity) is unchanged - it is just a path import, and the vendor variable
+  only affects this expansion. It stays an ordinary string-literal path, so
+  there is no new grammar (the inline version selectors `@pkg=1.2.3` /
+  `@pkg#commit` are `jvc`'s concern, DRAFT#12).
+- **Package-named entry, so the namespace is free.** A deck's entry file is
+  `<package>.j` (`vendor/claude/bitcoin/bitcoin.j`), named after the deck
+  directory. Because a module's display namespace and default alias both come
+  from `moduleStem` (the basename), that convention makes them fall out with
+  **zero special-casing**: `import "@claude/bitcoin/"` binds the `bitcoin.`
+  namespace and `def x as bitcoin.Wallet` type-checks, all from the existing
+  stem logic. Without an alias the default namespace is thus the package name
+  (never the useless `main` a fixed entry name would give); two decks with the
+  same package name (`@a/bitcoin`, `@b/bitcoin`) default to the same alias,
+  collide, and take an explicit `as` (the two-`util.j` rule) - typical use is
+  aliased anyway.
 - **Vendor-root discovery.** Walk up from the entry program's directory to the
   nearest `vendor/` (the `node_modules` / Composer convention), overridable with
   `--vendor DIR` and `JENNIFER_VENDOR` - the same override layering as
@@ -1603,12 +1641,14 @@ version constraint solving, fetching) stays a beyond-1.0.0 draft (DRAFT#12);
 this milestone lands only the interpreter-side resolution `jvc` builds on, so a
 vendored tree populated by hand (or by an early `jvc`) imports today.
 
-**Acceptance.** `import "@acme/widgets/mod.j" as w;` in an app with
-`vendor/acme/widgets/mod.j` resolves and runs; the vendor root is found by the
-upward walk and is overridable via flag / env; a missing package is a positioned
-error; `./`, `/`, and bare-name imports are byte-for-byte unchanged; a `@a/util`
-and a `@b/util` struct do not cross-satisfy each other's type checks; a
-`..`-escape path is rejected.
+**Acceptance.** `import "@acme/widgets/" as w;` in an app with
+`vendor/acme/widgets/widgets.j` resolves and runs (the trailing `/` expands to
+the package-named entry); an explicit `@acme/widgets/util.j` also resolves;
+without an alias the namespace defaults to `widgets`; the vendor root is found by
+the upward walk and is overridable via flag / env; a missing package is a
+positioned error; `./`, `/`, and bare-name imports are byte-for-byte unchanged;
+`@a/bitcoin` and `@b/bitcoin` structs do not cross-satisfy each other's type
+checks; a `..`-escape path is rejected.
 
 ### M19.8 - Relocation: `jennifer-lang` org + vanity module path
 

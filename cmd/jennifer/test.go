@@ -18,6 +18,7 @@ import (
 	"github.com/mplx/jennifer-lang/internal/interpreter"
 	"github.com/mplx/jennifer-lang/internal/lexer"
 	testinglib "github.com/mplx/jennifer-lang/internal/lib/testing"
+	"github.com/mplx/jennifer-lang/internal/module"
 	"github.com/mplx/jennifer-lang/internal/parser"
 	"github.com/mplx/jennifer-lang/internal/preproc"
 	"github.com/mplx/jennifer-lang/internal/profile"
@@ -169,6 +170,7 @@ func loadForTestProg(path string, cov *profile.Collector) (*interpreter.Interpre
 	// the default system module dir. Harmless for a file with no imports.
 	sm, _ := setupSysmoddir("")
 	in.EnableModules(baseDir, []string{sm.Dir}, loadModuleProgram, installLibraries)
+	in.SetVendorRoot(module.FindVendorRoot("", baseDir))
 	if moduleContext {
 		in.SetModuleContext(true)
 	}

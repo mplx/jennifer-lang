@@ -43,7 +43,7 @@ func main() {
 		// (matches Python sys.argv, Go os.Args): index 0 of the
 		// user-visible `os.ARGS` is the script path, the rest are the
 		// user-supplied args.
-		file, sysmoddirFlag, includes, userArgs, perr := parseRunArgs(os.Args[2:])
+		file, sysmoddirFlag, vendorFlag, includes, userArgs, perr := parseRunArgs(os.Args[2:])
 		if perr != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", perr)
 			usage()
@@ -57,7 +57,7 @@ func main() {
 		// Module search path: system module dir first, then each -I dir.
 		searchDirs := append([]string{sm.Dir}, includes...)
 		oslib.SetUserArgs(append([]string{file}, userArgs...))
-		os.Exit(runFile(file, searchDirs))
+		os.Exit(runFile(file, searchDirs, vendorFlag))
 	case "repl":
 		if len(os.Args) != 2 {
 			usage()
@@ -145,12 +145,12 @@ func usage() {
 // file, and the user program's argv. Flags precede the file; the first
 // non-flag token (or `-` for stdin) is the file, and everything after it
 // is passed through to the program untouched.
-func parseRunArgs(args []string) (file, sysmoddir string, includes, userArgs []string, err error) {
+func parseRunArgs(args []string) (file, sysmoddir, vendor string, includes, userArgs []string, err error) {
 	i := 0
 	for i < len(args) {
 		a := args[i]
 		if a == "-" || !strings.HasPrefix(a, "-") {
-			return a, sysmoddir, includes, args[i+1:], nil
+			return a, sysmoddir, vendor, includes, args[i+1:], nil
 		}
 		switch {
 		case strings.HasPrefix(a, "--sysmoddir="):
@@ -158,22 +158,30 @@ func parseRunArgs(args []string) (file, sysmoddir string, includes, userArgs []s
 			i++
 		case a == "--sysmoddir":
 			if i+1 >= len(args) {
-				return "", "", nil, nil, fmt.Errorf("jennifer run: --sysmoddir needs a directory argument")
+				return "", "", "", nil, nil, fmt.Errorf("jennifer run: --sysmoddir needs a directory argument")
 			}
 			sysmoddir, i = args[i+1], i+2
+		case strings.HasPrefix(a, "--vendor="):
+			vendor = strings.TrimPrefix(a, "--vendor=")
+			i++
+		case a == "--vendor":
+			if i+1 >= len(args) {
+				return "", "", "", nil, nil, fmt.Errorf("jennifer run: --vendor needs a directory argument")
+			}
+			vendor, i = args[i+1], i+2
 		case strings.HasPrefix(a, "-I="):
 			includes = append(includes, strings.TrimPrefix(a, "-I="))
 			i++
 		case a == "-I":
 			if i+1 >= len(args) {
-				return "", "", nil, nil, fmt.Errorf("jennifer run: -I needs a directory argument")
+				return "", "", "", nil, nil, fmt.Errorf("jennifer run: -I needs a directory argument")
 			}
 			includes, i = append(includes, args[i+1]), i+2
 		default:
-			return "", "", nil, nil, fmt.Errorf("jennifer run: unknown flag %q", a)
+			return "", "", "", nil, nil, fmt.Errorf("jennifer run: unknown flag %q", a)
 		}
 	}
-	return "", "", nil, nil, fmt.Errorf("jennifer run: no source file given")
+	return "", "", "", nil, nil, fmt.Errorf("jennifer run: no source file given")
 }
 
 // setupSysmoddir resolves the system module directory from the layer
@@ -190,15 +198,34 @@ func setupSysmoddir(cliFlag string) (module.Sysmoddir, error) {
 	return sm, nil
 }
 
-// printVersionVerbose backs `jennifer version -v`: the build version plus
-// the resolved system module directory and the layers behind it.
+// printVersionVerbose backs `jennifer version -v`: the build version plus every
+// system directory the resolver uses (the system module dir and the vendor
+// root for `@scope/package` decks), each with the layers behind it.
 func printVersionVerbose() {
 	fmt.Println("jennifer " + version.Version)
+
 	sm := module.ResolveSysmoddir("", os.Getenv)
 	fmt.Printf("system module dir: %s (%s)\n", sm.Dir, sm.Source)
 	fmt.Printf("  compile default: %s\n", module.CompileDefaultSysmoddir())
 	if env := os.Getenv(module.SysmoddirEnv); env != "" {
 		fmt.Printf("  env %s: %s\n", module.SysmoddirEnv, env)
+	}
+
+	// Vendor root for `@scope/package` deck imports. Resolved relative to the
+	// current directory (the upward `vendor/` walk), since there is no program
+	// context here.
+	cwd, _ := os.Getwd()
+	if vr := module.FindVendorRoot("", cwd); vr != "" {
+		src := "nearest vendor/ above cwd"
+		if os.Getenv(module.VendorEnv) != "" {
+			src = "env " + module.VendorEnv
+		}
+		fmt.Printf("vendor root: %s (%s)\n", vr, src)
+	} else {
+		fmt.Printf("vendor root: (none; no %s and no vendor/ above cwd)\n", module.VendorEnv)
+	}
+	if env := os.Getenv(module.VendorEnv); env != "" {
+		fmt.Printf("  env %s: %s\n", module.VendorEnv, env)
 	}
 }
 
@@ -240,15 +267,15 @@ func loadModuleProgram(path string) (*parser.Program, error) {
 	return parser.ParseTokens(toks)
 }
 
-func runFile(path string, searchDirs []string) int {
-	return runFileHook(path, searchDirs, nil)
+func runFile(path string, searchDirs []string, vendorFlag string) int {
+	return runFileHook(path, searchDirs, vendorFlag, nil)
 }
 
 // runFileHook is runFile with an optional callback invoked once the source has
 // parsed cleanly, just before execution begins. `jennifer serve` uses it to
 // print its "running" banner only after a clean parse, so the banner never
 // precedes a syntax error.
-func runFileHook(path string, searchDirs []string, afterParse func()) int {
+func runFileHook(path string, searchDirs []string, vendorFlag string, afterParse func()) int {
 	var (
 		src     string
 		label   string // path used in error messages
@@ -317,6 +344,9 @@ func runFileHook(path string, searchDirs []string, afterParse func()) int {
 	// system module dir, then any -I dirs). Each module loads into a fresh
 	// sub-interpreter that installLibraries populates.
 	in.EnableModules(baseDir, searchDirs, loadModuleProgram, installLibraries)
+	// `@scope/package` deck imports resolve under the vendor root: --vendor, else
+	// JENNIFER_VENDOR, else the nearest `vendor/` above this file.
+	in.SetVendorRoot(module.FindVendorRoot(vendorFlag, baseDir))
 	runErr := in.Run(prog)
 
 	// The exit-time loud-fail. Even when Run returned cleanly,

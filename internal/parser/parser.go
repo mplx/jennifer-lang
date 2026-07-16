@@ -213,7 +213,10 @@ func (p *parser) parseModuleImport() (*ModuleImportStmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !strings.HasSuffix(path.Lexeme, ".j") {
+	// A deck reference (`@scope/package/`) need not end in `.j`: the trailing
+	// slash expands to the package-named entry file at resolve time. Every other
+	// module path is a file and must end in `.j`.
+	if !strings.HasSuffix(path.Lexeme, ".j") && !strings.HasPrefix(path.Lexeme, "@") {
 		return nil, &ParseError{Msg: fmt.Sprintf("module path %q must end in `.j`", path.Lexeme), File: path.File, Line: path.Line, Col: path.Col}
 	}
 	m := &ModuleImportStmt{pos: pos{File: imp.File, Line: imp.Line, Col: imp.Col}, Path: path.Lexeme}

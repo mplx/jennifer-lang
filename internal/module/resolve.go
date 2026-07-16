@@ -73,7 +73,13 @@ func Classify(importPath string) (Kind, error) {
 // not-found error naming the search path. The returned path is cleaned and
 // absolute (canonical), the key the loader uses for run-once and cycle
 // detection.
-func Resolve(importPath, importingDir string, searchDirs []string) (string, error) {
+func Resolve(importPath, importingDir string, searchDirs []string, vendorRoot string) (string, error) {
+	// A leading `@` is a vendored-deck reference, expanded under the vendor root.
+	// Handled before Classify because the deck-entry form (`@scope/package/`)
+	// intentionally does not end in `.j`.
+	if strings.HasPrefix(importPath, "@") {
+		return resolveVendor(importPath, vendorRoot)
+	}
 	kind, err := Classify(importPath)
 	if err != nil {
 		return "", err
@@ -86,6 +92,93 @@ func Resolve(importPath, importingDir string, searchDirs []string) (string, erro
 		return canonical(native)
 	default: // Module
 		return resolveModule(importPath, native, searchDirs)
+	}
+}
+
+// resolveVendor expands an `@scope/package[/rest]` deck reference to a concrete
+// file under the vendor root. The `@` is the vendor-root shortcut, and a
+// reference that does not end in `.j` gets the package-named entry appended
+// (`@a/b` and `@a/b/` -> vendorRoot/a/b/b.j); an explicit `@a/b/util.j` (or a
+// subdir file) resolves as written. Rejects a missing vendor root, a stray `@`,
+// a `.`/`..` segment, and anything resolving outside the deck directory.
+func resolveVendor(importPath, vendorRoot string) (string, error) {
+	if vendorRoot == "" {
+		return "", fmt.Errorf("import %q needs a vendor directory, but none was found (pass --vendor DIR, set JENNIFER_VENDOR, or add a `vendor/` dir above the program)", importPath)
+	}
+	if strings.ContainsRune(importPath, '\\') {
+		return "", fmt.Errorf("import path %q must use '/' separators, not '\\'", importPath)
+	}
+	rest := importPath[1:] // drop the leading '@'
+	if strings.ContainsRune(rest, '@') {
+		return "", fmt.Errorf("import path %q: '@' is only valid as the first character", importPath)
+	}
+	explicitFile := strings.HasSuffix(rest, ".j")
+	rest = strings.TrimSuffix(rest, "/") // a trailing slash is the entry-form spelling
+	segs := strings.Split(rest, "/")
+	if len(segs) < 2 || segs[0] == "" || segs[1] == "" {
+		return "", fmt.Errorf("import path %q must be @scope/package[/file.j]", importPath)
+	}
+	for _, s := range segs {
+		if s == "." || s == ".." || s == "" {
+			return "", fmt.Errorf("import path %q must not contain '.' or '..' segments", importPath)
+		}
+	}
+	scope, pkg := segs[0], segs[1]
+	deckRoot, err := canonical(filepath.Join(vendorRoot, scope, pkg))
+	if err != nil {
+		return "", err
+	}
+	var target string
+	if explicitFile {
+		target = filepath.Join(vendorRoot, filepath.FromSlash(rest))
+	} else {
+		if len(segs) != 2 {
+			return "", fmt.Errorf("import path %q: only @scope/package expands to an entry file; a subdirectory needs an explicit `.j` file", importPath)
+		}
+		target = filepath.Join(deckRoot, pkg+".j") // package-named entry
+	}
+	c, err := canonical(target)
+	if err != nil {
+		return "", err
+	}
+	if c != deckRoot && !strings.HasPrefix(c, deckRoot+string(filepath.Separator)) {
+		return "", fmt.Errorf("import path %q resolves outside its package directory", importPath)
+	}
+	return c, nil
+}
+
+// FindVendorRoot resolves the vendor directory for `@scope/package` imports,
+// with the same override layering as the system module dir: an explicit dir
+// wins, else the JENNIFER_VENDOR environment variable, else an upward walk from
+// startDir to the nearest `vendor/` directory. Returns "" when none is found
+// (an `@` import then errors with guidance).
+func FindVendorRoot(explicit, startDir string) string {
+	if explicit != "" {
+		if abs, err := filepath.Abs(explicit); err == nil {
+			return filepath.Clean(abs)
+		}
+		return filepath.Clean(explicit)
+	}
+	if env := os.Getenv(VendorEnv); env != "" {
+		if abs, err := filepath.Abs(env); err == nil {
+			return filepath.Clean(abs)
+		}
+		return filepath.Clean(env)
+	}
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		return ""
+	}
+	for {
+		cand := filepath.Join(dir, "vendor")
+		if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
+			return cand
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "" // reached the filesystem root without a vendor/
+		}
+		dir = parent
 	}
 }
 

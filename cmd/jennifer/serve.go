@@ -40,7 +40,7 @@ func runServe(args []string) int {
 		oslib.SetUserArgs([]string{file})
 		// Print the banner only after a clean parse, so it never precedes a
 		// syntax error.
-		return runFileHook(file, searchDirs, func() {
+		return runFileHook(file, searchDirs, "", func() {
 			fmt.Fprintf(os.Stderr, "jennifer serve: running %s (pass --watch to reload on change)\n", file)
 		})
 	}

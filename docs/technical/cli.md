@@ -57,9 +57,16 @@ after the file is the program's own `os.ARGS`.
   wired in `main.go`'s `runFile` - `in.EnableModules(baseDir, searchDirs,
   loadModuleProgram, installLibraries)`, where `searchDirs` is the system
   dir followed by each `-I` dir.)
+- `--vendor DIR` (or `--vendor=DIR`) - the vendor root for `@scope/package`
+  deck imports. Overrides `JENNIFER_VENDOR`, which overrides the upward walk
+  to the nearest `vendor/` directory above the program. `@scope/package/`
+  expands to `<vendorRoot>/scope/package/package.j` (see the import spec);
+  wired via `in.SetVendorRoot(module.FindVendorRoot(vendorFlag, baseDir))`.
+  `repl` / `test` use the upward walk (no flag).
 
-`jennifer version -v` reports the resolved system module dir and the
-layers (compile default, `JENNIFER_SYSMODDIR`) behind it.
+`jennifer version -v` reports every system directory the resolver uses - the
+system module dir and the vendor root - each with the layers (compile default /
+`JENNIFER_SYSMODDIR`, and env / `vendor/`-walk) behind it.
 
 - Verifies the `.j` extension
 - Reads the file, parses, runs

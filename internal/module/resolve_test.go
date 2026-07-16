@@ -62,7 +62,7 @@ func TestResolveLocalAndAbsolute(t *testing.T) {
 	importing := filepath.Join(dir, "pkg")
 
 	// Local: relative to the importing file's directory, canonicalized.
-	got, err := Resolve("./util.j", importing, nil)
+	got, err := Resolve("./util.j", importing, nil, "")
 	if err != nil {
 		t.Fatalf("local: %v", err)
 	}
@@ -70,13 +70,13 @@ func TestResolveLocalAndAbsolute(t *testing.T) {
 		t.Errorf("local = %q, want %q", got, want)
 	}
 	// Local with ..: navigation within the tree is allowed.
-	got, _ = Resolve("../shared/x.j", importing, nil)
+	got, _ = Resolve("../shared/x.j", importing, nil, "")
 	if want := filepath.Join(dir, "shared", "x.j"); got != want {
 		t.Errorf("local .. = %q, want %q", got, want)
 	}
 	// Absolute: exactly that file, ignoring importingDir and searchDirs.
 	abs := filepath.Join(dir, "opt", "m.j")
-	got, err = Resolve(abs, importing, []string{"/should/be/ignored"})
+	got, err = Resolve(abs, importing, []string{"/should/be/ignored"}, "")
 	if err != nil {
 		t.Fatalf("absolute: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestResolveModuleSearchPath(t *testing.T) {
 	mustWrite(t, filepath.Join(idir, "helper.j"), "")
 
 	// Found in the system dir.
-	got, err := Resolve("core.j", "/irrelevant", []string{sysdir, idir})
+	got, err := Resolve("core.j", "/irrelevant", []string{sysdir, idir}, "")
 	if err != nil {
 		t.Fatalf("core.j: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestResolveModuleSearchPath(t *testing.T) {
 		t.Errorf("core.j = %q, want %q", got, want)
 	}
 	// Found only in the -I dir (a -I dir adds names).
-	got, err = Resolve("helper.j", "/irrelevant", []string{sysdir, idir})
+	got, err = Resolve("helper.j", "/irrelevant", []string{sysdir, idir}, "")
 	if err != nil {
 		t.Fatalf("helper.j: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestResolveModuleDuplicateIsError(t *testing.T) {
 	mustWrite(t, filepath.Join(a, "dup.j"), "")
 	mustWrite(t, filepath.Join(b, "dup.j"), "")
 
-	_, err := Resolve("dup.j", "/x", []string{a, b})
+	_, err := Resolve("dup.j", "/x", []string{a, b}, "")
 	if err == nil {
 		t.Fatal("expected an ambiguity error for a duplicate module name")
 	}
@@ -131,7 +131,7 @@ func TestResolveModuleDuplicateIsError(t *testing.T) {
 }
 
 func TestResolveModuleNotFound(t *testing.T) {
-	if _, err := Resolve("missing.j", "/x", []string{t.TempDir()}); err == nil {
+	if _, err := Resolve("missing.j", "/x", []string{t.TempDir()}, ""); err == nil {
 		t.Fatal("expected a not-found error")
 	} else if !strings.Contains(err.Error(), "not found") {
 		t.Errorf("error %q should mention not found", err.Error())
@@ -139,7 +139,7 @@ func TestResolveModuleNotFound(t *testing.T) {
 }
 
 func TestResolveRejectsBadPath(t *testing.T) {
-	if _, err := Resolve(`sub\x.j`, "/x", nil); err == nil {
+	if _, err := Resolve(`sub\x.j`, "/x", nil, ""); err == nil {
 		t.Error("expected backslash rejection to propagate through Resolve")
 	}
 }
@@ -155,5 +155,65 @@ func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A leading `@` expands under the vendor root: the trailing-slash / bare form
+// gets the package-named entry appended; an explicit file resolves as written.
+func TestResolveVendorExpansion(t *testing.T) {
+	vr := filepath.FromSlash("/proj/vendor")
+	cases := []struct{ imp, want string }{
+		{"@acme/widgets/", "/proj/vendor/acme/widgets/widgets.j"},
+		{"@acme/widgets", "/proj/vendor/acme/widgets/widgets.j"},
+		{"@acme/widgets/util.j", "/proj/vendor/acme/widgets/util.j"},
+		{"@acme/widgets/sub/util.j", "/proj/vendor/acme/widgets/sub/util.j"},
+	}
+	for _, c := range cases {
+		got, err := Resolve(c.imp, "/irrelevant", nil, vr)
+		if err != nil {
+			t.Errorf("%q: %v", c.imp, err)
+			continue
+		}
+		if want := filepath.Clean(filepath.FromSlash(c.want)); got != want {
+			t.Errorf("%q: got %q, want %q", c.imp, got, want)
+		}
+	}
+}
+
+// Vendor references reject a missing root, a stray `@`, `.`/`..` escapes, a
+// subdirectory entry form, and a too-short path.
+func TestResolveVendorErrors(t *testing.T) {
+	if _, err := Resolve("@acme/widgets/", "/x", nil, ""); err == nil {
+		t.Error("an @ import with no vendor root must error")
+	}
+	vr := filepath.FromSlash("/proj/vendor")
+	for _, imp := range []string{
+		"@acme", "@", "@/widgets/", "@acme//",
+		"@acme/../../etc.j", "@acme/widgets/../x.j", "@acme/wid@gets/", "@acme/widgets/sub/",
+	} {
+		if _, err := Resolve(imp, "/x", nil, vr); err == nil {
+			t.Errorf("%q should be a resolution error", imp)
+		}
+	}
+}
+
+// FindVendorRoot: explicit wins, then the upward walk to the nearest vendor/,
+// then "" when none exists.
+func TestFindVendorRoot(t *testing.T) {
+	if got := FindVendorRoot("/explicit/dir", "/start"); got != filepath.Clean("/explicit/dir") {
+		t.Errorf("explicit: got %q", got)
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a", "b"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "vendor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := FindVendorRoot("", filepath.Join(root, "a", "b")), filepath.Join(root, "vendor"); got != want {
+		t.Errorf("upward walk: got %q, want %q", got, want)
+	}
+	if got := FindVendorRoot("", t.TempDir()); got != "" {
+		t.Errorf("no vendor dir should give \"\", got %q", got)
 	}
 }
