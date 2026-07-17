@@ -36,6 +36,61 @@ func TestRandBytesLengthAndBounds(t *testing.T) {
 	if _, err := randBytesFn(noCtx, []interpreter.Value{interpreter.StringVal("x")}); err == nil {
 		t.Error("non-int n should error")
 	}
+	// An over-limit n must be a catchable error, never an unbounded make (the
+	// interpreter has no recover(), so make([]byte, huge) is a fatal crash).
+	if _, err := randBytesFn(noCtx, []interpreter.Value{interpreter.IntVal(maxRandBytes + 1)}); err == nil {
+		t.Error("over-limit n should error, not allocate")
+	}
+	// The cap itself is still allowed.
+	if _, err := randBytesFn(noCtx, []interpreter.Value{interpreter.IntVal(maxRandBytes)}); err != nil {
+		t.Errorf("n == maxRandBytes should be allowed: %v", err)
+	}
+}
+
+// PBKDF2's keyLen and iterations must be bounded so an untrusted value (e.g. a
+// hostile SCRAM server's i=) cannot allocate gigabytes or spin a core forever;
+// both should surface as a catchable error, and sane values still derive a key.
+func TestPBKDFBounds(t *testing.T) {
+	pw := interpreter.BytesVal([]byte("password"))
+	salt := interpreter.BytesVal([]byte("saltsalt"))
+	algo := interpreter.StringVal("sha256")
+	call := func(iter, keyLen int64) error {
+		_, err := pbkdf2Fn(noCtx, []interpreter.Value{pw, salt, interpreter.IntVal(iter), interpreter.IntVal(keyLen), algo})
+		return err
+	}
+	if call(maxPBKDFIterations+1, 32) == nil {
+		t.Error("over-limit iterations should error")
+	}
+	if call(1000, maxKeyLen+1) == nil {
+		t.Error("over-limit keyLen should error")
+	}
+	if err := call(100000, 32); err != nil {
+		t.Errorf("sane pbkdf params should derive a key: %v", err)
+	}
+}
+
+// RandFill fills a whole slice in one lock acquisition and yields distinct
+// output across calls; the buffer refills correctly across its 512-byte edge.
+func TestRandFill(t *testing.T) {
+	var a, b [40]byte
+	RandFill(a[:])
+	RandFill(b[:])
+	if a == b {
+		t.Error("two RandFill draws were identical")
+	}
+	// A draw larger than the internal buffer must still fill completely.
+	big := make([]byte, len(randBuf)*2+7)
+	RandFill(big)
+	allZero := true
+	for _, x := range big {
+		if x != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		t.Error("RandFill left an over-buffer-sized slice all zero")
+	}
 }
 
 func TestRandIntUniformAndBounds(t *testing.T) {

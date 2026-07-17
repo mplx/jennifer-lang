@@ -301,12 +301,21 @@ export func generate(s as Schema) {
         fail("minimum symbols required but the symbol pool is empty");
     }
     def required as int init $minLo + $minUp + $minDig + $minSym;
-    def target as int init $s.minLength;
-    if ($s.maxLength > $s.minLength) {
-        $target = crypto.randInt($s.minLength, $s.maxLength);
+    # Reject an infeasible schema up front (deterministically), then draw the
+    # target length from the feasible window [max(minLength, required),
+    # maxLength]. Drawing from minLength and throwing when the random target
+    # happened to fall below `required` made the same schema succeed or throw
+    # depending on the draw.
+    if ($required > $s.maxLength) {
+        fail("class minimums (" + convert.toString($required) + ") exceed maxLength (" + convert.toString($s.maxLength) + ")");
     }
-    if ($required > $target) {
-        fail("class minimums (" + convert.toString($required) + ") exceed the length (" + convert.toString($target) + ")");
+    def minTarget as int init $s.minLength;
+    if ($required > $minTarget) {
+        $minTarget = $required;
+    }
+    def target as int init $minTarget;
+    if ($s.maxLength > $minTarget) {
+        $target = crypto.randInt($minTarget, $s.maxLength);
     }
     def chars as list of string;
     $chars = pushRandom($chars, classPool($s, "lower"), $minLo);

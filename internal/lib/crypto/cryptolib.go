@@ -86,6 +86,23 @@ func RandByte() byte {
 	return b
 }
 
+// RandFill fills b with cryptographically secure random bytes from the shared
+// buffer, taking the lock once for the whole slice. uuid fills all 16 (or 10)
+// of a UUID's random bytes in one call, so it pays one lock acquisition instead
+// of one per byte. Refills the buffer mid-copy as needed.
+func RandFill(b []byte) {
+	randMu.Lock()
+	defer randMu.Unlock()
+	for i := range b {
+		if randPos >= len(randBuf) {
+			fill(randBuf[:])
+			randPos = 0
+		}
+		b[i] = randBuf[randPos]
+		randPos++
+	}
+}
+
 // fill reads len(b) crypto-grade random bytes into b. crypto/rand.Read fills
 // completely and does not return an error on the supported platform; a failure
 // is unrecoverable (no weak fallback), so it panics.
@@ -103,8 +120,15 @@ func randUint64() uint64 {
 	return binary.BigEndian.Uint64(b[:])
 }
 
+// maxRandBytes bounds a single crypto.randBytes request. Keys, tokens, nonces,
+// and salts are tens of bytes to a few KB; 64 MiB is far beyond any legitimate
+// draw and keeps an untrusted length (e.g. a request field) from triggering an
+// unbounded `make` - which, since the interpreter has no recover(), is a fatal
+// process crash (uncatchable OOM), not a Jennifer error.
+const maxRandBytes = 1 << 26 // 64 MiB
+
 // randBytesFn implements `crypto.randBytes(n) -> bytes`: n crypto-grade random
-// bytes. n must be >= 0; n == 0 yields empty bytes.
+// bytes. n must be in [0, maxRandBytes]; n == 0 yields empty bytes.
 func randBytesFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if len(args) != 1 {
 		return interpreter.Null(), fmt.Errorf("crypto.randBytes expects 1 argument (n), got %d", len(args))
@@ -115,6 +139,9 @@ func randBytesFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interprete
 	n := args[0].Int
 	if n < 0 {
 		return interpreter.Null(), fmt.Errorf("crypto.randBytes: n must be >= 0, got %d", n)
+	}
+	if n > maxRandBytes {
+		return interpreter.Null(), fmt.Errorf("crypto.randBytes: n (%d) exceeds the %d-byte limit", n, maxRandBytes)
 	}
 	out := make([]byte, n)
 	fill(out)
@@ -208,6 +235,18 @@ func hkdfFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 	return interpreter.BytesVal(key), nil
 }
 
+// maxKeyLen bounds a derived-key length. Real keys are tens of bytes; 1 MiB is
+// generous and keeps a large keyLen from allocating gigabytes and pinning a
+// core (PBKDF2 output work is proportional to keyLen). maxPBKDFIterations caps
+// the stretch factor: it is far above any legitimate value (OWASP suggests
+// hundreds of thousands) but stops an untrusted iteration count - e.g. a
+// hostile SCRAM server's `i=` - from running effectively forever with no
+// interrupt.
+const (
+	maxKeyLen          = 1 << 20     // 1 MiB
+	maxPBKDFIterations = 100_000_000 // 1e8
+)
+
 // pbkdf2Fn implements `crypto.pbkdf(password, salt, iterations, keyLen, algo)
 // -> bytes`: PBKDF2 (RFC 8018) deriving a `keyLen`-byte key from a low-entropy
 // `password` stretched by `iterations` rounds against `salt`, with `algo` the
@@ -232,8 +271,14 @@ func pbkdf2Fn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 	if iterations <= 0 {
 		return interpreter.Null(), fmt.Errorf("crypto.pbkdf: iterations must be > 0, got %d", iterations)
 	}
+	if iterations > maxPBKDFIterations {
+		return interpreter.Null(), fmt.Errorf("crypto.pbkdf: iterations (%d) exceeds the %d limit", iterations, maxPBKDFIterations)
+	}
 	if keyLen <= 0 {
 		return interpreter.Null(), fmt.Errorf("crypto.pbkdf: keyLen must be > 0, got %d", keyLen)
+	}
+	if keyLen > maxKeyLen {
+		return interpreter.Null(), fmt.Errorf("crypto.pbkdf: keyLen (%d) exceeds the %d-byte limit", keyLen, maxKeyLen)
 	}
 	key, kerr := pbkdf2.Key(h, string(args[0].Bytes), args[1].Bytes, int(iterations), int(keyLen))
 	if kerr != nil {

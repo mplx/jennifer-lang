@@ -24,7 +24,8 @@
 use strings;
 use convert;
 use lists;
-use math;
+use crypto;
+use encoding;
 
 /**
  * One form part: a field or a file.
@@ -135,17 +136,14 @@ func indexOfBytes(hay as bytes, needle as bytes, from as int) {
 
 # --- build (exported) -------------------------------------------------------
 
-# generateBoundary returns a fresh, unlikely-to-collide boundary token.
+# generateBoundary returns a fresh boundary token. The random suffix is drawn
+# from the crypto source (not math's seedable RNG): a predictable boundary lets
+# an attacker who influences part content embed a matching "--boundary"
+# delimiter and inject or overwrite parts as seen by the receiver (RFC 7578
+# requires an unguessable boundary when the payload is not fully sender-owned).
+# 12 crypto bytes -> 24 hex chars, 96 bits of entropy.
 func generateBoundary() {
-    def digits as string init "0123456789abcdef";
-    def out as string init "----JenniferFormBoundary";
-    def i as int init 0;
-    while ($i < 24) {
-        def d as int init math.randInt(0, 15);
-        $out = $out + strings.substring($digits, $d, $d + 1);
-        $i = $i + 1;
-    }
-    return $out;
+    return "----JenniferFormBoundary" + encoding.toText(crypto.randBytes(12), "hex");
 }
 
 # escapeParam makes a value safe inside a quoted Content-Disposition parameter:

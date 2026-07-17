@@ -33,7 +33,7 @@ the operating system's cryptographically secure source. They are
 
 | Call                   | Returns | Notes                                                        |
 | ---------------------- | ------- | ------------------------------------------------------------ |
-| `crypto.randBytes(n)`  | `bytes` | `n` secure random bytes (`n >= 0`; `0` yields empty bytes).  |
+| `crypto.randBytes(n)`  | `bytes` | `n` secure random bytes (`0 <= n <= 64 MiB`; `0` yields empty bytes). |
 | `crypto.randInt(lo, hi)` | `int` | A uniform int in the **inclusive** range `[lo, hi]`.        |
 
 `crypto.randInt` has the same shape as [`math.randInt`](math.md) but is
@@ -95,9 +95,11 @@ matching an external protocol: SCRAM-SHA-1 (MongoDB, XMPP) requires
   strong (a shared secret, a master key). It is fast; do not use it to
   hash passwords.
 - **PBKDF2** is for passwords: the `iterations` count makes each guess
-  expensive, so pick the largest value the deployment can afford. It
-  unblocks SASL SCRAM (see the [`sasl`](../modules/sasl.md) module) and
-  password-based key wrapping.
+  expensive, so pick the largest value the deployment can afford (capped
+  at 100,000,000 so an untrusted count — e.g. a hostile SCRAM server's
+  `i=` — cannot spin forever). `keyLen` is capped at 1 MiB; real keys are
+  tens of bytes. It unblocks SASL SCRAM (see the [`sasl`](../modules/sasl.md)
+  module) and password-based key wrapping.
 
 ```jennifer
 use crypto;

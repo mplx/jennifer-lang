@@ -41,9 +41,10 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespacedConst(LibraryName, "NIL", interpreter.StringVal(NIL))
 }
 
-// randByte draws one crypto-grade random byte, so v4 / v7 UUIDs are
-// unguessable and usable as security tokens.
-func randByte() byte { return cryptolib.RandByte() }
+// randFill fills b with crypto-grade random bytes in one shared-lock
+// acquisition (rather than one per byte), so v4 / v7 UUIDs are unguessable and
+// usable as security tokens without needless lock contention.
+func randFill(b []byte) { cryptolib.RandFill(b) }
 
 func generateFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	v, err := strArg("generate", args)
@@ -63,9 +64,7 @@ func generateFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter
 // genV4 builds a random (version 4) UUID string.
 func genV4() string {
 	var b [16]byte
-	for i := range b {
-		b[i] = randByte()
-	}
+	randFill(b[:])
 	b[6] = (b[6] & 0x0f) | 0x40 // version 4
 	b[8] = (b[8] & 0x3f) | 0x80 // RFC 4122 variant
 	return format(b)
@@ -82,9 +81,7 @@ func genV7() string {
 	b[3] = byte(ms >> 16)
 	b[4] = byte(ms >> 8)
 	b[5] = byte(ms)
-	for i := 6; i < 16; i++ {
-		b[i] = randByte()
-	}
+	randFill(b[6:16])
 	b[6] = (b[6] & 0x0f) | 0x70 // version 7
 	b[8] = (b[8] & 0x3f) | 0x80 // RFC 4122 variant
 	return format(b)
