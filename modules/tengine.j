@@ -92,6 +92,13 @@ def struct Verb {
     pos as int
 };
 
+# Nesting cap for exec's recursion: control blocks, template / block includes,
+# and range bodies all re-enter exec one level deeper. A template that includes
+# itself (directly or through a partner) would otherwise recurse until the
+# interpreter's stack dies - a fatal crash, not a catchable error. 256 levels
+# is far beyond any legitimate page.
+def const MAX_NESTING as int init 256;
+
 # --- set construction (exported) --------------------------------------------
 
 /**
@@ -159,7 +166,7 @@ export func add(set as Set, name as string, src as string) {
         }
         def pre as string init strings.substring($rest, 0, $i);
         def afterOpen as string init strings.substring($rest, $i + 2, len($rest));
-        def j as int init strings.indexOf($afterOpen, "}}");
+        def j as int init closeActionIndex($afterOpen);
         if ($j < 0) {
             throw Error{ kind: "tengine", message: "tengine: unterminated action in " + $name, file: "", line: 0, col: 0 };
         }
@@ -193,24 +200,31 @@ export func render(set as Set, entry as string, data as json.Value) {
     if (not setHas($set, $entry)) {
         throw Error{ kind: "tengine", message: "tengine: no such template: " + $entry, file: "", line: 0, col: 0 };
     }
-    return exec($set, setGet($set, $entry), $data, $data, emptyVars());
+    return exec($set, setGet($set, $entry), $data, $data, emptyVars(), 0);
 }
 
 # exec renders a template source against the current node (`.`), the root (`$`),
-# and the variable environment, returning the output.
-func exec(set as Set, src as string, node as json.Value, root as json.Value, vars as map of string to json.Value) {
-    def out as string init "";
+# and the variable environment, returning the output. `depth` counts nesting
+# levels (control blocks, template / block includes, range bodies) and trips
+# MAX_NESTING so an include cycle throws instead of overflowing the stack.
+func exec(set as Set, src as string, node as json.Value, root as json.Value, vars as map of string to json.Value, depth as int) {
+    if ($depth > MAX_NESTING) {
+        throw Error{ kind: "tengine", message: "tengine: nesting exceeds " + convert.toString(MAX_NESTING) + " levels (template include cycle?)", file: "", line: 0, col: 0 };
+    }
+    # Collect output fragments and join once: an accumulating `+` over a large
+    # template (or a big rendered sub-block) is O(N^2) in the output size.
+    def parts as list of string init [];
     def rest as string init $src;
     def env as map of string to json.Value init $vars;
     while (true) {
         def i as int init strings.indexOf($rest, "{{");
         if ($i < 0) {
-            $out = $out + $rest;
+            $parts[] = $rest;
             break;
         }
-        $out = $out + strings.substring($rest, 0, $i);
+        $parts[] = strings.substring($rest, 0, $i);
         def afterOpen as string init strings.substring($rest, $i + 2, len($rest));
-        def j as int init strings.indexOf($afterOpen, "}}");
+        def j as int init closeActionIndex($afterOpen);
         if ($j < 0) {
             throw Error{ kind: "tengine", message: "tengine: unterminated action", file: "", line: 0, col: 0 };
         }
@@ -219,7 +233,7 @@ func exec(set as Set, src as string, node as json.Value, root as json.Value, var
         def kind as string init actionKind($action);
         if ($kind == "if" or $kind == "range" or $kind == "with" or $kind == "block") {
             def bp as BlockParts init takeBlock($tail);
-            $out = $out + execControl($set, $kind, $action, $bp, $node, $root, $env);
+            $parts[] = execControl($set, $kind, $action, $bp, $node, $root, $env, $depth);
             $rest = $bp.remainder;
         } elseif ($kind == "assign") {
             $env = execAssign($action, $node, $root, $env);
@@ -235,16 +249,16 @@ func exec(set as Set, src as string, node as json.Value, root as json.Value, var
             if (not setHas($set, $na.name)) {
                 throw Error{ kind: "tengine", message: "tengine: no such template: " + $na.name, file: "", line: 0, col: 0 };
             }
-            $out = $out + exec($set, setGet($set, $na.name), $argNode, $argNode, emptyVars());
+            $parts[] = exec($set, setGet($set, $na.name), $argNode, $argNode, emptyVars(), $depth + 1);
             $rest = $tail;
         } elseif ($kind == "comment" or $kind == "end" or $kind == "else") {
             $rest = $tail;
         } else {
-            $out = $out + evalOutput($action, $node, $root, $env);
+            $parts[] = evalOutput($action, $node, $root, $env);
             $rest = $tail;
         }
     }
-    return $out;
+    return strings.join($parts, "");
 }
 
 # execAssign handles `{{ $x := PIPELINE }}`, returning the updated environment.
@@ -259,24 +273,24 @@ func execAssign(action as string, node as json.Value, root as json.Value, vars a
 
 # execControl renders one control action (if / with / range / block), returning
 # the produced output.
-func execControl(set as Set, kind as string, action as string, bp as BlockParts, node as json.Value, root as json.Value, vars as map of string to json.Value) {
+func execControl(set as Set, kind as string, action as string, bp as BlockParts, node as json.Value, root as json.Value, vars as map of string to json.Value, depth as int) {
     if ($kind == "if") {
         if (isTruthy(evalExprString(pipelineOf($action), $node, $root, $vars))) {
-            return exec($set, $bp.thenPart, $node, $root, $vars);
+            return exec($set, $bp.thenPart, $node, $root, $vars, $depth + 1);
         }
-        return exec($set, $bp.elsePart, $node, $root, $vars);
+        return exec($set, $bp.elsePart, $node, $root, $vars, $depth + 1);
     }
     if ($kind == "with") {
         def val as json.Value init evalExprString(pipelineOf($action), $node, $root, $vars);
         if (isTruthy($val)) {
-            return exec($set, $bp.thenPart, $val, $root, $vars);
+            return exec($set, $bp.thenPart, $val, $root, $vars, $depth + 1);
         }
-        return exec($set, $bp.elsePart, $node, $root, $vars);
+        return exec($set, $bp.elsePart, $node, $root, $vars, $depth + 1);
     }
     if ($kind == "range") {
         def rv as RangeVars init parseRange(pipelineOf($action));
         def val as json.Value init evalExprString($rv.source, $node, $root, $vars);
-        return execRange($set, $val, $bp, $node, $root, $vars, $rv);
+        return execRange($set, $val, $bp, $node, $root, $vars, $rv, $depth);
     }
     # block: render the set's named override if present, else the inline default
     def na as NameArg init parseNameArg($action);
@@ -285,44 +299,46 @@ func execControl(set as Set, kind as string, action as string, bp as BlockParts,
         $argNode = resolveTerm($na.arg, $node, $root, $vars);
     }
     if (setHas($set, $na.name)) {
-        return exec($set, setGet($set, $na.name), $argNode, $argNode, emptyVars());
+        return exec($set, setGet($set, $na.name), $argNode, $argNode, emptyVars(), $depth + 1);
     }
-    return exec($set, $bp.thenPart, $argNode, $argNode, emptyVars());
+    return exec($set, $bp.thenPart, $argNode, $argNode, emptyVars(), $depth + 1);
 }
 
 # execRange renders a range body once per element (list) or value (map, insertion
 # order), rebinding `.` and any `$i, $e` bindings; an empty collection renders the
 # else part.
-func execRange(set as Set, val as json.Value, bp as BlockParts, node as json.Value, root as json.Value, vars as map of string to json.Value, rv as RangeVars) {
+func execRange(set as Set, val as json.Value, bp as BlockParts, node as json.Value, root as json.Value, vars as map of string to json.Value, rv as RangeVars, depth as int) {
     def t as string init json.typeOf($val);
-    def out as string init "";
+    # Collect per-iteration fragments and join once: an accumulating `+` over a
+    # large range is O(N^2) in the rendered output size.
+    def parts as list of string init [];
     if ($t == "list") {
         def n as int init json.length($val);
         if ($n == 0) {
-            return exec($set, $bp.elsePart, $node, $root, $vars);
+            return exec($set, $bp.elsePart, $node, $root, $vars, $depth + 1);
         }
         def i as int init 0;
         while ($i < $n) {
             def elem as json.Value init json.get($val, "/" + convert.toString($i));
             def env as map of string to json.Value init bindLoop($vars, $rv, numVal($i), $elem);
-            $out = $out + exec($set, $bp.thenPart, $elem, $root, $env);
+            $parts[] = exec($set, $bp.thenPart, $elem, $root, $env, $depth + 1);
             $i = $i + 1;
         }
-        return $out;
+        return strings.join($parts, "");
     }
     if ($t == "map") {
         def keys as list of string init json.keys($val);
         if (len($keys) == 0) {
-            return exec($set, $bp.elsePart, $node, $root, $vars);
+            return exec($set, $bp.elsePart, $node, $root, $vars, $depth + 1);
         }
         for (def k in $keys) {
             def elem as json.Value init json.get($val, "/" + $k);
             def env as map of string to json.Value init bindLoop($vars, $rv, strVal($k), $elem);
-            $out = $out + exec($set, $bp.thenPart, $elem, $root, $env);
+            $parts[] = exec($set, $bp.thenPart, $elem, $root, $env, $depth + 1);
         }
-        return $out;
+        return strings.join($parts, "");
     }
-    return exec($set, $bp.elsePart, $node, $root, $vars);
+    return exec($set, $bp.elsePart, $node, $root, $vars, $depth + 1);
 }
 
 # bindLoop returns a copy of the environment with the range's index / element
@@ -361,7 +377,7 @@ func takeBlock(src as string) {
             $thenPart = $thenPart + $pre;
         }
         def afterOpen as string init strings.substring($rest, $i + 2, len($rest));
-        def j as int init strings.indexOf($afterOpen, "}}");
+        def j as int init closeActionIndex($afterOpen);
         if ($j < 0) {
             throw Error{ kind: "tengine", message: "tengine: unterminated action", file: "", line: 0, col: 0 };
         }
@@ -490,6 +506,102 @@ func lookup(base as json.Value, dotted as string) {
 }
 
 # tokenize splits an expression into terms, honoring quotes and parentheses.
+# closeActionIndex returns the rune index within `s` (the text right after a
+# `{{`) of the `}}` that ends the action, or -1 if it is unterminated. A `}}`
+# inside a quoted string does not count; when the action is a `{{/* ... */}}`
+# comment the scan runs to the `*/}}` terminator, so a `}}` inside the comment
+# body is ignored too. This replaces a naive `indexOf("}}")` that cut on the
+# first `}}` regardless of quoting or comments.
+func closeActionIndex(s as string) {
+    def cs as list of string init strings.chars($s);
+    def n as int init len($cs);
+    # Detect a comment: skip leading whitespace and an optional `-` trim marker,
+    # then look for `/*`.
+    def k as int init 0;
+    while ($k < $n and ($cs[$k] == " " or $cs[$k] == "\t" or $cs[$k] == "\r" or $cs[$k] == "\n" or $cs[$k] == "-")) {
+        $k = $k + 1;
+    }
+    if ($k + 1 < $n and $cs[$k] == "/" and $cs[$k + 1] == "*") {
+        # Comment body: find `*/`, then the `}}` after it (allowing a trailing
+        # `-` trim marker and whitespace in between).
+        def i as int init $k + 2;
+        while ($i + 1 < $n) {
+            if ($cs[$i] == "*" and $cs[$i + 1] == "/") {
+                def j as int init $i + 2;
+                while ($j < $n and ($cs[$j] == " " or $cs[$j] == "\t" or $cs[$j] == "-")) {
+                    $j = $j + 1;
+                }
+                if ($j + 1 < $n and $cs[$j] == "}" and $cs[$j + 1] == "}") {
+                    return $j;
+                }
+            }
+            $i = $i + 1;
+        }
+        return -1;
+    }
+    # Non-comment: the first top-level `}}` outside a quoted string.
+    def quote as string init "";
+    def i as int init 0;
+    while ($i < $n) {
+        def c as string init $cs[$i];
+        if (len($quote) > 0) {
+            if ($c == $quote) {
+                $quote = "";
+            }
+            $i = $i + 1;
+        } elseif ($c == "\"" or $c == "'") {
+            $quote = $c;
+            $i = $i + 1;
+        } elseif ($c == "}" and $i + 1 < $n and $cs[$i + 1] == "}") {
+            return $i;
+        } else {
+            $i = $i + 1;
+        }
+    }
+    return -1;
+}
+
+# splitPipes splits a pipeline on top-level `|`, ignoring a `|` inside a quoted
+# string or parentheses (so `printf "%s|%s"` and a literal `"a|b"` stay one
+# stage). Replaces a naive `strings.split(pipeline, "|")`.
+func splitPipes(s as string) {
+    def out as list of string init [];
+    def cur as string init "";
+    def cs as list of string init strings.chars($s);
+    def n as int init len($cs);
+    def i as int init 0;
+    def quote as string init "";
+    def depth as int init 0;
+    while ($i < $n) {
+        def c as string init $cs[$i];
+        if (len($quote) > 0) {
+            $cur = $cur + $c;
+            if ($c == $quote) {
+                $quote = "";
+            }
+        } elseif ($c == "\"" or $c == "'") {
+            $quote = $c;
+            $cur = $cur + $c;
+        } elseif ($c == "(") {
+            $depth = $depth + 1;
+            $cur = $cur + $c;
+        } elseif ($c == ")") {
+            if ($depth > 0) {
+                $depth = $depth - 1;
+            }
+            $cur = $cur + $c;
+        } elseif ($c == "|" and $depth == 0) {
+            $out[] = $cur;
+            $cur = "";
+        } else {
+            $cur = $cur + $c;
+        }
+        $i = $i + 1;
+    }
+    $out[] = $cur;
+    return $out;
+}
+
 func tokenize(expr as string) {
     def toks as list of string init [];
     def cur as string init "";
@@ -678,7 +790,7 @@ func compareOrder(a as json.Value, b as json.Value) {
 
 # evalPipeline evaluates a `term | func | func` pipeline to a value.
 func evalPipeline(pipeline as string, node as json.Value, root as json.Value, vars as map of string to json.Value) {
-    def segs as list of string init strings.split($pipeline, "|");
+    def segs as list of string init splitPipes($pipeline);
     def val as json.Value init evalExprString(strings.trim($segs[0]), $node, $root, $vars);
     def k as int init 1;
     while ($k < len($segs)) {
@@ -1138,7 +1250,7 @@ func trimMarkers(src as string) {
         }
         def pre as string init strings.substring($rest, 0, $i);
         def afterOpen as string init strings.substring($rest, $i + 2, len($rest));
-        def j as int init strings.indexOf($afterOpen, "}}");
+        def j as int init closeActionIndex($afterOpen);
         if ($j < 0) {
             throw Error{ kind: "tengine", message: "tengine: unterminated action", file: "", line: 0, col: 0 };
         }

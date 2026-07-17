@@ -89,6 +89,55 @@ try {
 	}
 }
 
+// The catch variable must survive catch-body defs. It occupies slot 0 of the
+// handler frame; a name-only binding into a fresh env leaves the slot slice
+// empty, so the first catch-body `def` (slot 1) grows the slice over slot 0
+// and every later slot-resolved `$e` read hits a zeroed binding (null).
+func TestCatchVariableSurvivesHandlerDefs(t *testing.T) {
+	out, err := run(t, `
+use io;
+try {
+    throw Error{kind: "demo", message: "boom", file: "", line: 0, col: 0};
+} catch (e) {
+    def x as int init 1;
+    def y as string init "two";
+    io.printf("msg=%s x=%d y=%s\n", $e.message, $x, $y);
+}
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	want := "msg=boom x=1 y=two\n"
+	if out != want {
+		t.Errorf("got %q, want %q", out, want)
+	}
+}
+
+// The try body is its own block scope: a `def` inside it is not visible after
+// the try, so a `def` skipped by a throw reads as an undefined-variable error
+// (at parse time) rather than a silent null. A def used within the body works.
+func TestTryBodyDefIsBlockScoped(t *testing.T) {
+	// Referencing a try-body def after the try is a parse-time undefined error.
+	if _, err := run(t, `
+use io;
+try { throw Error{kind: "x", message: "m", file: "", line: 0, col: 0}; def x as int init 5; } catch (e) {}
+io.printf("%v", $x);
+`); err == nil {
+		t.Error("expected an undefined-variable error for a try-body def read after the try")
+	}
+	// A def used within the try body works normally.
+	out, err := run(t, `
+use io;
+try { def x as int init 5; io.printf("%d", $x); } catch (e) { io.printf("bad"); }
+`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "5" {
+		t.Errorf("try-body def use: got %q, want 5", out)
+	}
+}
+
 func TestCatchDispatchOnKind(t *testing.T) {
 	out, err := run(t, `
 use io;

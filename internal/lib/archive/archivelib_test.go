@@ -4,6 +4,7 @@
 package archivelib
 
 import (
+	"strings"
 	"testing"
 
 	"jennifer-lang.dev/jennifer/internal/interpreter"
@@ -132,5 +133,64 @@ func TestErrors(t *testing.T) {
 	}
 	if _, err := unpackFn(ctx, []interpreter.Value{str("x"), str("tar")}); err == nil {
 		t.Error("unpack: non-bytes first argument should error")
+	}
+}
+
+// The decompression cap must bound the TOTAL expansion of one unpack call,
+// not each entry separately - otherwise a small archive with many entries
+// each just under the cap expands to (entries x cap) bytes and OOMs on
+// untrusted input. The entry count is capped for the same reason.
+func TestUnpackAggregateCaps(t *testing.T) {
+	lowerCaps := func(bytes int64, entries int) func() {
+		ob, oe := maxDecompressed, maxEntries
+		maxDecompressed, maxEntries = bytes, entries
+		return func() { maxDecompressed, maxEntries = ob, oe }
+	}
+
+	// Three 600-byte entries pass a 1 KiB per-entry check but total ~1.8 KiB.
+	big := make([]byte, 600)
+	bomb := []entry{
+		{name: "a", data: big, mtime: 1700000000},
+		{name: "b", data: big, mtime: 1700000000},
+		{name: "c", data: big, mtime: 1700000000},
+	}
+	for _, format := range []string{"tar", "zip", "tar.gz"} {
+		packed, err := packFn(interpreter.BuiltinCtx{}, []interpreter.Value{entriesVal(bomb), str(format)})
+		if err != nil {
+			t.Fatalf("%s pack: %v", format, err)
+		}
+		restore := lowerCaps(1024, 1000)
+		_, err = unpackFn(interpreter.BuiltinCtx{}, []interpreter.Value{packed, str(format)})
+		restore()
+		if err == nil || !strings.Contains(err.Error(), "limit") {
+			t.Errorf("%s: want aggregate-size error, got %v", format, err)
+		}
+	}
+
+	// Entry-count cap: five entries against a cap of four.
+	many := make([]entry, 5)
+	for i := range many {
+		many[i] = entry{name: string(rune('a' + i)), data: []byte("x"), mtime: 1700000000}
+	}
+	for _, format := range []string{"tar", "zip"} {
+		packed, err := packFn(interpreter.BuiltinCtx{}, []interpreter.Value{entriesVal(many), str(format)})
+		if err != nil {
+			t.Fatalf("%s pack: %v", format, err)
+		}
+		restore := lowerCaps(maxDecompressed, 4)
+		_, err = unpackFn(interpreter.BuiltinCtx{}, []interpreter.Value{packed, str(format)})
+		restore()
+		if err == nil || !strings.Contains(err.Error(), "entries") {
+			t.Errorf("%s: want entry-count error, got %v", format, err)
+		}
+	}
+
+	// Under the caps everything still unpacks.
+	packed, err := packFn(interpreter.BuiltinCtx{}, []interpreter.Value{entriesVal(bomb), str("tar")})
+	if err != nil {
+		t.Fatalf("pack: %v", err)
+	}
+	if _, err := unpackFn(interpreter.BuiltinCtx{}, []interpreter.Value{packed, str("tar")}); err != nil {
+		t.Errorf("in-budget unpack failed: %v", err)
 	}
 }

@@ -36,6 +36,7 @@ function - see
 | `os.wait(p)`       | `os.Result`  | Block until `$p` terminates; return captured streams + exit code. Idempotent.       |
 | `os.poll(p)`       | bool         | Non-blocking: true once `$p` has exited (a following `os.wait` returns immediately). |
 | `os.kill(p)`       | null         | Send SIGTERM to `$p`.                                                               |
+| `os.release(p)`    | bool         | Drop a **finished** handle from the registry (frees its captured output); errors if `$p` is still running. Returns whether the handle existed. |
 | `os.isTerminal(stream)` | bool    | Is `stream` (`"stdout"` / `"stderr"` / `"stdin"`) an interactive terminal? See "Terminal detection". |
 | `os.cwd()`         | string       | Absolute path of the current working directory. Errors only if it can't be determined. |
 | `os.homeDir()`     | string       | The current user's home directory (`$HOME` on Unix, `%USERPROFILE%` on Windows). Errors if unresolved. |
@@ -138,9 +139,30 @@ io.printf("done: exit=%d\n", $r.exitCode);
 ```
 
 `os.wait` is **idempotent** - calling it again on the same handle
-returns the same `os.Result` immediately. `os.kill($p)` sends
-SIGTERM; a subsequent `os.wait` returns whatever the OS reports for
-the terminated child.
+returns the same `os.Result` immediately. If the child did not
+terminate cleanly (an I/O failure draining its streams, not a non-zero
+exit), `os.wait` raises a catchable error rather than reporting a false
+exit code 0. `os.kill($p)` sends SIGTERM (falling back to a hard kill on
+Windows, which has no SIGTERM); a subsequent `os.wait` returns whatever
+the OS reports for the terminated child.
+
+**Captured output is capped** at 16 MiB per stream for both `os.run`
+and `os.spawn`: a child that writes more has the excess dropped and a
+`\n[output truncated at 16 MiB]` marker appended, so a runaway child
+can't grow the interpreter heap without bound.
+
+Because a handle (and its captured output) stays live for idempotent
+`os.wait`, a long-running program that spawns many children should
+`os.release($p)` each handle once it has read the result - it drops the
+entry from the process registry so it does not grow without bound.
+Releasing a still-running process is an error (`os.wait` or `os.kill`
+it first); releasing an already-released handle returns `false`.
+
+```jennifer
+def r as os.Result init os.wait($p);
+# ... use $r ...
+os.release($p);   # free the handle in a per-job server loop
+```
 
 **No shell parsing.** `argv` is always a list - Jennifer never
 concatenates a command string and hands it to a shell. If you

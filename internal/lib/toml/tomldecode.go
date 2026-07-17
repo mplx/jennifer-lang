@@ -68,14 +68,46 @@ func mapVal(entries []interpreter.MapEntry) interpreter.Value {
 
 // decodeToml parses a full TOML document into the root table (a KindMap).
 func decodeToml(src string) (interpreter.Value, error) {
-	d := &decoder{src: src}
+	d := &decoder{
+		src:     src,
+		defined: map[string]bool{},
+		arrays:  map[string]bool{},
+		inline:  map[string]bool{},
+	}
 	return d.run()
 }
 
+// maxNestingDepth caps container recursion in parseValue and the segment
+// count of a dotted key (inlineAssign recurses per segment, and headers /
+// dotted keys build one tree level per segment). Each nesting level costs Go
+// stack frames, and a Go stack overflow is fatal (not a catchable Jennifer
+// error), so deeply-nested untrusted input could otherwise kill the whole
+// process. 1000 is far beyond any legitimate document.
+const maxNestingDepth = 1000
+
 type decoder struct {
-	src  string
-	pos  int
-	line int // 0-based; +1 for messages
+	src   string
+	pos   int
+	line  int // 0-based; +1 for messages
+	depth int // current container nesting, gated in parseValue
+
+	// Table-definition state (keyed by encoded dotted path) enforces TOML 1.0's
+	// MUST-error redefinition rules that a plain tree build would silently merge:
+	//   defined  - explicitly created by a [header] (a second [header] errors)
+	//   arrays   - created by a [[array-of-tables]] header (a plain [header] on
+	//              one, or a static value shadowing one, errors)
+	//   inline   - value came from an inline table { } (closed: no later dotted
+	//              key or header may extend it)
+	defined map[string]bool
+	arrays  map[string]bool
+	inline  map[string]bool
+	curPath []string // dotted path of the current [header] context (for key paths)
+}
+
+// pathKey encodes a dotted path into a single map key. A NUL separator can't
+// collide with a bare key and is vanishingly unlikely in a quoted key.
+func pathKey(segs []string) string {
+	return strings.Join(segs, "\x00")
 }
 
 func (d *decoder) errf(format string, a ...interface{}) error {
@@ -206,6 +238,19 @@ func (d *decoder) parseTableHeader(root *interpreter.Value) (*interpreter.Value,
 		return nil, d.errf("expected ']' to close table header")
 	}
 	d.advance()
+	key := pathKey(segs)
+	dotted := strings.Join(segs, ".")
+	// A second [header] for the same path, or a [header] on an existing
+	// array-of-tables, is a TOML MUST-error.
+	if d.defined[key] {
+		return nil, d.errf("table %q is defined more than once", dotted)
+	}
+	if d.arrays[key] {
+		return nil, d.errf("%q is an array of tables, not a table", dotted)
+	}
+	if d.inline[key] {
+		return nil, d.errf("cannot extend inline table %q with a header", dotted)
+	}
 	cur := root
 	for _, seg := range segs {
 		cur, err = d.descendTable(cur, seg)
@@ -214,8 +259,10 @@ func (d *decoder) parseTableHeader(root *interpreter.Value) (*interpreter.Value,
 		}
 	}
 	if cur.Kind != interpreter.KindMap {
-		return nil, d.errf("table header %q targets a non-table", strings.Join(segs, "."))
+		return nil, d.errf("table header %q targets a non-table", dotted)
 	}
+	d.defined[key] = true
+	d.curPath = segs
 	return cur, nil
 }
 
@@ -233,6 +280,16 @@ func (d *decoder) parseArrayTableHeader(root *interpreter.Value) (*interpreter.V
 	}
 	d.advance()
 	d.advance()
+	key := pathKey(segs)
+	dotted := strings.Join(segs, ".")
+	// A [[header]] whose path names a plain table ([header]) or a closed inline
+	// table is a MUST-error.
+	if d.defined[key] {
+		return nil, d.errf("%q is a table, not an array of tables", dotted)
+	}
+	if d.inline[key] {
+		return nil, d.errf("cannot extend inline table %q as an array of tables", dotted)
+	}
 	cur := root
 	for i := 0; i < len(segs)-1; i++ {
 		cur, err = d.descendTable(cur, segs[i])
@@ -245,7 +302,9 @@ func (d *decoder) parseArrayTableHeader(root *interpreter.Value) (*interpreter.V
 	for i := range cur.Map {
 		if cur.Map[i].Key.Str == last {
 			v := &cur.Map[i].Value
-			if v.Kind != interpreter.KindList {
+			// The key must be an array *of tables* created by an earlier
+			// [[header]] - not a static array (`a = []`) sharing the KindList.
+			if v.Kind != interpreter.KindList || !d.arrays[key] {
 				return nil, d.errf("key %q is not an array of tables", last)
 			}
 			v.List = append(v.List, mapVal(nil))
@@ -253,6 +312,8 @@ func (d *decoder) parseArrayTableHeader(root *interpreter.Value) (*interpreter.V
 		}
 	}
 	cur.Map = append(cur.Map, interpreter.MapEntry{Key: interpreter.StringVal(last), Value: listVal([]interpreter.Value{mapVal(nil)})})
+	d.arrays[key] = true
+	d.curPath = segs
 	v := &cur.Map[len(cur.Map)-1].Value
 	return &v.List[0], nil
 }
@@ -298,8 +359,14 @@ func (d *decoder) parseKeyValue(current *interpreter.Value) error {
 	if err != nil {
 		return err
 	}
+	// Full path relative to the current [header] context, for redefinition state.
+	full := append(append([]string{}, d.curPath...), segs...)
 	cur := current
 	for i := 0; i < len(segs)-1; i++ {
+		// A dotted key may not reach through a closed inline table.
+		if d.inline[pathKey(full[:len(d.curPath)+i+1])] {
+			return d.errf("cannot extend inline table %q", strings.Join(full[:len(d.curPath)+i+1], "."))
+		}
 		cur, err = d.descendTable(cur, segs[i])
 		if err != nil {
 			return err
@@ -312,6 +379,11 @@ func (d *decoder) parseKeyValue(current *interpreter.Value) error {
 		}
 	}
 	cur.Map = append(cur.Map, interpreter.MapEntry{Key: interpreter.StringVal(last), Value: val})
+	// A value that is itself an inline table is closed: no later dotted key or
+	// header may extend it.
+	if val.Kind == interpreter.KindMap {
+		d.inline[pathKey(full)] = true
+	}
 	return nil
 }
 
@@ -326,6 +398,9 @@ func (d *decoder) parseKey() ([]string, error) {
 			return nil, err
 		}
 		segs = append(segs, seg)
+		if len(segs) > maxNestingDepth {
+			return nil, d.errf("key nesting exceeds %d segments", maxNestingDepth)
+		}
 		d.skipInlineWS()
 		if d.peek() == '.' {
 			d.advance()
@@ -375,9 +450,21 @@ func (d *decoder) parseValue() (interpreter.Value, error) {
 		s, err := d.parseLiteralString()
 		return interpreter.StringVal(s), err
 	case c == '[':
-		return d.parseArray()
+		if d.depth >= maxNestingDepth {
+			return interpreter.Value{}, d.errf("nesting exceeds %d levels", maxNestingDepth)
+		}
+		d.depth++
+		v, err := d.parseArray()
+		d.depth--
+		return v, err
 	case c == '{':
-		return d.parseInlineTable()
+		if d.depth >= maxNestingDepth {
+			return interpreter.Value{}, d.errf("nesting exceeds %d levels", maxNestingDepth)
+		}
+		d.depth++
+		v, err := d.parseInlineTable()
+		d.depth--
+		return v, err
 	case c == 't' || c == 'f':
 		return d.parseBool()
 	case c == '+' || c == '-' || c >= '0' && c <= '9' || c == 'i' || c == 'n':
@@ -401,6 +488,13 @@ func (d *decoder) parseBool() (interpreter.Value, error) {
 
 // ----- strings -------------------------------------------------------------
 
+// isTOMLControl reports whether c is a control character TOML forbids in string
+// content: U+0000-U+001F (except tab) and U+007F (DEL). Newlines are handled by
+// each scanner's own line rules, so callers check for them first.
+func isTOMLControl(c byte) bool {
+	return (c < 0x20 && c != '\t') || c == 0x7f
+}
+
 func (d *decoder) parseBasicString() (string, error) {
 	d.advance() // opening "
 	var sb strings.Builder
@@ -415,6 +509,10 @@ func (d *decoder) parseBasicString() (string, error) {
 		}
 		if c == '\n' {
 			return "", d.errf("newline in single-line string")
+		}
+		// A raw control byte (including a lone CR) is invalid in a basic string.
+		if isTOMLControl(c) {
+			return "", d.errf("control character U+%04X in string", c)
 		}
 		if c == '\\' {
 			r, err := d.parseEscape()
@@ -444,14 +542,23 @@ func (d *decoder) parseMultilineBasicString() (string, error) {
 		}
 		if d.peek() == '"' && d.at(1) == '"' && d.at(2) == '"' {
 			d.pos += 3
-			// Up to two extra quotes may hug the closing delimiter.
-			for d.peek() == '"' {
+			// At most two extra quotes may hug the closing delimiter; a third
+			// would be a separate token, not string content.
+			for extra := 0; extra < 2 && d.peek() == '"'; extra++ {
 				sb.WriteByte('"')
 				d.pos++
 			}
 			return sb.String(), nil
 		}
 		c := d.src[d.pos]
+		// Allow tab and newlines (incl. CRLF); reject other raw control bytes,
+		// including a lone CR not part of a CRLF pair.
+		if isTOMLControl(c) && c != '\r' && c != '\n' {
+			return "", d.errf("control character U+%04X in multiline string", c)
+		}
+		if c == '\r' && d.at(1) != '\n' {
+			return "", d.errf("lone carriage return in multiline string")
+		}
 		if c == '\\' {
 			// Line-ending backslash: trim the newline and following whitespace.
 			j := d.pos + 1
@@ -508,6 +615,10 @@ func (d *decoder) parseLiteralString() (string, error) {
 		if c == '\n' {
 			return "", d.errf("newline in single-line literal string")
 		}
+		// Literal strings allow tab but no other control byte (incl. lone CR).
+		if isTOMLControl(c) {
+			return "", d.errf("control character U+%04X in literal string", c)
+		}
 		d.pos++
 	}
 }
@@ -526,13 +637,20 @@ func (d *decoder) parseMultilineLiteralString() (string, error) {
 		}
 		if d.peek() == '\'' && d.at(1) == '\'' && d.at(2) == '\'' {
 			d.pos += 3
-			for d.peek() == '\'' {
+			// At most two extra quotes may hug the closing delimiter.
+			for extra := 0; extra < 2 && d.peek() == '\''; extra++ {
 				sb.WriteByte('\'')
 				d.pos++
 			}
 			return sb.String(), nil
 		}
 		c := d.src[d.pos]
+		if isTOMLControl(c) && c != '\r' && c != '\n' {
+			return "", d.errf("control character U+%04X in multiline literal string", c)
+		}
+		if c == '\r' && d.at(1) != '\n' {
+			return "", d.errf("lone carriage return in multiline literal string")
+		}
 		if c == '\n' {
 			d.line++
 		}
@@ -582,6 +700,11 @@ func (d *decoder) parseUnicodeEscape(n int) (string, error) {
 	cp, err := strconv.ParseUint(hex, 16, 32)
 	if err != nil {
 		return "", d.errf("invalid unicode escape %q", hex)
+	}
+	// TOML requires a valid Unicode scalar value: reject surrogates and
+	// out-of-range code points rather than silently substituting U+FFFD.
+	if cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF) {
+		return "", d.errf("unicode escape %q is not a valid scalar value", hex)
 	}
 	d.pos += n
 	return string(rune(cp)), nil
@@ -741,14 +864,25 @@ func (d *decoder) parseDatetime() (interpreter.Value, error) {
 		if err := d.scanTime(); err != nil {
 			return interpreter.Value{}, err
 		}
-		return datetimeVal(d.src[start:d.pos], formLocalTime), nil
+		text := d.src[start:d.pos]
+		if err := d.validateDatetime(text, formLocalTime); err != nil {
+			return interpreter.Value{}, err
+		}
+		return datetimeVal(text, formLocalTime), nil
 	}
-	// Date: YYYY-MM-DD. Bounds-check before advancing by the fixed width so a
-	// truncated token (`2020-`) is a positioned error, not a slice-past-end panic.
-	if d.pos+10 > len(d.src) {
-		return interpreter.Value{}, d.errf("truncated date-time")
+	// Date: YYYY-MM-DD, validating each position rather than blindly advancing
+	// (which could swallow a newline or non-digit into the token).
+	for _, want := range []byte{'D', 'D', 'D', 'D', '-', 'D', 'D', '-', 'D', 'D'} {
+		if want == 'D' {
+			if err := d.consumeDigit("date"); err != nil {
+				return interpreter.Value{}, err
+			}
+			continue
+		}
+		if err := d.consumeExact(want, "date"); err != nil {
+			return interpreter.Value{}, err
+		}
 	}
-	d.pos += 10
 	// A local date unless a time follows (separated by 'T', 't', or a space).
 	sep := d.peek()
 	hasTime := false
@@ -760,37 +894,100 @@ func (d *decoder) parseDatetime() (interpreter.Value, error) {
 		hasTime = true
 	}
 	if !hasTime {
-		return datetimeVal(d.src[start:d.pos], formLocalDate), nil
+		text := d.src[start:d.pos]
+		if err := d.validateDatetime(text, formLocalDate); err != nil {
+			return interpreter.Value{}, err
+		}
+		return datetimeVal(text, formLocalDate), nil
 	}
 	if err := d.scanTime(); err != nil {
 		return interpreter.Value{}, err
 	}
-	// Optional offset: Z, z, or ±HH:MM
+	// Optional offset: Z, z, or +HH:MM / -HH:MM
 	off := d.peek()
 	if off == 'Z' || off == 'z' {
 		d.pos++
-		return datetimeVal(normalizeDatetime(d.src[start:d.pos]), formOffsetDatetime), nil
+		return d.datetimeChecked(d.src[start:d.pos], formOffsetDatetime)
 	}
 	if off == '+' || off == '-' {
-		if d.pos+6 > len(d.src) {
-			return interpreter.Value{}, d.errf("truncated date-time offset")
+		// +HH:MM: validate each position rather than a blind 6-byte advance.
+		d.pos++ // sign
+		for _, want := range []byte{'D', 'D', ':', 'D', 'D'} {
+			if want == 'D' {
+				if err := d.consumeDigit("date-time offset"); err != nil {
+					return interpreter.Value{}, err
+				}
+				continue
+			}
+			if err := d.consumeExact(want, "date-time offset"); err != nil {
+				return interpreter.Value{}, err
+			}
 		}
-		d.pos += 6 // ±HH:MM
-		return datetimeVal(normalizeDatetime(d.src[start:d.pos]), formOffsetDatetime), nil
+		return d.datetimeChecked(d.src[start:d.pos], formOffsetDatetime)
 	}
-	return datetimeVal(normalizeDatetime(d.src[start:d.pos]), formLocalDatetime), nil
+	return d.datetimeChecked(d.src[start:d.pos], formLocalDatetime)
 }
 
-// scanTime consumes HH:MM:SS with an optional fractional part, erroring on a
-// token too short to hold the fixed HH:MM:SS width (rather than slicing past
-// the buffer).
-func (d *decoder) scanTime() error {
-	if d.pos+8 > len(d.src) {
-		return d.errf("truncated time")
+// datetimeChecked normalizes the raw token, verifies it parses under its form,
+// and returns the node (or a positioned error for an out-of-range field).
+func (d *decoder) datetimeChecked(raw, form string) (interpreter.Value, error) {
+	norm := normalizeDatetime(raw)
+	if err := d.validateDatetime(norm, form); err != nil {
+		return interpreter.Value{}, err
 	}
-	d.pos += 8 // HH:MM:SS
+	return datetimeVal(norm, form), nil
+}
+
+// validateDatetime re-parses a scanned token with Go's time package so
+// out-of-range fields (month 13, day 99, hour 25) are rejected instead of
+// stored as garbage that toml.encode would re-emit.
+func (d *decoder) validateDatetime(text, form string) error {
+	if _, err := parseDatetimeText(text, form); err != nil {
+		return d.errf("invalid %s %q", form, text)
+	}
+	return nil
+}
+
+// consumeDigit advances over one digit, erroring (without swallowing a stray
+// byte into the token) if the next character isn't 0-9.
+func (d *decoder) consumeDigit(ctx string) error {
+	if d.pos >= len(d.src) || !isDigit(d.src[d.pos]) {
+		return d.errf("invalid %s: expected a digit", ctx)
+	}
+	d.pos++
+	return nil
+}
+
+// consumeExact advances over one byte requiring it equals want. It never
+// consumes a newline into a date-time token, so d.line stays accurate.
+func (d *decoder) consumeExact(want byte, ctx string) error {
+	if d.pos >= len(d.src) || d.src[d.pos] != want {
+		return d.errf("invalid %s: expected %q", ctx, string(want))
+	}
+	d.pos++
+	return nil
+}
+
+// scanTime consumes HH:MM:SS with an optional fractional part, validating each
+// position rather than blindly advancing 8 bytes (which could swallow a newline
+// or non-digit into the token and desync the line counter).
+func (d *decoder) scanTime() error {
+	for _, want := range []byte{'D', 'D', ':', 'D', 'D', ':', 'D', 'D'} {
+		if want == 'D' {
+			if err := d.consumeDigit("time"); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := d.consumeExact(want, "time"); err != nil {
+			return err
+		}
+	}
 	if d.peek() == '.' {
 		d.pos++
+		if !isDigit(d.peek()) {
+			return d.errf("invalid time: fractional second needs at least one digit")
+		}
 		for isDigit(d.peek()) {
 			d.pos++
 		}
@@ -837,8 +1034,13 @@ func classifyNumber(tok string, d *decoder) (interpreter.Value, error) {
 	case "nan", "+nan", "-nan":
 		return interpreter.FloatVal(nan()), nil
 	}
+	// Underscores must sit between digits (strconv silently strips them, so
+	// without this `1__0`, `_1`, `1_` would slip through).
+	if !validateUnderscores(tok) {
+		return interpreter.Value{}, d.errf("invalid number %q: misplaced underscore", tok)
+	}
 	// Prefixed integers: hex / octal / binary. No sign, no underscores adjacent
-	// to the prefix (we strip all underscores leniently).
+	// to the prefix (we strip all underscores after the check above).
 	body := strings.ReplaceAll(tok, "_", "")
 	if len(body) > 2 && body[0] == '0' {
 		switch body[1] {
@@ -852,6 +1054,12 @@ func classifyNumber(tok string, d *decoder) (interpreter.Value, error) {
 			n, err := strconv.ParseInt(body[2:], 2, 64)
 			return intOrErr(n, err, tok, d)
 		}
+	}
+	// A plain decimal integer or float. strconv accepts leading zeros (`042`),
+	// bare-dot floats (`.5`, `5.`, `3.e2`), and empty exponents, all of which
+	// TOML rejects - validate the grammar explicitly first.
+	if !validateDecimalGrammar(body) {
+		return interpreter.Value{}, d.errf("invalid number %q", tok)
 	}
 	// Float if it carries a '.', or an exponent, or is inf/nan (handled above).
 	if strings.ContainsAny(body, ".eE") && !isDecimalInteger(body) {
@@ -872,6 +1080,74 @@ func classifyNumber(tok string, d *decoder) (interpreter.Value, error) {
 		return interpreter.Value{}, d.errf("invalid integer %q", tok)
 	}
 	return interpreter.IntVal(n), nil
+}
+
+// validateUnderscores rejects TOML underscore misuse: a `_` must sit between
+// two base digits. strconv strips underscores before parsing, so `1__0`, `_1`,
+// and `1_` would otherwise parse fine.
+func validateUnderscores(tok string) bool {
+	for i := 0; i < len(tok); i++ {
+		if tok[i] != '_' {
+			continue
+		}
+		if i == 0 || i == len(tok)-1 {
+			return false
+		}
+		if !isBaseDigit(tok[i-1]) || !isBaseDigit(tok[i+1]) {
+			return false
+		}
+	}
+	return true
+}
+
+func isBaseDigit(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+}
+
+// validateDecimalGrammar enforces TOML's decimal integer/float rules on an
+// underscore-stripped token: a leading digit (no bare-dot `.5`), no leading
+// zeros on a multi-digit integer part (`042`), a digit on both sides of the
+// decimal point (`5.`, `3.e2`), and digits in the exponent (`1e`).
+func validateDecimalGrammar(body string) bool {
+	i := 0
+	if i < len(body) && (body[i] == '+' || body[i] == '-') {
+		i++
+	}
+	intStart := i
+	for i < len(body) && body[i] >= '0' && body[i] <= '9' {
+		i++
+	}
+	intLen := i - intStart
+	if intLen == 0 {
+		return false // needs an integer part (rejects ".5")
+	}
+	if intLen > 1 && body[intStart] == '0' {
+		return false // no leading zeros (rejects "042")
+	}
+	if i < len(body) && body[i] == '.' {
+		i++
+		fracStart := i
+		for i < len(body) && body[i] >= '0' && body[i] <= '9' {
+			i++
+		}
+		if i-fracStart == 0 {
+			return false // fraction needs a digit (rejects "5." and "3.e2")
+		}
+	}
+	if i < len(body) && (body[i] == 'e' || body[i] == 'E') {
+		i++
+		if i < len(body) && (body[i] == '+' || body[i] == '-') {
+			i++
+		}
+		expStart := i
+		for i < len(body) && body[i] >= '0' && body[i] <= '9' {
+			i++
+		}
+		if i-expStart == 0 {
+			return false // exponent needs a digit (rejects "1e")
+		}
+	}
+	return i == len(body) // no trailing junk
 }
 
 // isDecimalInteger reports whether body is a plain base-10 integer (so a token

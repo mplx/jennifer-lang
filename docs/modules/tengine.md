@@ -128,6 +128,12 @@ An output or assignment value may be piped through one or more functions:
 
 An unknown pipe throws a catchable `Error` (kind `"tengine"`).
 
+Nesting (control blocks, `template` / `block` includes, `range` bodies) is
+capped at 256 levels; past the cap the engine throws a catchable `Error`
+(kind `"tengine"`) instead of recursing without bound, so a template that
+includes itself - directly or through a partner - fails cleanly even when
+templates come from untrusted authors.
+
 ### `printf`
 
 `printf` formats values with a `text/template`-style format string. It works both

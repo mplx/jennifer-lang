@@ -55,3 +55,38 @@ func TestHomogeneousCollectionBinds(t *testing.T) {
 		}
 	}
 }
+
+// Elements stored via index-write and append must be stamped with the
+// container's declared element / value type. A nested container stored
+// unstamped carries no ElemTyp/ValTyp, so later writes into it would skip
+// the declared-type check and a string could land inside a
+// `list of list of int`.
+func TestNestedStoreStampsElementType(t *testing.T) {
+	cases := []string{
+		// append a nested list, then write a mismatched element into it
+		`def grid as list of list of int init [[1]]; $grid[] = [9]; $grid[1][0] = "oops";`,
+		// index-write a nested list, then write a mismatched element into it
+		`def grid as list of list of int init [[1], [2]]; $grid[1] = [9]; $grid[1][0] = "oops";`,
+		// map value: store a nested list under a key, then poison it
+		`def m as map of string to list of int init {"a": [1]}; $m["b"] = [9]; $m["b"][0] = "oops";`,
+		// map value update of an existing key, then poison it
+		`def m as map of string to list of int init {"a": [1]}; $m["a"] = [9]; $m["a"][0] = "oops";`,
+		// nested map stored by index-write, then wrong value type inside
+		`def mm as map of string to map of string to int init {}; $mm["x"] = {"k": 1}; $mm["x"]["k"] = "oops";`,
+	}
+	for _, src := range cases {
+		if _, err := run(t, src); err == nil {
+			t.Errorf("expected a type error for %q", src)
+		}
+	}
+	// The stamped stores still accept well-typed writes.
+	ok := []string{
+		`use io; def grid as list of list of int init [[1]]; $grid[] = [9]; $grid[1][0] = 7; io.printf("%d", $grid[1][0]);`,
+		`use io; def m as map of string to list of int init {}; $m["a"] = [9]; $m["a"][0] = 7; io.printf("%d", $m["a"][0]);`,
+	}
+	for _, src := range ok {
+		if out, err := run(t, src); err != nil || out != "7" {
+			t.Errorf("well-typed store failed for %q: out=%q err=%v", src, out, err)
+		}
+	}
+}

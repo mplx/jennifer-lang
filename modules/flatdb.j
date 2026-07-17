@@ -21,6 +21,8 @@
  */
 use json;
 use fs;
+use strings;
+use uuid;
 
 /**
  * The value the caller holds: the file path plus the decoded document. A module
@@ -45,7 +47,12 @@ export func open(path as string) {
     def doc as json.Value init json.map();
     if (fs.exists($path)) {
         def text as string init fs.readString($path);
-        $doc = json.decode($text);
+        # A whitespace-only (or zero-byte) file - e.g. `touch state.json` before
+        # the first save - is treated like a missing file, so open never fails
+        # on a first run.
+        if (len(strings.trim($text)) > 0) {
+            $doc = json.decode($text);
+        }
     }
     return DB{ path: $path, data: $doc };
 }
@@ -146,7 +153,10 @@ export func remove(db as DB, pointer as string) {
  */
 export func save(db as DB) {
     def text as string init json.encode($db.data);
-    def tmp as string init $db.path + ".tmp";
+    # Uniquify the temp name: a fixed `.tmp` sibling lets two concurrent saves
+    # share one path, so one could rename while the other is mid-write and
+    # publish a torn file - defeating the crash-atomic guarantee.
+    def tmp as string init $db.path + ".tmp." + uuid.generate("v4");
     fs.writeString($tmp, $text);
     fs.rename($tmp, $db.path);
 }

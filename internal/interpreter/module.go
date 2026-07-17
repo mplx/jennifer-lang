@@ -53,6 +53,14 @@ func (m *loadedModule) isOwnStruct(name string) bool {
 // type on each side of the boundary. Library / other-module structs (a
 // different namespace) are left untouched.
 func retagStructs(v Value, fromNS, toNS, fromMod, toMod string, isOwn func(string) bool) Value {
+	// Copy-on-write: most values crossing a module boundary contain no
+	// module-own struct (nor a declared type that names one), so return them
+	// unchanged instead of deep-copying every list / map / struct. The
+	// allocation-free precheck below is complete - it inspects both the values
+	// and the declared element / key / value types retagType would rewrite.
+	if !subtreeNeedsRetag(v, fromNS, fromMod, isOwn) {
+		return v
+	}
 	switch v.Kind {
 	case KindStruct:
 		nv := v
@@ -79,7 +87,13 @@ func retagStructs(v Value, fromNS, toNS, fromMod, toMod string, isOwn func(strin
 		nv := v
 		nv.Map = make([]MapEntry, len(v.Map))
 		for i := range v.Map {
-			nv.Map[i] = MapEntry{Key: v.Map[i].Key, Value: retagStructs(v.Map[i].Value, fromNS, toNS, fromMod, toMod, isOwn)}
+			// Retag both key and value: a `map of Struct to V` returned across
+			// the boundary must retag its struct keys too, or the consumer's
+			// `$m[$k]` never matches (and retagType already retags KeyTyp).
+			nv.Map[i] = MapEntry{
+				Key:   retagStructs(v.Map[i].Key, fromNS, toNS, fromMod, toMod, isOwn),
+				Value: retagStructs(v.Map[i].Value, fromNS, toNS, fromMod, toMod, isOwn),
+			}
 		}
 		nv.KeyTyp = retagType(v.KeyTyp, fromNS, toNS, fromMod, toMod, isOwn)
 		nv.ValTyp = retagType(v.ValTyp, fromNS, toNS, fromMod, toMod, isOwn)
@@ -87,6 +101,58 @@ func retagStructs(v Value, fromNS, toNS, fromMod, toMod string, isOwn func(strin
 	default:
 		return v
 	}
+}
+
+// subtreeNeedsRetag reports whether v contains any struct value, or any
+// declared element / key / value type, that retagStructs / retagType would
+// rewrite. It must stay in lock-step with those two functions: a false
+// negative would skip a needed retag. Allocation-free.
+func subtreeNeedsRetag(v Value, fromNS, fromMod string, isOwn func(string) bool) bool {
+	switch v.Kind {
+	case KindStruct:
+		if v.StructNS == fromNS && v.ModPath == fromMod && isOwn(v.StructName) {
+			return true
+		}
+		for _, f := range v.Fields {
+			if subtreeNeedsRetag(f.Value, fromNS, fromMod, isOwn) {
+				return true
+			}
+		}
+	case KindList:
+		if typeNeedsRetag(v.ElemTyp, fromNS, fromMod, isOwn) {
+			return true
+		}
+		for _, e := range v.List {
+			if subtreeNeedsRetag(e, fromNS, fromMod, isOwn) {
+				return true
+			}
+		}
+	case KindMap:
+		if typeNeedsRetag(v.KeyTyp, fromNS, fromMod, isOwn) || typeNeedsRetag(v.ValTyp, fromNS, fromMod, isOwn) {
+			return true
+		}
+		for _, e := range v.Map {
+			if subtreeNeedsRetag(e.Key, fromNS, fromMod, isOwn) || subtreeNeedsRetag(e.Value, fromNS, fromMod, isOwn) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// typeNeedsRetag reports whether a declared type names a retaggable module
+// struct (the type-metadata counterpart to subtreeNeedsRetag). Must mirror
+// retagType.
+func typeNeedsRetag(t *parser.Type, fromNS, fromMod string, isOwn func(string) bool) bool {
+	if t == nil {
+		return false
+	}
+	if t.Kind == parser.TypeStruct && t.StructNS == fromNS && t.ModPath == fromMod && isOwn(t.StructName) {
+		return true
+	}
+	return typeNeedsRetag(t.Element, fromNS, fromMod, isOwn) ||
+		typeNeedsRetag(t.KeyType, fromNS, fromMod, isOwn) ||
+		typeNeedsRetag(t.ValType, fromNS, fromMod, isOwn)
 }
 
 // retagType returns a copy of a declared type with every struct type whose
@@ -242,6 +308,14 @@ func (i *Interpreter) callModuleMethod(m *loadedModule, c *parser.QualifiedCallE
 		v, err := i.evalExpr(a, env)
 		if err != nil {
 			return Value{}, err
+		}
+		// Reject an impostor: a struct whose name matches one of the module's
+		// own structs but whose identity is not the module's (a
+		// consumer-defined bare struct sharing the name). Without this it would
+		// pass the module's param-type check - which sees the module's structs
+		// as bare - then blow up mid-body or be re-branded on return.
+		if v.Kind == KindStruct && m.isOwnStruct(v.StructName) && !(v.StructNS == m.ns && v.ModPath == m.path) {
+			return Value{}, &runtimeError{Msg: fmt.Sprintf("argument %d to %s.%s: struct %q is not %s.%s (a consumer-defined struct cannot impersonate a module struct)", idx+1, m.ns, c.Callee, v.StructName, m.ns, v.StructName), File: file, Line: line, Col: col}
 		}
 		// Cross the boundary inward: a module struct the consumer holds is
 		// tagged `(module-stem, name)`; inside the module it is bare.
@@ -525,6 +599,22 @@ func (i *Interpreter) moduleByNS(ns string) *loadedModule {
 		}
 	}
 	return found
+}
+
+// moduleByPath returns the loaded module with the given canonical path, or
+// nil. Unlike moduleByNS this is never ambiguous: the canonical path IS the
+// module identity, so it resolves correctly even when two loaded modules
+// share a file stem. Prefer it whenever a Value / Type carries a ModPath.
+func (i *Interpreter) moduleByPath(path string) *loadedModule {
+	if path == "" {
+		return nil
+	}
+	for _, m := range i.moduleAliases {
+		if m.path == path {
+			return m
+		}
+	}
+	return nil
 }
 
 // moduleConst reads `alias.NAME`, a constant declared at the module's top

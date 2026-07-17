@@ -196,6 +196,29 @@ func TestTokenizeRejectsUnterminatedString(t *testing.T) {
 	}
 }
 
+// TestTokenizeRejectsNonASCIIDigit checks a non-ASCII digit (Arabic-Indic 3,
+// U+0663) is a clean lex error, not a confusing downstream strconv failure.
+func TestTokenizeRejectsNonASCIIDigit(t *testing.T) {
+	if _, err := Tokenize("def x as int init ٣;"); err == nil {
+		t.Error("expected lex error for non-ASCII digit U+0663")
+	}
+}
+
+// TestTokenizeStripsLeadingBOM checks a leading UTF-8 BOM is dropped so the file
+// lexes normally (and a shebang after it is still recognized).
+func TestTokenizeStripsLeadingBOM(t *testing.T) {
+	toks, err := Tokenize("\uFEFFdef x as int init 1;")
+	if err != nil {
+		t.Fatalf("lex with BOM: %v", err)
+	}
+	if len(toks) == 0 || toks[0].Type != TOKEN_DEFINE {
+		t.Fatalf("BOM not stripped: first token %v", toks[0])
+	}
+	if toks[0].Col != 1 {
+		t.Errorf("BOM shifted column: got col %d, want 1", toks[0].Col)
+	}
+}
+
 // TestTokenizeM6Tokens covers the punctuation and keywords needed
 // for list/map syntax: `[`, `]`, `:` and the keywords `list`, `map`,
 // `of`, `to`, `in`.

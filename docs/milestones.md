@@ -1708,6 +1708,240 @@ produces `jennifer` / `jennifer-tiny`; `grep -rn 'mplx/jennifer-lang'` is empty;
 the old GitHub URL redirects to the org; the AUR package builds from the new
 source; pkg.go.dev serves the module under `jennifer-lang.dev/jennifer`.
 
+### M19.9 - Audit-driven correctness + hardening pass
+
+**Done.** A systematic sweep through the findings of a full
+bug-and-performance audit of the interpreter (`internal/`) and the module
+library (`modules/`), worked in severity order: criticals first, then the
+value-semantics / type-safety holes, then module correctness, performance
+(the O(N^2) accumulation patterns), and hardening long-tail. Every fix
+lands with a regression test (Go test for interpreter code, `_test.j`
+overlay coverage for modules) and both-toolchain builds.
+
+Shipped so far:
+
+- **RNG entropy seeding.** The shared `math` random source was seeded with
+  a compile-time constant, so every fresh process produced the identical
+  "random" stream - the same `math.rand` sequence, `lists.shuffle`
+  permutation, `uuid.generate` UUIDs (and therefore predictable
+  session ids and generated passwords) on every run. The source is now
+  seeded from OS entropy at startup (CSPRNG bytes, wall-clock fallback);
+  `math.randSeed` remains the deterministic opt-in. The previously
+  undocumented `rand` / `randInt` / `randSeed` surface is now in
+  `docs/libraries/math.md` and the cheatsheet.
+- **`json.decode` / `toml.decode` nesting caps.** Both decoders recursed
+  without bound, so deeply-nested untrusted input (e.g. ten million `[`s
+  fed to a `web` service body) killed the whole process with an
+  uncatchable Go stack overflow. Container nesting (and TOML dotted-key
+  segment counts) past 1000 levels now raises a normal, catchable decode
+  error.
+- **Catch-variable binding.** The `try`/`catch` handler bound its catch
+  variable name-only into an unsized frame; the first `def` in the catch
+  body grew the slot slice over it, so every later read of the catch
+  variable returned `null` (and `.field` access on it errored) - the
+  error-handling construct corrupted its own binding. The catch variable
+  now binds at its resolved slot in a pre-sized pooled frame, the same
+  shape `for`-each uses for its iteration variable.
+- **`tengine` recursion guard.** A template that included itself (directly
+  or through a partner) recursed until the process died. Nesting is now
+  capped at 256 levels and past it the engine throws a catchable
+  `Error{kind: "tengine"}` - hostile author templates fail cleanly.
+- **Code 128 stop pattern.** `barcode.encode` emitted every Code 128
+  symbol with a doubled termination bar (15-module stop, final bar 4 wide
+  instead of 2), which no scanner reads. The pattern table now holds the
+  standard 11-module stop and the encoder appends the termination bar
+  once; a reference test pins the exact run widths of a known symbol.
+- **Lvalue writes commit the current root.** `$g[0] = f();`,
+  `$xs[] = f();`, and `$p.x = f();` fetched the root binding before
+  evaluating the right-hand side, so an RHS (or index expression) that
+  reassigned the same variable had that write silently overwritten by the
+  stale pre-evaluation copy. All three write paths re-fetch the binding
+  after evaluation, immediately before the commit.
+- **Nested stores keep their element types.** Values stored by
+  index-write or append were never stamped with the container's declared
+  element / value type, so a nested container stored that way carried no
+  inner type and later writes into it skipped the declared-type check -
+  `$grid[] = [9]; $grid[1][0] = "oops";` put a string inside a
+  `list of list of int`. Index / append stores now stamp like field
+  writes and `def` / assignment always did.
+- **REPL vs. spawn table race.** New methods, structs, or imports typed
+  at the prompt while a spawned task was still running mutated the
+  method / struct / namespace tables that task goroutines read by name -
+  a fatal "concurrent map read and map write". `EvalInteractive` now
+  rejects table-mutating input while any task is live (with a message
+  pointing at `task.wait` / `task.discard`); plain statements still
+  evaluate.
+- **Same-stem module structs.** With two imported modules sharing a file
+  stem (`a/util.j` + `b/util.j`), every struct field write and zero-init
+  on either module's structs failed: the runtime resolved struct
+  definitions by stem, which is ambiguous under a collision. Struct
+  lookups now resolve through the module's canonical path (the identity),
+  with the stem as fallback only when no path is available.
+- **`archive.unpack` aggregate cap.** The 256 MiB decompression cap was
+  per entry, so a small archive with many entries could still expand to
+  entries-times-cap and OOM. The cap now bounds the total across all
+  entries of one call (zip pre-checks declared sizes too) and the member
+  count is capped at 65536.
+- **`httpd` body handling.** `respond` stored the caller's `bytes`
+  backing and wrote it to the socket later from the handler goroutine, so
+  a post-respond mutation raced the write - the body is copied at the
+  boundary now. And a request body over the 10 MiB cap was silently
+  truncated and handed to the program looking complete (defeating
+  body-signature checks); the engine now rejects it with 413 before it
+  reaches the pull loop.
+- **Wire-protocol byte framing + quadratic buffering.** The `redis`,
+  `memcache`, `pop`, and `imap` clients counted / sliced their payloads by
+  rune where the protocol frames by byte (RESP bulk strings, memcache
+  values, POP bodies, IMAP `{N}` literals), corrupting any non-ASCII value
+  and desyncing the connection; the readers also grew a string buffer with
+  `+` and re-scanned it per chunk, which is O(N^2) in the message size.
+  All four now frame over a `bytes` buffer with a forward cursor and decode
+  to a string only once a payload is fully extracted - byte-exact and
+  linear.
+- **`http.j` request-splitting.** Caller-supplied header names / values and
+  the request path were concatenated raw onto the wire, so a CR / LF / NUL
+  injected extra headers or a smuggled second request. The request is now
+  built (and rejected on any control character) before a socket is opened;
+  the fix propagates to `rest` / `oauth` / `webhook` / `bucket`.
+- **`tengine` quote / comment scanning.** The action scanner cut on the
+  first `}}` and the pipeline split on the first `|`, ignoring quoted
+  strings, so `{{ if eq .a "}}" }}` and `{{ printf "%s|%s" ... }}` broke; a
+  comment's `}}`-in-body ended it early too. A quote-aware boundary scanner
+  and pipe splitter fix all three.
+- **`web` / `session` hardening.** A throwing middleware propagated to the
+  serve loop's catch-all, which read any error as a shutdown signal and
+  killed the whole server (a one-request DoS); middleware now runs under the
+  per-request try and only `httpd.accept` failing ends the loop. Session
+  ids (from client cookies) flowed unvalidated into memcache keys, allowing
+  protocol injection; they are now restricted to `[A-Za-z0-9-]`, 1-250 chars.
+- **O(N^2) accumulation.** `influxdb.write`, `csv.formatWith`, `jsonl.encode`,
+  `smtp` dot-stuffing, and `mime` base64 line-wrapping each built a large
+  output with `+` in a loop; all now collect into a `list of string` and
+  `strings.join` once.
+- **Assorted module correctness.** `websocket.receive` discarded a
+  half-reassembled fragmented message when a ping / pong interleaved (RFC
+  6455 allows control frames between fragments) - it now keeps reassembling.
+  `gpio.setup` re-exported an already-exported pin (EBUSY on real sysfs) -
+  it now guards on the pin directory. `log` text / logfmt quoting didn't
+  escape backslashes or newlines, allowing log injection - it now escapes
+  them (and neutralises newlines in the text message). `semver` caret /
+  tilde ranges with a prerelease operand (`^1.2.3-rc.1`) dropped the
+  prerelease lower bound - `satisfies` and `minVersion` now keep it.
+  `ical.parse` let a nested `VALARM`'s `SUMMARY` / `DESCRIPTION` clobber the
+  enclosing event's - sub-components are now skipped until their `END`.
+
+  **Break:** `jsonl.readRecord` now returns a `Record{value, done}` sentinel
+  instead of throwing at end-of-stream. A `hasMore`-guarded loop could not
+  see trailing blank lines (they leave the file un-exhausted yet carry no
+  record) and so threw; loop on `readRecord(...).done` instead. `hasMore`
+  remains as a coarse `not eof` check.
+- **Pre-1.0 strictness rulings (six coordinated breaks).** A batch of
+  semantics tightenings, each shipped with tests and the operator / scoping
+  docs updated:
+  - **`%` is now floored** (Python semantics), consistent with `//`, so the
+    div/mod identity holds for negative operands: `-7 % 3 == 2`,
+    `7 % -3 == -2` (was C/Go truncation: `-1` and `1`). Both the runtime and
+    constant folding changed together.
+  - **Integer arithmetic overflow is a positioned error**, not a silent
+    wrap: `9223372036854775807 + 1` (and `-`, `*`, `MinInt64 // -1`) errors.
+    Overflowing literal operations are left unfolded so the runtime raises at
+    the correct position.
+  - **A duplicate key in a map literal is an error** (`{"a":1,"a":2}`) rather
+    than a corrupt two-entry map where only the first was reachable.
+  - **Mixed `int`/`float` comparison is exact** (including `==`): the int is
+    no longer promoted to a lossy `float64`, so
+    `9007199254740993 == 9007199254740992.0` is `false` and the `>` /`<`
+    orderings are correct above 2^53.
+  - **A method may not share its name with a top-level variable or constant**
+    (`def foo ...; func foo() {}` is a parse error) - the no-shadowing rule
+    now applies both directions across the def/func namespace.
+  - **Reading a constant with the `$` sigil is a parse error** (`$MAX`); the
+    sigil is reserved for mutable variables. A `$CONST[...]` mutation attempt
+    still reports the clearer "cannot mutate constant" error.
+- **Interpreter + library correctness / lifecycle / perf (mediums).** A broad
+  sweep: for-each now iterates a stable snapshot (independent of slice
+  capacity); a `try` body is its own block scope, so a `def` skipped by a
+  throw is an undefined-variable error rather than a silent null;
+  `convert.toFloat` rejects `NaN`/`Inf`; `task.waitAll` returns a generic list
+  (validated per-element) instead of relabeling as `list of int`; out-of-range
+  `time` instants are rejected and pre-epoch `time.unix` floors; map equality's
+  asymmetry is closed by the duplicate-key rejection. A consumer struct can no
+  longer impersonate a module struct across the call boundary, and a map of
+  module structs retags its keys on the way out; included files strip trivia;
+  module resolution dedupes and symlink-canonicalizes the search path.
+  Performance: `KindObject` shares its immutable payload instead of deep-copying
+  it; the slot-resolved write path no longer mirrors into the name map (name
+  readers consult the authoritative slot); the task registry prunes observed
+  tasks; module-boundary retag is copy-on-write; `maps.merge`/`has`/`delete`
+  are index-aware; `regex.findAll`'s byte->rune conversion is amortized;
+  `io.readBytes` reads in bounded chunks; `lists.range` detects int64 wrap.
+  Library lifecycle: `net.eof` no longer blocks on an open idle connection and
+  `net.Conn` fields are mutex-guarded; `httpd` applies handler headers before
+  `serveFile`, bounds concurrent body buffering (admission semaphore), and
+  answers 500 for an accepted-but-unanswered request instead of leaking the
+  goroutine; `os` gains **`os.release(p)`** to drop a finished process handle
+  (the registry no longer grows without bound for a per-job spawner).
+
+- **Interpreter + library long-tail (lows).** The remaining interpreter and
+  standard-library findings. Lexer: number literals accept ASCII digits only
+  (a non-ASCII digit is a clean lex error), and a leading UTF-8 BOM is
+  stripped. `toml` gained a full conformance pass: date-times are validated
+  (out-of-range fields rejected, local-time `asDatetime` anchored to the epoch
+  so its nanos are representable), string content rejects control bytes / lone
+  CR / a third hugging quote, the number grammar rejects leading zeros / bad
+  underscores / bare-dot floats, `\u` escapes reject surrogates and
+  out-of-range code points, table redefinition follows TOML 1.0's four
+  MUST-error rules, and a wrapped array-of-tables encodes instead of being
+  dropped. `json`: a `-0` decodes as float (sign preserved), object decode is
+  O(1)-per-key (was O(N^2)), and a JSON-pointer index that would overflow `int`
+  is rejected instead of panicking. Library correctness: `math.randInt`
+  rejection-samples to remove modulo bias; `strings.repeat` / `lists` range-
+  check before narrowing and cap the result; `io.printf` zero-fill groups
+  columnar; `time`'s `%z` parse enforces the +/-26h cap; the `testing` TAP /
+  text renderers escape newlines and `#`; hash / crc / compress streams hold a
+  per-stream mutex and gained a `discard` verb (leak-free abort);
+  `fs.writeString` propagates its close error; `os.run` / `os.spawn` cap
+  captured output, `os.wait` surfaces a non-exit failure, `os.kill` falls back
+  to a hard kill on Windows; `httpd.listenTLS` floors at TLS 1.2 and the unix-
+  socket listener only clears a confirmed-stale socket; `archive.unpack`
+  rejects zip-slip entry names. Parser / resolver: `CONST.field` parses (no
+  parenthesis workaround), a `ConstRefExpr` uses its resolver slot, the
+  for-header frame is pre-sized (body frame no longer oversized per iteration),
+  and an lvalue-chain expression statement is parsed once. Diagnostics: `lint`
+  descends into `spawn` bodies (L202) and `repeat ... until` conditions (L105),
+  a `# lint-disable` in an included file is honoured, the profiler's Chrome
+  trace puts each goroutine on its own track, and module-resolution stat
+  errors distinguish EACCES from not-found.
+- **Module correctness / performance long-tail (lows).** The remaining
+  `modules/` findings. Wire framing: `amqp` / `mqtt` / `mikrotik` accumulate
+  reads in place (O(N)); `websocket` parses the handshake status code exactly
+  and de-O(N^2)s the response read; `imap` answers an unexpected `+`
+  continuation so a failed AUTHENTICATE fails fast. HTTP: `http.j` skips caller
+  framing headers, joins repeated response headers, and throws on a truncated
+  chunked body; `web` uses a constant-time CSRF compare, validates cookie
+  name/value, rejects wildcard-origin-with-credentials CORS (adds `Vary`), and
+  parses `If-None-Match` lists / weak ETags; `telegram` / `prometheus` /
+  `oauth` guard their JSON decode and rethrow their own error kind. Formats:
+  `pdfwriter` transcodes text to WinAnsi (octal-escaped) and encodes Info
+  metadata correctly (name-escaped keys, UTF-16BE values), and omits `/Encoding`
+  for Symbol / ZapfDingbats; `barcode` rejects `*` in Code 39, validates a full
+  EAN check digit, scores QR mask rule 3 in both directions, inlines the GF(256)
+  multiply, and builds SVG / terminal output with `strings.join`; `label_zpl`
+  honours module width / QR magnification, rotates counter-clockwise, and `^FH`-
+  escapes barcode data; `markdown` splits link titles out of the href and
+  measures East-Asian width for table alignment; `mime` keeps an unterminated
+  final part and quotes RFC 5322 specials; `csv` joins fields instead of `+`.
+  Data / misc: `ipnet` rejects leading-zero octets and misplaced embedded IPv4;
+  `cron` widens its search horizon past the 2100 leap gap, validates numeric
+  fields, and treats `*/n` as unrestricted; `semver` fixes `>*` / `<*`, empty
+  OR-clauses, prerelease-only interval intersects, and reuses parsed versions;
+  `bucket` gains ListObjectsV2 pagination; `flatdb` uniquifies its temp file;
+  `gpio` wraps sysfs I/O in its own error kind; `docblock` reports the
+  construct's line, keeps an unterminated comment's tail, and bounds its
+  per-block source scan; `vcard` / `ical` split the value colon quote-aware;
+  `ansi.rgb` clamps its channels; `smtp` splits the envelope at the last `@`;
+  `idna` length-checks A-labels and maps the Unicode dot variants.
+
 ## M20 - system libraries
 
 Go **system libraries**: cryptographic primitives, plus formats too heavy

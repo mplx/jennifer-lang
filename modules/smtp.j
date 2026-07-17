@@ -94,20 +94,17 @@ func replyFinalCode(text as string) {
 # dotStuff prefixes an extra "." to any body line that begins with one, per the
 # RFC 5321 transparency rule, so the "." end-of-data terminator is unambiguous.
 func dotStuff(body as string) {
-    def out as string init "";
-    def first as bool init true;
+    # Collect the (possibly dot-stuffed) lines and join once: an accumulating
+    # `+` over a multi-MB body would be O(N^2) before any network I/O.
+    def lines as list of string init [];
     for (def line in strings.split($body, "\n")) {
-        if (not $first) {
-            $out = $out + "\n";
-        }
-        $first = false;
         def l as string init $line;
         if (strings.startsWith($l, ".")) {
             $l = "." + $l;
         }
-        $out = $out + $l;
+        $lines[] = $l;
     }
-    return $out;
+    return strings.join($lines, "\n");
 }
 
 # crlf normalises any line endings to CRLF.
@@ -145,7 +142,18 @@ func asciiOnly(s as string, what as string) {
 # asciiEnvelope makes an envelope address wire-safe: the domain is IDNA-encoded
 # to its `xn--` form, the local part must already be ASCII.
 func asciiEnvelope(addr as string) {
-    def at as int init strings.indexOf($addr, "@");
+    # Split at the LAST '@': a quoted local part may itself contain '@', so
+    # splitting at the first one would truncate the local part and mangle the
+    # domain.
+    def at as int init -1;
+    def cs as list of string init strings.chars($addr);
+    def ci as int init 0;
+    while ($ci < len($cs)) {
+        if ($cs[$ci] == "@") {
+            $at = $ci;
+        }
+        $ci = $ci + 1;
+    }
     if ($at < 0) {
         return asciiOnly($addr, "address");
     }

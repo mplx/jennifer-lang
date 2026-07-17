@@ -26,6 +26,7 @@ use fs;
 use os;
 use convert;
 use strings;
+use time;
 
 def const DEFAULT_BASE as string init "/sys/class/gpio";
 def const BASE_ENV as string init "JENNIFER_GPIO_BASE";
@@ -53,6 +54,25 @@ func pinDir(dir as string, pin as int) {
     return $dir + "/gpio" + convert.toString($pin);
 }
 
+# gpioWrite / gpioRead wrap sysfs I/O so a hardware failure surfaces as a
+# gpio-kind error, not a raw fs-kind one - callers catching `kind == "gpio"`
+# would otherwise miss every real I/O failure.
+func gpioWrite(path as string, data as string) {
+    try {
+        fs.writeString($path, $data);
+    } catch (err) {
+        throw Error{ kind: "gpio", message: "gpio: write to " + $path + " failed: " + $err.message, file: "", line: 0, col: 0 };
+    }
+}
+
+func gpioRead(path as string) {
+    try {
+        return fs.readString($path);
+    } catch (err) {
+        throw Error{ kind: "gpio", message: "gpio: read from " + $path + " failed: " + $err.message, file: "", line: 0, col: 0 };
+    }
+}
+
 /**
  * Export a pin and set its direction ("in" or "out").
  * @param pin {int} the GPIO pin number
@@ -66,12 +86,33 @@ export func setup(pin as int, direction as string) {
     def dir as string init base();
     requireBase($dir);
     def pinStr as string init convert.toString($pin);
-    fs.writeString($dir + "/export", $pinStr);
+    def pd as string init pinDir($dir, $pin);
+    # Export only when the pin is not already exported: writing `export` for an
+    # already-exported pin fails with EBUSY on real sysfs, so a second setup
+    # (a re-run after a crash, or reconfiguring the direction) would throw.
+    if (not fs.exists($pd)) {
+        gpioWrite($dir + "/export", $pinStr);
+    }
     # The kernel creates gpioN on export; mkdirAll is a no-op when it already
     # exists (real sysfs) and creates it on a mock tree.
-    def pd as string init pinDir($dir, $pin);
     fs.mkdirAll($pd);
-    fs.writeString($pd + "/direction", $direction);
+    # Retry the direction write briefly: after export, udev needs a moment to
+    # grant write permission on the new attribute files, so a non-root write
+    # can transiently fail with EACCES (the canonical sysfs-GPIO flake).
+    def attempt as int init 0;
+    def wrote as bool init false;
+    while (not $wrote) {
+        try {
+            fs.writeString($pd + "/direction", $direction);
+            $wrote = true;
+        } catch (err) {
+            $attempt = $attempt + 1;
+            if ($attempt >= 10) {
+                throw Error{ kind: "gpio", message: "gpio.setup: could not set direction after export (udev permission delay?): " + $err.message, file: "", line: 0, col: 0 };
+            }
+            time.sleep(time.fromMilliseconds(20));
+        }
+    }
 }
 
 /**
@@ -86,7 +127,7 @@ export func write(pin as int, value as int) {
     }
     def dir as string init base();
     requireBase($dir);
-    fs.writeString(pinDir($dir, $pin) + "/value", convert.toString($value));
+    gpioWrite(pinDir($dir, $pin) + "/value", convert.toString($value));
 }
 
 /**
@@ -98,7 +139,7 @@ export func write(pin as int, value as int) {
 export func read(pin as int) {
     def dir as string init base();
     requireBase($dir);
-    def raw as string init fs.readString(pinDir($dir, $pin) + "/value");
+    def raw as string init gpioRead(pinDir($dir, $pin) + "/value");
     return convert.toInt(strings.trim($raw));
 }
 
@@ -110,5 +151,5 @@ export func read(pin as int) {
 export func release(pin as int) {
     def dir as string init base();
     requireBase($dir);
-    fs.writeString($dir + "/unexport", convert.toString($pin));
+    gpioWrite($dir + "/unexport", convert.toString($pin));
 }

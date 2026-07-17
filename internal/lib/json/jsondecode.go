@@ -5,6 +5,7 @@ package jsonlib
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -34,10 +35,17 @@ func decodeFn(args []interpreter.Value) (interpreter.Value, error) {
 	return v, nil
 }
 
+// maxNestingDepth caps container recursion in parseValue. Each nesting level
+// costs Go stack frames, and a Go stack overflow is fatal (not a catchable
+// Jennifer error), so deeply-nested untrusted input could otherwise kill the
+// whole process. 1000 is far beyond any legitimate document.
+const maxNestingDepth = 1000
+
 // decoder is a recursive-descent JSON reader over a byte-indexed string.
 type decoder struct {
-	s   string
-	pos int
+	s     string
+	pos   int
+	depth int // current container nesting, gated in parseValue
 }
 
 // errf builds an error tagged with the line/column of the current position.
@@ -71,9 +79,21 @@ func (d *decoder) parseValue() (interpreter.Value, error) {
 	}
 	switch c := d.s[d.pos]; {
 	case c == '{':
-		return d.parseObject()
+		if d.depth >= maxNestingDepth {
+			return interpreter.Null(), d.errf("nesting exceeds %d levels", maxNestingDepth)
+		}
+		d.depth++
+		v, err := d.parseObject()
+		d.depth--
+		return v, err
 	case c == '[':
-		return d.parseArray()
+		if d.depth >= maxNestingDepth {
+			return interpreter.Null(), d.errf("nesting exceeds %d levels", maxNestingDepth)
+		}
+		d.depth++
+		v, err := d.parseArray()
+		d.depth--
+		return v, err
 	case c == '"':
 		s, err := d.parseString()
 		if err != nil {
@@ -96,6 +116,9 @@ func (d *decoder) parseValue() (interpreter.Value, error) {
 func (d *decoder) parseObject() (interpreter.Value, error) {
 	d.pos++ // '{'
 	var entries []interpreter.MapEntry
+	// idx keys each seen key to its position so duplicate handling stays O(1)
+	// per key: a linear scan per key made a large object O(N^2).
+	idx := map[string]int{}
 	d.skipWS()
 	if d.pos < len(d.s) && d.s[d.pos] == '}' {
 		d.pos++
@@ -120,7 +143,12 @@ func (d *decoder) parseObject() (interpreter.Value, error) {
 		if err != nil {
 			return interpreter.Null(), err
 		}
-		entries = putEntry(entries, key, val)
+		if pos, seen := idx[key]; seen {
+			entries[pos].Value = val // last-wins
+		} else {
+			idx[key] = len(entries)
+			entries = append(entries, interpreter.MapEntry{Key: interpreter.StringVal(key), Value: val})
+		}
 		d.skipWS()
 		if d.pos >= len(d.s) {
 			return interpreter.Null(), d.errf("unterminated object")
@@ -337,6 +365,12 @@ func (d *decoder) parseNumber() (interpreter.Value, error) {
 		return interpreter.Null(), d.errf("invalid number: leading zeros are not allowed")
 	}
 	tok := d.s[start:d.pos]
+	// `-0` (with no fraction/exponent) would parse to int 0 and lose its sign;
+	// decode it as negative-zero float to preserve the sign, matching Go's
+	// encoding/json.
+	if !isFloat && tok == "-0" {
+		return interpreter.FloatVal(math.Copysign(0, -1)), nil
+	}
 	if !isFloat {
 		if n, err := strconv.ParseInt(tok, 10, 64); err == nil {
 			return interpreter.IntVal(n), nil
@@ -351,18 +385,6 @@ func (d *decoder) parseNumber() (interpreter.Value, error) {
 }
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
-
-// putEntry appends key->val to entries, replacing an existing entry with the
-// same key (JSON last-wins), so the resulting map has unique keys.
-func putEntry(entries []interpreter.MapEntry, key string, val interpreter.Value) []interpreter.MapEntry {
-	for i := range entries {
-		if entries[i].Key.Str == key {
-			entries[i].Value = val
-			return entries
-		}
-	}
-	return append(entries, interpreter.MapEntry{Key: interpreter.StringVal(key), Value: val})
-}
 
 // listVal / mapVal build generic decoded collections. Element / value types
 // are left unset so the value is assignable to any declared list / map type

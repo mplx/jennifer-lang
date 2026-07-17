@@ -543,7 +543,22 @@ func parseCookie(header as string, name as string) {
 }
 
 # formatSetCookie renders a Set-Cookie header value from name, value, and options.
+# rejectCookieInjection throws when a cookie name or value carries a character
+# that would break out of its field: a `;` / `,` injects extra attributes and a
+# CR/LF reaches the response header, so both are attribute/header-injection
+# vectors (RFC 6265 excludes these from cookie names and values anyway).
+func rejectCookieInjection(s as string, what as string) {
+    if (strings.contains($s, ";") or strings.contains($s, ",") or
+        strings.contains($s, "\r") or strings.contains($s, "\n") or
+        strings.contains($s, "\0") or strings.contains($s, " ") or
+        strings.contains($s, "\t")) {
+        throw Error{ kind: "web", message: "web cookie " + $what + " contains an illegal character (control, ';', ',', or whitespace)", file: "", line: 0, col: 0 };
+    }
+}
+
 func formatSetCookie(name as string, value as string, opts as CookieOptions) {
+    rejectCookieInjection($name, "name");
+    rejectCookieInjection($value, "value");
     def out as string init $name + "=" + $value;
     if (len($opts.path) > 0) {
         $out = $out + "; Path=" + $opts.path;
@@ -721,14 +736,18 @@ func ensureAnswered(req as httpd.Request, status as int, body as string) {
 }
 
 # dispatch runs the middleware chain then the handler, guaranteeing a response.
+# Both the middleware chain and the handler run under one try: a throw from
+# either is contained here and turned into a 500 by the safety net below - it
+# must never propagate to serveOn, which would read it as a shutdown signal and
+# stop the whole server (a one-request DoS).
 func dispatch(app as App, handler as string, ctx as Context, req as httpd.Request) {
-    def cont as bool init runMiddleware($app, $ctx);
-    if ($cont) {
-        try {
+    try {
+        def cont as bool init runMiddleware($app, $ctx);
+        if ($cont) {
             meta.callMain($handler, $ctx);
-        } catch (err) {
-            # handler failed - the safety net below turns it into a 500.
         }
+    } catch (err) {
+        # middleware or handler failed - the safety net below turns it into a 500.
     }
     ensureAnswered($req, 500, "500 internal server error\n");
 }
@@ -822,6 +841,23 @@ func csrfSign(secret as string, rand as string) {
     return encoding.toText($mac, "hex");
 }
 
+# constantTimeEqual compares two strings without an early-out, so a timing
+# side channel can't leak how many leading characters of a secret matched.
+func constantTimeEqual(a as string, b as string) {
+    if (not (len($a) == len($b))) {
+        return false;
+    }
+    def ab as bytes init convert.bytesFromString($a, "utf-8");
+    def bb as bytes init convert.bytesFromString($b, "utf-8");
+    def diff as int init 0;
+    def i as int init 0;
+    while ($i < len($ab)) {
+        $diff = $diff | ($ab[$i] ^ $bb[$i]);
+        $i = $i + 1;
+    }
+    return $diff == 0;
+}
+
 # csrfValid reports whether a "<rand>.<sig>" token's signature verifies.
 func csrfValid(secret as string, token as string) {
     def dot as int init strings.indexOf($token, ".");
@@ -830,7 +866,9 @@ func csrfValid(secret as string, token as string) {
     }
     def rand as string init strings.substring($token, 0, $dot);
     def sig as string init strings.substring($token, $dot + 1, len($token));
-    return $sig == csrfSign($secret, $rand);
+    # Constant-time compare so an attacker can't recover the signature byte by
+    # byte from response-timing differences.
+    return constantTimeEqual($sig, csrfSign($secret, $rand));
 }
 
 /**
@@ -869,7 +907,7 @@ export func csrfCheck(ctx as Context, secret as string) {
     if ($submitted == "") {
         return false;
     }
-    if (not ($submitted == cookie($ctx, "csrf"))) {
+    if (not constantTimeEqual($submitted, cookie($ctx, "csrf"))) {
         return false;
     }
     return csrfValid($secret, $submitted);
@@ -877,11 +915,26 @@ export func csrfCheck(ctx as Context, secret as string) {
 
 # --- caching ----------------------------------------------------------------
 
-# etagMatches reports whether an If-None-Match header value matches the tag (in
-# either its quoted or bare form) or the wildcard "*". A simple exact match: the
-# RFC 7232 comma-list and weak-tag (W/) forms are not parsed.
+# etagMatches reports whether an If-None-Match header value matches the tag. It
+# handles the RFC 7232 comma-list (`"a", "b"`) and weak validators (`W/"tag"`,
+# common behind nginx+gzip), which a bare exact match would miss - so a 304
+# still fires behind a proxy.
 func etagMatches(inm as string, quoted as string, tag as string) {
-    return $inm == "*" or $inm == $quoted or $inm == $tag;
+    def trimmed as string init strings.trim($inm);
+    if ($trimmed == "*") {
+        return true;
+    }
+    for (def part in strings.split($trimmed, ",")) {
+        def cand as string init strings.trim($part);
+        # Strip a weak-validator prefix; comparison is weak either way here.
+        if (strings.startsWith($cand, "W/")) {
+            $cand = strings.trim(strings.substring($cand, 2, len($cand)));
+        }
+        if ($cand == $quoted or $cand == $tag) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
@@ -917,6 +970,11 @@ export func etag(ctx as Context, tag as string) {
  * @return {App} a new App with the policy set
  */
 export func cors(app as App, opts as CorsOptions) {
+    # A wildcard origin with credentials is forbidden by the Fetch spec and
+    # every browser hard-rejects it; catch the misconfiguration at setup.
+    if ($opts.allowCredentials and $opts.allowOrigin == "*") {
+        throw Error{ kind: "web", message: "web.cors: allowCredentials cannot be combined with a wildcard allowOrigin; name an explicit origin", file: "", line: 0, col: 0 };
+    }
     def out as App init $app;
     $out.cors = $opts;
     return $out;
@@ -930,6 +988,11 @@ func corsEnabled(app as App) {
 # applyCors adds the configured Access-Control-* response headers.
 func applyCors(ctx as Context, opts as CorsOptions) {
     httpd.setHeader($ctx.req, "Access-Control-Allow-Origin", $opts.allowOrigin);
+    # A specific allow-origin makes the response vary by request Origin; tell
+    # caches so they don't serve one origin's CORS response to another.
+    if (not ($opts.allowOrigin == "*")) {
+        httpd.setHeader($ctx.req, "Vary", "Origin");
+    }
     if (len($opts.allowMethods) > 0) {
         httpd.setHeader($ctx.req, "Access-Control-Allow-Methods", $opts.allowMethods);
     }
@@ -956,31 +1019,46 @@ func applyCors(ctx as Context, opts as CorsOptions) {
  * @param app {App} the router
  * @param srv {httpd.Server} the already-listening server handle
  */
+# handleOne routes and answers a single accepted request. Any error it raises
+# is caught per-request in serveOn (turned into a 500), never ending the loop.
+func handleOne(app as App, req as httpd.Request) {
+    def m as string init httpd.method($req);
+    def p as string init httpd.path($req);
+    def matched as Match init matchRoute($app, $m, $p);
+    def ctx as Context init Context{ req: $req, params: $matched.params };
+    if (corsEnabled($app)) {
+        applyCors($ctx, $app.cors);
+    }
+    if (corsEnabled($app) and $m == "OPTIONS" and len(httpd.header($req, "Origin")) > 0 and len(httpd.header($req, "Access-Control-Request-Method")) > 0) {
+        # A genuine CORS preflight (carries Origin + Access-Control-Request-
+        # Method): the CORS headers are set, answer 204 without routing. A
+        # plain OPTIONS (no preflight headers) routes normally, so a registered
+        # OPTIONS handler stays reachable.
+        httpd.respond($req, 204, "");
+    } elseif ($matched.found) {
+        dispatch($app, $matched.handler, $ctx, $req);
+    } elseif (not ($app.notFound == "")) {
+        dispatch($app, $app.notFound, $ctx, $req);
+    } else {
+        httpd.respond($req, 404, "404 not found\n");
+    }
+}
+
 export func serveOn(app as App, srv as httpd.Server) {
-    def running as bool init true;
-    while ($running) {
+    while (true) {
+        # Only httpd.accept failing (the server was shut down) ends the loop.
+        # A failure while handling one request must not take the server down,
+        # so request handling runs under its own catch that answers 500 and
+        # keeps serving.
         try {
             def req as httpd.Request init httpd.accept($srv);
-            def m as string init httpd.method($req);
-            def p as string init httpd.path($req);
-            def matched as Match init matchRoute($app, $m, $p);
-            def ctx as Context init Context{ req: $req, params: $matched.params };
-            if (corsEnabled($app)) {
-                applyCors($ctx, $app.cors);
+            try {
+                handleOne($app, $req);
+            } catch (reqErr) {
+                ensureAnswered($req, 500, "500 internal server error\n");
             }
-            if (corsEnabled($app) and $m == "OPTIONS") {
-                # Preflight: the CORS headers are set; answer without routing.
-                httpd.respond($req, 204, "");
-            } elseif ($matched.found) {
-                dispatch($app, $matched.handler, $ctx, $req);
-            } elseif (not ($app.notFound == "")) {
-                dispatch($app, $app.notFound, $ctx, $req);
-            } else {
-                httpd.respond($req, 404, "404 not found\n");
-            }
-        } catch (err) {
-            # httpd.accept errors once the server is shut down; end the loop.
-            $running = false;
+        } catch (acceptErr) {
+            return;
         }
     }
 }

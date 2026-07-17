@@ -25,8 +25,10 @@ use convert;
 use lists;
 
 # The search horizon for `next`: give up after this many days rather than loop
-# forever on an impossible schedule (e.g. Feb 31). Five years covers a leap day.
-def const HORIZON_DAYS as int init 366 * 5;
+# forever on an impossible schedule (e.g. Feb 31). Nine years covers the widest
+# real gap: a Feb-29-only schedule spans 8 years across a non-leap century
+# boundary (2096 -> 2104, since 2100 is not a leap year).
+def const HORIZON_DAYS as int init 366 * 9;
 
 /**
  * A parsed cron schedule: the allowed values per field. `weekdays` are ISO
@@ -56,6 +58,21 @@ func fail(message as string) {
     throw Error{ kind: "cron", message: "cron: " + $message, file: "", line: 0, col: 0 };
 }
 
+# toIntChecked parses a bare decimal, throwing a "cron"-kind error (not
+# convert's generic one) when the substring isn't a digit run, so a caller
+# catching kind == "cron" doesn't crash on malformed input like "a * * * *".
+func toIntChecked(s as string, field as string, term as string) {
+    if (len($s) == 0) {
+        fail("empty number in " + $field + " field: " + $term);
+    }
+    for (def ch in strings.chars($s)) {
+        if (strings.indexOf("0123456789", $ch) < 0) {
+            fail("non-numeric value in " + $field + " field: " + $term);
+        }
+    }
+    return convert.toInt($s);
+}
+
 # parseTerm expands one comma-term of a field (`*`, `a`, `a-b`, and any `/step`)
 # into its list of integer values, validated against [minv, maxv].
 func parseTerm(term as string, minv as int, maxv as int, field as string) {
@@ -64,7 +81,7 @@ func parseTerm(term as string, minv as int, maxv as int, field as string) {
     def slash as int init strings.indexOf($term, "/");
     if ($slash >= 0) {
         $base = strings.substring($term, 0, $slash);
-        $step = convert.toInt(strings.substring($term, $slash + 1, len($term)));
+        $step = toIntChecked(strings.substring($term, $slash + 1, len($term)), $field, $term);
         if ($step <= 0) {
             fail("step must be positive in " + $field + " field: " + $term);
         }
@@ -74,10 +91,10 @@ func parseTerm(term as string, minv as int, maxv as int, field as string) {
     if (not ($base == "*")) {
         def dash as int init strings.indexOf($base, "-");
         if ($dash >= 0) {
-            $start = convert.toInt(strings.substring($base, 0, $dash));
-            $end = convert.toInt(strings.substring($base, $dash + 1, len($base)));
+            $start = toIntChecked(strings.substring($base, 0, $dash), $field, $term);
+            $end = toIntChecked(strings.substring($base, $dash + 1, len($base)), $field, $term);
         } else {
-            $start = convert.toInt($base);
+            $start = toIntChecked($base, $field, $term);
             # a bare value with a step runs from the value to the field's max
             if ($slash >= 0) {
                 $end = $maxv;
@@ -150,8 +167,10 @@ export func parse(expr as string) {
         daysOfMonth: parseField($parts[2], 1, 31, "day-of-month"),
         months: parseField($parts[3], 1, 12, "month"),
         weekdays: $weekdays,
-        domStar: $parts[2] == "*",
-        dowStar: $parts[4] == "*"
+        # A `*/n` field is unrestricted for the DOM-OR-DOW rule, matching
+        # Vixie/cronie: treat any field starting with `*` as a star.
+        domStar: strings.startsWith($parts[2], "*"),
+        dowStar: strings.startsWith($parts[4], "*")
     };
 }
 

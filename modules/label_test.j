@@ -39,7 +39,7 @@ func testZplEscape() {
 }
 
 func testRenderZpl() {
-    def want as string init "^XA\n^FO40,40^A0N,32,32^FH^FDHELLO^FS\n^FO16,16^GB368,208,4^FS\n^FO40,160^BY2^BCN,120,Y,N,N^FD12345678^FS\n^PQ2\n^XZ\n";
+    def want as string init "^XA\n^FO40,40^A0N,32,32^FH^FDHELLO^FS\n^FO16,16^GB368,208,4^FS\n^FO40,160^BY2^BCN,120,Y,N,N^FH^FD12345678^FS\n^PQ2\n^XZ\n";
     testing.assertEqual(render(sampleLabel(), zpl(203)), $want);
 }
 
@@ -79,13 +79,13 @@ func testCabExtraBarcodes() {
 func testZplExtraBarcodes() {
     def a as Label init barcode(new(50.0, 20.0), 5.0, 5.0, "code39", noopts(), "ABC123");
     testing.assertEqual(render($a, zpl(203)),
-        "^XA\n^FO40,40^BY2^B3N,N,120,Y,N^FDABC123^FS\n^PQ1\n^XZ\n");
+        "^XA\n^FO40,40^BY2^B3N,N,120,Y,N^FH^FDABC123^FS\n^PQ1\n^XZ\n");
     def b as Label init barcode(new(80.0, 30.0), 5.0, 5.0, "gs1-128", noopts(), "(00)300653005555555552");
     testing.assertEqual(render($b, zpl(203)),
-        "^XA\n^FO40,40^BY2^BCN,120,Y,N,N,D^FD(00)300653005555555552^FS\n^PQ1\n^XZ\n");
+        "^XA\n^FO40,40^BY2^BCN,120,Y,N,N,D^FH^FD(00)300653005555555552^FS\n^PQ1\n^XZ\n");
     def c as Label init barcode(new(30.0, 30.0), 5.0, 5.0, "datamatrix", noopts(), "HELLO");
     testing.assertEqual(render($c, zpl(203)),
-        "^XA\n^FO40,40^BXN,8,200^FDHELLO^FS\n^PQ1\n^XZ\n");
+        "^XA\n^FO40,40^BXN,8,200^FH^FDHELLO^FS\n^PQ1\n^XZ\n");
 }
 
 func testImageBothDialects() {
@@ -124,7 +124,7 @@ func testBarcodeOptionsZpl() {
     $a.hideText = true;
     def la as Label init barcode(new(50.0, 20.0), 5.0, 5.0, "code128", $a, "12345");
     testing.assertEqual(render($la, zpl(203)),
-        "^XA\n^FO40,40^BY2^BCN,120,N,N,N^FD12345^FS\n^PQ1\n^XZ\n");
+        "^XA\n^FO40,40^BY2^BCN,120,N,N,N^FH^FD12345^FS\n^PQ1\n^XZ\n");
     # checkDigit -> ITF native check digit Y.
     def b as BarcodeOptions;
     $b.checkDigit = "mod10";
@@ -136,7 +136,7 @@ func testBarcodeOptionsZpl() {
     $c.errorLevel = "H";
     def lc as Label init barcode(new(30.0, 30.0), 5.0, 5.0, "qr", $c, "hello");
     testing.assertEqual(render($lc, zpl(203)),
-        "^XA\n^FO40,40^BQN,2,5^FDHA,hello^FS\n^PQ1\n^XZ\n");
+        "^XA\n^FO40,40^BQN,2,8^FH^FDHA,hello^FS\n^PQ1\n^XZ\n");
 }
 
 func badItf() {
@@ -176,7 +176,7 @@ func testEanEightZpl() {
     $o.height = 6.0;
     def l as Label init barcode(new(20.0, 15.0), 3.7, 2.0, "ean8", $o, "93125192");
     testing.assertEqual(render($l, zpl(203)),
-        "^XA\n^FO30,16^B8N,48,Y,N^FD93125192^FS\n^PQ1\n^XZ\n");
+        "^XA\n^FO30,16^BY2^B8N,48,Y,N^FD93125192^FS\n^PQ1\n^XZ\n");
 }
 
 func testTextRotationBoldPointsCab() {
@@ -196,7 +196,7 @@ func testTextRotationZpl() {
     def l as Label init text(new(20.0, 15.0), 2.2, 4.0, $o, "06");
     # 8 pt at 203 dpi = round(8 * 203 / 72) = 23 dots.
     testing.assertEqual(render($l, zpl(203)),
-        "^XA\n^FO18,32^A0R,23,23^FH^FD06^FS\n^PQ1\n^XZ\n");
+        "^XA\n^FO18,32^A0B,23,23^FH^FD06^FS\n^PQ1\n^XZ\n");
 }
 
 func testCabSetupPreamble() {

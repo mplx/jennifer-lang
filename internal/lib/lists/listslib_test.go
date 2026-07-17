@@ -291,3 +291,19 @@ func TestShuffleSingleElement(t *testing.T) {
 		t.Errorf("got %+v, want [42]", out.List)
 	}
 }
+
+// lists.range must not loop forever when `v += step` overflows int64 near the
+// bounds (the increment can wrap and stay on the correct side of `end`).
+func TestRangeNearMaxIntTerminates(t *testing.T) {
+	max := int64(9223372036854775807)
+	out, err := rangeFn(interpreter.BuiltinCtx{}, []interpreter.Value{
+		interpreter.IntVal(max - 2), interpreter.IntVal(max), interpreter.IntVal(3),
+	})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// [max-2, max) with step 3 contains only max-2.
+	if len(out.List) != 1 || out.List[0].Int != max-2 {
+		t.Errorf("got %d elements (%+v), want [max-2]", len(out.List), out.List)
+	}
+}

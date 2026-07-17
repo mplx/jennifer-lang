@@ -121,16 +121,31 @@ func readBytes(ctx interpreter.BuiltinCtx, args []interpreter.Value) (interprete
 	if eofState {
 		return interpreter.BytesVal(nil), nil
 	}
-	out := make([]byte, n)
-	got, err := io.ReadFull(r, out)
-	if err == io.EOF || err == io.ErrUnexpectedEOF {
-		eofState = true
-		return interpreter.BytesVal(out[:got]), nil
+	// Read in bounded chunks so a huge requested count on a short stream does
+	// not pre-allocate gigabytes: the buffer grows only to what the stream
+	// actually delivers, capped at n. (A bare make([]byte, n) with an
+	// arbitrary n OOMs, and narrows n to a 32-bit int under TinyGo.)
+	const chunkSize = 1 << 16 // 64 KiB
+	var out []byte
+	remaining := n
+	for remaining > 0 {
+		want := int64(chunkSize)
+		if remaining < want {
+			want = remaining
+		}
+		buf := make([]byte, want)
+		got, err := io.ReadFull(r, buf)
+		out = append(out, buf[:got]...)
+		remaining -= int64(got)
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			eofState = true
+			break
+		}
+		if err != nil {
+			return interpreter.Null(), fmt.Errorf("readBytes: %v", err)
+		}
 	}
-	if err != nil {
-		return interpreter.Null(), fmt.Errorf("readBytes: %v", err)
-	}
-	return interpreter.BytesVal(out[:got]), nil
+	return interpreter.BytesVal(out), nil
 }
 
 // readChars reads exactly `n` Unicode code points from stdin's UTF-8

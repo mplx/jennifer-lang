@@ -156,16 +156,16 @@ func makeWaitAll(in *interpreter.Interpreter) interpreter.Builtin {
 		if firstErr != nil {
 			return interpreter.Null(), firstErr
 		}
-		// Construct the output list with the right element type so
-		// the caller's `def xs as list of int init task.waitAll($ts);`
-		// type check passes. If the input list lacked an element
-		// type, fall back to int as a reasonable default (the empty
-		// input case never carries type info either way).
-		elemT := parser.PrimitiveType(parser.TypeInt)
+		// When the task list carries a recorded element type (`list of
+		// task of T`), stamp the results as `list of T`. When it does not
+		// (a bare list-literal argument, whose ElemTyp is nil), return a
+		// GENERIC list - not `list of int` - so the binding site validates
+		// each result against the caller's declared type instead of
+		// relabeling strings (etc.) as ints via the recorded-type fast path.
 		if innerT != nil {
-			elemT = *innerT
+			return interpreter.ListVal(*innerT, results), nil
 		}
-		return interpreter.ListVal(elemT, results), nil
+		return interpreter.Value{Kind: interpreter.KindList, List: results}, nil
 	}
 }
 

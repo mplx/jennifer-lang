@@ -166,10 +166,22 @@ func tokenFromNode(node as json.Value, nowUnix as int) {
         expiresAt: $expiresAt};
 }
 
+# decodeToken decodes a token-endpoint body, mapping a non-JSON response (a 502
+# HTML page during polling) to an oauth-kind error rather than a raw json one.
+func decodeToken(body as string) {
+    def node as json.Value;
+    try {
+        $node = json.decode($body);
+    } catch (e) {
+        fail("non-JSON response from the token endpoint");
+    }
+    return $node;
+}
+
 # parseTokenBody parses a token-endpoint response body, throwing on an OAuth2
 # error field.
 func parseTokenBody(body as string, nowUnix as int) {
-    def node as json.Value init json.decode($body);
+    def node as json.Value init decodeToken($body);
     if (json.has($node, "/error")) {
         fail(errorMessage($node));
     }
@@ -177,9 +189,15 @@ func parseTokenBody(body as string, nowUnix as int) {
 }
 
 # pollState classifies a device-poll response: "success" or the error code
-# ("authorization_pending" / "slow_down" / a terminal error).
+# ("authorization_pending" / "slow_down" / a terminal error). A non-JSON body
+# during polling is treated as retryable ("slow_down") rather than fatal.
 func pollState(body as string) {
-    def node as json.Value init json.decode($body);
+    def node as json.Value;
+    try {
+        $node = json.decode($body);
+    } catch (e) {
+        return "slow_down";
+    }
     if (json.has($node, "/error")) {
         return json.asString($node, "/error");
     }
@@ -283,9 +301,20 @@ export func deviceStart(config as Config) {
 export func deviceWait(config as Config, deviceAuth as DeviceAuth) {
     def interval as int init $deviceAuth.interval;
     while (true) {
+        # Stop polling once the device code has expired instead of looping
+        # forever against a lenient endpoint that keeps returning pending.
+        if ($deviceAuth.expiresAt > 0 and nowUnix() >= $deviceAuth.expiresAt) {
+            fail("device authorization expired before approval");
+        }
         def params as map of string to string init {
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
             "device_code": $deviceAuth.deviceCode, "client_id": $config.clientId};
+        # Google's token endpoint requires the client secret in the device
+        # polling request; include it when configured (public clients leave it
+        # empty).
+        if (not ($config.clientSecret == "")) {
+            $params["client_secret"] = $config.clientSecret;
+        }
         def body as string init postForm($config.tokenUrl, $params).body;
         def state as string init pollState($body);
         if ($state == "success") {

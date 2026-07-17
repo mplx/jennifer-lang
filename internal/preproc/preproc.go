@@ -70,7 +70,10 @@ func Process(tokens []lexer.Token, baseDir, selfPath string) ([]lexer.Token, err
 }
 
 func stripTrivia(toks []lexer.Token) []lexer.Token {
-	out := toks[:0]
+	// Allocate a fresh slice rather than compacting in place (out := toks[:0]):
+	// an in-place compaction corrupts any caller that still holds the original
+	// slice.
+	out := make([]lexer.Token, 0, len(toks))
 	for _, t := range toks {
 		switch t.Type {
 		case lexer.TOKEN_COMMENT_LINE,
@@ -236,6 +239,10 @@ func spliceFile(path, baseDir string, visited map[string]bool, originTok lexer.T
 	if err != nil {
 		return nil, err
 	}
+	// Strip the included file's trivia (comments, blank lines) so the
+	// include / use / import recognizers see meaningful adjacent tokens -
+	// the same normalization the top-level Process applies.
+	incToks = stripTrivia(incToks)
 	childVisited := copyVisited(visited)
 	childVisited[absPath] = true
 	expanded, err := processTokens(incToks, filepath.Dir(fullPath), childVisited)

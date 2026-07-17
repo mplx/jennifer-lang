@@ -15,7 +15,10 @@
 package profile
 
 import (
+	"bytes"
+	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -62,6 +65,7 @@ type callEvent struct {
 	col   int
 	start time.Duration // since run start
 	end   time.Duration // since run start
+	gid   int           // goroutine id, so concurrent spawn spans land on separate trace tracks
 }
 
 // Collector accumulates instrumentation events. It is safe for concurrent
@@ -159,7 +163,26 @@ func (c *Collector) RecordCall(name, file string, line, col int, start, end time
 		col:   col,
 		start: start.Sub(c.runStart),
 		end:   end.Sub(c.runStart),
+		gid:   goroutineID(),
 	})
+}
+
+// goroutineID returns the current goroutine's id by parsing the header of a
+// single-goroutine stack dump. It is only called from RecordCall (bounded by
+// maxCall, and only while profiling), so the cost is acceptable; it lets the
+// Chrome trace put each spawn goroutine's spans on its own track instead of
+// overlapping them all on tid 1.
+func goroutineID() int {
+	var buf [64]byte
+	n := runtime.Stack(buf[:], false)
+	s := buf[:n]
+	s = bytes.TrimPrefix(s, []byte("goroutine "))
+	i := bytes.IndexByte(s, ' ')
+	if i < 0 {
+		return 0
+	}
+	id, _ := strconv.Atoi(string(s[:i]))
+	return id
 }
 
 // RecordEagerCopy counts one eager deep copy at a value-storage site (def,

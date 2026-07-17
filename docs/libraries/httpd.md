@@ -62,7 +62,7 @@ for (def i in lists.range(0, 4)) {
 | `httpd.path(req)` | `string` | URL path, e.g. `/users/42`. |
 | `httpd.query(req, name)` | `string` | Query parameter (`""` if absent). |
 | `httpd.header(req, name)` | `string` | Request header (`""` if absent; case-insensitive name). |
-| `httpd.body(req)` | `bytes` | The request body (buffered, capped at 10 MiB). |
+| `httpd.body(req)` | `bytes` | The request body (buffered; a body over the 10 MiB cap is answered 413 by the engine). |
 | `httpd.remoteAddr(req)` | `string` | Client `host:port`. |
 | `httpd.setHeader(req, name, value)` | `null` | Set a response header (before `respond`). |
 | `httpd.respond(req, status, body)` | `null` | Send the response; `body` is a `string` or `bytes`. |
@@ -151,7 +151,13 @@ server {
 
 **Unix domain socket.** No TCP port; nginx proxies over a socket file (cleaner
 permissions, a touch less overhead). The `unix:` prefix selects it, and a
-graceful `httpd.shutdown` unlinks the socket on the way out:
+graceful `httpd.shutdown` unlinks the socket on the way out. If a socket file
+lingers from a prior crash, `httpd.listen` clears it only after confirming it
+is stale (nothing is listening) - it never deletes a socket a live server is
+still using.
+
+`httpd.listenTLS` floors the negotiated protocol at TLS 1.2 (TLS 1.0 / 1.1 are
+deprecated by RFC 8996).
 
 ```jennifer
 def srv as httpd.Server init httpd.listen("unix:/run/app/app.sock");
@@ -178,8 +184,18 @@ app processes on distinct ports or sockets behind one nginx `upstream {}` block.
 
 - **HTTP/1.1** over plaintext; **HTTP/2** is negotiated automatically over TLS
   by `net/http`.
-- The request body is buffered with a **10 MiB cap**; a configurable limit and
-  explicit read/idle/write timeout knobs are a planned follow-up.
+- The request body is buffered with a **10 MiB cap**; a body over the cap is
+  rejected with **413 Request Entity Too Large** before it reaches the program
+  (never silently truncated - a truncated body would defeat body-signature
+  checks). A configurable limit is a planned follow-up.
+- **Admission control.** At most 256 requests buffer a body / stay in flight at
+  once; further connections wait for a slot, so buffered memory is bounded
+  (~slots x 10 MiB) rather than growing with the connection count.
+- **Must respond.** Every accepted request must be answered with
+  `httpd.respond` (or `serveFile` / `serveDir`). A request left unanswered -
+  e.g. the program threw between `accept` and `respond` - is answered **500**
+  by the engine after a 60-second safety timeout, so the handler goroutine and
+  client connection don't leak.
 - **Routing, path parameters, middleware, cookies, and sessions** are not in
   the engine - they belong to the [`web`](../modules/web.md) framework module
   built on top of it, which does name-based handler dispatch itself (the engine

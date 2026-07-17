@@ -116,6 +116,30 @@ export def struct FileDoc { module as ModuleDoc, funcs as list of FuncDoc, struc
 # ===== private intermediates =====
 
 def struct RawDoc { body as string, after as int, line as int };
+
+# A tag's gathered body (inline text plus continuation lines) and the line
+# index just past it.
+def struct TagBody { text as string, next as int };
+
+# tagBody joins a tag's inline `rest` with any following non-tag continuation
+# lines (wrapped description prose), so a multi-line @param / @return / @throws
+# / @see description is not truncated to its first line. `start` is the line
+# after the tag line.
+func tagBody(lines as list of string, rest as string, start as int, cnt as int) {
+    def parts as list of string init [];
+    if (not ($rest == "")) {
+        $parts[] = $rest;
+    }
+    def j as int init $start;
+    while ($j < $cnt and not isTag($lines[$j])) {
+        def cont as string init strings.trim($lines[$j]);
+        if (not ($cont == "")) {
+            $parts[] = $cont;
+        }
+        $j = $j + 1;
+    }
+    return TagBody{ text: strings.join($parts, " "), next: $j };
+}
 def struct Parsed {
     summary as string, description as string,
     params as list of ParamDoc, returns as ReturnDoc, throws as list of ThrowDoc,
@@ -146,20 +170,33 @@ export func parse(source as string) {
         if ($p.isModule) {
             $module = buildModule($p);
         } else {
-            def tail as string init strings.trimLeft(strings.substring($source, $raw.after, len($source)));
+            # Match against a bounded window past the doc comment, not the whole
+            # remaining source: a per-block `substring(... len(source))` copy is
+            # O(doc-count * file-size). A declaration line fits comfortably here.
+            def tailEnd as int init $raw.after + 512;
+            if ($tailEnd > len($source)) {
+                $tailEnd = len($source);
+            }
+            def rawTail as string init strings.substring($source, $raw.after, $tailEnd);
+            def tail as string init strings.trimLeft($rawTail);
+            # The construct sits after the whitespace trimmed above; advance the
+            # reported line past those newlines so it points at the documented
+            # construct rather than the comment's closing line.
+            def gap as int init len($rawTail) - len($tail);
+            def line as int init $raw.line + countNewlines(strings.substring($rawTail, 0, $gap));
             def fm as regex.Match init regex.find("^(export\\s+)?func\\s+([A-Za-z]+)\\s*\\(([^)]*)\\)", $tail);
             def sm as regex.Match init regex.find("^(export\\s+)?def\\s+struct\\s+([A-Za-z]+)\\s*\\{([^}]*)\\}", $tail);
             def cm as regex.Match init regex.find("^(export\\s+)?def\\s+const\\s+([A-Za-z][A-Za-z_]*)\\s+as\\s+([A-Za-z][A-Za-z. ]*?)\\s+init", $tail);
             if (not ($fm.start == -1)) {
                 $funcs[] = buildFunc($p, $fm.groups[1], not ($fm.groups[0] == ""));
-                $diags = lists.concat($diags, crossCheck("param", $fm.groups[1], $raw.line, $p.params, declNames($fm.groups[2])));
+                $diags = lists.concat($diags, crossCheck("param", $fm.groups[1], $line, $p.params, declNames($fm.groups[2])));
             } elseif (not ($sm.start == -1)) {
                 $structs[] = buildStruct($p, $sm.groups[1], not ($sm.groups[0] == ""));
-                $diags = lists.concat($diags, crossCheck("field", $sm.groups[1], $raw.line, $p.params, declNames($sm.groups[2])));
+                $diags = lists.concat($diags, crossCheck("field", $sm.groups[1], $line, $p.params, declNames($sm.groups[2])));
             } elseif (not ($cm.start == -1)) {
                 $consts[] = buildConst($p, $cm.groups[1], not ($cm.groups[0] == ""), strings.trim($cm.groups[2]));
             } else {
-                $diags[] = Diagnostic{ severity: "warning", line: $raw.line, message: "doc comment precedes no documentable construct (orphaned)" };
+                $diags[] = Diagnostic{ severity: "warning", line: $line, message: "doc comment precedes no documentable construct (orphaned)" };
             }
         }
     }
@@ -228,7 +265,14 @@ func scanDocs(source as string) {
             def span as string init strings.substring($source, $i, $afterEnd);
             def nl as int init countNewlines($span);
             if ($isDoc) {
-                def body as string init strings.substring($source, $i + $openLen, $afterEnd - 2);
+                # Slice off the trailing `*/` only when the comment is actually
+                # terminated; an unterminated comment ends at EOF, and a blind
+                # `-2` would drop the last two characters of the file.
+                def bodyEnd as int init $afterEnd;
+                if (strings.endsWith($span, "*/")) {
+                    $bodyEnd = $afterEnd - 2;
+                }
+                def body as string init strings.substring($source, $i + $openLen, $bodyEnd);
                 $out[] = RawDoc{ body: $body, after: $afterEnd, line: $line + $nl };
             }
             $line = $line + $nl;
@@ -319,15 +363,18 @@ func parseBody(body as string) {
                 def tag as string init $tm.groups[0];
                 def rest as string init $tm.groups[1];
                 if ($tag == "param" or $tag == "field") {
-                    $params[] = parseParam($rest);
-                    $i = $i + 1;
+                    def tb as TagBody init tagBody($lines, $rest, $i + 1, $cnt);
+                    $params[] = parseParam($tb.text);
+                    $i = $tb.next;
                 } elseif ($tag == "return" or $tag == "returns") {
-                    $returns = parseTyped($rest);
-                    $i = $i + 1;
+                    def tb as TagBody init tagBody($lines, $rest, $i + 1, $cnt);
+                    $returns = parseTyped($tb.text);
+                    $i = $tb.next;
                 } elseif ($tag == "throws") {
-                    def t as ReturnDoc init parseTyped($rest);
+                    def tb as TagBody init tagBody($lines, $rest, $i + 1, $cnt);
+                    def t as ReturnDoc init parseTyped($tb.text);
                     $throws[] = ThrowDoc{ type: $t.type, description: $t.description };
-                    $i = $i + 1;
+                    $i = $tb.next;
                 } elseif ($tag == "example") {
                     def exLines as list of string init [];
                     if (not ($rest == "")) {
@@ -350,8 +397,9 @@ func parseBody(body as string) {
                     }
                     $i = $i + 1;
                 } elseif ($tag == "see") {
-                    $see[] = $rest;
-                    $i = $i + 1;
+                    def tb as TagBody init tagBody($lines, $rest, $i + 1, $cnt);
+                    $see[] = $tb.text;
+                    $i = $tb.next;
                 } elseif ($tag == "internal") {
                     $internal = true;
                     $i = $i + 1;

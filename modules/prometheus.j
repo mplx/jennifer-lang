@@ -231,6 +231,7 @@ export func observe(metric as Metric, labels as map of string to string, value a
         if (labelsEqual($out.samples[$i].labels, $labels)) {
             $out.samples[$i].value = $value;
             $replaced = true;
+            break;   # a label set appears once; stop scanning
         }
         $i = $i + 1;
     }
@@ -259,17 +260,22 @@ func renderLabels(labels as map of string to string) {
  * @return {string} the exposition text (one trailing newline per line)
  */
 export func render(metrics as list of Metric) {
-    def out as string init "";
+    # Collect lines and join once: an accumulating `+` over thousands of
+    # samples is O(N^2) in the output, and /metrics is scraped repeatedly.
+    def lines as list of string init [];
     for (def m in $metrics) {
         if (len($m.help) > 0) {
-            $out = $out + "# HELP " + $m.name + " " + escapeHelp($m.help) + "\n";
+            $lines[] = "# HELP " + $m.name + " " + escapeHelp($m.help);
         }
-        $out = $out + "# TYPE " + $m.name + " " + $m.type + "\n";
+        $lines[] = "# TYPE " + $m.name + " " + $m.type;
         for (def s in $m.samples) {
-            $out = $out + $m.name + renderLabels($s.labels) + " " + convert.toString($s.value) + "\n";
+            $lines[] = $m.name + renderLabels($s.labels) + " " + convert.toString($s.value);
         }
     }
-    return $out;
+    if (len($lines) == 0) {
+        return "";
+    }
+    return strings.join($lines, "\n") + "\n";
 }
 
 # --- retrieval (exported; needs the default binary via http) ----------------
@@ -377,10 +383,22 @@ func parseResult(node as json.Value) {
  * @return {Result} the parsed result set
  * @throws {Error} kind "prometheus" when the server reports a query error
  */
+# decodeBody decodes a Prometheus HTTP response, mapping a non-JSON body (a 502
+# HTML page or an auth portal) to a prometheus-kind error, not a raw json one.
+func decodeBody(resp as http.Response) {
+    def node as json.Value;
+    try {
+        $node = json.decode($resp.body);
+    } catch (e) {
+        throw Error{ kind: "prometheus", message: "prometheus: non-JSON response (HTTP " + convert.toString($resp.status) + ")", file: "", line: 0, col: 0 };
+    }
+    return $node;
+}
+
 export func query(base as string, promql as string) {
     def url as string init joinBase($base, "/api/v1/query") + "?query=" + urlEncode($promql);
     def resp as http.Response init http.get($url, {});
-    return parseResult(json.decode($resp.body));
+    return parseResult(decodeBody($resp));
 }
 
 /**
@@ -399,5 +417,5 @@ export func queryRange(base as string, promql as string, start as string, end as
     def url as string init joinBase($base, "/api/v1/query_range") + "?query=" + urlEncode($promql) +
         "&start=" + urlEncode($start) + "&end=" + urlEncode($end) + "&step=" + urlEncode($step);
     def resp as http.Response init http.get($url, {});
-    return parseResult(json.decode($resp.body));
+    return parseResult(decodeBody($resp));
 }

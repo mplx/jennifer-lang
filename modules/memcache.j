@@ -9,9 +9,9 @@
  * `exptime` and the server evicts under memory pressure - so it suits sessions,
  * rate limits, and derived data, not a system of record. `exptime` is seconds
  * (0 = never expire, until evicted). A protocol error (`ERROR` / `CLIENT_ERROR`
- * / `SERVER_ERROR`) throws a catchable `Error` (kind "memcache"). Values are
- * read as UTF-8 text: byte-exact for ASCII / UTF-8 values (the common case); a
- * binary value whose byte length differs from its rune length is not yet
+ * / `SERVER_ERROR`) throws a catchable `Error` (kind "memcache"). The value
+ * block is framed over bytes by the server's byte count, so a value whose byte
+ * length differs from its rune length (any non-ASCII UTF-8 text) round-trips
  * byte-exact. Needs the default `jennifer` binary (uses `net`).
  * @module memcache
  * @example
@@ -48,10 +48,13 @@ export def struct Session {
     timeout as int
 };
 
-# One CRLF-terminated protocol line plus the still-buffered remainder.
+# One CRLF-terminated protocol line plus the still-buffered remainder. `rest`
+# is `bytes`: a value block is framed by a byte count and the remainder after a
+# line can hold the start of one, so the buffer stays bytes and a payload is
+# decoded to a string only once fully extracted.
 def struct Line {
     text as string,
-    rest as string
+    rest as bytes
 };
 
 # --- wire helpers (private) ----------------------------------------
@@ -60,31 +63,67 @@ func writeCmd(session as Session, text as string) {
     net.writeBytes($session.conn, convert.bytesFromString($text, "utf-8"));
 }
 
-# recvLine reads one CRLF-terminated line, returning it (without the CRLF) and
-# the buffer left over after it.
-func recvLine(session as Session, buf as string) {
-    def b as string init $buf;
+# emptyBytes returns a fresh empty bytes value (a zero-length starting buffer).
+func emptyBytes() {
+    def e as bytes;
+    return $e;
+}
+
+# byteSlice returns buf[start:end] as a fresh bytes value.
+func byteSlice(buf as bytes, start as int, end as int) {
+    def out as bytes;
+    def i as int init $start;
+    while ($i < $end) {
+        $out[] = $buf[$i];
+        $i = $i + 1;
+    }
+    return $out;
+}
+
+# crlfIndex returns the index of the CR of the first CRLF at or after `from`,
+# or -1 if none is present yet.
+func crlfIndex(buf as bytes, from as int) {
+    def i as int init $from;
+    def n as int init len($buf);
+    while ($i + 1 < $n) {
+        if ($buf[$i] == 13 and $buf[$i + 1] == 10) {
+            return $i;
+        }
+        $i = $i + 1;
+    }
+    return -1;
+}
+
+# recvLine reads one CRLF-terminated line, returning it (without the CRLF, as a
+# string - protocol lines are ASCII) and the raw byte remainder after it.
+func recvLine(session as Session, buf as bytes) {
+    def b as bytes init $buf;
     while (true) {
-        def nl as int init strings.indexOf($b, "\r\n");
+        def nl as int init crlfIndex($b, 0);
         if ($nl >= 0) {
-            return Line{text: strings.substring($b, 0, $nl),
-                rest: strings.substring($b, $nl + 2)};
+            return Line{text: convert.stringFromBytes(byteSlice($b, 0, $nl), "utf-8"),
+                rest: byteSlice($b, $nl + 2, len($b))};
         }
         if ($session.timeout > 0) {
             net.setDeadline($session.conn, $session.timeout);
         }
         def chunk as bytes init net.readBytes($session.conn, 1024);
         if (len($chunk) == 0) {
-            return Line{text: $b, rest: ""};
+            return Line{text: convert.stringFromBytes($b, "utf-8"), rest: emptyBytes()};
         }
-        $b = $b + convert.stringFromBytes($chunk, "utf-8");
+        def j as int init 0;
+        while ($j < len($chunk)) {
+            $b[] = $chunk[$j];
+            $j = $j + 1;
+        }
     }
-    return Line{text: "", rest: ""};
+    return Line{text: "", rest: emptyBytes()};
 }
 
-# fillBytes reads until the buffer holds at least `n` bytes.
-func fillBytes(session as Session, buf as string, n as int) {
-    def b as string init $buf;
+# fillBytes reads until the buffer holds at least `n` bytes, framing over the
+# raw byte stream (`n` is a byte count).
+func fillBytes(session as Session, buf as bytes, n as int) {
+    def b as bytes init $buf;
     while (len($b) < $n) {
         if ($session.timeout > 0) {
             net.setDeadline($session.conn, $session.timeout);
@@ -93,7 +132,11 @@ func fillBytes(session as Session, buf as string, n as int) {
         if (len($chunk) == 0) {
             return $b;
         }
-        $b = $b + convert.stringFromBytes($chunk, "utf-8");
+        def j as int init 0;
+        while ($j < len($chunk)) {
+            $b[] = $chunk[$j];
+            $j = $j + 1;
+        }
     }
     return $b;
 }
@@ -126,7 +169,7 @@ func storeHeader(verb as string, key as string, value as string, exptime as int)
 # store runs a storage command and returns its reply line.
 func store(session as Session, verb as string, key as string, value as string, exptime as int) {
     writeCmd($session, storeHeader($verb, $key, $value, $exptime) + "\r\n" + $value + "\r\n");
-    def resp as Line init recvLine($session, "");
+    def resp as Line init recvLine($session, emptyBytes());
     checkError($resp.text);
     return $resp.text;
 }
@@ -188,17 +231,20 @@ export func add(session as Session, key as string, value as string, exptime as i
  */
 export func get(session as Session, key as string) {
     writeCmd($session, "get " + $key + "\r\n");
-    def first as Line init recvLine($session, "");
+    def first as Line init recvLine($session, emptyBytes());
     checkError($first.text);
     if (strings.startsWith($first.text, "END")) {
         return "";
     }
     def parts as list of string init strings.split($first.text, " ");
     def nbytes as int init convert.toInt($parts[3]);
-    def data as string init fillBytes($session, $first.rest, $nbytes + 2);
-    def value as string init strings.substring($data, 0, $nbytes);
+    # `nbytes` is the value's byte length; frame and slice over bytes so a
+    # multi-byte value round-trips exactly, decoding to a string only once the
+    # whole value is in hand.
+    def data as bytes init fillBytes($session, $first.rest, $nbytes + 2);
+    def value as string init convert.stringFromBytes(byteSlice($data, 0, $nbytes), "utf-8");
     # consume the value's trailing CRLF and the END line
-    recvLine($session, strings.substring($data, $nbytes + 2));
+    recvLine($session, byteSlice($data, $nbytes + 2, len($data)));
     return $value;
 }
 
@@ -211,7 +257,7 @@ export func get(session as Session, key as string) {
  */
 export func delete(session as Session, key as string) {
     writeCmd($session, "delete " + $key + "\r\n");
-    def r as Line init recvLine($session, "");
+    def r as Line init recvLine($session, emptyBytes());
     checkError($r.text);
     if ($r.text == "DELETED") {
         return true;
@@ -232,7 +278,7 @@ export func delete(session as Session, key as string) {
  */
 export func touch(session as Session, key as string, exptime as int) {
     writeCmd($session, "touch " + $key + " " + convert.toString($exptime) + "\r\n");
-    def r as Line init recvLine($session, "");
+    def r as Line init recvLine($session, emptyBytes());
     checkError($r.text);
     if ($r.text == "TOUCHED") {
         return true;
@@ -247,7 +293,7 @@ export func touch(session as Session, key as string, exptime as int) {
 # absent (memcached will not create it).
 func counter(session as Session, verb as string, key as string, delta as int) {
     writeCmd($session, $verb + " " + $key + " " + convert.toString($delta) + "\r\n");
-    def r as Line init recvLine($session, "");
+    def r as Line init recvLine($session, emptyBytes());
     checkError($r.text);
     if ($r.text == "NOT_FOUND") {
         return -1;

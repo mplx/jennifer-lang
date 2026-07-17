@@ -77,3 +77,16 @@ func writeTwo() {
 func testInvalidValue() {
     testing.assertThrows("writeTwo", "gpio");
 }
+
+# A second setup on an already-exported pin must NOT re-write `export` (that is
+# EBUSY on real sysfs); it should still update the direction. The mock tree
+# would happily overwrite export, so this asserts the write is actually skipped.
+func testResetupSkipsExport() {
+    setup(17, "out");
+    def dir as string init mockBase();
+    # Overwrite the export file so a second export write is detectable.
+    fs.writeString($dir + "/export", "CLEARED");
+    setup(17, "in");
+    testing.assertEqual(strings.trim(fs.readString($dir + "/export")), "CLEARED");
+    testing.assertEqual(strings.trim(fs.readString($dir + "/gpio17/direction")), "in");
+}

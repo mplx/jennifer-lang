@@ -171,6 +171,113 @@ func app() {
 	}
 }
 
+// `%` is floored, matching `//`, so the div/mod identity holds for negative
+// operands: (a // b) * b + (a % b) == a.
+func TestFlooredModulo(t *testing.T) {
+	prog := `use io;
+def a as int init (0 - 7) % 3;
+def b as int init 7 % (0 - 3);
+def c as int init (0 - 7) % (0 - 3);
+io.printf("%d %d %d", $a, $b, $c);`
+	out, err := run(t, prog)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// floored: -7 % 3 = 2, 7 % -3 = -2, -7 % -3 = -1
+	if out != "2 -2 -1" {
+		t.Errorf("floored %% got %q, want %q", out, "2 -2 -1")
+	}
+	// The div/mod identity holds: (a // b) * b + (a % b) == a for a=-7, b=3.
+	id, err := run(t, `use io;
+def q as int init (0 - 7) // 3;
+def r as int init (0 - 7) % 3;
+io.printf("%d", $q * 3 + $r);`)
+	if err != nil {
+		t.Fatalf("identity err: %v", err)
+	}
+	if id != "-7" {
+		t.Errorf("div/mod identity got %q, want -7", id)
+	}
+}
+
+// Integer arithmetic that overflows int64 is a positioned runtime error, not a
+// silent wrap - consistent with the language's "undefined results error" stance.
+func TestIntegerOverflowErrors(t *testing.T) {
+	overflowing := []string{
+		`def x as int init 9223372036854775807 + 1;`,
+		`def x as int init 9223372036854775807 * 2;`,
+		`def x as int init (0 - 9223372036854775807) - 2;`,
+		`def x as int init (0 - 9223372036854775807) * 3;`,
+	}
+	for _, src := range overflowing {
+		if _, err := run(t, src); err == nil {
+			t.Errorf("expected an overflow error for %q", src)
+		}
+	}
+	// In-range arithmetic still works, including the exact boundaries.
+	ok, err := run(t, `use io;
+def hi as int init 9223372036854775806 + 1;
+io.printf("%d", $hi);`)
+	if err != nil || ok != "9223372036854775807" {
+		t.Errorf("boundary add: out=%q err=%v", ok, err)
+	}
+}
+
+// A mixed int/float comparison must be exact: promoting the int to float64
+// loses precision above 2^53, which would make 9007199254740993 (int) compare
+// equal to 9007199254740992.0 (float).
+func TestMixedComparisonIsExact(t *testing.T) {
+	out, err := run(t, `use io;
+def n as int init 9007199254740993;
+def f as float init 9007199254740992.0;
+io.printf("%t %t %t %t", $n == $f, $n > $f, $f < $n, $n <= $f);`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	// n is exactly one greater than f: not equal, n > f, f < n, not (n <= f).
+	if out != "false true true false" {
+		t.Errorf("exact mixed comparison got %q, want %q", out, "false true true false")
+	}
+	// A genuinely-equal mixed pair still compares equal.
+	eq, err := run(t, `use io; def n as int init 5; def f as float init 5.0; io.printf("%t", $n == $f);`)
+	if err != nil || eq != "true" {
+		t.Errorf("5 == 5.0: out=%q err=%v", eq, err)
+	}
+}
+
+// A method may not share its name with a top-level variable or constant (the
+// no-shadowing rule applies both directions).
+func TestMethodGlobalNameClashRejected(t *testing.T) {
+	for _, src := range []string{
+		`def foo as int init 1; func foo() { return 2; }`,
+		`func bar() { return 1; } def bar as int init 2;`,
+		`def const BAZ as int init 1; func BAZ() { return 2; }`,
+	} {
+		if _, err := run(t, src); err == nil {
+			t.Errorf("expected a method/global clash error for %q", src)
+		}
+	}
+	// A method and a *local* (method-body) name that don't collide at top
+	// level are fine.
+	if _, err := run(t, `use io; func f() { def x as int init 1; return $x; } io.printf("%d", f());`); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// The `$` sigil is for mutable variables; a constant read with `$` is rejected,
+// while a bare constant read and a `$CONST[...]` mutation attempt (which the
+// runtime rejects as a const mutation) are handled elsewhere.
+func TestConstSigilRejectedOnRead(t *testing.T) {
+	if _, err := run(t, `use io; def const MAX as int init 10; io.printf("%d", $MAX);`); err == nil {
+		t.Error("expected a $CONST read to be rejected")
+	}
+	// Bare constant read works.
+	out, err := run(t, `use io; def const MAX as int init 10; io.printf("%d", MAX);`)
+	if err != nil || out != "10" {
+		t.Errorf("bare const read: out=%q err=%v", out, err)
+	}
+}
+
 func TestEmptyProgramRunsCleanly(t *testing.T) {
 	// app() is no longer required. An empty program (or one with only imports
 	// and method defs that are never called) is valid and produces no output.

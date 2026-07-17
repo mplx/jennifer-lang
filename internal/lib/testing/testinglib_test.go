@@ -252,6 +252,36 @@ func TestReportTAP(t *testing.T) {
 	}
 }
 
+// TestReportTAPEscapesMultilineMessage - a message with newlines must not split
+// a TAP report line; it renders as a YAML block scalar so `prove` still counts
+// one failing test, and the `1..1` plan matches the emitted result lines.
+func TestReportTAPEscapesMultilineMessage(t *testing.T) {
+	out, err := runProg(t, `
+		use io;
+		use testing;
+		func failing() { throw Error{kind: "assertion", message: "line one\nline two # not a directive", file: "", line: 0, col: 0}; }
+		testing.run("failing");
+		def tap as string init testing.report(testing.results(), "tap");
+		io.printf("%s", $tap);
+	`)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// A raw newline inside `message: line one\nline two` would create a bogus
+	// TAP line; the block scalar keeps every message line indented under it.
+	if !strings.Contains(out, "  message: |") {
+		t.Errorf("multi-line message not rendered as a block scalar:\n%s", out)
+	}
+	// Exactly one `not ok` line (the message's own `# not a directive` and its
+	// second line must not read as extra results).
+	if n := strings.Count(out, "not ok"); n != 1 {
+		t.Errorf("expected exactly 1 'not ok' line, got %d:\n%s", n, out)
+	}
+	if !strings.Contains(out, "    line two # not a directive") {
+		t.Errorf("second message line not indented under block scalar:\n%s", out)
+	}
+}
+
 // TestReportJUnit - "junit" format is well-formed XML with a
 // testsuite root and testcase entries.
 func TestReportJUnit(t *testing.T) {

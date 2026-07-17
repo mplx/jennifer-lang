@@ -25,7 +25,10 @@ func fakeIMAP(ln net.Listener) {
 	defer conn.Close()
 	r := bufio.NewReader(conn)
 	fmt.Fprintf(conn, "* OK IMAP4rev1 ready\r\n")
-	msg := "Subject: Hello\r\nFrom: alice@example.com\r\n\r\nthe body text\r\n"
+	// A multi-byte UTF-8 body: the {N} literal count is a BYTE count, which
+	// differs from the rune count here ("café"/"résumé"), so a rune-indexed
+	// reader under-reads the literal and swallows the protocol trailer.
+	msg := "Subject: Café\r\nFrom: alice@example.com\r\n\r\nthe café résumé body\r\n"
 	for {
 		line, err := r.ReadString('\n')
 		if err != nil {
@@ -80,8 +83,8 @@ def nums as list of int init imap.search($s);
 testing.assertEqual(len($nums), 2);
 testing.assertEqual($nums[1], 2);
 def body as string init imap.fetch($s, 1);
-testing.assertContains($body, "Subject: Hello");
-testing.assertContains($body, "the body text");
+testing.assertContains($body, "Subject: Café");
+testing.assertContains($body, "the café résumé body");
 imap.logout($s);`, imapMod, port)
 	progPath := filepath.Join(dir, "recv.j")
 	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {

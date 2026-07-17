@@ -48,7 +48,13 @@ func enabled() {
     if (len(os.getEnv("NO_COLOR")) > 0) {
         return false;
     }
-    if (len(os.getEnv("FORCE_COLOR")) > 0) {
+    def fc as string init os.getEnv("FORCE_COLOR");
+    if (len($fc) > 0) {
+        # Interpret the value, don't just test presence: FORCE_COLOR=0 (and
+        # "false") means force OFF, any other value forces ON.
+        if ($fc == "0" or $fc == "false") {
+            return false;
+        }
         return true;
     }
     return os.isTerminal("stdout");
@@ -109,7 +115,19 @@ export func style(s as string, name as string) {
  * @return {string} the wrapped text, or s unchanged when colour is off
  */
 export func rgb(s as string, r as int, g as int, b as int) {
-    return wrap($s, "38;2;" + convert.toString($r) + ";" + convert.toString($g) + ";" + convert.toString($b));
+    return wrap($s, "38;2;" + convert.toString(clampChannel($r)) + ";" + convert.toString(clampChannel($g)) + ";" + convert.toString(clampChannel($b)));
+}
+
+# clampChannel bounds a colour channel to [0, 255] so an out-of-range argument
+# can't emit a malformed SGR truecolor sequence.
+func clampChannel(v as int) {
+    if ($v < 0) {
+        return 0;
+    }
+    if ($v > 255) {
+        return 255;
+    }
+    return $v;
 }
 
 /**

@@ -218,3 +218,59 @@ func testErrorsThrow() {
     testing.assertThrows("throwsUnknownPipe", "tengine");
     testing.assertThrows("throwsMissingTemplate", "tengine");
 }
+
+# --- recursion guard ---------------------------------------------------------
+# A template that includes itself (directly or through a partner) must throw a
+# catchable tengine error instead of recursing until the process dies.
+
+func throwsSelfInclude() {
+    render(add(newSet(), "m", "{{ template \"m\" . }}"), "m", json.decode("null"));
+}
+
+func throwsMutualInclude() {
+    render(add(add(newSet(), "a", "{{ template \"b\" . }}"), "b", "{{ template \"a\" . }}"), "a", json.decode("null"));
+}
+
+func testRecursionGuardThrows() {
+    testing.assertThrows("throwsSelfInclude", "tengine");
+    testing.assertThrows("throwsMutualInclude", "tengine");
+}
+
+func testDeepButFiniteNestingRenders() {
+    # 40 nested ifs stay well inside the guard.
+    def src as string init "";
+    def n as int init 40;
+    for (def i as int init 0; $i < $n; $i = $i + 1) {
+        $src = $src + "{{ if .x }}";
+    }
+    $src = $src + "ok";
+    for (def k as int init 0; $k < $n; $k = $k + 1) {
+        $src = $src + "{{ end }}";
+    }
+    testing.assertEqual(render(oneSet($src), "main", json.decode("{\"x\":true}")), "ok");
+}
+
+# --- quote-aware action / pipeline scanning ---------------------------------
+# A `}}` inside a quoted string must not terminate the action early.
+func testActionCloseInsideQuotes() {
+    testing.assertEqual(
+        render(oneSet("{{ if eq .a \"}}\" }}Y{{ else }}N{{ end }}"), "main", json.decode("{\"a\":\"}}\"}")),
+        "Y");
+}
+
+# A `|` inside a quoted string is not a pipeline separator.
+func testPipeSplitIgnoresQuotedBar() {
+    testing.assertEqual(render(oneSet("{{ \"x|y\" }}"), "main", json.decode("null")), "x|y");
+}
+
+# A printf format string may legitimately contain `|`.
+func testPrintfFormatWithBar() {
+    testing.assertEqual(
+        render(oneSet("{{ printf \"%s|%s\" .a .b }}"), "main", json.decode("{\"a\":\"L\",\"b\":\"R\"}")),
+        "L|R");
+}
+
+# A `}}` inside a comment body does not end the comment; the terminator is `*/}}`.
+func testCommentWithBracesInBody() {
+    testing.assertEqual(render(oneSet("a{{/* note }} here */}}b"), "main", json.decode("null")), "ab");
+}

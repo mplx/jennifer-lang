@@ -24,3 +24,17 @@ func TestToIntRejectsUnrepresentableFloats(t *testing.T) {
 		t.Errorf("toInt(3.9) = %+v, err %v; want 3", r, err)
 	}
 }
+
+// toFloat must reject the non-finite spellings strconv.ParseFloat accepts
+// ("NaN", "Inf", "Infinity"): Jennifer's float model forbids those values.
+func TestToFloatRejectsNonFinite(t *testing.T) {
+	for _, s := range []string{"NaN", "nan", "Inf", "inf", "+Inf", "-Inf", "Infinity"} {
+		if _, err := toFloatFn(interpreter.BuiltinCtx{}, []interpreter.Value{interpreter.StringVal(s)}); err == nil {
+			t.Errorf("toFloat(%q) should error", s)
+		}
+	}
+	// A normal float string still parses.
+	if v, err := toFloatFn(interpreter.BuiltinCtx{}, []interpreter.Value{interpreter.StringVal("3.5")}); err != nil || v.Float != 3.5 {
+		t.Errorf("toFloat(\"3.5\") = %+v, err %v", v, err)
+	}
+}

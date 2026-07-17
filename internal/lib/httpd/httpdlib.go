@@ -134,7 +134,13 @@ func takeBodyArg(fnName string, v Value) ([]byte, error) {
 	case interpreter.KindString:
 		return []byte(v.Str), nil
 	case interpreter.KindBytes:
-		return v.Bytes, nil
+		// Copy at the boundary: the socket write happens later, on the
+		// handler goroutine, after respond has returned - handing it the
+		// caller's backing would let a post-respond `$buf[i] = ...`
+		// mutation race the write.
+		out := make([]byte, len(v.Bytes))
+		copy(out, v.Bytes)
+		return out, nil
 	default:
 		return nil, fmt.Errorf("%s: body must be string or bytes, got %s", fnName, v.Kind)
 	}

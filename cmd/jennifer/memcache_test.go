@@ -123,6 +123,10 @@ def mc as memcache.Session init memcache.connect(memcache.Options{host: "127.0.0
 memcache.set($mc, "greeting", "hello", 60);
 testing.assertEqual(memcache.get($mc, "greeting"), "hello");
 testing.assertEqual(memcache.get($mc, "missing"), "");
+# A multi-byte value: "café" is 5 bytes / 4 runes. The value must round-trip
+# byte-exact - a rune-indexed reader mis-slices the trailing CRLF into it.
+memcache.set($mc, "accent", "café", 60);
+testing.assertEqual(memcache.get($mc, "accent"), "café");
 testing.assertTrue(memcache.add($mc, "fresh", "1", 60));
 testing.assertFalse(memcache.add($mc, "greeting", "again", 60));
 memcache.set($mc, "counter", "10", 0);

@@ -342,33 +342,60 @@ export func incPatch(v as Version) {
 
 # --- sort (exported) -----------------------------------------------
 
-# insertSorted places v into an already-sorted list (ascending by compare).
-func insertSorted(sorted as list of Version, v as Version) {
-    def out as list of Version init [];
-    def placed as bool init false;
-    for (def w in $sorted) {
-        if (not $placed and compare($v, $w) < 0) {
-            $out[] = $v;
-            $placed = true;
-        }
-        $out[] = $w;
-    }
-    if (not $placed) {
-        $out[] = $v;
-    }
-    return $out;
-}
 
 /**
  * Return a new list ordered ascending by SemVer precedence. lists.sort is
- * scalar-only, so this is an insertion sort over compare().
+ * scalar-only, so this is a merge sort over compare() - O(n log n), where an
+ * insertion sort was O(n^2).
  * @param vs {list of Version} the versions to order
  * @return {list of Version} a new list sorted ascending
  */
 export func sort(vs as list of Version) {
+    return mergeSort($vs);
+}
+
+# mergeSort orders a list of Version ascending by compare(), stable and
+# O(n log n).
+func mergeSort(vs as list of Version) {
+    def n as int init len($vs);
+    if ($n <= 1) {
+        return $vs;
+    }
+    def mid as int init $n // 2;
+    def left as list of Version init [];
+    def right as list of Version init [];
+    def i as int init 0;
+    while ($i < $mid) {
+        $left[] = $vs[$i];
+        $i = $i + 1;
+    }
+    while ($i < $n) {
+        $right[] = $vs[$i];
+        $i = $i + 1;
+    }
+    return mergeVersions(mergeSort($left), mergeSort($right));
+}
+
+func mergeVersions(a as list of Version, b as list of Version) {
     def out as list of Version init [];
-    for (def v in $vs) {
-        $out = insertSorted($out, $v);
+    def i as int init 0;
+    def j as int init 0;
+    while ($i < len($a) and $j < len($b)) {
+        if (compare($a[$i], $b[$j]) <= 0) {
+            $out[] = $a[$i];
+            $i = $i + 1;
+        } else {
+            $out[] = $b[$j];
+            $j = $j + 1;
+        }
+    }
+    while ($i < len($a)) {
+        $out[] = $a[$i];
+        $i = $i + 1;
+    }
+    while ($j < len($b)) {
+        $out[] = $b[$j];
+        $j = $j + 1;
     }
     return $out;
 }
@@ -505,7 +532,10 @@ func operandOf(c as string) {
 func cmpOp(v as Version, operand as string, op as string) {
     def o as string init strings.trim($operand);
     if (isWild($o)) {
-        return true;
+        # `*` spans every version, so `>=*` / `<=*` / `=*` match all - but strict
+        # `>*` / `<*` ask for something outside the whole range and match none
+        # (npm semantics).
+        return $op == ">=" or $op == "<=" or $op == "=";
     }
     if (isValid($o)) {
         def c as int init compare($v, parse($o));
@@ -571,11 +601,22 @@ func rawComparator(v as Version, c as string) {
         return true;
     }
     if (strings.startsWith($s, "^")) {
-        def core as Core init parseCore(rest($s, 1));
+        def operand as string init rest($s, 1);
+        def core as Core init parseCore($operand);
+        # A prerelease operand (`^1.2.3-rc.1`) keeps its prerelease as the
+        # inclusive lower bound; stripping it to the release (coreLower) would
+        # exclude the very prerelease the caret pins.
+        if (isValid($operand)) {
+            return boundedMatch($v, parse($operand), caretUpper($core));
+        }
         return boundedMatch($v, coreLower($core), caretUpper($core));
     }
     if (strings.startsWith($s, "~")) {
-        def core as Core init parseCore(rest($s, 1));
+        def operand as string init rest($s, 1);
+        def core as Core init parseCore($operand);
+        if (isValid($operand)) {
+            return boundedMatch($v, parse($operand), tildeUpper($core));
+        }
         return boundedMatch($v, coreLower($core), tildeUpper($core));
     }
     if (strings.startsWith($s, ">=")) {
@@ -607,14 +648,35 @@ func preAtTuple(comparator as string, v as Version) {
     return len($t.prerelease) > 0 and $t.major == $v.major and $t.minor == $v.minor and $t.patch == $v.patch;
 }
 
-# tokenize splits a clause into comparators on whitespace or commas.
+# isBareOperator reports whether a token is a comparator operator with no
+# operand attached.
+func isBareOperator(t as string) {
+    return $t == ">=" or $t == "<=" or $t == ">" or $t == "<" or $t == "=" or $t == "^" or $t == "~";
+}
+
+# tokenize splits a clause into comparators on whitespace or commas, then
+# rejoins a bare operator with the operand that follows it: `>= 1.2.3` tokenizes
+# to `>=` + `1.2.3` but means `>=1.2.3`, not the wildcard operator plus an exact
+# `1.2.3`.
 func tokenize(clause as string) {
     def spaced as string init strings.replace($clause, ",", " ");
-    def out as list of string init [];
+    def raw as list of string init [];
     for (def tok in strings.split($spaced, " ")) {
         def t as string init strings.trim($tok);
         if (not ($t == "")) {
+            $raw[] = $t;
+        }
+    }
+    def out as list of string init [];
+    def i as int init 0;
+    while ($i < len($raw)) {
+        def t as string init $raw[$i];
+        if (isBareOperator($t) and $i + 1 < len($raw)) {
+            $out[] = $t + $raw[$i + 1];
+            $i = $i + 2;
+        } else {
             $out[] = $t;
+            $i = $i + 1;
         }
     }
     return $out;
@@ -654,7 +716,11 @@ func matchesClause(v as Version, clause as string) {
     }
     def comps as list of string init tokenize($cl);
     if (len($comps) == 0) {
-        return not isPrerelease($v);
+        # An empty clause only arises from a stray `||` (`"^1.0.0 ||"`); it
+        # matches nothing, consistent with the interval algebra (rangeToIntervals
+        # produces no interval for it). The whole-range empty/`*`/`any` case is
+        # handled in satisfies before the `||` split.
+        return false;
     }
     for (def c in $comps) {
         if (not rawComparator($v, $c)) {
@@ -693,7 +759,12 @@ export func satisfies(version as string, range as string) {
     if (not isValid($version)) {
         return false;
     }
-    def v as Version init parse($version);
+    return satisfiesVer(parse($version), $range);
+}
+
+# satisfiesVer tests an already-parsed Version against a range, so callers that
+# hold a parsed Version (maxSatisfying / minSatisfying) don't re-parse it.
+func satisfiesVer(v as Version, range as string) {
     def r as string init strings.trim($range);
     if ($r == "" or $r == "*" or $r == "any") {
         return not isPrerelease($v);
@@ -791,9 +862,9 @@ export func maxSatisfying(versions as list of string, range as string) {
     def have as bool init false;
     def bestVer as Version;
     for (def ver in $versions) {
-        if (satisfies($ver, $range)) {
+        if (isValid($ver)) {
             def parsed as Version init parse($ver);
-            if (not $have or compare($parsed, $bestVer) > 0) {
+            if (satisfiesVer($parsed, $range) and (not $have or compare($parsed, $bestVer) > 0)) {
                 $bestVer = $parsed;
                 $chosen = $ver;
                 $have = true;
@@ -815,9 +886,9 @@ export func minSatisfying(versions as list of string, range as string) {
     def have as bool init false;
     def lowVer as Version;
     for (def ver in $versions) {
-        if (satisfies($ver, $range)) {
+        if (isValid($ver)) {
             def parsed as Version init parse($ver);
-            if (not $have or compare($parsed, $lowVer) < 0) {
+            if (satisfiesVer($parsed, $range) and (not $have or compare($parsed, $lowVer) < 0)) {
                 $lowVer = $parsed;
                 $chosen = $ver;
                 $have = true;
@@ -995,11 +1066,22 @@ func comparatorInterval(c as string) {
         return fullInterval();
     }
     if (strings.startsWith($s, "^")) {
-        def core as Core init parseCore(rest($s, 1));
+        def operand as string init rest($s, 1);
+        def core as Core init parseCore($operand);
+        # A prerelease operand keeps its prerelease as the interval's lower
+        # bound (and pins it), so minVersion / the interval algebra return the
+        # exact prerelease the caret allows rather than the bare release.
+        if (isValid($operand)) {
+            return Interval{lo: parse($operand), loIncl: true, hi: caretUpper($core), hiIncl: false, pins: pinList($operand)};
+        }
         return Interval{lo: coreLower($core), loIncl: true, hi: caretUpper($core), hiIncl: false, pins: $none};
     }
     if (strings.startsWith($s, "~")) {
-        def core as Core init parseCore(rest($s, 1));
+        def operand as string init rest($s, 1);
+        def core as Core init parseCore($operand);
+        if (isValid($operand)) {
+            return Interval{lo: parse($operand), loIncl: true, hi: tildeUpper($core), hiIncl: false, pins: pinList($operand)};
+        }
         return Interval{lo: coreLower($core), loIncl: true, hi: tildeUpper($core), hiIncl: false, pins: $none};
     }
     if (strings.startsWith($s, ">=")) {
@@ -1233,7 +1315,17 @@ export func minVersion(range as string) {
         } elseif (len($iv.lo.prerelease) > 0 and not pinnedAt($iv.pins, tupleStr($iv.lo))) {
             $cand = releaseCore($iv.lo);
         }
-        if (not $have or compare($cand, $floor) < 0) {
+        # Only take a candidate that actually lies within the interval's upper
+        # bound: for a release-empty interval (`>1.2.3 <1.2.4`) the bumped patch
+        # candidate can overshoot hi, and this interval then contributes no floor.
+        def withinHi as bool init true;
+        def cmpHi as int init compare($cand, $iv.hi);
+        if ($iv.hiIncl) {
+            $withinHi = $cmpHi <= 0;
+        } else {
+            $withinHi = $cmpHi < 0;
+        }
+        if ($withinHi and (not $have or compare($cand, $floor) < 0)) {
             $floor = $cand;
             $have = true;
         }
@@ -1266,8 +1358,15 @@ export func intersects(rangeA as string, rangeB as string) {
                 if (intervalHasRelease($iv)) {
                     return true;
                 }
-                def t as string init tupleStr($iv.lo);
-                if (pinnedAt($a.pins, $t) and pinnedAt($b.pins, $t)) {
+                # An interval whose only content is prereleases above lo (e.g.
+                # `>1.2.3 <1.2.4-rc.5`) pins those at the NEXT tuple, not lo's:
+                # `1.2.4-rc.x` has tuple 1.2.4, not 1.2.3. Check both.
+                def tLo as string init tupleStr($iv.lo);
+                def tNext as string init tupleStr(incPatch(releaseCore($iv.lo)));
+                if (pinnedAt($a.pins, $tLo) and pinnedAt($b.pins, $tLo)) {
+                    return true;
+                }
+                if (pinnedAt($a.pins, $tNext) and pinnedAt($b.pins, $tNext)) {
                     return true;
                 }
             }
@@ -1413,6 +1512,7 @@ export func simplifyRange(versions as list of string, range as string) {
     def sorted as list of Version init sort($all);
     def clauses as list of string init [];
     def matched as int init 0;
+    def anyPre as bool init false;
     def i as int init 0;
     def n as int init len($sorted);
     while ($i < $n) {
@@ -1420,10 +1520,16 @@ export func simplifyRange(versions as list of string, range as string) {
             def startS as string init toString($sorted[$i]);
             def endS as string init $startS;
             $matched = $matched + 1;
+            if (isPrerelease($sorted[$i])) {
+                $anyPre = true;
+            }
             while ($i + 1 < $n and satisfies(toString($sorted[$i + 1]), $range)) {
                 $i = $i + 1;
                 $endS = toString($sorted[$i]);
                 $matched = $matched + 1;
+                if (isPrerelease($sorted[$i])) {
+                    $anyPre = true;
+                }
             }
             if ($startS == $endS) {
                 $clauses[] = $startS;
@@ -1436,13 +1542,43 @@ export func simplifyRange(versions as list of string, range as string) {
     if ($matched == 0) {
         return "<0.0.0-0";
     }
-    if ($matched == $n and len($clauses) == 1) {
-        return "*";
+    # Pick a candidate simplification, but never take the "*" shortcut when a
+    # prerelease matched: "*" excludes prereleases, so it would drop them.
+    def candidate as string init "";
+    if ($matched == $n and len($clauses) == 1 and not $anyPre) {
+        $candidate = "*";
+    } else {
+        def joined as string init strings.join($clauses, " || ");
+        def orig as string init strings.trim($range);
+        if (len($orig) <= len($joined)) {
+            $candidate = $orig;
+        } else {
+            $candidate = $joined;
+        }
     }
-    def joined as string init strings.join($clauses, " || ");
-    def orig as string init strings.trim($range);
-    if (len($orig) <= len($joined)) {
-        return $orig;
+    # Verify the candidate selects exactly the versions the original range did;
+    # otherwise fall back to an explicit OR of the matched versions (which
+    # always reproduces the set exactly, prereleases included).
+    if (sameMatchSet($sorted, $candidate, $range)) {
+        return $candidate;
     }
-    return $joined;
+    def pins as list of string init [];
+    for (def v in $sorted) {
+        if (satisfies(toString($v), $range)) {
+            $pins[] = toString($v);
+        }
+    }
+    return strings.join($pins, " || ");
+}
+
+# sameMatchSet reports whether `candidate` and `orig` accept exactly the same
+# subset of `sorted`.
+func sameMatchSet(sorted as list of Version, candidate as string, orig as string) {
+    for (def v in $sorted) {
+        def s as string init toString($v);
+        if (not (satisfies($s, $candidate) == satisfies($s, $orig))) {
+            return false;
+        }
+    }
+    return true;
 }

@@ -84,6 +84,11 @@ func stripTrivia(toks []lexer.Token) []lexer.Token {
 type parser struct {
 	tokens []lexer.Token
 	pos    int
+	// seed, when non-nil, is a pre-parsed primary that parsePrimaryAtom returns
+	// instead of consuming tokens. It lets tryParseIndexAssign hand an
+	// already-parsed lvalue chain back into the expression ladder (a non-`=`
+	// statement) without re-parsing the chain from scratch.
+	seed Expr
 }
 
 func (p *parser) peek() lexer.Token       { return p.tokens[p.pos] }
@@ -763,19 +768,17 @@ func (p *parser) parseThrow() (Stmt, error) {
 
 // tryParseIndexAssign attempts to parse `$xs[i]...[j] = expr ;` as an
 // IndexAssignStmt, or `$xs[] = expr ;` as an AppendStmt.
-// Returns (stmt, true, nil) on success. Returns (nil, false, nil) when
-// the lvalue chain parses but no `=` follows (meaning the original
-// token stream was an expression statement, not an assignment) - in
-// that case the parser position is restored to the VARREF so the
-// caller can re-parse it as an expression. Errors during the lvalue
-// chain itself are propagated.
+// Returns (stmt, true, nil) on success. When the lvalue chain parses but no
+// `=` follows, the chain was actually the start of an expression statement;
+// rather than restore the position and re-parse, it continues the expression
+// from the already-built chain (via parseExprFrom) and returns that ExprStmt.
+// Errors during the lvalue chain itself are propagated.
 //
 // The append form `$xs[] = expr ;` is detected first because it can't
 // be mistaken for anything else: an empty index between a bare VARREF
 // and `=` has no read meaning (you can't read past-the-end), so any
 // occurrence is an unambiguous append.
 func (p *parser) tryParseIndexAssign() (Stmt, bool, error) {
-	saved := p.pos
 	vref, _ := p.match(lexer.TOKEN_VARREF)
 	// Detect the append form `$xs[] = expr ;` before walking any
 	// index chain - chained appends like `$xs[0][] = ...` aren't
@@ -842,9 +845,18 @@ func (p *parser) tryParseIndexAssign() (Stmt, bool, error) {
 		break
 	}
 	if _, ok := p.match(lexer.TOKEN_ASSIGN); !ok {
-		// Not an assignment; let the expression-statement path try again.
-		p.pos = saved
-		return nil, false, nil
+		// Not an assignment: the lvalue chain we parsed is actually the start of
+		// an expression statement. Continue the expression from the chain we
+		// already built (seeding the ladder) instead of restoring the position
+		// and re-parsing it from scratch.
+		expr, err := p.parseExprFrom(target)
+		if err != nil {
+			return nil, false, err
+		}
+		if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate statement"); err != nil {
+			return nil, false, err
+		}
+		return &ExprStmt{pos: pos{File: vref.File, Line: vref.Line, Col: vref.Col}, Expr: expr}, true, nil
 	}
 	val, err := p.parseExpr()
 	if err != nil {
@@ -1617,6 +1629,19 @@ func (p *parser) parseQualifiedTail(prefix lexer.Token) (Expr, error) {
 	// Qualified constant reference: prefix.NAME. Same constant-name rule
 	// as bare constants - uppercase chunks separated by single `_`.
 	if !isValidConstName(name.Lexeme) {
+		// A constant-named prefix with a non-const post-dot name is field
+		// access on a (deep const) struct: `ORIGIN.x`. Fall back to a
+		// FieldAccessExpr so the field is reachable directly, not only via the
+		// `(ORIGIN).x` parenthesis workaround. The postfix loop in parsePrimary
+		// continues any further `.field` / `[i]` chain.
+		if isValidConstName(prefix.Lexeme) {
+			base := pos{File: prefix.File, Line: prefix.Line, Col: prefix.Col}
+			return &FieldAccessExpr{
+				pos:    base,
+				Target: &ConstRefExpr{pos: base, Name: prefix.Lexeme, Depth: -1, Slot: -1},
+				Field:  name.Lexeme,
+			}, nil
+		}
 		return nil, &ParseError{Msg: fmt.Sprintf("qualified constant name %q must be uppercase [A-Z]+ with single `_` separators", name.Lexeme), File: name.File, Line: name.Line, Col: name.Col}
 	}
 	return &QualifiedConstRefExpr{
@@ -1683,6 +1708,15 @@ func (p *parser) foldMostNegativeInt() Expr {
 // `.field` suffixes onto it. Returning the chained form from `primary`
 // lets every level above (unary, mul, add, ...) treat `$xs[0]` and
 // `$p.field` exactly like any other expression without special-casing.
+// parseExprFrom continues parsing an expression whose leading primary has
+// already been built (by tryParseIndexAssign). It seeds the ladder so the
+// operator-precedence climb runs once over the pre-parsed lvalue chain instead
+// of the caller restoring the position and re-parsing it.
+func (p *parser) parseExprFrom(primary Expr) (Expr, error) {
+	p.seed = primary
+	return p.parseExpr()
+}
+
 func (p *parser) parsePrimary() (Expr, error) {
 	e, err := p.parsePrimaryAtom()
 	if err != nil {
@@ -1737,6 +1771,13 @@ func (p *parser) parsePrimary() (Expr, error) {
 }
 
 func (p *parser) parsePrimaryAtom() (Expr, error) {
+	// A seeded primary (from parseExprFrom) is returned once, consuming no
+	// tokens; parsePrimary's postfix loop then continues any further chain.
+	if p.seed != nil {
+		s := p.seed
+		p.seed = nil
+		return s, nil
+	}
 	t := p.peek()
 	switch t.Type {
 	case lexer.TOKEN_INT:

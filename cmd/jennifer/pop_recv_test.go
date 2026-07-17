@@ -40,6 +40,10 @@ func fakePOP3(ln net.Listener) {
 		case up == "RETR 2":
 			// ".dotted" byte-stuffed to "..dotted" on the wire.
 			fmt.Fprintf(conn, "+OK 14 octets\r\nSubject: Two\r\n\r\n..dotted\r\n.\r\n")
+		case up == "RETR 3":
+			// A multi-byte UTF-8 body. Reading it as per-chunk strings (or
+			// counting runes) corrupts the accented characters.
+			fmt.Fprintf(conn, "+OK 30 octets\r\nSubject: Trois\r\n\r\ncafé résumé\r\n.\r\n")
 		case up == "QUIT":
 			fmt.Fprintf(conn, "+OK bye\r\n")
 			return
@@ -77,6 +81,8 @@ testing.assertContains($msgA, "Subject: One");
 testing.assertContains($msgA, "body one");
 def msgB as string init pop.retrieve($s, 2);
 testing.assertContains($msgB, ".dotted");
+def msgC as string init pop.retrieve($s, 3);
+testing.assertContains($msgC, "café résumé");
 def szs as list of int init pop.sizes($s);
 testing.assertEqual(len($szs), 2);
 testing.assertEqual($szs[0], 20);

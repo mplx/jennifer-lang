@@ -34,6 +34,25 @@ func testParseUrlDefaults() {
     testing.assertEqual($h.port, 443);
 }
 
+# IPv6 literal hosts, userinfo, and fragments.
+func testParseUrlBracketHostUserinfoFragment() {
+    # Bracketed IPv6 with a port: the inner colons are not the port separator.
+    def a as Url init parseUrl("http://[::1]:8080/x");
+    testing.assertEqual($a.host, "[::1]");
+    testing.assertEqual($a.port, 8080);
+    testing.assertEqual($a.path, "/x");
+    testing.assertEqual(hostHeader($a), "[::1]:8080");
+    # Userinfo is stripped at the last '@'; the fragment never reaches the path.
+    def b as Url init parseUrl("http://user:p@ss@host:9/p#frag");
+    testing.assertEqual($b.host, "host");
+    testing.assertEqual($b.port, 9);
+    testing.assertEqual($b.path, "/p");
+    # An IPv6 host with no port keeps its brackets and the scheme default.
+    def c as Url init parseUrl("http://[fe80::1]/");
+    testing.assertEqual($c.host, "[fe80::1]");
+    testing.assertEqual($c.port, 80);
+}
+
 func testHostHeader() {
     testing.assertEqual(hostHeader(parseUrl("http://h/")), "h");        # default port omitted
     testing.assertEqual(hostHeader(parseUrl("https://h/")), "h");
@@ -97,6 +116,16 @@ func testParseResponseStatusText() {
     testing.assertEqual($r.body, "");
 }
 
+# A status line with no reason phrase ("HTTP/1.1 200\r\n") must parse (the code
+# is the whole remainder, the reason phrase empty) rather than throw.
+func testParseResponseEmptyReasonPhrase() {
+    def raw as bytes init convert.bytesFromString(
+        "HTTP/1.1 200\r\nContent-Length: 0\r\n\r\n", "utf-8");
+    def r as Response init parseResponse($raw);
+    testing.assertEqual($r.status, 200);
+    testing.assertEqual($r.statusText, "");
+}
+
 func testHeaderLookup() {
     def raw as bytes init convert.bytesFromString(
         "HTTP/1.1 204 No Content\r\nX-Test: abc\r\n\r\n", "utf-8");
@@ -104,4 +133,27 @@ func testHeaderLookup() {
     testing.assertEqual(header($r, "x-test"), "abc");
     testing.assertEqual(header($r, "X-TEST"), "abc");     # case-insensitive
     testing.assertEqual(header($r, "missing"), "");
+}
+
+# A header value carrying CRLF must be rejected: concatenated onto the wire it
+# would inject an extra header or smuggle a second request (request splitting).
+func injectViaHeaderValue() {
+    def hdrs as map of string to string init {"X-Evil": "a\r\nX-Injected: yes"};
+    buildRequest("GET", parseUrl("http://h/p"), $hdrs, "");
+}
+
+func injectViaHeaderName() {
+    def hdrs as map of string to string init {"X\r\nInjected": "v"};
+    buildRequest("GET", parseUrl("http://h/p"), $hdrs, "");
+}
+
+func injectViaPath() {
+    def u as Url init Url{scheme: "http", host: "h", port: 80, path: "/p\r\nX-Injected: yes"};
+    buildRequest("GET", $u, {}, "");
+}
+
+func testRejectsHeaderInjection() {
+    testing.assertThrows("injectViaHeaderValue", "http");
+    testing.assertThrows("injectViaHeaderName", "http");
+    testing.assertThrows("injectViaPath", "http");
 }

@@ -147,6 +147,56 @@ func TestTCPFullJenniferServerAndClient(t *testing.T) {
 	}
 }
 
+// net.eof must NOT block on an open connection where no data is pending (it is
+// the local side's turn to write): a bare Peek(1) would deadlock. The server
+// here accepts and stays silent; eof must return false promptly.
+func TestTCPEOFDoesNotBlockOnOpenIdleConn(t *testing.T) {
+	addr := pickListenerAddr(t)
+	l, err := stdnet.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	accepted := make(chan stdnet.Conn, 1)
+	go func() {
+		c, aErr := l.Accept()
+		if aErr != nil {
+			return
+		}
+		accepted <- c // keep the connection open (never write, never close)
+	}()
+
+	done := make(chan struct{})
+	var out string
+	var runErr error
+	go func() {
+		out, runErr = runProg(t, fmt.Sprintf(`
+			use io;
+			use net;
+			def c as net.Conn init net.connect(%q);
+			io.printf("eof=%%t\n", net.eof($c));
+			net.close($c);
+		`, addr))
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("net.eof blocked on an open idle connection (deadlock)")
+	}
+	if runErr != nil {
+		t.Fatalf("run: %v", runErr)
+	}
+	if out != "eof=false\n" {
+		t.Errorf("got %q, want %q", out, "eof=false\n")
+	}
+	if c := <-accepted; c != nil {
+		c.Close()
+	}
+}
+
 // TestTCPEOFAfterServerClose exercises the sticky-EOF flow. Server
 // writes 3 bytes then closes; client reads them, then a follow-up
 // read returns a partial (empty) result and net.eof flips true.

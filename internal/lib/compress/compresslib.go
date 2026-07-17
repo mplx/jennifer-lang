@@ -54,6 +54,7 @@ const (
 // an in-memory buffer. finalize closes the writer (flushing the trailer) and
 // returns the buffer.
 type compStream struct {
+	mu  sync.Mutex // guards w/buf: spawned tasks sharing one handle must not race
 	w   io.WriteCloser
 	buf *bytes.Buffer
 }
@@ -77,6 +78,7 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "stream", streamFn)
 	in.RegisterNamespaced(LibraryName, "update", updateFn)
 	in.RegisterNamespaced(LibraryName, "finalize", finalizeFn)
+	in.RegisterNamespaced(LibraryName, "discard", discardFn)
 }
 
 // writerFor builds a leveled compressor for algo over w.
@@ -243,8 +245,11 @@ func updateFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 	if !ok {
 		return interpreter.Null(), fmt.Errorf("compress.update: stream %d has already been finalized or never existed", id)
 	}
-	if _, err := st.w.Write(args[1].Bytes); err != nil {
-		return interpreter.Null(), fmt.Errorf("compress.update: %v", err)
+	st.mu.Lock()
+	_, werr := st.w.Write(args[1].Bytes)
+	st.mu.Unlock()
+	if werr != nil {
+		return interpreter.Null(), fmt.Errorf("compress.update: %v", werr)
 	}
 	return interpreter.Null(), nil
 }
@@ -268,9 +273,37 @@ func finalizeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter
 	if !ok {
 		return interpreter.Null(), fmt.Errorf("compress.finalize: stream %d has already been finalized or never existed", id)
 	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
 	if err := st.w.Close(); err != nil {
 		return interpreter.Null(), fmt.Errorf("compress.finalize: %v", err)
 	}
 	out := st.buf.Bytes()
 	return interpreter.BytesVal(out), nil
+}
+
+// discardFn drops a live stream without flushing/returning its output, closing
+// the underlying writer to release its state. The abort path for a stream
+// opened but abandoned before finalize.
+func discardFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("compress.discard expects 1 argument (stream), got %d", len(args))
+	}
+	id, err := extractStreamID("compress.discard", args[0])
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	streamsMu.Lock()
+	st, ok := streams[id]
+	if ok {
+		delete(streams, id)
+	}
+	streamsMu.Unlock()
+	if !ok {
+		return interpreter.Null(), fmt.Errorf("compress.discard: stream %d has already been finalized or never existed", id)
+	}
+	st.mu.Lock()
+	st.w.Close() // release the writer's buffers; the output is intentionally dropped
+	st.mu.Unlock()
+	return interpreter.Null(), nil
 }

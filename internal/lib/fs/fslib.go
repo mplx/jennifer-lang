@@ -142,9 +142,15 @@ func writeCommon(fnName string, path string, payload []byte, flags int) error {
 	if err != nil {
 		return fmt.Errorf("%s: %s: %v", fnName, path, err)
 	}
-	defer f.Close()
 	if _, werr := f.Write(payload); werr != nil {
+		f.Close()
 		return fmt.Errorf("%s: %s: %v", fnName, path, werr)
+	}
+	// Propagate the Close error explicitly: on NFS / quota volumes the write
+	// can succeed into a buffer and the flush-on-close fail, so a deferred
+	// Close that dropped the error would report a truncated file as written.
+	if cerr := f.Close(); cerr != nil {
+		return fmt.Errorf("%s: %s: %v", fnName, path, cerr)
 	}
 	return nil
 }

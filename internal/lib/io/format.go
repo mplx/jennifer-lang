@@ -737,18 +737,40 @@ func renderInt(spec FormatSpec, n int64) string {
 		mag = -mag
 	}
 	digits := strconv.FormatUint(mag, spec.Base)
+	sign := signPrefix(neg, spec.Sign)
+	if spec.Fill == '0' && spec.HasPad {
+		// Zero-pad the raw digits *before* grouping so the fill lines up
+		// columnar with the separators (`0,001,234`), not jammed ahead of the
+		// first one (`000001,234`). The target width counts the sign and the
+		// separators grouping will insert.
+		digits = zeroPadForGroup(digits, spec, len(sign))
+	}
 	if spec.HasGrp {
 		digits = groupDigits(digits, spec.Group, spec.Sep)
 	}
-	sign := signPrefix(neg, spec.Sign)
-	if spec.Fill == '0' && spec.HasPad {
-		// Zero-pad between the sign and the digits, so `-007` not `00-7`.
-		need := spec.Pad - len(sign) - len(digits)
-		if need > 0 {
-			digits = strings.Repeat("0", need) + digits
-		}
-	}
 	return sign + digits
+}
+
+// zeroPadForGroup grows the raw digit string until the fully rendered field
+// (sign + digits + grouping separators) reaches spec.Pad, so a `fill=0` with a
+// `group=` produces valid columnar output. With no grouping active it reduces
+// to padding to `spec.Pad - signLen` digits, matching the plain zero-fill.
+func zeroPadForGroup(digits string, spec FormatSpec, signLen int) string {
+	width := func(nd int) int {
+		seps := 0
+		if spec.HasGrp && spec.Group > 0 && nd > 0 {
+			seps = (nd - 1) / spec.Group
+		}
+		return signLen + nd + seps
+	}
+	n := len(digits)
+	for width(n) < spec.Pad {
+		n++
+	}
+	if n > len(digits) {
+		digits = strings.Repeat("0", n-len(digits)) + digits
+	}
+	return digits
 }
 
 func groupDigits(digits string, every int, sep byte) string {

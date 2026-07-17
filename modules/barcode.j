@@ -54,8 +54,8 @@ export def struct Symbol {
  * @field height {int} bar height for 1D codes (module units)
  * @field quiet {int} quiet-zone width in modules / narrow bars
  * @field ecLevel {string} QR error-correction level: "L", "M", "Q", or "H"
- * @field foreground {string} the dark colour (SVG / PNG), e.g. "#000000"
- * @field background {string} the light colour (SVG / PNG), e.g. "#ffffff"
+ * @field foreground {string} the dark colour (SVG only; PNG is always black), e.g. "#000000"
+ * @field background {string} the light colour (SVG only; PNG is always white), e.g. "#ffffff"
  */
 export def struct Options {
     scale as int,
@@ -638,10 +638,8 @@ func penalty(mods as list of list of int, size as int) {
     return $score;
 }
 
-# finderLike tests the 11-cell 1:1:3:1:1 + light run pattern at (r,c) along a
-# row (horizontal) or column.
-func finderLike(mods as list of list of int, r as int, c as int, horizontal as bool) {
-    def pat as list of int init [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0];
+# matchesPattern tests an 11-cell pattern at (r,c) along a row or column.
+func matchesPattern(mods as list of list of int, r as int, c as int, horizontal as bool, pat as list of int) {
     def i as int init 0;
     while ($i < 11) {
         def v as int init 0;
@@ -656,6 +654,14 @@ func finderLike(mods as list of list of int, r as int, c as int, horizontal as b
         $i = $i + 1;
     }
     return true;
+}
+
+# finderLike tests the 11-cell 1:1:3:1:1 finder pattern with the 4-cell light run
+# on *either* side, per the QR mask rule 3. Testing only the light-run-after form
+# would miss half the finder-like occurrences and skew mask selection.
+func finderLike(mods as list of list of int, r as int, c as int, horizontal as bool) {
+    return matchesPattern($mods, $r, $c, $horizontal, [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0])
+        or matchesPattern($mods, $r, $c, $horizontal, [0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1]);
 }
 
 # qrMatrix builds the final masked QR module grid for a payload.
@@ -838,6 +844,11 @@ func codeThirtyNineBars(data as string) {
     def bits as string init codeThirtyNineChar("*");
     def cs as list of string init strings.chars(strings.upper($data));
     for (def ch in $cs) {
+        # `*` is the Code 39 start/stop delimiter; in the payload it would encode
+        # a stop mid-symbol and truncate the scan, so reject it.
+        if ($ch == "*") {
+            fail("code39: '*' is the start/stop delimiter and cannot appear in the data");
+        }
         $bits = $bits + "0" + codeThirtyNineChar($ch);
     }
     $bits = $bits + "0" + codeThirtyNineChar("*");
@@ -859,6 +870,15 @@ func eanBars(data as string, digits as int) {
     def ds as list of int init digitList($data);
     if (len($ds) == $digits - 1) {
         $ds[] = eanCheck($ds, $digits);
+    } elseif (len($ds) == $digits) {
+        # Full-length input: verify the supplied check digit rather than trusting
+        # it, so a mistyped GTIN fails at encode instead of producing a
+        # well-formed but unscannable symbol. eanCheck computes over the body
+        # digits, so slice off the supplied check digit first.
+        def body as list of int init lists.slice($ds, 0, $digits - 1);
+        if (not ($ds[$digits - 1] == eanCheck($body, $digits))) {
+            fail("ean: check digit mismatch (last digit does not verify)");
+        }
     }
     if (not (len($ds) == $digits)) {
         fail("ean: expected " + convert.toString($digits) + " digits");
@@ -1017,7 +1037,9 @@ func codeThirtyNineChar(ch as string) {
     return $pats[$idx];
 }
 
-# codeOneTwentyEightPatterns is the Code 128 module-pattern table (values 0..106).
+# codeOneTwentyEightPatterns is the Code 128 module-pattern table (values
+# 0..106, 11 modules each; the encoder appends the 2-module termination bar
+# after the stop pattern, entry 106).
 func codeOneTwentyEightPatterns() {
     return ["11011001100", "11001101100", "11001100110", "10010011000", "10010001100",
         "10001001100", "10011001000", "10011000100", "10001100100", "11001001000",
@@ -1040,7 +1062,7 @@ func codeOneTwentyEightPatterns() {
         "11011110110", "11110110110", "10101111000", "10100011110", "10001011110",
         "10111101000", "10111100010", "11110101000", "11110100010", "10111011110",
         "10111101110", "11101011110", "11110101110", "11010000100", "11010010000",
-        "11010011100", "1100011101011"];
+        "11010011100", "11000111010"];
 }
 
 # --- renderers (exported) ---------------------------------------------------
@@ -1068,7 +1090,7 @@ export func terminal(symbol as Symbol) {
     }
     def m as list of list of bool init $symbol.matrix;
     def n as int init len($m);
-    def out as string init "";
+    def parts as list of string init [];
     def r as int init 0;
     while ($r < $n) {
         def c as int init 0;
@@ -1078,13 +1100,13 @@ export func terminal(symbol as Symbol) {
             if ($r + 1 < $n) {
                 $bot = $m[$r + 1][$c];
             }
-            $out = $out + halfBlock($top, $bot);
+            $parts[] = halfBlock($top, $bot);
             $c = $c + 1;
         }
-        $out = $out + "\n";
+        $parts[] = "\n";
         $r = $r + 2;
     }
-    return $out;
+    return strings.join($parts, "");
 }
 
 # halfBlock picks the Unicode half-block glyph for a top/bottom cell pair.
@@ -1122,19 +1144,23 @@ func svgMatrix(symbol as Symbol, opts as Options) {
     def s as int init $opts.scale;
     def q as int init $opts.quiet;
     def dim as int init ($n + 2 * $q) * $s;
-    def body as string init svgHeader($dim, $dim, $opts.background);
+    # Accumulate rects in a list and join once: an SVG can hold thousands of
+    # rects, and a growing `string +` per rect is O(N^2) in the output size.
+    def parts as list of string init [];
+    $parts[] = svgHeader($dim, $dim, $opts.background);
     def r as int init 0;
     while ($r < $n) {
         def c as int init 0;
         while ($c < $n) {
             if ($m[$r][$c]) {
-                $body = $body + svgRect(($c + $q) * $s, ($r + $q) * $s, $s, $s, $opts.foreground);
+                $parts[] = svgRect(($c + $q) * $s, ($r + $q) * $s, $s, $s, $opts.foreground);
             }
             $c = $c + 1;
         }
         $r = $r + 1;
     }
-    return $body + "</svg>\n";
+    $parts[] = "</svg>\n";
+    return strings.join($parts, "");
 }
 
 func svgLinear(symbol as Symbol, opts as Options) {
@@ -1147,17 +1173,19 @@ func svgLinear(symbol as Symbol, opts as Options) {
     }
     def width as int init ($totalUnits + 2 * $q) * $s;
     def height as int init $h + 2 * $q * $s;
-    def body as string init svgHeader($width, $height, $opts.background);
+    def parts as list of string init [];
+    $parts[] = svgHeader($width, $height, $opts.background);
     def x as int init $q * $s;
     def dark as bool init true;
     for (def w in $symbol.bars) {
         if ($dark) {
-            $body = $body + svgRect($x, $q * $s, $w * $s, $h, $opts.foreground);
+            $parts[] = svgRect($x, $q * $s, $w * $s, $h, $opts.foreground);
         }
         $x = $x + $w * $s;
         $dark = not $dark;
     }
-    return $body + "</svg>\n";
+    $parts[] = "</svg>\n";
+    return strings.join($parts, "");
 }
 
 func svgHeader(w as int, h as int, bg as string) {

@@ -16,6 +16,7 @@ package listslib
 
 import (
 	"fmt"
+	"math"
 	"sort"
 
 	"jennifer-lang.dev/jennifer/internal/interpreter"
@@ -54,6 +55,11 @@ func requireList(name string, v interpreter.Value, argpos string) error {
 func requireInt(name string, v interpreter.Value, argpos string) (int, error) {
 	if v.Kind != interpreter.KindInt {
 		return 0, fmt.Errorf("lists.%s: %s must be int, got %s", name, argpos, v.Kind)
+	}
+	// Range-check before narrowing to int: on a 32-bit build (TinyGo) a value
+	// beyond the platform int range would silently truncate to a bogus index.
+	if v.Int > int64(math.MaxInt) || v.Int < int64(math.MinInt) {
+		return 0, fmt.Errorf("lists.%s: %s value %d is out of range", name, argpos, v.Int)
 	}
 	return int(v.Int), nil
 }
@@ -392,14 +398,26 @@ func rangeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 			step = -1
 		}
 	}
+	// Advance with overflow detection: near MaxInt64 / MinInt64, `v += step`
+	// can wrap around and stay on the correct side of `end`, looping forever.
 	var data []interpreter.Value
 	if step > 0 {
-		for v := start; v < end; v += step {
+		for v := start; v < end; {
 			data = append(data, interpreter.IntVal(v))
+			next := v + step
+			if next < v { // wrapped past MaxInt64
+				break
+			}
+			v = next
 		}
 	} else {
-		for v := start; v > end; v += step {
+		for v := start; v > end; {
 			data = append(data, interpreter.IntVal(v))
+			next := v + step
+			if next > v { // wrapped past MinInt64
+				break
+			}
+			v = next
 		}
 	}
 	return interpreter.ListVal(parser.PrimitiveType(parser.TypeInt), data), nil

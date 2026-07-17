@@ -178,6 +178,86 @@ func TestSameStemModulesCoexist(t *testing.T) {
 	}
 }
 
+// Field writes and zero-init on a same-stem module struct must resolve
+// through the module's canonical path (the identity), not the stem: a
+// stem-keyed lookup is ambiguous when two loaded modules share a basename,
+// which would break `$x.field = ...` and `def y as u.Thing;` for both.
+func TestSameStemModuleFieldWriteAndZeroInit(t *testing.T) {
+	out, err := runModuleMainTree(t, map[string]string{
+		"a/util.j": `export def struct Thing { x as int };
+			export func make() { return Thing{ x: 1 }; }`,
+		"b/util.j": `export def struct Gadget { y as int };
+			export func make() { return Gadget{ y: 2 }; }`,
+		"main.j": `import "./a/util.j" as u; import "./b/util.j" as v; use io;
+			def t as u.Thing init u.make();
+			$t.x = 5;
+			def z as u.Thing;
+			def g as v.Gadget init v.make();
+			$g.y = 7;
+			def h as v.Gadget;
+			io.printf("%d %d %d %d\n", $t.x, $z.x, $g.y, $h.y);`,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.TrimSpace(out) != "5 0 7 0" {
+		t.Errorf("got %q, want %q", strings.TrimSpace(out), "5 0 7 0")
+	}
+}
+
+// A consumer-defined bare struct that shares a name with a module's struct must
+// not impersonate it across the inward call boundary: passing the consumer's own
+// Point to a module method that takes the module's Point is a positioned error,
+// not silently accepted.
+func TestModuleRejectsImpostorStruct(t *testing.T) {
+	_, err := runModuleMainTree(t, map[string]string{
+		"geo.j": `export def struct Point { x as int };
+			export func px(p as Point) { return $p.x; }`,
+		"main.j": `import "./geo.j" as g; use io;
+			def struct Point { name as string };
+			def mine as Point init Point{ name: "nope" };
+			io.printf("%d\n", g.px($mine));`,
+	})
+	if err == nil {
+		t.Fatal("expected an impostor-struct error")
+	}
+	if !strings.Contains(err.Error(), "impersonate") {
+		t.Errorf("error should mention impersonation: %v", err)
+	}
+	// A genuine module struct (constructed via the alias) is accepted.
+	out, err := runModuleMainTree(t, map[string]string{
+		"geo.j": `export def struct Point { x as int };
+			export func px(p as Point) { return $p.x; }`,
+		"main.j": `import "./geo.j" as g; use io;
+			def p as g.Point init g.Point{ x: 42 };
+			io.printf("%d\n", g.px($p));`,
+	})
+	if err != nil {
+		t.Fatalf("genuine module struct should be accepted: %v", err)
+	}
+	if strings.TrimSpace(out) != "42" {
+		t.Errorf("got %q, want 42", strings.TrimSpace(out))
+	}
+}
+
+// A map whose keys are a module's own struct must retag those keys on the way
+// out, so the consumer's lookup with a same-identity key matches.
+func TestModuleRetagsMapStructKeys(t *testing.T) {
+	out, err := runModuleMainTree(t, map[string]string{
+		"reg.j": `export def struct K { id as int };
+			export func build() { def m as map of K to int init {K{ id: 1 }: 100, K{ id: 2 }: 200}; return $m; }`,
+		"main.j": `import "./reg.j" as r; use io;
+			def m as map of r.K to int init r.build();
+			io.printf("%d %d\n", $m[r.K{ id: 1 }], $m[r.K{ id: 2 }]);`,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.TrimSpace(out) != "100 200" {
+		t.Errorf("got %q, want %q", strings.TrimSpace(out), "100 200")
+	}
+}
+
 // Distinct stems are fine, and importing the same module file twice (a run-once
 // cache hit) is not a collision.
 func TestModuleDistinctStemsAndReimportOK(t *testing.T) {

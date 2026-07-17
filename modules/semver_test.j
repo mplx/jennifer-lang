@@ -210,6 +210,23 @@ func testInvalidVersionNeverMatches() {
     testing.assertFalse(satisfies("", "*"));
 }
 
+# A caret / tilde range whose operand carries a prerelease keeps that
+# prerelease as the inclusive lower bound (npm semantics), rather than
+# rounding up to the bare release and excluding it.
+func testCaretTildePrereleaseLowerBound() {
+    testing.assertTrue(satisfies("1.2.3-rc.2", "^1.2.3-rc.1"));
+    testing.assertTrue(satisfies("1.2.3-rc.1", "^1.2.3-rc.1"));
+    testing.assertFalse(satisfies("1.2.3-rc.0", "^1.2.3-rc.1"));   # below the pinned prerelease
+    testing.assertTrue(satisfies("1.2.4", "^1.2.3-rc.1"));         # a later release still matches
+    testing.assertTrue(satisfies("1.2.3-rc.2", "~1.2.3-rc.1"));
+    testing.assertFalse(satisfies("1.3.0-rc.1", "~1.2.3-rc.1"));   # outside the tilde patch window
+}
+
+func testMinVersionCaretPrerelease() {
+    testing.assertEqual(minVersion("^1.2.3-rc.1"), "1.2.3-rc.1");
+    testing.assertEqual(minVersion("~1.2.3-rc.1"), "1.2.3-rc.1");
+}
+
 # --- ranges: compound (new) -----------------------------------------
 
 func testCompoundAnd() {
@@ -261,6 +278,17 @@ func testMinSatisfying() {
     testing.assertEqual(minSatisfying($vers, "^1.2.0"), "1.2.0");
     testing.assertEqual(minSatisfying($vers, ">=1.0.0"), "1.0.0");
     testing.assertEqual(minSatisfying($vers, "^9.0.0"), "");
+}
+
+# Whitespace after a comparator operator must not turn ">= 1.2.3" into an
+# exact match (the operator and operand rejoin).
+func testWhitespaceAfterOperator() {
+    testing.assertTrue(satisfies("1.5.0", ">= 1.2.3"));
+    testing.assertFalse(satisfies("1.1.0", ">= 1.2.3"));
+    testing.assertTrue(satisfies("1.2.0", "<= 2.0.0"));
+    testing.assertTrue(satisfies("1.9.9", "^ 1.2.0"));
+    testing.assertTrue(satisfies("1.5.0", ">= 1.2.0 < 2.0.0"));
+    testing.assertFalse(satisfies("2.1.0", ">= 1.2.0 < 2.0.0"));
 }
 
 func testValidRange() {
@@ -385,4 +413,13 @@ func testSimplifyRange() {
     testing.assertEqual(simplifyRange($vers, "^9.0.0"), "<0.0.0-0");
     testing.assertEqual(simplifyRange($vers, "^1.0.0"), "^1.0.0");   # original kept when shorter
     testing.assertEqual(simplifyRange($vers, "1.0.0 || 2.1.0"), "1.0.0 || 2.1.0");
+}
+
+# simplifyRange must not drop prerelease versions the original matched (the "*"
+# shortcut excludes prereleases): the produced range still matches them.
+func testSimplifyRangePreservesPrereleases() {
+    def vers as list of string init ["1.2.3-rc.1"];
+    def out as string init simplifyRange($vers, ">=1.2.3-rc.1 <1.3.0");
+    testing.assertFalse($out == "*");                 # "*" would match nothing here
+    testing.assertTrue(satisfies("1.2.3-rc.1", $out)); # the produced range keeps it
 }

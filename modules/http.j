@@ -116,16 +116,18 @@ func dechunk(body as bytes) {
     while ($pos < $n) {
         def lineEnd as int init findCRLF($body, $pos);
         if ($lineEnd < 0) {
-            return $out;
+            # A chunk-size line with no CRLF means the connection dropped
+            # mid-stream: fail loudly rather than return a silent partial body.
+            throw Error{kind: "http", message: "truncated body: chunk size line has no CRLF", file: "", line: 0, col: 0};
         }
         def size as int init hexToInt(strings.trim(bytesToStr($body, $pos, $lineEnd)));
         if ($size == 0) {
-            return $out;
+            return $out;   # terminal 0-length chunk: complete
         }
         def dataStart as int init $lineEnd + 2;
         def dataEnd as int init $dataStart + $size;
         if ($dataEnd > $n) {
-            $dataEnd = $n;
+            throw Error{kind: "http", message: "truncated body: chunk declares more bytes than received", file: "", line: 0, col: 0};
         }
         def j as int init $dataStart;
         while ($j < $dataEnd) {
@@ -134,7 +136,8 @@ func dechunk(body as bytes) {
         }
         $pos = $dataEnd + 2;
     }
-    return $out;
+    # Ran out of input without ever seeing the terminal 0-length chunk.
+    throw Error{kind: "http", message: "truncated body: missing terminal chunk", file: "", line: 0, col: 0};
 }
 
 # --- request / response (private) ----------------------------------
@@ -149,6 +152,12 @@ func parseUrl(url as string) {
         $scheme = strings.lower(strings.substring($url, 0, $si));
         $rest = strings.substring($url, $si + 3, len($url));
     }
+    # A fragment (#...) is never sent to the server; strip it before anything
+    # else so it cannot leak onto the wire.
+    def hash as int init strings.indexOf($rest, "#");
+    if ($hash >= 0) {
+        $rest = strings.substring($rest, 0, $hash);
+    }
     def authority as string init $rest;
     def path as string init "/";
     def slash as int init strings.indexOf($rest, "/");
@@ -156,17 +165,50 @@ func parseUrl(url as string) {
         $authority = strings.substring($rest, 0, $slash);
         $path = strings.substring($rest, $slash, len($rest));
     }
+    # Strip userinfo (user[:pass]@) at the LAST '@' - a password may contain '@'.
+    def at as int init lastAt($authority);
+    if ($at >= 0) {
+        $authority = strings.substring($authority, $at + 1, len($authority));
+    }
     def host as string init $authority;
     def port as int init 80;
     if ($scheme == "https") {
         $port = 443;
     }
-    def colon as int init strings.indexOf($authority, ":");
-    if ($colon >= 0) {
-        $host = strings.substring($authority, 0, $colon);
-        $port = convert.toInt(strings.substring($authority, $colon + 1, len($authority)));
+    if (strings.startsWith($authority, "[")) {
+        # Bracketed IPv6 literal: the colon inside the brackets is not the
+        # port separator. Keep the brackets on the host so the Host header
+        # and net.connect address stay well-formed (`[::1]:8080`).
+        def rb as int init strings.indexOf($authority, "]");
+        if ($rb >= 0) {
+            $host = strings.substring($authority, 0, $rb + 1);
+            def afterBr as string init strings.substring($authority, $rb + 1, len($authority));
+            if (strings.startsWith($afterBr, ":")) {
+                $port = convert.toInt(strings.substring($afterBr, 1, len($afterBr)));
+            }
+        }
+    } else {
+        def colon as int init strings.indexOf($authority, ":");
+        if ($colon >= 0) {
+            $host = strings.substring($authority, 0, $colon);
+            $port = convert.toInt(strings.substring($authority, $colon + 1, len($authority)));
+        }
     }
     return Url{scheme: $scheme, host: $host, port: $port, path: $path};
+}
+
+# lastAt returns the index of the last '@' in s, or -1.
+func lastAt(s as string) {
+    def cs as list of string init strings.chars($s);
+    def found as int init -1;
+    def i as int init 0;
+    while ($i < len($cs)) {
+        if ($cs[$i] == "@") {
+            $found = $i;
+        }
+        $i = $i + 1;
+    }
+    return $found;
 }
 
 # hostHeader renders the Host header value (host, plus port when non-default).
@@ -180,15 +222,57 @@ func hostHeader(u as Url) {
     return $u.host + ":" + convert.toString($u.port);
 }
 
+# hasControlChar reports whether s contains CR, LF, or NUL - the bytes that let
+# a caller-supplied value break out of its field and inject request lines.
+func hasControlChar(s as string) {
+    return strings.contains($s, "\r") or strings.contains($s, "\n") or strings.contains($s, "\0");
+}
+
+# rejectInjection throws if any part that goes onto the request line or a header
+# carries CR / LF / NUL, which would otherwise smuggle extra headers or a whole
+# second request (HTTP request splitting / header injection).
+func rejectInjection(u as Url, headers as map of string to string) {
+    if (hasControlChar($u.host) or hasControlChar($u.path)) {
+        throw Error{kind: "http", message: "request target contains a control character (CR/LF/NUL)", file: "", line: 0, col: 0};
+    }
+    for (def k in $headers) {
+        if (hasControlChar($k)) {
+            throw Error{kind: "http", message: "header name contains a control character (CR/LF/NUL)", file: "", line: 0, col: 0};
+        }
+        if (hasControlChar($headers[$k])) {
+            throw Error{kind: "http", message: "header value contains a control character (CR/LF/NUL): " + $k, file: "", line: 0, col: 0};
+        }
+    }
+}
+
 # buildRequest renders the full request text for a method / URL / headers / body.
+# hasHeaderCI reports whether headers holds a key equal to lname (already
+# lowercased), matching case-insensitively per RFC 7230.
+func hasHeaderCI(headers as map of string to string, lname as string) {
+    for (def k in $headers) {
+        if (strings.lower($k) == $lname) {
+            return true;
+        }
+    }
+    return false;
+}
+
 func buildRequest(method as string, u as Url, headers as map of string to string, body as string) {
+    rejectInjection($u, $headers);
     def out as string init $method + " " + $u.path + " HTTP/1.1\r\n";
     $out = $out + "Host: " + hostHeader($u) + "\r\n";
     $out = $out + "Connection: close\r\n";
-    if (not maps.has($headers, "User-Agent")) {
+    if (not hasHeaderCI($headers, "user-agent")) {
         $out = $out + "User-Agent: jennifer-http\r\n";
     }
     for (def k in $headers) {
+        # Skip the framing headers the client owns: re-emitting a caller's Host /
+        # Connection / Content-Length yields a duplicate that strict servers
+        # reject and that enables request smuggling. Compared case-insensitively.
+        def lk as string init strings.lower($k);
+        if ($lk == "host" or $lk == "connection" or $lk == "content-length") {
+            continue;
+        }
         $out = $out + $k + ": " + $headers[$k] + "\r\n";
     }
     if (len($body) > 0) {
@@ -209,7 +293,16 @@ func parseHeaders(lines as list of string) {
         if ($colon > 0) {
             def raw as string init strings.substring($line, 0, $colon);
             def name as string init strings.lower(strings.trim($raw));
-            $headers[$name] = strings.trim(strings.substring($line, $colon + 1, len($line)));
+            def value as string init strings.trim(strings.substring($line, $colon + 1, len($line)));
+            # Repeated headers (e.g. two Set-Cookie lines) would otherwise
+            # last-wins-collapse, silently dropping all but one. Join them with
+            # ", " so no value is lost (RFC 7230 comma-folding; a caller that
+            # needs individual Set-Cookie values must re-split).
+            if (maps.has($headers, $name)) {
+                $headers[$name] = $headers[$name] + ", " + $value;
+            } else {
+                $headers[$name] = $value;
+            }
         }
         $i = $i + 1;
     }
@@ -229,9 +322,17 @@ func parseResponse(raw as bytes) {
     def statusLine as string init $lines[0];
     def protoEnd as int init strings.indexOf($statusLine, " ");
     def afterProto as string init strings.substring($statusLine, $protoEnd + 1, len($statusLine));
+    # A status line may carry no reason phrase ("HTTP/1.1 200\r\n"), which every
+    # client tolerates: when there is no space after the code, the whole
+    # remainder is the code and the reason phrase is empty.
     def codeEnd as int init strings.indexOf($afterProto, " ");
-    def status as int init convert.toInt(strings.substring($afterProto, 0, $codeEnd));
-    def statusText as string init strings.substring($afterProto, $codeEnd + 1, len($afterProto));
+    def codeStr as string init $afterProto;
+    def statusText as string init "";
+    if ($codeEnd >= 0) {
+        $codeStr = strings.substring($afterProto, 0, $codeEnd);
+        $statusText = strings.substring($afterProto, $codeEnd + 1, len($afterProto));
+    }
+    def status as int init convert.toInt($codeStr);
     def headers as map of string to string init parseHeaders($lines);
     def bodyBytes as bytes init sliceBytes($raw, $hend + 4, len($raw));
     if (isChunked($headers)) {
@@ -309,13 +410,24 @@ func dial(u as Url) {
 export func requestWith(method as string, url as string,
     headers as map of string to string, body as string, timeoutMs as int) {
     def u as Url init parseUrl($url);
+    # Build (and validate) the request before opening a socket, so an injected
+    # header / path throws without dialing and nothing malformed hits the wire.
+    def wire as string init buildRequest($method, $u, $headers, $body);
     def conn as net.Conn init dial($u);
     if ($timeoutMs > 0) {
         net.setDeadline($conn, $timeoutMs);   # covers the write and the first read
     }
-    def wire as string init buildRequest($method, $u, $headers, $body);
-    net.writeBytes($conn, convert.bytesFromString($wire, "utf-8"));
-    def resp as Response init parseResponse(readToEOF($conn, $timeoutMs));
+    # Close the socket exactly once whether the exchange succeeds or throws: a
+    # read timeout or a parse error must not leak the connection (a poller
+    # hitting timeouts would otherwise exhaust file descriptors).
+    def resp as Response;
+    try {
+        net.writeBytes($conn, convert.bytesFromString($wire, "utf-8"));
+        $resp = parseResponse(readToEOF($conn, $timeoutMs));
+    } catch (err) {
+        net.close($conn);
+        throw $err;
+    }
     net.close($conn);
     return $resp;
 }

@@ -211,7 +211,13 @@ func readN(conn as net.Conn, n as int) {
         if (len($chunk) == 0) {
             throw Error{ kind: "mqtt", message: "mqtt: connection closed mid-packet", file: "", line: 0, col: 0 };
         }
-        $out = appendBytes($out, $chunk);
+        # Append in place: `out = appendBytes(out, chunk)` copies the whole
+        # growing buffer per read (O(N^2) over a large packet).
+        def k as int init 0;
+        while ($k < len($chunk)) {
+            $out[] = $chunk[$k];
+            $k = $k + 1;
+        }
     }
     return $out;
 }

@@ -51,18 +51,24 @@ copies, so successive `readRecord` calls advance the same stream.
 | Call | Returns | |
 | ---- | ------- | - |
 | `jsonl.openReader(path)` | `Reader` | open a file for streaming |
-| `jsonl.hasMore(reader)` | `bool` | whether more input remains |
-| `jsonl.readRecord(reader)` | `json.Value` | the next record (skips blank lines) |
+| `jsonl.hasMore(reader)` | `bool` | whether the file has unread bytes (coarse; see below) |
+| `jsonl.readRecord(reader)` | `Record` | the next `{value, done}` (skips blank lines) |
 | `jsonl.closeReader(reader)` | `null` | close the reader |
 
-`readRecord` mirrors `fs.readLine`: it throws `Error{kind: "jsonl"}` when the
-stream is exhausted, so guard it with `hasMore`.
+`readRecord` returns a `Record` `{value, done}`: `done` is the reliable
+end-of-stream signal. Loop until `done` rather than guarding with `hasMore` -
+`hasMore` is a coarse `not eof` check that still reports `true` when only
+trailing blank lines remain (which carry no record), so a `hasMore`-guarded
+loop would over-run the last record.
 
 ```jennifer
 def r as jsonl.Reader init jsonl.openReader("events.jsonl");
-while (jsonl.hasMore($r)) {
-    def rec as json.Value init jsonl.readRecord($r);
-    # process one record without loading the whole file
+while (true) {
+    def rec as jsonl.Record init jsonl.readRecord($r);
+    if ($rec.done) {
+        break;
+    }
+    # process $rec.value without loading the whole file
 }
 jsonl.closeReader($r);
 ```

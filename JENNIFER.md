@@ -31,10 +31,16 @@ an assistant usually guesses wrong:
    uses a bare name: `def x as int init 5;` then use `$x`. Writing `def $x` is
    an error; using bare `x` in an expression is an error.
 2. **Constants are referenced bare (no `$`): `MAX`.** They are `UPPER_CASE`.
+   Reading one *with* `$` (`$MAX`) is a parse error - the sigil is for
+   mutable variables only. A method may not share a name with a top-level
+   variable or constant either (`def foo ...; func foo() {}` is rejected).
 3. **Method calls are bare and take `()`: `greet()`.** The parser tells a call
    from a constant by the `(`.
 4. **`/` is true division and always returns `float`** (like Python 3).
-   `5 / 2 == 2.5`. Use `//` for integer/floor division: `5 // 2 == 2`.
+   `5 / 2 == 2.5`. Use `//` for integer/floor division: `5 // 2 == 2`. `%`
+   is **floored** to match `//` (`-7 % 3 == 2`, `7 % -3 == -2`). Integer
+   arithmetic that overflows `int64` is a runtime error (no silent wrap),
+   and a mixed `int`/`float` comparison is exact (no lossy promotion).
 5. **Identifiers are letters only, <= 64 chars.** No digits, no underscores in
    variable/method/parameter/library names. `myVar`, not `my_var` or `var2`.
    (Constants are the *only* names that take `_`: `MAX_RETRIES`.)

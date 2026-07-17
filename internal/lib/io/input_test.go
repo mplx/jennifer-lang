@@ -266,3 +266,22 @@ func TestEofArgumentError(t *testing.T) {
 		t.Errorf("got %v", err)
 	}
 }
+
+// readBytes with a huge requested count on a short stream must return only the
+// available bytes without attempting a giant up-front allocation.
+func TestReadBytesHugeCountShortStream(t *testing.T) {
+	resetInputForTest()
+	in := interpreter.New()
+	Install(in)
+	var out bytes.Buffer
+	ctx := interpreter.BuiltinCtx{Out: &out, In: strings.NewReader("hello")}
+	readBytesFn := in.LookupNamespacedBuiltin("io", "readBytes")
+	// A trillion-byte request against a 5-byte stream must not OOM.
+	v, err := readBytesFn(ctx, []interpreter.Value{interpreter.IntVal(1000000000000)})
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if v.Kind != interpreter.KindBytes || string(v.Bytes) != "hello" {
+		t.Errorf("got %s(%q), want the 5 available bytes", v.Kind, string(v.Bytes))
+	}
+}

@@ -19,6 +19,7 @@ information); this is entropy-based *size reduction*. Backed by Go's
 | `compress.stream(algo [, level])` | `compress.Stream` | Start a streaming compressor.                                  |
 | `compress.update(stream, b)`      | `null`            | Feed one chunk of input.                                       |
 | `compress.finalize(stream)`       | `bytes`           | Close and return the full compressed output.                   |
+| `compress.discard(stream)`        | `null`            | Drop a stream without flushing/returning output, releasing its state. Subsequent calls error. |
 
 `level` is optional: `"fast"`, `"default"` (when omitted), or `"best"`.
 Decompressing malformed input, or an unknown `algo`, is a positioned

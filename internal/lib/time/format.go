@@ -52,7 +52,7 @@ func parseFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 	if err != nil {
 		return interpreter.Null(), fmt.Errorf("time.parse: %v", err)
 	}
-	return makeTime(t), nil
+	return makeTime(t)
 }
 
 // isoFn implements `time.iso($t)`. Returns an RFC 3339 string with
@@ -81,7 +81,7 @@ func fromIsoFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.
 	if err != nil {
 		return interpreter.Null(), fmt.Errorf("time.fromIso: %v", err)
 	}
-	return makeTime(t), nil
+	return makeTime(t)
 }
 
 // formatISO produces an RFC 3339 string. Includes the fractional
@@ -371,9 +371,17 @@ func readZoneShort(input string, pos int) (int, int, error) {
 	if err != nil {
 		return 0, 0, err
 	}
+	if mm >= 60 {
+		return 0, 0, fmt.Errorf("zone offset minutes %02d out of range (must be < 60)", mm)
+	}
 	off := hh*3600 + mm*60
 	if sign == '-' {
 		off = -off
+	}
+	// Enforce the same bound as time.zone so `%z` can't parse an offset the
+	// zone constructor would reject (e.g. `+9999`).
+	if off > maxOffsetSeconds || off < -maxOffsetSeconds {
+		return 0, 0, fmt.Errorf("zone offset %c%02d%02d exceeds the +/-26h limit", sign, hh, mm)
 	}
 	return off, 5, nil
 }

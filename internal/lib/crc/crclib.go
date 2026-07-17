@@ -56,11 +56,15 @@ const algoList = `"crc32", "crc64"`
 // Live streaming state. Cleared per-entry on `crc.finalize`.
 var (
 	streamsMu sync.Mutex // guards streams + nextID (spawned tasks share the registry)
-	streams   = map[int64]streamEntry{}
+	streams   = map[int64]*streamEntry{}
 	nextID    int64
 )
 
+// streamEntry carries its own mutex: the registry map is guarded by streamsMu,
+// but the checksum state is mutable and two spawned tasks sharing one handle
+// would race on the Go hash.Hash internals without a per-stream lock.
 type streamEntry struct {
+	mu    sync.Mutex
 	h     gohash.Hash
 	width int
 }
@@ -75,6 +79,7 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "stream", streamFn)
 	in.RegisterNamespaced(LibraryName, "update", updateFn)
 	in.RegisterNamespaced(LibraryName, "finalize", finalizeFn)
+	in.RegisterNamespaced(LibraryName, "discard", discardFn)
 }
 
 func makeStream(id int64) interpreter.Value {
@@ -151,7 +156,7 @@ func streamFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 	streamsMu.Lock()
 	nextID++
 	id := nextID
-	streams[id] = streamEntry{h: spec.newStream(), width: spec.width}
+	streams[id] = &streamEntry{h: spec.newStream(), width: spec.width}
 	streamsMu.Unlock()
 	return makeStream(id), nil
 }
@@ -173,7 +178,9 @@ func updateFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 	if !ok {
 		return interpreter.Null(), fmt.Errorf("crc.update: stream %d has already been finalized or never existed", id)
 	}
+	entry.mu.Lock()
 	entry.h.Write(args[1].Bytes)
+	entry.mu.Unlock()
 	return interpreter.Null(), nil
 }
 
@@ -194,17 +201,39 @@ func finalizeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter
 	if !ok {
 		return interpreter.Null(), fmt.Errorf("crc.finalize: stream %d has already been finalized or never existed", id)
 	}
+	entry.mu.Lock()
 	digest := entry.h.Sum(nil)
+	entry.mu.Unlock()
 	if len(digest) != entry.width {
 		digest = padToWidth(digest, entry.width)
 	}
 	return interpreter.BytesVal(digest), nil
 }
 
+// discardFn drops a live stream without computing its checksum, releasing its
+// state. The abort path for a stream opened but abandoned before finalize.
+func discardFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("crc.discard expects 1 argument (stream), got %d", len(args))
+	}
+	id, err := extractStreamID("crc.discard", args[0])
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	streamsMu.Lock()
+	_, ok := streams[id]
+	delete(streams, id)
+	streamsMu.Unlock()
+	if !ok {
+		return interpreter.Null(), fmt.Errorf("crc.discard: stream %d has already been finalized or never existed", id)
+	}
+	return interpreter.Null(), nil
+}
+
 // resetForTest clears the live-stream map and id counter. Test-only.
 func resetForTest() {
 	streamsMu.Lock()
-	streams = map[int64]streamEntry{}
+	streams = map[int64]*streamEntry{}
 	nextID = 0
 	streamsMu.Unlock()
 }

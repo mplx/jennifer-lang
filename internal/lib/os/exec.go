@@ -33,10 +33,44 @@ func execUnsupportedErr(fnName string) error {
 // The Jennifer-visible `os.Process` value only carries the pid; the
 // rest of the bookkeeping lives in this struct and is reached
 // through the handles map keyed by pid.
+// maxCaptureBytes caps the output captured per stream from a child process, so
+// a verbose child can't grow the interpreter heap by its entire (possibly
+// unbounded) output. Past the cap, further bytes are discarded and a marker is
+// appended - the child is never blocked (Write always reports a full write).
+const maxCaptureBytes = 16 << 20 // 16 MiB per stream
+
+// capBuffer is a bytes.Buffer that stops storing past maxCaptureBytes and flags
+// the truncation, so String() can append a marker.
+type capBuffer struct {
+	buf       bytes.Buffer
+	truncated bool
+}
+
+func (c *capBuffer) Write(p []byte) (int, error) {
+	room := maxCaptureBytes - c.buf.Len()
+	if room <= 0 {
+		c.truncated = true
+		return len(p), nil // discard but don't block the child
+	}
+	if len(p) > room {
+		c.buf.Write(p[:room])
+		c.truncated = true
+		return len(p), nil
+	}
+	return c.buf.Write(p)
+}
+
+func (c *capBuffer) String() string {
+	if c.truncated {
+		return c.buf.String() + "\n[output truncated at 16 MiB]"
+	}
+	return c.buf.String()
+}
+
 type processState struct {
 	cmd      *exec.Cmd
-	stdout   *bytes.Buffer
-	stderr   *bytes.Buffer
+	stdout   *capBuffer
+	stderr   *capBuffer
 	done     chan struct{} // closed when cmd.Wait() returns
 	exitCode int64
 	waitErr  error
@@ -135,7 +169,7 @@ func runFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Valu
 		return interpreter.Null(), err
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
-	var outBuf, errBuf bytes.Buffer
+	var outBuf, errBuf capBuffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
@@ -167,8 +201,8 @@ func spawnFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Va
 	cmd := exec.Command(argv[0], argv[1:]...)
 	state := &processState{
 		cmd:    cmd,
-		stdout: &bytes.Buffer{},
-		stderr: &bytes.Buffer{},
+		stdout: &capBuffer{},
+		stderr: &capBuffer{},
 		done:   make(chan struct{}),
 	}
 	cmd.Stdout = state.stdout
@@ -220,9 +254,50 @@ func waitFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 		return interpreter.Null(), fmt.Errorf("os.wait: unknown process handle (pid %d)", pid)
 	}
 	<-state.done
+	// A non-ExitError from cmd.Wait (a stdout/stderr pipe-copy failure, say)
+	// means the process didn't cleanly report an exit code - surfacing exit 0
+	// with partial output would be reporting success where there was none.
+	handlesMu.Lock()
+	werr := state.waitErr
+	handlesMu.Unlock()
+	if werr != nil {
+		if _, isExit := werr.(*exec.ExitError); !isExit {
+			return interpreter.Null(), fmt.Errorf("os.wait: process did not complete cleanly: %v", werr)
+		}
+	}
 	// The reaper has drained the buffers into outStr / errStr by the time
-	// done is closed, so read those (stdout / stderr are now nil).
+	// done is closed, so read those (stdout / stderr are now nil). The handle
+	// stays in the registry so os.wait / os.poll remain idempotent; a
+	// long-running spawner drops handles it is done with via os.release.
 	return makeResult(state.exitCode, state.outStr, state.errStr), nil
+}
+
+// releaseFn implements `os.release(p) -> bool`. Drops the process handle from
+// the registry, freeing its captured output. The process must have finished
+// (os.wait / os.poll true); releasing a live handle is an error. Returns
+// whether the handle existed. A server spawning a child per job calls this once
+// it has read the result, so the registry does not grow without bound.
+func releaseFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("os.release expects 1 argument (process handle), got %d", len(args))
+	}
+	pid, err := extractPid("os.release", args[0])
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	handlesMu.Lock()
+	defer handlesMu.Unlock()
+	state, ok := handles[pid]
+	if !ok {
+		return interpreter.BoolVal(false), nil
+	}
+	select {
+	case <-state.done:
+		delete(handles, pid)
+		return interpreter.BoolVal(true), nil
+	default:
+		return interpreter.Null(), fmt.Errorf("os.release: process is still running (wait or kill it first)")
+	}
 }
 
 // pollFn implements `os.poll(p) -> bool`. Pure predicate, no side
@@ -272,7 +347,7 @@ func killFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 	if state.cmd.Process == nil {
 		return interpreter.Null(), fmt.Errorf("os.kill: process has no live OS handle")
 	}
-	if err := state.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+	if err := terminateProcess(state.cmd.Process); err != nil {
 		// "process already finished" is a benign race - the wait
 		// goroutine just hasn't recorded yet. Surface as a no-op.
 		if err != stdos.ErrProcessDone {
@@ -280,6 +355,16 @@ func killFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 		}
 	}
 	return interpreter.Null(), nil
+}
+
+// terminateProcess asks a child to stop, portably. On Unix it sends SIGTERM;
+// on Windows, which supports only Kill/Interrupt through Process.Signal, it
+// falls back to Process.Kill so os.kill isn't a silent no-op.
+func terminateProcess(p *stdos.Process) error {
+	if runtime.GOOS == "windows" {
+		return p.Kill()
+	}
+	return p.Signal(syscall.SIGTERM)
 }
 
 // parser import for the package - used in oslib.go's Install for

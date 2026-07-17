@@ -148,6 +148,17 @@ func testParseIgnoresParameters() {
     testing.assertTrue(time.equal($cal.events[0].start, at("2024-06-15T13:00:00Z")));
 }
 
+# A nested VALARM carries its own DESCRIPTION / SUMMARY; those must not
+# overwrite the enclosing VEVENT's fields (real Google / Outlook exports embed
+# alarms). The parser skips a sub-component's properties until its END.
+func testParseIgnoresNestedValarm() {
+    def src as string init "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nDTSTART:20240615T130000Z\r\nDTEND:20240615T140000Z\r\nSUMMARY:Real Summary\r\nDESCRIPTION:Real Description\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:Reminder popup\r\nSUMMARY:Alarm summary\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    def cal as Calendar init parse($src);
+    testing.assertEqual(len($cal.events), 1);
+    testing.assertEqual($cal.events[0].summary, "Real Summary");
+    testing.assertEqual($cal.events[0].description, "Real Description");
+}
+
 func testParseSkipsEventWithoutStart() {
     def src as string init "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nSUMMARY:No start\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
     testing.assertEqual(len(parse($src).events), 0);

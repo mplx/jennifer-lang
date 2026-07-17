@@ -82,19 +82,22 @@ func stripWS(s as string) {
 }
 
 # wrapLines folds a long unbroken string (base64) into 76-column CRLF lines.
+# The input is ASCII base64, so slicing by rune index equals slicing by column;
+# collecting the 76-char lines and joining once keeps a large attachment linear
+# (a per-character `+` was O(N^2)).
 func wrapLines(s as string) {
-    def out as string init "";
-    def cs as list of string init strings.chars($s);
-    def n as int init len($cs);
+    def n as int init len($s);
+    def lines as list of string init [];
     def i as int init 0;
     while ($i < $n) {
-        if ($i > 0 and $i % 76 == 0) {
-            $out = $out + "\r\n";
+        def end as int init $i + 76;
+        if ($end > $n) {
+            $end = $n;
         }
-        $out = $out + $cs[$i];
-        $i = $i + 1;
+        $lines[] = strings.substring($s, $i, $end);
+        $i = $end;
     }
-    return $out;
+    return strings.join($lines, "\r\n");
 }
 
 # --- transfer encoding (private) -----------------------------------
@@ -246,6 +249,11 @@ func parseMultipart(body as string, boundary as string) {
                 $cur[] = $line;
             }
         }
+    }
+    # A truncated message may end mid-part with no closing delimiter; keep the
+    # last collected part rather than silently dropping it.
+    if ($collecting and len($cur) > 0) {
+        $parts[] = parse(strings.join($cur, "\n"));
     }
     return $parts;
 }
@@ -424,15 +432,40 @@ func unquote(s as string) {
     return $s;
 }
 
-# encodeAddressHeader encodes a non-ASCII display name in `Name <addr>`, leaving
-# the address alone. A multi-address value (a comma) is left raw.
-func encodeAddressHeader(value as string) {
-    if (strings.contains($value, ",")) {
-        return $value;
+# splitTopLevelCommas splits an address-list value on commas that are outside a
+# quoted display name (a comma inside `"Last, First"` is not a separator).
+func splitTopLevelCommas(s as string) {
+    def out as list of string init [];
+    def cur as string init "";
+    def cs as list of string init strings.chars($s);
+    def i as int init 0;
+    def inQuote as bool init false;
+    while ($i < len($cs)) {
+        def c as string init $cs[$i];
+        if ($c == "\"") {
+            $inQuote = not $inQuote;
+            $cur = $cur + $c;
+        } elseif ($c == "," and not $inQuote) {
+            $out[] = $cur;
+            $cur = "";
+        } else {
+            $cur = $cur + $c;
+        }
+        $i = $i + 1;
     }
+    $out[] = $cur;
+    return $out;
+}
+
+# encodeOneAddress encodes a non-ASCII display name in a single `Name <addr>`
+# mailbox (or a bare non-ASCII phrase), leaving the address alone.
+func encodeOneAddress(value as string) {
     def lt as int init strings.indexOf($value, "<");
     if ($lt < 0) {
-        return $value;
+        if (isAsciiText($value)) {
+            return $value;
+        }
+        return encodeWord(unquote($value));
     }
     def phrase as string init strings.trim(strings.substring($value, 0, $lt));
     if (isAsciiText($phrase)) {
@@ -440,6 +473,18 @@ func encodeAddressHeader(value as string) {
     }
     def addr as string init strings.substring($value, $lt, len($value));
     return encodeWord(unquote($phrase)) + " " + $addr;
+}
+
+# encodeAddressHeader encodes each mailbox of an address-list header, so an
+# international display name survives even in a multi-address To / Cc / From
+# (splitting on top-level commas rather than bailing out on the first comma,
+# which used to serialize the whole value as raw 8-bit).
+func encodeAddressHeader(value as string) {
+    def encoded as list of string init [];
+    for (def part in splitTopLevelCommas($value)) {
+        $encoded[] = encodeOneAddress(strings.trim($part));
+    }
+    return strings.join($encoded, ", ");
 }
 
 # encodeHeaderValue applies encoded-word encoding to a non-ASCII header value
@@ -490,7 +535,10 @@ export func attachment(filename as string, contentType as string, body as string
     def hs as list of Header init [];
     $hs[] = mkHeader("Content-Type", $contentType);
     $hs[] = mkHeader("Content-Transfer-Encoding", "base64");
-    $hs[] = mkHeader("Content-Disposition", "attachment; filename=\"" + $filename + "\"");
+    # Escape `\` and `"` so a filename containing a quote can't break out of the
+    # quoted-string parameter.
+    def safeName as string init strings.replace(strings.replace($filename, "\\", "\\\\"), "\"", "\\\"");
+    $hs[] = mkHeader("Content-Disposition", "attachment; filename=\"" + $safeName + "\"");
     return Part{headers: $hs, body: $body, encoding: "base64", parts: [], boundary: ""};
 }
 
@@ -619,12 +667,17 @@ export func contentType(part as Part) {
     return typeOnly(findHeader($part.headers, "Content-Type"));
 }
 
-# needsQuoting reports whether a display name must be a quoted-string.
+# needsQuoting reports whether a display name must be a quoted-string. RFC 5322
+# lets a bare (atom) display name hold only atext characters and spaces; any
+# other character (`.` `,` `:` `;` `(` `)` `<` `>` `@` `"` ...) forces quoting.
 func needsQuoting(s as string) {
-    if (strings.contains($s, ",") or strings.contains($s, "<")) {
-        return true;
+    def atext as string init "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-/=?^_`{|}~ ";
+    for (def ch in strings.chars($s)) {
+        if (strings.indexOf($atext, $ch) < 0) {
+            return true;
+        }
     }
-    return strings.contains($s, "@") or strings.contains($s, "\"");
+    return false;
 }
 
 /**

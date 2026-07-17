@@ -83,6 +83,7 @@ def digest as bytes init hash.finalize($s);
 | `hash.stream(algo)`           | `hash.Stream` | Allocate a fresh handle for the named algorithm.                   |
 | `hash.update($s, $bytes)`     | `null`        | Feed one chunk. Mutates the handle's state by side effect.         |
 | `hash.finalize($s)`           | `bytes`       | Compute the digest and consume the handle. Subsequent calls error. |
+| `hash.discard($s)`            | `null`        | Drop a stream without computing its digest, releasing its state. The abort path for a handle opened but abandoned. Subsequent calls error. |
 
 `hash.Stream` carries an integer `id` field that indexes into a
 Go-side map of live state. Users should not read or mutate the

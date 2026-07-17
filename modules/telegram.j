@@ -185,7 +185,17 @@ func call(b as Bot, method as string, params as map of string to string, timeout
     def url as string init $b.baseUrl + "/bot" + $b.token + "/" + $method;
     def headers as map of string to string init {"Content-Type": "application/x-www-form-urlencoded"};
     def resp as http.Response init http.requestWith("POST", $url, $headers, formEncode($params), $timeoutMs);
-    def node as json.Value init json.decode($resp.body);
+    # A proxy error page (502 HTML, auth portal) isn't JSON: decode under a
+    # guard and rethrow as a telegram-kind error rather than a raw json one.
+    def node as json.Value;
+    try {
+        $node = json.decode($resp.body);
+    } catch (e) {
+        fail("non-JSON response (HTTP " + convert.toString($resp.status) + ")");
+    }
+    if (not json.has($node, "/ok")) {
+        fail("malformed response: missing 'ok' field (HTTP " + convert.toString($resp.status) + ")");
+    }
     checkResponse($node);
     return $node;
 }

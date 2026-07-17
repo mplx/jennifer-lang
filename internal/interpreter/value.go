@@ -231,6 +231,67 @@ func (v *Value) buildMapIndex() {
 	v.mapIdx = idx
 }
 
+// LookupKey returns the position of key in a KindMap Value, or -1 if absent.
+// It uses the O(1) hash index when it is trustworthy and falls back to a linear
+// Equal scan otherwise. Exported so libraries (maps.has / delete / merge) avoid
+// an O(n) scan per lookup. key.Copy() is the caller's responsibility if stored.
+func (v Value) LookupKey(key Value) int {
+	if v.Kind != KindMap {
+		return -1
+	}
+	if enc, hashable := mapKeyEncode(key); hashable && v.mapIndexUsable() {
+		if pos, ok := v.mapIdx[enc]; ok {
+			return pos
+		}
+		return -1
+	}
+	for i := range v.Map {
+		if v.Map[i].Key.Equal(key) {
+			return i
+		}
+	}
+	return -1
+}
+
+// UpsertKey sets key -> val in a KindMap Value in place, appending a new entry
+// when the key is absent, and keeps the hash index in lock-step so a sequence
+// of upserts (e.g. maps.merge) stays O(n) rather than O(n^2). The receiver must
+// be addressable; the maps library calls it on its own working copy. key / val
+// are stored as given (the caller copies for value semantics).
+func (v *Value) UpsertKey(key, val Value) {
+	if v.Kind != KindMap {
+		return
+	}
+	if enc, hashable := mapKeyEncode(key); hashable {
+		if !v.mapIndexUsable() {
+			v.buildMapIndex()
+		}
+		if v.mapIndexUsable() {
+			if pos, ok := v.mapIdx[enc]; ok {
+				v.Map[pos].Value = val
+				return
+			}
+			v.Map = append(v.Map, MapEntry{Key: key, Value: val})
+			v.mapIdx[enc] = len(v.Map) - 1
+			return
+		}
+		// buildMapIndex declined (a non-hashable key elsewhere): fall to scan.
+	}
+	for i := range v.Map {
+		if v.Map[i].Key.Equal(key) {
+			v.Map[i].Value = val
+			return
+		}
+	}
+	v.Map = append(v.Map, MapEntry{Key: key, Value: val})
+	v.mapIdx = nil
+}
+
+// DropMapIndex clears the hash index of a KindMap Value: positions became
+// stale (e.g. after an entry was removed), so the next indexed op rebuilds it
+// or falls back to the linear scan.
+func (v *Value) DropMapIndex() { v.mapIdx = nil }
+
 // Value semantics rest entirely on eager deep copies at every binding site:
 // execDefine / execAssign (via eagerCopy), parameter binding (bindParamValue),
 // and the spawn snapshot (DeepCopy) all take a private copy, and library
@@ -394,13 +455,12 @@ func (v Value) DeepCopy() Value {
 		}
 		return Value{Kind: KindStruct, StructNS: v.StructNS, ModPath: v.ModPath, StructName: v.StructName, Fields: out}
 	case KindObject:
-		// opaque, immutable payload; deep-copy the wrapped tree so value
-		// semantics hold even though there are no mutation paths on it.
-		if v.Obj == nil {
-			return Value{Kind: KindObject, StructNS: v.StructNS, StructName: v.StructName}
-		}
-		inner := v.Obj.DeepCopy()
-		return Value{Kind: KindObject, StructNS: v.StructNS, StructName: v.StructName, Obj: &inner}
+		// The wrapped payload is immutable - the library write surface returns
+		// fresh handles, nothing mutates the tree in place - so share the Obj
+		// pointer instead of deep-copying the whole document at every bind.
+		// Aliasing is unobservable, and a large decoded document is no longer
+		// multiplied into every call / assignment.
+		return Value{Kind: KindObject, StructNS: v.StructNS, StructName: v.StructName, Obj: v.Obj}
 	}
 	return v
 }
@@ -664,9 +724,14 @@ func (v Value) AsFloat() (float64, bool) {
 	return 0, false
 }
 
+// isNumeric reports whether v is an int or float.
+func (v Value) isNumeric() bool {
+	return v.Kind == KindInt || v.Kind == KindFloat
+}
+
 // Equal implements Jennifer's `==` semantics. Same-kind: deep equal. Mixed
-// int/float: compared as floats (per the int->float promotion rule). Any
-// other cross-kind pairing is not equal. Lists and maps recurse.
+// int/float: compared exactly (not via a lossy float promotion). Any other
+// cross-kind pairing is not equal. Lists and maps recurse.
 func (v Value) Equal(o Value) bool {
 	if v.Kind == o.Kind {
 		switch v.Kind {
@@ -742,11 +807,46 @@ func (v Value) Equal(o Value) bool {
 			return true
 		}
 	}
-	// numeric promotion
-	if a, ok := v.AsFloat(); ok {
-		if b, ok := o.AsFloat(); ok {
-			return a == b
-		}
+	// Cross-kind int/float: compare exactly. Promoting the int to float64
+	// (the old path) loses precision above 2^53, so e.g.
+	// 9007199254740993 == 9007199254740992.0 wrongly reported true.
+	if v.Kind == KindInt && o.Kind == KindFloat {
+		return compareIntFloat(v.Int, o.Float) == 0
+	}
+	if v.Kind == KindFloat && o.Kind == KindInt {
+		return compareIntFloat(o.Int, v.Float) == 0
 	}
 	return false
+}
+
+// compareIntFloat returns the sign of (n - f) exactly: -1 if n < f, 0 if equal,
+// +1 if n > f. It avoids converting n to float64 (lossy above 2^53). f is
+// assumed finite (Jennifer forbids NaN / Inf floats).
+func compareIntFloat(n int64, f float64) int {
+	// f beyond the int64 range decides by magnitude alone.
+	if f >= 9223372036854775808.0 { // >= 2^63, above MaxInt64
+		return -1
+	}
+	if f < -9223372036854775808.0 { // < -2^63
+		return 1
+	}
+	// f is now within (-2^63, 2^63), so int64(f) truncates it exactly.
+	tf := int64(f)
+	if n < tf {
+		return -1
+	}
+	if n > tf {
+		return 1
+	}
+	// Integer parts match; the fractional part of f (if any) breaks the tie.
+	// float64(tf) is exact here: |tf| <= 2^53 makes it representable, and a
+	// larger f has no fractional part (it is already integral).
+	frac := f - float64(tf)
+	if frac > 0 {
+		return -1
+	}
+	if frac < 0 {
+		return 1
+	}
+	return 0
 }

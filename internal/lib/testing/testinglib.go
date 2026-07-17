@@ -299,7 +299,7 @@ func renderText(recs []Record) string {
 		} else {
 			failed++
 		}
-		fmt.Fprintf(&sb, "%s %s (%d ms)\n", status, r.Name, r.Ms)
+		fmt.Fprintf(&sb, "%s %s (%d ms)\n", status, oneLine(r.Name), r.Ms)
 		if !r.Passed {
 			pos := ""
 			if r.File != "" {
@@ -307,11 +307,44 @@ func renderText(recs []Record) string {
 			} else if r.Line != 0 {
 				pos = fmt.Sprintf(" %d:%d", r.Line, r.Col)
 			}
-			fmt.Fprintf(&sb, "     [%s]%s %s\n", r.ErrorKind, pos, r.ErrorMessage)
+			fmt.Fprintf(&sb, "     [%s]%s %s\n", oneLine(r.ErrorKind), pos, oneLine(r.ErrorMessage))
 		}
 	}
 	fmt.Fprintf(&sb, "\n%d passed, %d failed, %d total\n", passed, failed, len(recs))
 	return sb.String()
+}
+
+// oneLine renders a value on a single line: control characters become escapes
+// so a newline in a test name or message can't split one report line into two
+// (which makes a TAP/text harness miscount).
+func oneLine(s string) string {
+	return strings.NewReplacer("\\", "\\\\", "\n", "\\n", "\r", "\\r", "\t", "\\t").Replace(s)
+}
+
+// tapDescription is oneLine plus a backslash before any `#`, so a `#` in a name
+// isn't read as a TAP directive (`# TODO` / `# SKIP`) and mis-marked.
+func tapDescription(s string) string {
+	return strings.ReplaceAll(oneLine(s), "#", "\\#")
+}
+
+// tapMessage writes a `message:` YAML field that is valid regardless of the
+// message's contents: a multi-line message uses a literal block scalar, a
+// single-line one a double-quoted string (so an embedded `#`/`:` can't be
+// misread as a YAML comment or mapping).
+func tapMessage(sb *strings.Builder, msg string) {
+	if strings.ContainsAny(msg, "\n\r") {
+		sb.WriteString("  message: |\n")
+		norm := strings.ReplaceAll(msg, "\r\n", "\n")
+		norm = strings.ReplaceAll(norm, "\r", "\n")
+		for _, line := range strings.Split(norm, "\n") {
+			sb.WriteString("    ")
+			sb.WriteString(line)
+			sb.WriteByte('\n')
+		}
+		return
+	}
+	quoted := strings.NewReplacer("\\", "\\\\", "\"", "\\\"").Replace(msg)
+	fmt.Fprintf(sb, "  message: \"%s\"\n", quoted)
 }
 
 // renderTAP: Test Anything Protocol v14. Machine-readable, works
@@ -321,12 +354,12 @@ func renderTAP(recs []Record) string {
 	fmt.Fprintf(&sb, "TAP version 14\n1..%d\n", len(recs))
 	for i, r := range recs {
 		if r.Passed {
-			fmt.Fprintf(&sb, "ok %d - %s\n", i+1, r.Name)
+			fmt.Fprintf(&sb, "ok %d - %s\n", i+1, tapDescription(r.Name))
 		} else {
-			fmt.Fprintf(&sb, "not ok %d - %s\n", i+1, r.Name)
+			fmt.Fprintf(&sb, "not ok %d - %s\n", i+1, tapDescription(r.Name))
 			fmt.Fprintf(&sb, "  ---\n")
-			fmt.Fprintf(&sb, "  kind: %s\n", r.ErrorKind)
-			fmt.Fprintf(&sb, "  message: %s\n", r.ErrorMessage)
+			fmt.Fprintf(&sb, "  kind: %s\n", oneLine(r.ErrorKind))
+			tapMessage(&sb, r.ErrorMessage)
 			if r.File != "" {
 				fmt.Fprintf(&sb, "  file: %s\n", r.File)
 			}

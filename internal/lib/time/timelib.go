@@ -104,7 +104,7 @@ func Install(in *interpreter.Interpreter) {
 	// and repl.go, which call every library's Install up front).
 	// Captured through `nowFunc` so tests that freeze the clock pick
 	// up the frozen instant.
-	in.RegisterNamespacedConst(LibraryName, "PROGRAM_START", makeTime(nowFunc()))
+	in.RegisterNamespacedConst(LibraryName, "PROGRAM_START", makeTimeUnchecked(nowFunc()))
 
 	in.RegisterNamespaced(LibraryName, "format", formatFn)
 	in.RegisterNamespaced(LibraryName, "parse", parseFn)
@@ -112,9 +112,28 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "fromIso", fromIsoFn)
 }
 
-// makeTime constructs a `time.Time{...}` Value from a Go time.Time. The
-// stored `offset` reflects the zone the Go value carries.
-func makeTime(t stdtime.Time) interpreter.Value {
+// The instant range a Time can represent: UnixNano is stored in an int64, so
+// an instant before ~1678 or after ~2262 has no representation and UnixNano
+// would silently wrap to a wrong date. Boundaries are the times at the int64
+// nanosecond extremes.
+var (
+	minRepresentable = stdtime.Unix(0, -1<<63)
+	maxRepresentable = stdtime.Unix(0, 1<<63-1)
+)
+
+// makeTime constructs a `time.Time{...}` Value from a Go time.Time, rejecting
+// an instant outside the representable int64-nanosecond range. Use it wherever
+// the instant derives from user input (parse, fromUnix, arithmetic).
+func makeTime(t stdtime.Time) (interpreter.Value, error) {
+	if t.Before(minRepresentable) || t.After(maxRepresentable) {
+		return interpreter.Null(), fmt.Errorf("time %s is outside the representable range (roughly year 1678 to 2262)", t.UTC().Format("2006-01-02T15:04:05Z"))
+	}
+	return makeTimeUnchecked(t), nil
+}
+
+// makeTimeUnchecked skips the range check for instants known to be in range
+// (the wall clock, and a nanosecond count that is itself the stored value).
+func makeTimeUnchecked(t stdtime.Time) interpreter.Value {
 	_, offset := t.Zone()
 	return interpreter.NamespacedStructVal(LibraryName, "Time", []interpreter.StructField{
 		{Name: "nanos", Value: interpreter.IntVal(t.UnixNano())},
@@ -190,14 +209,14 @@ func nowFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Valu
 	if len(args) != 0 {
 		return interpreter.Null(), fmt.Errorf("time.now expects 0 arguments, got %d", len(args))
 	}
-	return makeTime(nowFunc()), nil
+	return makeTimeUnchecked(nowFunc()), nil
 }
 
 func utcFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	if len(args) != 0 {
 		return interpreter.Null(), fmt.Errorf("time.utc expects 0 arguments, got %d", len(args))
 	}
-	return makeTime(nowFunc().UTC()), nil
+	return makeTimeUnchecked(nowFunc().UTC()), nil
 }
 
 func intArg(fnName, paramName string, args []interpreter.Value) (int64, error) {
@@ -215,7 +234,7 @@ func fromUnixFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter
 	if err != nil {
 		return interpreter.Null(), err
 	}
-	return makeTime(stdtime.Unix(seconds, 0).UTC()), nil
+	return makeTime(stdtime.Unix(seconds, 0).UTC())
 }
 
 func fromUnixMillisFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
@@ -223,7 +242,7 @@ func fromUnixMillisFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (inter
 	if err != nil {
 		return interpreter.Null(), err
 	}
-	return makeTime(stdtime.UnixMilli(ms).UTC()), nil
+	return makeTime(stdtime.UnixMilli(ms).UTC())
 }
 
 func fromUnixNanosFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
@@ -231,7 +250,8 @@ func fromUnixNanosFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interp
 	if err != nil {
 		return interpreter.Null(), err
 	}
-	return makeTime(stdtime.Unix(0, ns).UTC()), nil
+	// A nanosecond count is exactly the stored value, always in range.
+	return makeTimeUnchecked(stdtime.Unix(0, ns).UTC()), nil
 }
 
 // ----- unix accessors -------------------------------------------------
@@ -244,7 +264,10 @@ func unixFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 	if err != nil {
 		return interpreter.Null(), err
 	}
-	return interpreter.IntVal(nanos / int64(stdtime.Second)), nil
+	// Unix seconds floor toward negative infinity; Go integer division
+	// truncates toward zero, so a pre-epoch instant would be off by one.
+	// stdtime.Unix(0, nanos).Unix() floors correctly.
+	return interpreter.IntVal(stdtime.Unix(0, nanos).Unix()), nil
 }
 
 func unixMillisFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
@@ -255,7 +278,8 @@ func unixMillisFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpret
 	if err != nil {
 		return interpreter.Null(), err
 	}
-	return interpreter.IntVal(nanos / int64(stdtime.Millisecond)), nil
+	// Floor toward negative infinity (see time.unix) for pre-epoch instants.
+	return interpreter.IntVal(stdtime.Unix(0, nanos).UnixMilli()), nil
 }
 
 func unixNanosFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
@@ -403,9 +427,15 @@ func addFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Valu
 	if err != nil {
 		return interpreter.Null(), err
 	}
+	// Detect int64 wrap in the nanosecond sum before it lands an instant in a
+	// wrong era (a wrapped value could otherwise pass the range check).
+	sum := nanos + dn
+	if (nanos > 0 && dn > 0 && sum < 0) || (nanos < 0 && dn < 0 && sum >= 0) {
+		return interpreter.Null(), fmt.Errorf("time.add: result overflows the representable range")
+	}
 	loc := stdtime.FixedZone("", int(offset))
-	result := stdtime.Unix(0, nanos+dn).In(loc)
-	return makeTime(result), nil
+	result := stdtime.Unix(0, sum).In(loc)
+	return makeTime(result)
 }
 
 func subFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {

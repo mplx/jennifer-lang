@@ -28,7 +28,8 @@ use convert;
 def struct Span {
     kind as string,
     text as string,
-    url as string
+    url as string,
+    title as string
 };
 
 # A block: a heading (with `level`), a paragraph or code block (in `text`), a
@@ -68,7 +69,12 @@ def struct TablePretty {
 # --- span + block constructors (private) ---------------------------
 
 func span(kind as string, text as string, url as string) {
-    return Span{kind: $kind, text: $text, url: $url};
+    return Span{kind: $kind, text: $text, url: $url, title: ""};
+}
+
+# linkSpan builds a link span carrying an optional title (from `[t](url "t")`).
+func linkSpan(text as string, url as string, title as string) {
+    return Span{kind: "link", text: $text, url: $url, title: $title};
 }
 
 func paraBlock(lines as list of string) {
@@ -96,6 +102,13 @@ func codeBlockNode(text as string) {
 # --- inline scanner (private) --------------------------------------
 
 # findChar returns the index of target in cs at or after `from`, or -1.
+# isFlankSpace reports whether c is whitespace, for CommonMark emphasis
+# flanking (a delimiter run flanked by whitespace on the inside does not open /
+# close emphasis).
+func isFlankSpace(c as string) {
+    return $c == " " or $c == "\t" or $c == "\n" or $c == "\r";
+}
+
 func findChar(cs as list of string, target as string, from as int) {
     def j as int init $from;
     while ($j < len($cs)) {
@@ -156,10 +169,14 @@ func parseInline(s as string) {
             $i = $bt + 1;
             continue;
         }
-        # strong: **text**
+        # strong: **text** (flanking: no whitespace just inside the markers, so
+        # a space-flanked `**` is literal, not a delimiter).
         def dbl as int init -1;
-        if ($c == "*" and $i + 1 < $n and $cs[$i + 1] == "*") {
+        if ($c == "*" and $i + 1 < $n and $cs[$i + 1] == "*" and $i + 2 < $n and not isFlankSpace($cs[$i + 2])) {
             $dbl = findDouble($cs, "*", $i + 2);
+            if ($dbl >= 0 and isFlankSpace($cs[$dbl - 1])) {
+                $dbl = -1;
+            }
         }
         if ($dbl >= 0) {
             if (len($buf) > 0) {
@@ -170,10 +187,15 @@ func parseInline(s as string) {
             $i = $dbl + 2;
             continue;
         }
-        # emphasis: *text*
+        # emphasis: *text* (flanking: the char right after the opening `*` and
+        # right before the closing `*` must be non-space, so "3 * 4 * 5" is not
+        # italicized).
         def em as int init -1;
-        if ($c == "*") {
+        if ($c == "*" and $i + 1 < $n and not isFlankSpace($cs[$i + 1])) {
             $em = findChar($cs, "*", $i + 1);
+            if ($em >= 0 and isFlankSpace($cs[$em - 1])) {
+                $em = -1;
+            }
         }
         if ($em >= 0) {
             if (len($buf) > 0) {
@@ -223,10 +245,25 @@ func linkAt(cs as list of string, i as int) {
 }
 
 # linkSpanAt builds the link span for a `[text](url)` known to start at `i`.
+# The destination is split into a URL and an optional quoted title on the first
+# space, so `[t](http://x "title")` yields a clean href plus a title attribute
+# rather than dumping the title into the URL.
 func linkSpanAt(cs as list of string, i as int) {
     def rb as int init findChar($cs, "]", $i + 1);
     def rp as int init findChar($cs, ")", $rb + 2);
-    return span("link", sliceStr($cs, $i + 1, $rb), sliceStr($cs, $rb + 2, $rp));
+    def text as string init sliceStr($cs, $i + 1, $rb);
+    def dest as string init strings.trim(sliceStr($cs, $rb + 2, $rp));
+    def sp as int init strings.indexOf($dest, " ");
+    if ($sp < 0) {
+        return linkSpan($text, $dest, "");
+    }
+    def url as string init strings.substring($dest, 0, $sp);
+    def rawTitle as string init strings.trim(strings.substring($dest, $sp + 1, len($dest)));
+    # Strip a single pair of surrounding double or single quotes.
+    if (len($rawTitle) >= 2 and (strings.startsWith($rawTitle, "\"") and strings.endsWith($rawTitle, "\"") or strings.startsWith($rawTitle, "'") and strings.endsWith($rawTitle, "'"))) {
+        $rawTitle = strings.substring($rawTitle, 1, len($rawTitle) - 1);
+    }
+    return linkSpan($text, $url, $rawTitle);
 }
 
 # --- block parser (private) ----------------------------------------
@@ -441,21 +478,38 @@ func headingBlock(level as int, text as string) {
 # its content plus the line index just past the closing fence.
 func collectFence(lines as list of string, open as int) {
     def n as int init len($lines);
-    def code as string init "";
-    def first as bool init true;
+    # Record the opening fence length; a shorter run of backticks inside the
+    # block is content, not a terminator (only a fence of equal-or-greater
+    # length closes it).
+    def openLen as int init fenceLen(strings.trim($lines[$open]));
+    def parts as list of string init [];
     def j as int init $open + 1;
-    while ($j < $n and not strings.startsWith(strings.trim($lines[$j]), "```")) {
-        if (not $first) {
-            $code = $code + "\n";
+    while ($j < $n) {
+        if (fenceLen(strings.trim($lines[$j])) >= $openLen) {
+            break;
         }
-        $first = false;
-        $code = $code + $lines[$j];
+        $parts[] = $lines[$j];
         $j = $j + 1;
     }
+    def code as string init strings.join($parts, "\n");
     if ($j < $n) {
         return Fence{code: $code, next: $j + 1};
     }
     return Fence{code: $code, next: $j};
+}
+
+# fenceLen returns the number of leading backticks in a trimmed line when it is
+# a code fence (3 or more), else 0.
+func fenceLen(trimmed as string) {
+    def cs as list of string init strings.chars($trimmed);
+    def k as int init 0;
+    while ($k < len($cs) and $cs[$k] == "`") {
+        $k = $k + 1;
+    }
+    if ($k >= 3) {
+        return $k;
+    }
+    return 0;
 }
 
 # --- HTML rendering, through htmlwriter (exported) -----------------
@@ -474,7 +528,7 @@ func inlineToNodes(spans as list of Span) {
         } elseif ($sp.kind == "em") {
             $nodes[] = wrapEl("em", $sp.text);
         } elseif ($sp.kind == "link") {
-            $nodes[] = linkNode($sp.text, $sp.url);
+            $nodes[] = linkNode($sp.text, $sp.url, $sp.title);
         }
     }
     return $nodes;
@@ -486,9 +540,12 @@ func wrapEl(tag as string, text as string) {
     return html.element($tag, [], $kids);
 }
 
-func linkNode(text as string, url as string) {
+func linkNode(text as string, url as string, title as string) {
     def attrs as list of html.Attr init [];
     $attrs[] = html.attr("href", $url);
+    if (not ($title == "")) {
+        $attrs[] = html.attr("title", $title);
+    }
     def kids as list of html.Node init [];
     $kids[] = html.text($text);
     return html.element("a", $attrs, $kids);
@@ -623,10 +680,43 @@ func indentLines(s as string, prefix as string) {
     return $out;
 }
 
+# isWideRune approximates the Unicode East-Asian Width "W"/"F" categories plus
+# the common emoji blocks - the code points a terminal renders two columns wide.
+func isWideRune(cp as int) {
+    return ($cp >= 0x1100 and $cp <= 0x115F)
+        or ($cp >= 0x2E80 and $cp <= 0x303E)
+        or ($cp >= 0x3041 and $cp <= 0x33FF)
+        or ($cp >= 0x3400 and $cp <= 0x4DBF)
+        or ($cp >= 0x4E00 and $cp <= 0x9FFF)
+        or ($cp >= 0xA000 and $cp <= 0xA4CF)
+        or ($cp >= 0xAC00 and $cp <= 0xD7A3)
+        or ($cp >= 0xF900 and $cp <= 0xFAFF)
+        or ($cp >= 0xFE30 and $cp <= 0xFE4F)
+        or ($cp >= 0xFF00 and $cp <= 0xFF60)
+        or ($cp >= 0xFFE0 and $cp <= 0xFFE6)
+        or ($cp >= 0x1F300 and $cp <= 0x1FAFF)
+        or ($cp >= 0x20000 and $cp <= 0x3FFFD);
+}
+
+# displayWidth is the terminal column width of s: East-Asian wide / fullwidth
+# runes occupy two columns, so a table built from CJK / emoji cells aligns
+# instead of running one column short per wide rune.
+func displayWidth(s as string) {
+    def w as int init 0;
+    for (def ch in strings.chars($s)) {
+        if (isWideRune(convert.toCodepoint($ch))) {
+            $w = $w + 2;
+        } else {
+            $w = $w + 1;
+        }
+    }
+    return $w;
+}
+
 # cellVisWidth is the visible width of a rendered cell (styling stripped, so
-# escape codes do not count).
+# escape codes do not count), measured in terminal columns.
 func cellVisWidth(text as string) {
-    return len(ansi.strip(inlineToAnsi(parseInline($text))));
+    return displayWidth(ansi.strip(inlineToAnsi(parseInline($text))));
 }
 
 # widenAt grows column `c`'s width to at least `w` (columns past the header

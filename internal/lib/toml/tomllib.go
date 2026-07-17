@@ -175,12 +175,19 @@ func isArrayOfTables(v interpreter.Value) bool {
 // table, not a following header), then sub-tables as [header] sections, then
 // arrays of tables as [[header]] sections.
 func emitTable(sb *strings.Builder, entries []tableEntry, path []string, pretty bool) error {
-	for _, e := range entries {
-		if e.val.Kind == interpreter.KindObject {
-			if inner, ok := e.val.AsObject(LibraryName, "Value"); ok {
-				e.val = inner
-			}
+	// Unwrap any wrapped toml.Value once up front so every pass (leaf,
+	// sub-table, array-of-tables) classifies the inner value rather than the
+	// opaque handle. Without this, a wrapped array-of-tables slipped past the
+	// pass-1/pass-3 predicates and was silently dropped from the output.
+	norm := make([]tableEntry, len(entries))
+	for i, e := range entries {
+		if inner, ok := e.val.AsObject(LibraryName, "Value"); ok {
+			e.val = inner
 		}
+		norm[i] = e
+	}
+	entries = norm
+	for _, e := range entries {
 		if _, err := asTable(e.val); err == nil {
 			continue // a sub-table: pass 2
 		}
@@ -195,11 +202,7 @@ func emitTable(sb *strings.Builder, entries []tableEntry, path []string, pretty 
 		sb.WriteByte('\n')
 	}
 	for _, e := range entries {
-		val := e.val
-		if inner, ok := val.AsObject(LibraryName, "Value"); ok {
-			val = inner
-		}
-		sub, err := asTable(val)
+		sub, err := asTable(e.val)
 		if err != nil {
 			continue
 		}

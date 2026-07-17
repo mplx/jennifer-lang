@@ -8,10 +8,10 @@
 | `-`, `*`             | subtraction, multiplication (`int`/`float`)              |
 | `/`                  | **true division - always returns `float`**               |
 | `//`                 | floor (integer) division; `int // int -> int`            |
-| `%`                  | modulo (`int` only)                                      |
+| `%`                  | modulo (`int` only); **floored**, matching `//`          |
 | unary `-`            | numeric negation (`int`/`float`)                         |
-| `<`, `>`, `<=`, `>=` | numeric comparison; result is `bool`                     |
-| `==`                 | equality; same-kind plus `int`/`float` promotion; `bool` |
+| `<`, `>`, `<=`, `>=` | numeric comparison (exact across `int`/`float`); `bool`  |
+| `==`                 | equality; same-kind plus exact `int`/`float`; `bool`     |
 | `and`, `or`          | logical; both operands `bool`; short-circuit             |
 | `not`                | unary logical negation; operand `bool`                   |
 | `&`, `|`, `^`        | bitwise AND / OR / XOR on `int`                          |
@@ -31,6 +31,17 @@ ints:
 
 So `def x as int init 5 / 2;` is rejected (right side is float). Use
 `5 // 2` for an int result, or `def x as float init 5 / 2;`.
+
+**`%` is floored**, consistent with `//`, so the identity
+`(a // b) * b + (a % b) == a` holds for negative operands:
+`-7 // 3 == -3` and `-7 % 3 == 2`; `7 % -3 == -2`. (This is Python's
+convention, not C/Go truncation toward zero.)
+
+**Integer overflow errors.** Integer arithmetic whose result does not
+fit in a 64-bit int (`9223372036854775807 + 1`) is a positioned runtime
+error rather than a silent wrap. A mixed `int`/`float` comparison is
+**exact** - the int is not promoted to a lossy float - so a 64-bit int
+never spuriously compares equal to a nearby float.
 
 (Line comments are `#`, freeing `//` for the Python-3 floor-division
 operator. The `#` choice also lets Jennifer files start with a shebang:

@@ -96,7 +96,10 @@ func appendBytes(dst as bytes, src as bytes) {
     return $dst;
 }
 
-# readN reads exactly n bytes, looping over the "up to n" net.readBytes.
+# readN reads exactly n bytes, looping over the "up to n" net.readBytes. The
+# chunk is appended into the owning `out` in place (amortised O(1) per byte);
+# `$out = appendBytes($out, $chunk)` would copy the whole growing buffer on
+# every short read (gigabytes of memcpy for a large frame read in small chunks).
 func readN(socket as net.Conn, n as int) {
     def out as bytes;
     while (len($out) < $n) {
@@ -104,7 +107,11 @@ func readN(socket as net.Conn, n as int) {
         if (len($chunk) == 0) {
             fail("connection closed mid-frame");
         }
-        $out = appendBytes($out, $chunk);
+        def i as int init 0;
+        while ($i < len($chunk)) {
+            $out[] = $chunk[$i];
+            $i = $i + 1;
+        }
     }
     return $out;
 }
@@ -170,20 +177,41 @@ func acceptFor(key as string) {
 }
 
 # readHandshakeResponse reads bytes until the CRLFCRLF header terminator.
+# It reads a byte at a time (the terminator must not be over-read into the first
+# frame, and readN blocks for exactly its count), but accumulates into a byte
+# buffer and decodes once - a growing `string +` per byte would be O(N^2).
 func readHandshakeResponse(socket as net.Conn) {
-    def out as string init "";
+    def buf as bytes;
     def done as bool init false;
     repeat {
         def one as bytes init readN($socket, 1);
-        $out = $out + convert.fromCodepoint($one[0]);
-        if (len($out) >= 4 and strings.endsWith($out, "\r\n\r\n")) {
+        $buf[] = $one[0];
+        def m as int init len($buf);
+        # `\r\n\r\n` is 13,10,13,10.
+        if ($m >= 4 and $buf[$m - 1] == 10 and $buf[$m - 2] == 13 and $buf[$m - 3] == 10 and $buf[$m - 4] == 13) {
             $done = true;
         }
-        if (len($out) > 8192) {
+        if ($m > 8192) {
             fail("handshake response too large");
         }
     } until ($done);
-    return $out;
+    return convert.stringFromBytes($buf, "utf-8");
+}
+
+# statusCodeOf extracts the numeric status code (the token after the first
+# space) from an HTTP status line, so a code check can't be fooled by "101"
+# appearing elsewhere on the line.
+func statusCodeOf(statusLine as string) {
+    def sp as int init strings.indexOf($statusLine, " ");
+    if ($sp < 0) {
+        return "";
+    }
+    def rest as string init strings.substring($statusLine, $sp + 1, len($statusLine));
+    def spTwo as int init strings.indexOf($rest, " ");
+    if ($spTwo < 0) {
+        return strings.trim($rest);
+    }
+    return strings.substring($rest, 0, $spTwo);
 }
 
 # headerValue finds a header's value (case-insensitive name) in the response
@@ -219,7 +247,7 @@ func handshake(socket as net.Conn, t as Target, key as string) {
     net.writeBytes($socket, convert.bytesFromString($req, "utf-8"));
     def resp as string init readHandshakeResponse($socket);
     def lines as list of string init strings.split($resp, "\r\n");
-    if (not strings.contains($lines[0], "101")) {
+    if (not (statusCodeOf($lines[0]) == "101")) {
         fail("handshake rejected: " + $lines[0]);
     }
     if (not (headerValue($lines, "sec-websocket-accept") == acceptFor($key))) {
@@ -381,6 +409,10 @@ export func receive(c as Conn) {
     net.setDeadline($c.socket, $c.timeoutMs);
     def acc as bytes;
     def dataOpcode as int init OP_TEXT;
+    # `started` marks that a data message is being reassembled, so a control
+    # frame (ping / pong) interleaved between fragments does not abandon the
+    # partial message: RFC 6455 allows control frames between data fragments.
+    def started as bool init false;
     def done as bool init false;
     def control as Message;
     def isControl as bool init false;
@@ -389,18 +421,30 @@ export func receive(c as Conn) {
         if ($f.opcode == OP_PING) {
             net.writeBytes($c.socket, encodeFrame(OP_PONG, $f.payload));
         } elseif ($f.opcode == OP_PONG) {
-            $control = Message{ kind: "pong", text: "", data: $f.payload };
-            $isControl = true;
-            $done = true;
+            # A pong interleaved in a fragmented message is ignored so
+            # reassembly continues; only a standalone pong surfaces as a
+            # message.
+            if (not $started) {
+                $control = Message{ kind: "pong", text: "", data: $f.payload };
+                $isControl = true;
+                $done = true;
+            }
         } elseif ($f.opcode == OP_CLOSE) {
             $control = Message{ kind: "close", text: "", data: $f.payload };
             $isControl = true;
             $done = true;
         } else {
+            $started = true;
             if (not ($f.opcode == OP_CONT)) {
                 $dataOpcode = $f.opcode;
             }
-            $acc = appendBytes($acc, $f.payload);
+            # Append fragment payload into `acc` in place (a by-value
+            # appendBytes copies the whole reassembly buffer per fragment).
+            def bi as int init 0;
+            while ($bi < len($f.payload)) {
+                $acc[] = $f.payload[$bi];
+                $bi = $bi + 1;
+            }
             if ($f.fin == 1) {
                 $done = true;
             }

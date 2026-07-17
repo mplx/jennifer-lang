@@ -149,10 +149,19 @@ func arrayIndex(tok string) (int, bool) {
 		if tok[i] < '0' || tok[i] > '9' {
 			return 0, false
 		}
+		// Reject before the multiply/add can overflow int to a negative value
+		// (a 19-20 digit token would otherwise wrap past a length check and
+		// panic on a negative slice index).
+		if n > (maxInt-9)/10 {
+			return 0, false
+		}
 		n = n*10 + int(tok[i]-'0')
 	}
 	return n, true
 }
+
+// maxInt is the platform int max, used to reject overflowing pointer indices.
+const maxInt = int(^uint(0) >> 1)
 
 // resolvePointer parses ptr and walks it against node.
 func resolvePointer(fnName string, node interpreter.Value, ptr string) (interpreter.Value, error) {

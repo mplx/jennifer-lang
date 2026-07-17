@@ -171,8 +171,10 @@ func (c *checkCtx) nestStmt(st parser.Stmt, depth int) {
 	case *parser.IfStmt:
 		d := depth + 1
 		c.maybeReportNest(n, d)
+		c.nestExpr(n.Cond, depth)
 		c.nestStmts(n.Then.Stmts, d)
 		for i := range n.ElseIfBodies {
+			c.nestExpr(n.ElseIfs[i], depth)
 			c.nestStmts(n.ElseIfBodies[i].Stmts, d)
 		}
 		if n.Else != nil {
@@ -181,14 +183,19 @@ func (c *checkCtx) nestStmt(st parser.Stmt, depth int) {
 	case *parser.WhileStmt:
 		d := depth + 1
 		c.maybeReportNest(n, d)
+		c.nestExpr(n.Cond, depth)
 		c.nestStmts(n.Body.Stmts, d)
 	case *parser.ForStmt:
 		d := depth + 1
 		c.maybeReportNest(n, d)
+		c.nestStmt(n.Init, depth)
+		c.nestExpr(n.Cond, depth)
+		c.nestStmt(n.Step, depth)
 		c.nestStmts(n.Body.Stmts, d)
 	case *parser.ForEachStmt:
 		d := depth + 1
 		c.maybeReportNest(n, d)
+		c.nestExpr(n.Coll, depth)
 		if n.Body != nil {
 			c.nestStmts(n.Body.Stmts, d)
 		}
@@ -196,6 +203,7 @@ func (c *checkCtx) nestStmt(st parser.Stmt, depth int) {
 		d := depth + 1
 		c.maybeReportNest(n, d)
 		c.nestStmts(n.Body.Stmts, d)
+		c.nestExpr(n.Cond, depth)
 	case *parser.TryStmt:
 		d := depth + 1
 		c.maybeReportNest(n, d)
@@ -205,6 +213,76 @@ func (c *checkCtx) nestStmt(st parser.Stmt, depth int) {
 		if n.CatchBody != nil {
 			c.nestStmts(n.CatchBody.Stmts, d)
 		}
+	case *parser.DefineStmt:
+		c.nestExpr(n.InitExpr, depth)
+	case *parser.AssignStmt:
+		c.nestExpr(n.Value, depth)
+	case *parser.IndexAssignStmt:
+		c.nestExpr(n.Target, depth)
+		c.nestExpr(n.Value, depth)
+	case *parser.AppendStmt:
+		c.nestExpr(n.Target, depth)
+		c.nestExpr(n.Value, depth)
+	case *parser.FieldAssignStmt:
+		c.nestExpr(n.Target, depth)
+		c.nestExpr(n.Value, depth)
+	case *parser.ReturnStmt:
+		c.nestExpr(n.Value, depth)
+	case *parser.ThrowStmt:
+		c.nestExpr(n.Value, depth)
+	case *parser.ExitStmt:
+		c.nestExpr(n.Code, depth)
+	case *parser.ExprStmt:
+		c.nestExpr(n.Expr, depth)
+	}
+}
+
+// nestExpr descends into any spawn bodies reachable from e, counting each
+// spawn block as one nesting level - the same way a control-flow block counts.
+// The resolver skips spawn bodies, so without this a deeply-nested spawn body
+// would go unflagged by L202.
+func (c *checkCtx) nestExpr(e parser.Expr, depth int) {
+	if e == nil {
+		return
+	}
+	switch n := e.(type) {
+	case *parser.SpawnExpr:
+		d := depth + 1
+		c.maybeReportNest(n, d)
+		c.nestStmts(n.Body, d)
+	case *parser.ListLit:
+		for _, el := range n.Elements {
+			c.nestExpr(el, depth)
+		}
+	case *parser.MapLit:
+		for i := range n.Keys {
+			c.nestExpr(n.Keys[i], depth)
+			c.nestExpr(n.Values[i], depth)
+		}
+	case *parser.StructLit:
+		for _, f := range n.Fields {
+			c.nestExpr(f.Expr, depth)
+		}
+	case *parser.IndexExpr:
+		c.nestExpr(n.Target, depth)
+		c.nestExpr(n.Index, depth)
+	case *parser.FieldAccessExpr:
+		c.nestExpr(n.Target, depth)
+	case *parser.CallExpr:
+		for _, a := range n.Args {
+			c.nestExpr(a, depth)
+		}
+	case *parser.QualifiedCallExpr:
+		for _, a := range n.Args {
+			c.nestExpr(a, depth)
+		}
+	case *parser.LenExpr:
+		c.nestExpr(n.Operand, depth)
+	case *parser.BinaryExpr:
+		c.nestExpr(n.Left, depth)
+		c.nestExpr(n.Right, depth)
+	case *parser.UnaryExpr:
+		c.nestExpr(n.Operand, depth)
 	}
 }
 
@@ -272,6 +350,13 @@ func checkConstantCondition(c *checkCtx) {
 		case *parser.WhileStmt:
 			if b, ok := n.Cond.(*parser.BoolLit); ok && b.Value && loopCanEscape(n.Body) {
 				// while (true) { ... break/return/... } - intentional.
+				return
+			}
+			c.reportConstCond(n.Cond)
+		case *parser.RepeatStmt:
+			// repeat { ... } until (false) is the post-test spin-loop idiom -
+			// leave it alone when the body can break / return out.
+			if b, ok := n.Cond.(*parser.BoolLit); ok && !b.Value && loopCanEscape(n.Body) {
 				return
 			}
 			c.reportConstCond(n.Cond)

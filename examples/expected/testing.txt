@@ -21,22 +21,22 @@ ok 1 - addPasses
 not ok 2 - addFails
   ---
   kind: assertion
-  message: expected 42, got 41
+  message: "expected 42, got 41"
   ...
 not ok 3 - indexTooFar
   ---
   kind: runtime
-  message: list index 5 out of bounds (len 0)
+  message: "list index 5 out of bounds (len 0)"
   ...
 not ok 4 - earlyExit
   ---
   kind: exit
-  message: exit code 7
+  message: "exit code 7"
   ...
 not ok 5 - missingMethod
   ---
   kind: unknown
-  message: method "missingMethod" is not defined
+  message: "method \"missingMethod\" is not defined"
   ...
 
 === junit report ===

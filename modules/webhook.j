@@ -67,7 +67,10 @@ func equalConstantTime(a as string, b as string) {
  * @return {bool} true if the signature is valid
  */
 export func verify(payload as string, signature as string, secret as string) {
-    return equalConstantTime(sign($payload, $secret), $signature);
+    # Normalize case before the compare: the hex digest and the `sha256=`
+    # prefix are case-insensitive, so a signature sent as `SHA256=...` or with
+    # uppercase hex is still valid. sign() always emits lowercase.
+    return equalConstantTime(sign($payload, $secret), strings.lower($signature));
 }
 
 # --- send (needs the default binary) ----------------------------------------

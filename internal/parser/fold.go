@@ -3,6 +3,10 @@
 
 package parser
 
+// foldMinInt64 mirrors the interpreter's minInt64: the one int64 value with no
+// positive image, so `MinInt64 // -1` and `MinInt64 * -1` are left unfolded.
+const foldMinInt64 = -1 << 63
+
 // Constant folding at parse time.
 //
 // Runs from inside Resolve() as a post-step on BinaryExpr and
@@ -210,17 +214,37 @@ func tryFoldBinary(ex *BinaryExpr) Expr {
 		return &BoolLit{pos: ex.pos, Value: lf >= rf}
 	}
 
-	// Pure-int arithmetic + bit ops.
+	// Pure-int arithmetic + bit ops. Overflowing +, -, *, and MinInt64 // -1
+	// are left unfolded (return nil) so the runtime raises the same positioned
+	// error it would for non-literal operands (implementation-note 16).
 	if lIsInt && rIsInt {
 		switch ex.Op {
 		case OpAdd:
-			return &IntLit{pos: ex.pos, Value: li + ri}
+			s := li + ri
+			if (li > 0 && ri > 0 && s < 0) || (li < 0 && ri < 0 && s >= 0) {
+				return nil
+			}
+			return &IntLit{pos: ex.pos, Value: s}
 		case OpSub:
-			return &IntLit{pos: ex.pos, Value: li - ri}
+			d := li - ri
+			if (li >= 0 && ri < 0 && d < 0) || (li < 0 && ri > 0 && d >= 0) {
+				return nil
+			}
+			return &IntLit{pos: ex.pos, Value: d}
 		case OpMul:
-			return &IntLit{pos: ex.pos, Value: li * ri}
+			if li == 0 || ri == 0 {
+				return &IntLit{pos: ex.pos, Value: 0}
+			}
+			if (li == foldMinInt64 && ri == -1) || (ri == foldMinInt64 && li == -1) {
+				return nil
+			}
+			p := li * ri
+			if p/li != ri {
+				return nil
+			}
+			return &IntLit{pos: ex.pos, Value: p}
 		case OpFloorDiv:
-			if ri == 0 {
+			if ri == 0 || (li == foldMinInt64 && ri == -1) {
 				return nil
 			}
 			q := li / ri
@@ -232,7 +256,12 @@ func tryFoldBinary(ex *BinaryExpr) Expr {
 			if ri == 0 {
 				return nil
 			}
-			return &IntLit{pos: ex.pos, Value: li % ri}
+			// Floored, matching the runtime and `//`.
+			r := li % ri
+			if r != 0 && ((r < 0) != (ri < 0)) {
+				r += ri
+			}
+			return &IntLit{pos: ex.pos, Value: r}
 		case OpBitAnd:
 			return &IntLit{pos: ex.pos, Value: li & ri}
 		case OpBitOr:

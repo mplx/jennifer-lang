@@ -18,6 +18,15 @@ archive/zip; works on both binaries.
 `"tgz"`). An unknown format, or corrupt input to `unpack`, is a
 positioned runtime error (catchable with `try` / `catch`).
 
+`unpack` bounds untrusted input: the total decompressed payload of one
+call (summed across every entry) is capped at 256 MiB and the member
+count at 65536; past either cap it raises a normal catchable error
+instead of expanding a small "zip bomb" into gigabytes of memory. It
+also rejects any member whose name is an absolute path or escapes with
+`..` (a "zip-slip" name), so a naive extraction loop
+(`fs.writeBytes($dir + "/" + $e.name, $e.data)`) can't be tricked into
+writing outside the target directory.
+
 ## `archive.Entry`
 
 A struct `{ name as string, data as bytes, mode as int, mtime as int }`:

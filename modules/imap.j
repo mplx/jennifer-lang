@@ -10,9 +10,9 @@
  * `jennifer` binary. A session is stateful: `connect`, `selectMailbox`,
  * `search` / `fetch`, `logout`. A "NO" / "BAD" completion throws a catchable
  * `Error` (kind "imap"). One fixed command tag is used, which is safe for this
- * synchronous client (one command in flight at a time). Message literals are
- * read assuming 7-bit / ASCII on the wire (MIME transfer encoding keeps mail
- * ASCII); raw 8-bit literals are not yet byte-exact.
+ * synchronous client (one command in flight at a time). Message literals
+ * (`{N}`) are framed over bytes by their byte count, so an 8-bit / multi-byte
+ * UTF-8 literal is read byte-exact.
  * @module imap
  * @example
  * import "imap.j" as imap;
@@ -146,60 +146,110 @@ func expectTaggedOK(line as string, tag as string) {
 # forever. Re-armed before each read.
 def const TIMEOUT_MS as int init 30000;
 
-func fillUntilCRLF(conn as net.Conn, buf as string) {
-    def b as string init $buf;
-    while (strings.indexOf($b, "\r\n") < 0) {
-        net.setDeadline($conn, TIMEOUT_MS);
-        def chunk as bytes init net.readBytes($conn, 512);
-        if (len($chunk) == 0) {
-            return $b;
-        }
-        $b = $b + convert.stringFromBytes($chunk, "utf-8");
-    }
-    return $b;
+# --- byte-buffer helpers -------------------------------------------
+# IMAP literals (`{N}`) carry N raw bytes of arbitrary message content, so the
+# reader frames over a byte buffer with a forward cursor: it never re-slices
+# the buffer (which would be O(N^2) in the message size) and never decodes a
+# partial chunk to a string (which would split a multi-byte sequence). The
+# response text is decoded from bytes once, after the whole response is in hand.
+
+func emptyBytes() {
+    def e as bytes;
+    return $e;
 }
 
-# fillToLength reads until `buf` holds at least `n` characters (or EOF).
-func fillToLength(conn as net.Conn, buf as string, n as int) {
-    def b as string init $buf;
-    while (len($b) < $n) {
-        net.setDeadline($conn, TIMEOUT_MS);
-        def chunk as bytes init net.readBytes($conn, 512);
-        if (len($chunk) == 0) {
-            return $b;
-        }
-        $b = $b + convert.stringFromBytes($chunk, "utf-8");
+# byteSlice returns buf[start:end] as a fresh bytes value.
+func byteSlice(buf as bytes, start as int, end as int) {
+    def out as bytes;
+    def i as int init $start;
+    while ($i < $end) {
+        $out[] = $buf[$i];
+        $i = $i + 1;
     }
-    return $b;
+    return $out;
+}
+
+# crlfIndex returns the index of the CR of the first CRLF at or after `from`,
+# or -1 if none is present yet.
+func crlfIndex(buf as bytes, from as int) {
+    def i as int init $from;
+    if ($i < 0) {
+        $i = 0;
+    }
+    def n as int init len($buf);
+    while ($i + 1 < $n) {
+        if ($buf[$i] == 13 and $buf[$i + 1] == 10) {
+            return $i;
+        }
+        $i = $i + 1;
+    }
+    return -1;
 }
 
 # readResponse accumulates a full IMAP response - untagged lines, literals read
-# by their byte count, then the tagged completion - and throws on NO / BAD.
+# by their byte count, then the tagged completion - and throws on NO / BAD. The
+# consumed prefix of `buf` (bytes 0..pos) is exactly the response; it is decoded
+# to a string once, at return.
 func readResponse(conn as net.Conn, tag as string) {
-    def resp as string init "";
-    def buf as string init "";
+    def buf as bytes;
+    def pos as int init 0;
     while (true) {
-        $buf = fillUntilCRLF($conn, $buf);
-        def nl as int init strings.indexOf($buf, "\r\n");
-        if ($nl < 0) {
-            return $resp;
+        # Find the next CRLF at or after the cursor, reading as needed. The
+        # scan resumes near the buffer end (with a 1-byte overlap for a CRLF
+        # straddling a read boundary), so it never rescans the whole buffer.
+        def nl as int init crlfIndex($buf, $pos);
+        def scan as int init len($buf);
+        while ($nl < 0) {
+            net.setDeadline($conn, TIMEOUT_MS);
+            def chunk as bytes init net.readBytes($conn, 512);
+            if (len($chunk) == 0) {
+                return convert.stringFromBytes(byteSlice($buf, 0, $pos), "utf-8");
+            }
+            def k as int init 0;
+            while ($k < len($chunk)) {
+                $buf[] = $chunk[$k];
+                $k = $k + 1;
+            }
+            def from as int init $scan - 1;
+            if ($from < $pos) {
+                $from = $pos;
+            }
+            $nl = crlfIndex($buf, $from);
+            $scan = len($buf);
         }
-        def line as string init strings.substring($buf, 0, $nl);
-        $buf = strings.substring($buf, $nl + 2);
-        $resp = $resp + $line + "\r\n";
+        def line as string init convert.stringFromBytes(byteSlice($buf, $pos, $nl), "utf-8");
+        $pos = $nl + 2;
+        # An unexpected `+ ...` continuation (e.g. a SASL error mid-AUTHENTICATE)
+        # would otherwise read as an untagged line and the loop would block until
+        # timeout. Answer with an empty line so the server sends its tagged NO.
+        if (strings.startsWith($line, "+ ") or $line == "+") {
+            net.writeBytes($conn, convert.bytesFromString("\r\n", "utf-8"));
+            continue;
+        }
         def litlen as int init literalLength($line);
         if ($litlen >= 0) {
-            $buf = fillToLength($conn, $buf, $litlen);
-            $resp = $resp + strings.substring($buf, 0, $litlen);
-            $buf = strings.substring($buf, $litlen);
+            # A literal is exactly `litlen` bytes; read by byte count.
+            while (len($buf) - $pos < $litlen) {
+                net.setDeadline($conn, TIMEOUT_MS);
+                def chunk as bytes init net.readBytes($conn, 512);
+                if (len($chunk) == 0) {
+                    return convert.stringFromBytes(byteSlice($buf, 0, $pos), "utf-8");
+                }
+                def k as int init 0;
+                while ($k < len($chunk)) {
+                    $buf[] = $chunk[$k];
+                    $k = $k + 1;
+                }
+            }
+            $pos = $pos + $litlen;
             continue;
         }
         if (isTagged($line, $tag)) {
             expectTaggedOK($line, $tag);
-            return $resp;
+            return convert.stringFromBytes(byteSlice($buf, 0, $pos), "utf-8");
         }
     }
-    return $resp;
+    return convert.stringFromBytes(byteSlice($buf, 0, $pos), "utf-8");
 }
 
 # command sends a tagged command and returns the full response.
@@ -210,12 +260,23 @@ func command(conn as net.Conn, line as string) {
 
 # readGreeting consumes the untagged "* OK" server greeting.
 func readGreeting(conn as net.Conn) {
-    def buf as string init fillUntilCRLF($conn, "");
-    def nl as int init strings.indexOf($buf, "\r\n");
-    def line as string init $buf;
-    if ($nl >= 0) {
-        $line = strings.substring($buf, 0, $nl);
+    def buf as bytes;
+    def nl as int init -1;
+    while ($nl < 0) {
+        net.setDeadline($conn, TIMEOUT_MS);
+        def chunk as bytes init net.readBytes($conn, 512);
+        if (len($chunk) == 0) {
+            $nl = len($buf);
+            break;
+        }
+        def k as int init 0;
+        while ($k < len($chunk)) {
+            $buf[] = $chunk[$k];
+            $k = $k + 1;
+        }
+        $nl = crlfIndex($buf, 0);
     }
+    def line as string init convert.stringFromBytes(byteSlice($buf, 0, $nl), "utf-8");
     if (not strings.startsWith($line, "* OK")) {
         def msg as string init "greeting: " + strings.trim($line);
         throw Error{kind: "imap", message: $msg, file: "", line: 0, col: 0};
