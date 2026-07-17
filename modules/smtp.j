@@ -4,7 +4,8 @@
 /**
  * An SMTP send client: the line-oriented command/response dialogue of RFC 5321,
  * over the `net` system library (plaintext, implicit TLS, or STARTTLS) with
- * SASL AUTH PLAIN (LOGIN / XOAUTH2 to follow). The message body is any string,
+ * SASL AUTH: PLAIN, LOGIN, XOAUTH2, CRAM-MD5, and SCRAM-SHA-1 / SCRAM-SHA-256.
+ * The message body is any string,
  * typically built by the `mime` module. Because it uses `net`, this module runs
  * on the default `jennifer` binary only (`jennifer-tiny` stubs the network
  * stack). `send` throws a catchable `Error` (kind "smtp") when the server
@@ -36,7 +37,7 @@ import "./idna.j" as idna;
  * @field clientName {string} the EHLO identity (defaults to "localhost" when empty)
  * @field user {string} the SASL username (empty means no auth)
  * @field pass {string} the SASL password, or the OAuth2 access token for xoauth2
- * @field auth {string} the SASL mechanism: "" (auto - PLAIN when `user` is set, else no auth), "plain", "login", or "xoauth2"
+ * @field auth {string} the SASL mechanism: "" (default - no auth when `user` is empty, else PLAIN), "auto" (negotiate the strongest mechanism the server's EHLO advertises, falling back to PLAIN), "plain", "login", "xoauth2", "cram" (CRAM-MD5), "scram-sha-1", or "scram-sha-256"
  */
 export def struct Options {
     host as string,
@@ -197,19 +198,53 @@ func clientName(opts as Options) {
     return $opts.clientName;
 }
 
-# greet sends EHLO and expects a 2xx; used after connect and after STARTTLS.
+# greet sends EHLO and returns the reply (its text carries the AUTH capability
+# line); used after connect and after STARTTLS.
 func greet(conn as net.Conn, opts as Options) {
-    expect(command($conn, "EHLO " + clientName($opts)), 250, 259, "EHLO");
+    def reply as Reply init command($conn, "EHLO " + clientName($opts));
+    expect($reply, 250, 259, "EHLO");
+    return $reply;
 }
 
-# authenticate runs SASL PLAIN when credentials are set.
-func authenticate(conn as net.Conn, opts as Options) {
+# ehloMechs pulls the SASL mechanism names from an EHLO reply's "250[- ]AUTH
+# <mech> <mech> ..." capability line (case-insensitive keyword).
+func ehloMechs(text as string) {
+    def out as list of string init [];
+    for (def raw in strings.split($text, "\n")) {
+        def line as string init strings.trim($raw);
+        if (len($line) < 5) {
+            continue;
+        }
+        def rest as string init strings.substring($line, 4, len($line));
+        if (strings.startsWith(strings.upper($rest), "AUTH ")) {
+            for (def tk in strings.split(strings.substring($rest, 5, len($rest)), " ")) {
+                if (not (strings.trim($tk) == "")) {
+                    $out[] = strings.trim($tk);
+                }
+            }
+        }
+    }
+    return $out;
+}
+
+# authenticate runs SASL per opts.auth: "" is PLAIN (when a user is set),
+# "auto" picks the strongest mechanism the server's EHLO advertised (caps, else
+# PLAIN), and an explicit token forces that mechanism.
+func authenticate(conn as net.Conn, opts as Options, caps as string) {
     def mech as string init $opts.auth;
-    if (len($mech) == 0) {
+    if ($mech == "") {
         if (len($opts.user) == 0) {
             return;
         }
         $mech = "plain";
+    } elseif ($mech == "auto") {
+        if (len($opts.user) == 0) {
+            return;
+        }
+        $mech = sasl.negotiate(ehloMechs($caps));
+        if ($mech == "") {
+            $mech = "plain";
+        }
     }
     if ($mech == "plain") {
         def resp as string init "AUTH PLAIN " + sasl.plain($opts.user, $opts.pass);
@@ -227,8 +262,58 @@ func authenticate(conn as net.Conn, opts as Options) {
         expect(command($conn, $resp), 235, 235, "AUTH XOAUTH2");
         return;
     }
+    if ($mech == "cram") {
+        def r as Reply init command($conn, "AUTH CRAM-MD5");
+        expect($r, 334, 334, "AUTH CRAM-MD5");
+        def resp as string init sasl.cram($opts.user, $opts.pass, saslChallenge($r.text));
+        expect(command($conn, $resp), 235, 235, "CRAM-MD5 response");
+        return;
+    }
+    if ($mech == "scram-sha-1" or $mech == "scram-sha-256") {
+        scramAuth($conn, $opts, $mech);
+        return;
+    }
     def msg as string init "unknown auth mechanism: " + $mech;
     throw Error{kind: "smtp", message: $msg, file: "", line: 0, col: 0};
+}
+
+# saslChallenge extracts the base64 payload from a SASL continuation reply
+# ("334 <base64>"): the text after the status code, whitespace-trimmed.
+func saslChallenge(text as string) {
+    def t as string init strings.trim($text);
+    def sp as int init strings.indexOf($t, " ");
+    if ($sp < 0) {
+        return "";
+    }
+    return strings.trim(strings.substring($t, $sp + 1, len($t)));
+}
+
+# scramAuth runs the SCRAM exchange (RFC 5802): AUTH with the client-first,
+# then client-final, then verify the server's signature off the server-final
+# (a MITM without the password cannot forge it). The server-final rides on a
+# 334 continuation (the client acks with an empty "=" response); a server that
+# instead concludes with 235 has already accepted us.
+func scramAuth(conn as net.Conn, opts as Options, mech as string) {
+    def algo as string init "sha256";
+    def wire as string init "SCRAM-SHA-256";
+    if ($mech == "scram-sha-1") {
+        $algo = "sha1";
+        $wire = "SCRAM-SHA-1";
+    }
+    def sc as sasl.Scram init sasl.scramStart($opts.user, $algo);
+    def firstReply as Reply init command($conn, "AUTH " + $wire + " " + sasl.scramClientFirst($sc));
+    expect($firstReply, 334, 334, $wire + " server-first");
+    $sc = sasl.scramClientFinal($sc, saslChallenge($firstReply.text), $opts.pass);
+    def finalReply as Reply init command($conn, sasl.scramFinalToken($sc));
+    if ($finalReply.code == 334) {
+        if (not sasl.scramVerify($sc, saslChallenge($finalReply.text))) {
+            command($conn, "*");
+            throw Error{kind: "smtp", message: $wire + ": server signature verification failed", file: "", line: 0, col: 0};
+        }
+        expect(command($conn, "="), 235, 235, $wire + " completion");
+        return;
+    }
+    expect($finalReply, 235, 235, $wire);
 }
 
 func dial(opts as Options) {
@@ -263,13 +348,13 @@ export func send(opts as Options, from as string, recipients as list of string,
     }
     def conn as net.Conn init dial($opts);
     expect(readReply($conn), 220, 220, "greeting");
-    greet($conn, $opts);
+    def caps as Reply init greet($conn, $opts);
     if ($opts.security == "starttls") {
         expect(command($conn, "STARTTLS"), 220, 220, "STARTTLS");
         $conn = net.startTLS($conn);
-        greet($conn, $opts);
+        $caps = greet($conn, $opts);
     }
-    authenticate($conn, $opts);
+    authenticate($conn, $opts, $caps.text);
     expect(command($conn, "MAIL FROM:<" + $sender + ">"), 250, 259, "MAIL FROM");
     for (def rcpt in $rcpts) {
         expect(command($conn, "RCPT TO:<" + $rcpt + ">"), 250, 259, "RCPT TO");

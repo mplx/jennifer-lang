@@ -4,9 +4,9 @@
 // Package uuidlib is the `uuid` library: generate and parse RFC 9562 UUIDs
 // (v4 random, v7 time-ordered). Sixteen bytes, version / variant bits, and the
 // 8-4-4-4-12 hex form. Self-contained and TinyGo-clean: hex is hand-formatted,
-// randomness draws from `math`'s shared non-crypto RNG (seedable via
-// `math.randSeed`, swappable for a crypto source when the `crypto` library
-// lands), and v7's timestamp is the wall clock.
+// randomness draws from the `crypto` library's crypto-grade source (so v4 / v7
+// are unguessable and safe for security tokens), and v7's timestamp is the
+// wall clock.
 package uuidlib
 
 import (
@@ -14,7 +14,7 @@ import (
 	stdtime "time"
 
 	"jennifer-lang.dev/jennifer/internal/interpreter"
-	mathlib "jennifer-lang.dev/jennifer/internal/lib/math"
+	cryptolib "jennifer-lang.dev/jennifer/internal/lib/crypto"
 )
 
 // LibraryName is the namespace prefix (`uuid.`) and the `use` name.
@@ -41,8 +41,9 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespacedConst(LibraryName, "NIL", interpreter.StringVal(NIL))
 }
 
-// randByte draws one uniform byte from math's shared seedable RNG.
-func randByte() byte { return byte(mathlib.SharedIntN(256)) }
+// randByte draws one crypto-grade random byte, so v4 / v7 UUIDs are
+// unguessable and usable as security tokens.
+func randByte() byte { return cryptolib.RandByte() }
 
 func generateFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Value, error) {
 	v, err := strArg("generate", args)

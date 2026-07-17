@@ -29,6 +29,7 @@ use convert;
 use uuid;
 use encoding;
 use hash;
+use crypto;
 use compress;
 import "./multipart.j" as formdata;
 
@@ -608,7 +609,8 @@ export func setCookie(ctx as Context, name as string, value as string, opts as C
 /**
  * Return the request's session id, minting a new one on first use. If the
  * `cookieName` cookie is present its value is returned; otherwise a fresh UUID
- * is generated and set as a `HttpOnly`, `SameSite=Lax`, path-`/` cookie. `web`
+ * v4 (crypto-grade random, so unguessable as a session token) is generated and
+ * set as a `HttpOnly`, `SameSite=Lax`, path-`/` cookie. `web`
  * manages only the id cookie - the session data itself lives in a store the app
  * owns (e.g. the `session` module over `memcache`), so `web` forces no store or
  * network dependency. Call once per request and capture the returned id.
@@ -841,21 +843,12 @@ func csrfSign(secret as string, rand as string) {
     return encoding.toText($mac, "hex");
 }
 
-# constantTimeEqual compares two strings without an early-out, so a timing
-# side channel can't leak how many leading characters of a secret matched.
+# constantTimeEqual compares two strings without leaking, through timing, how
+# many leading characters of a secret matched. Delegates to crypto.hmacEqual
+# (Go's vetted subtle.ConstantTimeCompare) over the UTF-8 bytes.
 func constantTimeEqual(a as string, b as string) {
-    if (not (len($a) == len($b))) {
-        return false;
-    }
-    def ab as bytes init convert.bytesFromString($a, "utf-8");
-    def bb as bytes init convert.bytesFromString($b, "utf-8");
-    def diff as int init 0;
-    def i as int init 0;
-    while ($i < len($ab)) {
-        $diff = $diff | ($ab[$i] ^ $bb[$i]);
-        $i = $i + 1;
-    }
-    return $diff == 0;
+    return crypto.hmacEqual(convert.bytesFromString($a, "utf-8"),
+        convert.bytesFromString($b, "utf-8"));
 }
 
 # csrfValid reports whether a "<rand>.<sig>" token's signature verifies.

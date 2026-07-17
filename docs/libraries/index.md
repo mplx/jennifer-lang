@@ -30,6 +30,7 @@ rebuilt with a network stack runs `net` too; see the
 | [`archive`](archive.md)   | `use archive;`  | full                                                    | tar / zip containers over `bytes` (no `fs`). `archive.pack`/`unpack` with format `"tar"`/`"zip"`/`"tar.gz"`; bundle is a `list of archive.Entry` `{name, data, mode, mtime}` |
 | [`compress`](compress.md) | `use compress;` | full                                                    | byte-stream compression. `compress.pack`/`unpack` for `"gzip"`/`"zlib"`/`"deflate"` (`bytes` in/out, optional `"fast"`/`"default"`/`"best"` level) + streaming (`compress.stream`/`update`/`finalize`); struct `compress.Stream` |
 | [`crc`](crc.md)           | `use crc;`      | full                                                    | `crc.compute(b, algo)` + streaming (`crc.stream`/`update`/`finalize`) for `"crc32"`, `"crc64"`; output is big-endian bytes; struct `crc.Stream`                          |
+| [`crypto`](crypto.md)     | `use crypto;`   | full                                                    | security primitives. Crypto-grade random `crypto.randBytes`/`randInt`; constant-time `crypto.hmacEqual`; key derivation `crypto.hkdf` (HKDF) / `crypto.pbkdf` (PBKDF2), `algo` `"sha1"`/`"sha256"`/`"sha512"`. Digests and HMAC live in [`hash`](hash.md). |
 | [`encoding`](encoding.md) | `use encoding;` | full                                                    | introspection (`isAscii`, `lenBytes`, `lenRunes`); binary-to-text `toText`/`fromText` for `"hex"`, `"base64"`, `"base64-url"`; character codecs `encode`/`decode` for `"ascii"`, `"iso-8859-1"`, `"windows-1252"`, `"ebcdic"` |
 | [`fs`](fs.md)             | `use fs;`       | full                                                    | filesystem I/O. Whole-file `readString`/`readBytes`/`writeString`/`writeBytes`/`appendString`/`appendBytes`; metadata `exists`/`isFile`/`isDir`/`stat`; dir ops `mkdir`/`mkdirAll`/`remove`/`removeAll`/`rename`/`list`/`walk`; handles `open`/`readLine`/`readChars`/`readBytes`/`writeString`/`writeBytes`/`eof`/`close`; structs `fs.Stat`, `fs.File` |
 | [`hash`](hash.md)         | `use hash;`     | full                                                    | `hash.compute(b, algo)` + streaming (`hash.stream`/`update`/`finalize`) for `"md5"`, `"sha1"`, `"sha256"`; struct `hash.Stream`                                          |
@@ -48,7 +49,7 @@ rebuilt with a network stack runs `net` too; see the
 | [`testing`](testing.md)   | `use testing;`  | full                                                    | test-runner primitives. `testing.run`/`results`/`reset`/`report` + `testing.Result` struct. Catches runtime errors, throws, and (uniquely) `exit` inside test bodies. Three report formats: `"text"`, `"tap"`, `"junit"`. Foundation for the .j-side test framework. |
 | [`time`](time.md)         | `use time;`     | full                                                    | instant/duration arithmetic, calendar + Unix accessors, fixed-offset zones (`time.zone`, `time.inZone`, `time.UTC`, `time.local`), strftime format/parse, ISO round-trip; structs `time.Time`, `time.Duration`, `time.Zone` |
 | [`toml`](toml.md)         | `use toml;`     | full                                                    | RFC-conformant TOML 1.0 `toml.encode`/`encodePretty`/`decode`. Same opaque `toml.Value` + read / walk / write surface as `json`, name for name, addressed by JSON Pointer; adds `toml.asDatetime` (backed by `time.Time`) for TOML's native date-times. |
-| [`uuid`](uuid.md)         | `use uuid;`     | full                                                    | RFC 9562 UUIDs. `uuid.generate("v4")` (random) / `generate("v7")` (time-ordered) + `parse`/`isValid`/`version` + constant `NIL`. Version tag is a string arg; draws from `math`'s seedable RNG (not crypto-grade). |
+| [`uuid`](uuid.md)         | `use uuid;`     | full                                                    | RFC 9562 UUIDs. `uuid.generate("v4")` (random) / `generate("v7")` (time-ordered) + `parse`/`isValid`/`version` + constant `NIL`. Version tag is a string arg; draws from the `crypto` library's crypto-grade random source (unguessable, safe as a security token). |
 
 A quick taste:
 
@@ -106,6 +107,10 @@ large ones. The organizing principle, captured for future extensions:
   Non-cryptographic checksums (CRC-32, CRC-64) -> `crc`.
   The split keeps "transport integrity" and "content
   addressing" visible at the import line.
+- Crypto-grade randomness, constant-time comparison, and key
+  derivation (HKDF, PBKDF2) -> `crypto`. The security primitives
+  that need a secure source or a timing-safe operation, kept
+  distinct from the digests in `hash`.
 - Byte / string introspection and character-set codecs (ASCII,
   ISO-8859-1, Windows-1252, EBCDIC IBM-1047) plus hex / base64
   binary-to-text -> `encoding` (long-tail codecs parked for later).

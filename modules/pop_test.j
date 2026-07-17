@@ -50,3 +50,15 @@ func testParseSizes() {
     testing.assertEqual($szs[2], 300);
 }
 
+
+func testApopTimestamp() {
+    testing.assertEqual(apopTimestamp("+OK POP3 ready <1896.697170952@dbc.mtview.ca.us>"),
+        "<1896.697170952@dbc.mtview.ca.us>");
+    testing.assertEqual(apopTimestamp("+OK no timestamp here"), "");
+}
+
+func testApopDigest() {
+    # RFC 1939 worked example: <1896.697170952@dbc.mtview.ca.us> + "tanstaaf".
+    testing.assertEqual(apopDigest("<1896.697170952@dbc.mtview.ca.us>", "tanstaaf"),
+        "c4c9334bac560ecc979e58001b3e22fb");
+}

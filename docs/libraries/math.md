@@ -46,8 +46,10 @@ arguments return that type; any `float` involved produces a `float`.
 The library keeps one shared pseudo-random source. It is seeded from OS
 entropy at startup, so every run produces a different stream; call
 `math.randSeed(n)` when you need reproducible output (tests, demos,
-simulations). The same source drives `lists.shuffle` and `uuid.generate`,
-so one `randSeed` call makes all of them deterministic together.
+simulations). The same source drives `lists.shuffle`, so one `randSeed`
+call makes both deterministic together. (`uuid` and `password` draw from
+the [`crypto`](crypto.md) library's crypto-grade source instead, so
+`randSeed` does not affect them.)
 
 The source is **not cryptographically secure** - it is Go's `math/rand`,
 seedable and predictable once observed. Don't derive long-lived secrets

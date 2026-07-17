@@ -2,8 +2,9 @@
 
 Import with `import "smtp.j" as smtp;`. An SMTP **send** client: the
 line-oriented command/response dialogue of RFC 5321 over the `net` system
-library, with plaintext / implicit-TLS / STARTTLS transport and SASL `AUTH
-PLAIN`. The message body is any string, typically built by the
+library, with plaintext / implicit-TLS / STARTTLS transport and SASL `AUTH`
+(PLAIN / LOGIN / XOAUTH2 / CRAM-MD5 / SCRAM-SHA-1 / SCRAM-SHA-256). The message
+body is any string, typically built by the
 [`mime`](mime.md) module. Because it uses `net`, this module needs the
 default **`jennifer`** binary; on the stock `jennifer-tiny` a send raises a
 friendly error.
@@ -44,7 +45,7 @@ Runnable: [`examples/modules/smtp_demo.j`](https://github.com/jennifer-language/
 | `port`       | Server port (25 / 587 plaintext or STARTTLS, 465 implicit TLS).        |
 | `security`   | `"none"` (plaintext), `"starttls"` (upgrade after EHLO), `"tls"` (implicit TLS on connect). |
 | `clientName` | The `EHLO` identity; defaults to `"localhost"` when empty.             |
-| `auth`       | SASL mechanism: `""` (auto - PLAIN when `user` is set, else none), `"plain"`, `"login"`, or `"xoauth2"`. |
+| `auth`       | SASL mechanism: `""` (none when `user` is empty, else PLAIN), `"auto"` (negotiate the strongest mechanism `EHLO` advertises, falling back to PLAIN), `"plain"`, `"login"`, `"xoauth2"`, `"cram"` (CRAM-MD5), `"scram-sha-1"`, or `"scram-sha-256"`. |
 | `user`       | SASL username; `""` with `auth: ""` skips authentication.              |
 | `pass`       | SASL password.                                                         |
 
@@ -56,9 +57,11 @@ One call runs the whole delivery, throwing a catchable `Error` (kind
 1. Connect per `security` (`net.connect`, or `net.connectTLS` for `"tls"`).
 2. Read the `220` greeting, send `EHLO`.
 3. For `"starttls"`: `STARTTLS`, then `net.startTLS` and a second `EHLO`.
-4. Authenticate per `auth` (via the [`sasl`](sasl.md) encoders): `AUTH PLAIN`,
-   the `AUTH LOGIN` two-step, or `AUTH XOAUTH2` (an OAuth2 bearer token in
-   `pass` - how Google / Microsoft 365 authenticate).
+4. Authenticate per `auth` (via the [`sasl`](sasl.md) mechanisms): `AUTH PLAIN`,
+   the `AUTH LOGIN` two-step, `AUTH XOAUTH2` (an OAuth2 bearer token in `pass` -
+   how Google / Microsoft 365 authenticate), `AUTH CRAM-MD5`, or the SCRAM
+   challenge-response (`AUTH SCRAM-SHA-1` / `SCRAM-SHA-256`, whose server
+   signature the client verifies).
 5. `MAIL FROM:<from>`, one `RCPT TO:<r>` per recipient, `DATA`.
 6. Send the message (CRLF-normalised and dot-stuffed) ended by `<CRLF>.<CRLF>`.
 7. `QUIT` and close.
@@ -97,8 +100,9 @@ server); a live send against a real daemon is the demo's job.
 
 - **Send only.** Receiving is POP3 / IMAP (later sub-milestones); this module
   does not fetch mail.
-- **PLAIN / LOGIN / XOAUTH2** (via [`sasl`](sasl.md)). The challenge-response
-  mechanisms (`CRAM-MD5`, `SCRAM`) need the `crypto` library and land with it.
+- **Auth mechanisms**: PLAIN, LOGIN, XOAUTH2, CRAM-MD5, and SCRAM-SHA-1 /
+  SCRAM-SHA-256 (via [`sasl`](sasl.md)). `auth: "auto"` selects the strongest
+  the server's `EHLO` advertises. Server-side SASLprep is not applied.
 - **No connection reuse / pipelining.** `send` opens, delivers, and closes one
   connection per call.
 - **Non-ASCII local parts only.** An internationalized **domain** in the host

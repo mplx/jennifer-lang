@@ -34,6 +34,11 @@ flat lookup view, not authoritative.
 | [`crc`](crc.md)`.finalize($s)`                        | Final checksum as big-endian bytes; consumes the handle.                                                                            |
 | [`crc`](crc.md)`.stream(algo)`                        | Allocate a `crc.Stream` for `algo`; feed chunks via `crc.update` then close with `crc.finalize`.                                    |
 | [`crc`](crc.md)`.update($s, $bytes)`                  | Feed one chunk into a `crc.Stream` (mutates by side effect).                                                                        |
+| [`crypto`](crypto.md)`.hkdf(secret, salt, info, length, algo)` | Derive `length` bytes from a high-entropy secret (HKDF, RFC 5869); `algo` `"sha1"`/`"sha256"`/`"sha512"`; `salt`/`info` may be empty.  |
+| [`crypto`](crypto.md)`.hmacEqual(a, b)`               | Constant-time equality of two `bytes` (MAC comparison); unequal lengths return `false`.                                             |
+| [`crypto`](crypto.md)`.pbkdf(password, salt, iterations, keyLen, algo)` | Stretch a password into a `keyLen`-byte key (PBKDF2, RFC 8018); `algo` `"sha1"`/`"sha256"`/`"sha512"`. Name drops the "2".      |
+| [`crypto`](crypto.md)`.randBytes(n)`                  | `n` crypto-grade random bytes (`n >= 0`).                                                                                           |
+| [`crypto`](crypto.md)`.randInt(lo, hi)`               | Uniform crypto-grade int in the inclusive range `[lo, hi]` (rejection-sampled, unbiased; unseedable).                               |
 | [`encoding`](encoding.md)`.codecs()`                  | Canonical character-codec names in registration order.                                                                              |
 | [`encoding`](encoding.md)`.decode(b, codec)`          | Decode `bytes` from a character codec to a Jennifer string.                                                                         |
 | [`encoding`](encoding.md)`.encode(s, codec)`          | Encode a Jennifer string into a character codec's bytes.                                                                            |
@@ -149,7 +154,7 @@ flat lookup view, not authoritative.
 | [`math`](math.md)`.pow(x, y)`                         | `x` raised to `y`; always float. Errors on NaN/Inf-producing inputs.                                                                |
 | [`math`](math.md)`.rand()`                            | Float in `[0, 1)` from the shared seedable (non-crypto) source.                                                                     |
 | [`math`](math.md)`.randInt(lo, hi)`                   | Int in `[lo, hi]` inclusive; errors if `lo > hi`.                                                                                   |
-| [`math`](math.md)`.randSeed(n)`                       | Reseed the shared source for reproducible runs (also drives `lists.shuffle`, `uuid`).                                               |
+| [`math`](math.md)`.randSeed(n)`                       | Reseed the shared source for reproducible runs (also drives `lists.shuffle`; `uuid` / `password` use `crypto` instead).             |
 | [`math`](math.md)`.round(x)`                          | Round to nearest int (half away from zero).                                                                                         |
 | [`math`](math.md)`.sqrt(x)`                           | Square root; always float. Errors on negative input.                                                                                |
 | [`os`](os.md)`.flag(name)`                            | Value following `name` in `os.ARGS`, or `""` if absent / at end. Exact-match (no `--foo=bar` parsing).                              |

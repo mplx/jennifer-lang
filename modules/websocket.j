@@ -27,7 +27,7 @@ use strings;
 use convert;
 use hash;
 use encoding;
-use math;
+use crypto;
 
 # The RFC 6455 handshake GUID, concatenated with the client key before SHA-1.
 def const WS_MAGIC as string init "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -116,17 +116,14 @@ func readN(socket as net.Conn, n as int) {
     return $out;
 }
 
-# randomBytes returns n bytes from math's (non-crypto) RNG. Used for the mask
-# and the handshake nonce - neither is a security boundary (masking defeats
-# proxy cache poisoning; the nonce only needs to be unlikely to repeat).
+# randomBytes returns n crypto-grade random bytes. RFC 6455 (section 5.3)
+# requires the frame masking key be "derived from a strong source of entropy"
+# and hard to predict frame to frame (it is what stops a malicious script from
+# steering the on-the-wire bytes to poison an intermediary cache); the
+# handshake nonce (Sec-WebSocket-Key) is a random value too. `crypto` satisfies
+# both - `math`'s seedable RNG would not.
 func randomBytes(n as int) {
-    def b as bytes;
-    def i as int init 0;
-    while ($i < $n) {
-        $b[] = math.randInt(0, 255);
-        $i = $i + 1;
-    }
-    return $b;
+    return crypto.randBytes($n);
 }
 
 # --- handshake (private) ----------------------------------------------------

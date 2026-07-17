@@ -2,8 +2,9 @@
 
 Import with `import "pop.j" as pop;`. A **POP3** receive client (RFC 1939):
 the line-oriented status dialogue (`+OK` / `-ERR`) over the `net` system
-library, with plaintext / implicit-TLS / STLS transport and `USER` / `PASS`
-auth. Retrieved messages come back as strings, ready for the
+library, with plaintext / implicit-TLS / STLS transport and auth by `USER` /
+`PASS`, APOP, XOAUTH2, CRAM-MD5, or SCRAM-SHA-1 / SCRAM-SHA-256. Retrieved
+messages come back as strings, ready for the
 [`mime`](mime.md) module to parse. Because it uses `net`, this module needs
 the default **`jennifer`** binary.
 
@@ -83,9 +84,13 @@ server.
 ## Out of scope
 
 - **Receive only** (retrieve / delete). Sending is [`smtp`](smtp.md).
-- **`USER` / `PASS`, or XOAUTH2** (`Options.auth = "xoauth2"`, via
-  [`sasl`](sasl.md), for Google / Microsoft 365). `APOP` (MD5 challenge) and
-  the SASL challenge-response mechanisms land with the `crypto` library.
+- **Auth**: `USER` / `PASS` (default), APOP (`auth: "apop"`, RFC 1939 - proves
+  the password with MD5 of the greeting's timestamp, never sending it), or SASL
+  `AUTH` - XOAUTH2 (`auth: "xoauth2"`, for Google / Microsoft 365), CRAM-MD5
+  (`"cram"`), or SCRAM-SHA-1 / SCRAM-SHA-256 (`"scram-sha-1"` / `"scram-sha-256"`),
+  via [`sasl`](sasl.md). `auth: "auto"` picks the strongest the server offers
+  (SASL from `CAPA`, then APOP when the greeting carries a timestamp, else USER /
+  PASS); `auth: ""` is plain USER / PASS.
 - **No `TOP` / `UIDL`.** Just `STAT` / `LIST` / `RETR` / `DELE`.
 - An internationalized (IDN) host is IDNA-encoded to its `xn--` form
   automatically (via [`idna`](idna.md)).

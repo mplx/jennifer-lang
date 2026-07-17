@@ -2,7 +2,8 @@
 
 Import with `import "imap.j" as imap;`. An **IMAP4rev1** receive client (RFC
 3501): tagged commands and untagged `*` responses over the `net` system
-library, with plaintext / implicit-TLS / STARTTLS transport and `LOGIN` auth.
+library, with plaintext / implicit-TLS / STARTTLS transport and auth by `LOGIN`,
+XOAUTH2, CRAM-MD5, or SCRAM-SHA-1 / SCRAM-SHA-256.
 A useful **reading subset** - select a mailbox, search it, fetch whole
 messages - not the full protocol. Retrieved messages come back as strings for
 the [`mime`](mime.md) module to parse. Because it uses `net`, this module needs
@@ -79,9 +80,13 @@ This is a reading subset, not full IMAP4rev1:
 - **Commands.** `LOGIN` / `SELECT` / `SEARCH ALL` / `FETCH BODY.PEEK[]` /
   `LOGOUT`. No partial fetch, `STORE` (flag changes), `COPY`, `APPEND`,
   `EXPUNGE`, mailbox management, or `IDLE`.
-- **Auth.** `LOGIN`, or `AUTHENTICATE XOAUTH2` (`Options.auth = "xoauth2"`, via
-  [`sasl`](sasl.md), for Google / Microsoft 365). The SASL challenge-response
-  mechanisms (`CRAM-MD5` / `SCRAM`) land with the `crypto` library.
+- **Auth.** `LOGIN` (default), or `AUTHENTICATE` with XOAUTH2 (`auth:
+  "xoauth2"`, for Google / Microsoft 365), CRAM-MD5 (`"cram"`), or SCRAM-SHA-1 /
+  SCRAM-SHA-256 (`"scram-sha-1"` / `"scram-sha-256"`), via [`sasl`](sasl.md).
+  `auth: "auto"` probes `CAPABILITY` and picks the strongest mechanism (else
+  LOGIN); `auth: ""` is plain LOGIN. SCRAM uses the non-initial-response form and
+  verifies the server
+  signature.
 - **Literals are read as 7-bit / ASCII.** MIME transfer encoding keeps mail
   bodies ASCII; raw 8-bit literals are not yet byte-exact.
 - An internationalized (IDN) host is IDNA-encoded to its `xn--` form

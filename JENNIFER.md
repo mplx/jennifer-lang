@@ -273,10 +273,12 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   `setHeader`/`serveFile`/`serveDir`/`shutdown`. `spawn` several accept loops
   for a worker pool. Default binary only (`jennifer-tiny` stubs it).
 - **`time`**, **`fs`**, **`net`**, **`regex`**, **`hash`**, **`crc`**,
-  **`compress`**, **`archive`**, **`encoding`**, **`uuid`**, **`meta`**,
-  **`testing`** - clock, files, sockets, RE2 regex, digests, checksums,
-  byte-stream + container compression, text/character codecs, UUIDs,
-  interpreter identity, and test primitives.
+  **`crypto`**, **`compress`**, **`archive`**, **`encoding`**, **`uuid`**,
+  **`meta`**, **`testing`** - clock, files, sockets, RE2 regex, digests,
+  checksums, security primitives (crypto-grade random `crypto.randBytes`/
+  `randInt`, constant-time `crypto.hmacEqual`, key derivation `crypto.hkdf`/
+  `crypto.pbkdf`), byte-stream + container compression, text/character codecs,
+  UUIDs, interpreter identity, and test primitives.
 
 For the exact signature of any function, see the hosted library reference -
 the [cheatsheet](https://jennifer-lang.dev/libraries/cheatsheet.html)
@@ -447,11 +449,16 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   encoded-word on `encode` and decoded on `parse` (primitives `mime.encodeWord`
   / `decodeWord`). Bodies are text (UTF-8); no networking. The foundation the
   mail clients build on.
-- **`sasl`** - SASL auth encoders shared by the mail clients (pure base64, no
-  net, no crypto): `sasl.plain(user, pass)`, `sasl.loginUser` / `loginPass`,
-  `sasl.bearer(user, token)` (SASL XOAUTH2 - the "use a token" half of OAuth2,
-  for Google / Microsoft 365). The mail clients select it with
-  `Options.auth = "xoauth2"` (token in `pass`).
+- **`sasl`** - SASL auth mechanisms shared by the mail clients: base64 encoders
+  `sasl.plain(user, pass)`, `sasl.loginUser` / `loginPass`, `sasl.bearer(user,
+  token)` (SASL XOAUTH2 - the "use a token" half of OAuth2, for Google /
+  Microsoft 365; mail clients select it with `Options.auth = "xoauth2"`, token
+  in `pass`), plus challenge-response `sasl.cram(user, pass, challenge)`
+  (CRAM-MD5) and SCRAM: `sasl.scramStart(user, algo)` -> `scramClientFirst` ->
+  `scramClientFinal(s, serverFirst, pass)` -> `scramFinalToken` -> `scramVerify`
+  (SCRAM-SHA-1 / SCRAM-SHA-256, over `hash` + `crypto`). `sasl.negotiate(advertised)`
+  picks the strongest of a server's advertised mechanisms (what the mail clients
+  use for `auth: "auto"`; `auth: ""` keeps the plain default). No net; both binaries.
 - **`semver`** - strict SemVer 2.0.0 over a `Version` struct, package-registry-grade:
   `semver.parse(s)` / `isValid` / `toString`, `compare` / `lt` / `lte` / `eq` /
   `neq` / `gt` / `gte` / `diff`, `isStable` / `isPrerelease`, `incMajor` /
@@ -477,9 +484,10 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
 - **`pop`** - receive mail (POP3, RFC 1939) over `net`: `pop.connect(opts)` ->
   `pop.Session`, then `stat` / `count` / `sizes` / `retrieve(session, n)` /
   `deleteMessage(session, n)` / `quit`, plus `pop.fetchAll(opts)` (every
-  message, no delete). Retrieved messages are strings for `mime.parse`. Named
-  `pop` because a namespace is letters-only (no digit). **Default `jennifer`
-  binary only** (`net`).
+  message, no delete). Retrieved messages are strings for `mime.parse`. Auth per
+  `Options.auth`: USER/PASS, APOP (`"apop"`), XOAUTH2, CRAM-MD5, SCRAM-SHA-1 /
+  SCRAM-SHA-256, or `"auto"` (strongest offered). Named `pop` because a namespace
+  is letters-only (no digit). **Default `jennifer` binary only** (`net`).
 - **`redis`** - a Redis client speaking RESP2 over `net`: `redis.connect(opts)`
   -> `redis.Session`, then typed helpers `get` / `set(session, k, v)` /
   `del` / `exists` / `incr` / `decr` / `keys(session, pattern)` / `ping`, plus
@@ -499,7 +507,8 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `jennifer` binary only** (`net`).
 - **`smtp`** - send mail (SMTP client) over `net`: `smtp.send(opts, from,
   recipients, message)` runs the dialogue (EHLO, optional STARTTLS / implicit
-  TLS via `smtp.Options.security`, `AUTH PLAIN`, `MAIL FROM` / `RCPT TO` /
+  TLS via `smtp.Options.security`, SASL auth per `Options.auth` - PLAIN / LOGIN /
+  XOAUTH2 / CRAM-MD5 / SCRAM-SHA-1 / SCRAM-SHA-256, `MAIL FROM` / `RCPT TO` /
   `DATA`), with `message` built by `mime`. Throws `Error` (kind `"smtp"`) on
   rejection. Uses `net`, so **default `jennifer` binary only**.
 - **`totp`** - time-based one-time passwords (RFC 6238 over RFC 4226 HOTP), the
@@ -509,7 +518,9 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `totp.uri(issuer, account, secret, opts)` builds the `otpauth://` provisioning
   string a QR code encodes. `secret` is base32; a zero-value `totp.Options` is 6
   digits / 30 s / SHA-1, else set `digits` / `period` / `algorithm` (`"sha256"` /
-  `"sha512"`). Over `hash.hmac` + `encoding` + `time`; pure, both binaries.
+  `"sha512"`). `verify` compares codes constant-time (`crypto.hmacEqual`) so it
+  leaks nothing via timing. Over `hash.hmac` + `crypto` + `encoding` + `time`;
+  pure, both binaries.
 - **`webhook`** - HMAC-signed webhooks (the GitHub `X-Hub-Signature-256`
   convention). `webhook.sign(payload, secret)` -> `"sha256=" + hex HMAC-SHA256`;
   `webhook.verify(payload, signature, secret)` -> bool (constant-time compare,
@@ -667,9 +678,10 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   checks length + per-class minimums (minimums, not a whitelist); `complexity(pw) ->
   Strength{length, classes, poolSize, entropy as float, label}` estimates bits
   (`length * log2(pool)`, banded very weak / weak / reasonable / strong / very strong).
-  A disabled class overrides a leftover minimum. Randomness is `math`'s non-crypto,
-  seedable RNG (like `uuid` - swaps to `crypto` later; not for high-value secrets yet).
-  Pure `.j` over `math` / `strings` / `lists` / `convert`; **both binaries**.
+  A disabled class overrides a leftover minimum. Randomness (character choice and
+  the final shuffle) is `crypto`-grade, so a generated password is unpredictable
+  and safe to mint as a real credential. Pure `.j` over `crypto` / `strings` /
+  `convert`; **both binaries**.
 - **`influxdb`** - an InfluxDB 1.x time-series client over the `http` module.
   `influxdb.client(url, db)` / `clientWith(url, db, user, password)` open a `Client`.
   Build a `Point` with value-semantic builders: `point(measurement)`, then
@@ -725,7 +737,8 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   "text" / "binary" / "close" / "pong" - it transparently answers a ping with a pong
   and reassembles fragmented messages. `ping(c)` and `close(c)` (sends a close frame,
   shuts the socket). Frame length is auto-encoded in the 7 / 16 / 64-bit form; the
-  mask and handshake nonce use `math`'s non-crypto RNG (not a security boundary).
+  mask and handshake nonce use `crypto`-grade random (RFC 6455 requires a strong
+  entropy source for the mask).
   A protocol error or dropped connection throws `Error{kind: "websocket"}`. Client
   only (no server upgrade). **Default `jennifer` binary only** (`net`).
 - **`amqp`** - an AMQP 0-9-1 client for RabbitMQ over `net` (the largest protocol

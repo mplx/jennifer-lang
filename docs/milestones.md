@@ -979,8 +979,9 @@ Decode's return shape was later superseded by
 **Done.** RFC 9562: `uuid.generate("v4")` (random) / `generate("v7")`
 (time-ordered), the version tag a string argument (identifiers are
 letters-only), plus `parse`/`isValid`/`version` and constant `NIL`.
-Randomness draws from `math`'s shared seedable RNG (documented
-non-crypto; swaps when M20.1 `crypto` lands). See [uuid.md](libraries/uuid.md).
+Randomness originally drew from `math`'s seedable RNG; M20.1 repointed it
+at `crypto`'s crypto-grade source, so v4 / v7 are now unguessable. See
+[uuid.md](libraries/uuid.md).
 
 ### M16.11 - `compress`
 
@@ -1543,33 +1544,37 @@ or too reflect-bound for a Jennifer-coded `.j` module (the `json` pattern,
 
 ### M20.1 - `crypto`
 
-Symmetric and asymmetric primitives, key derivation, crypto-grade random.
-System library; TinyGo-safe primitives only. Hashes already shipped in
-M15.6.
+**Done.** The security-primitives system library above the digests in
+`hash`. Go standard library only (`crypto/rand`, `crypto/subtle`,
+`crypto/hkdf`, `crypto/pbkdf2`), so it adds no dependency and builds on
+both binaries (TinyGo 0.41 carries the Go 1.24 KDF packages). Surface:
 
-- **Swap `uuid`'s random source.** `uuid` (M16.10) draws its v4 / v7
-  randomness from `math`'s shared non-crypto RNG (seedable, predictable -
-  documented). When crypto-grade random lands here, repoint
-  `uuidlib.randByte` at it so `uuid.v4` is unguessable; the change is one
-  function, no surface change. Until then `uuid` must not be used for
-  security tokens.
-- **Message authentication (HMAC) already shipped as `hash.hmac`.** HMAC
-  is a hash construction, so it lives in the `hash` library (RFC 2104,
-  Go `crypto/hmac`, TinyGo-clean) rather than here - it unblocks request
-  signing, webhook verification, JWT HS256, and TOTP without a crypto
-  library. What can still land here is a constant-time
-  `crypto.hmacEqual` for MAC comparison (verification today recomputes
-  and compares the full digest). The KDFs below build on HMAC (PBKDF2 is
-  iterated HMAC; HKDF and SASL SCRAM are HMAC-based).
-- **Key derivation (stdlib, no dependency).** `HKDF` - derive keys from a
-  high-entropy secret - and `PBKDF2-HMAC-SHA256` - derive a key from a
-  password (salt + iteration count). Both come from the Go standard
-  library (`crypto/hkdf`, `crypto/pbkdf2`, stdlib since Go 1.24), so they
-  add no dependency and stay TinyGo-clean. Shape: `crypto.hkdf(...)` /
-  `crypto.pbkdf2(password, salt, iterations, keyLen) -> bytes`.
-- **Password hashing is out of scope here.** Argon2id (and bcrypt /
-  scrypt) moved to the Long-horizon list: they need the `x/crypto`
+- **Crypto-grade random.** `crypto.randBytes(n) -> bytes` and
+  `crypto.randInt(lo, hi) -> int` (inclusive, rejection-sampled so
+  exactly uniform, unseedable). The counterpart to `math`'s fast,
+  seedable, predictable `rand*`: the same shape, but for values that
+  guard something.
+- **Swapped `uuid`'s random source.** `uuidlib.randByte` now draws from
+  `crypto` (one function, no surface change), so `uuid.generate("v4")` is
+  unguessable. That secures the `session` module, `web.sessionId`, and
+  `web.csrfToken` (all mint ids from uuid v4) for free, and the
+  `password` module's generation was repointed here too (character choice
+  + a crypto-grade Fisher-Yates shuffle).
+- **Constant-time comparison.** `crypto.hmacEqual(a, b) -> bool` over two
+  `bytes` (Go `crypto/subtle`), for verifying a MAC without a
+  timing side channel. HMAC itself stays `hash.hmac` (a hash
+  construction).
+- **Key derivation.** `crypto.hkdf(secret, salt, info, length, algo) ->
+  bytes` (HKDF, RFC 5869) and `crypto.pbkdf(password, salt, iterations,
+  keyLen, algo) -> bytes` (PBKDF2, RFC 8018), `algo` one of `"sha1"` /
+  `"sha256"` / `"sha512"` (SCRAM-SHA-1 needs `"sha1"`). Registered as
+  `pbkdf` rather than `pbkdf2`: a Jennifer method name is letters-only,
+  so the digit can't appear - the same rule behind `uuid.generate("v4")`.
+- **Password hashing stays out of scope.** Argon2id (and bcrypt /
+  scrypt) remain on the Long-horizon list: they need the `x/crypto`
   dependency and their own `hashPassword` / `verifyPassword` surface.
+  PBKDF2 here is for interoperable KDF needs (SASL SCRAM, key wrapping),
+  not a general password store.
 
 ### M20.2 - `xml`
 

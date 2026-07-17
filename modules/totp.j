@@ -21,6 +21,7 @@
  * def ok as bool init totp.verify("JBSWY3DPEHPK3PXP", $code, $o);
  */
 use hash;
+use crypto;
 use encoding;
 use time;
 use strings;
@@ -153,14 +154,22 @@ export func verifyAt(secret as string, code as string, unixSeconds as int, opts 
     def digits as int init digitsOf($opts);
     def algorithm as string init algorithmOf($opts);
     def counter as int init $unixSeconds // periodOf($opts);
+    def codeBytes as bytes init convert.bytesFromString($code, "utf-8");
+    # Compare every window with a constant-time check and without an early
+    # return: a plain `==` leaks, through response timing, how many leading
+    # digits matched (and which window), which a network attacker can exploit
+    # against a 2FA endpoint. crypto.hmacEqual runs in time independent of the
+    # contents.
+    def match as bool init false;
     def step as int init -1;
     while ($step <= 1) {
-        if (hotp($key, $counter + $step, $digits, $algorithm) == $code) {
-            return true;
+        def computed as bytes init convert.bytesFromString(hotp($key, $counter + $step, $digits, $algorithm), "utf-8");
+        if (crypto.hmacEqual($computed, $codeBytes)) {
+            $match = true;
         }
         $step = $step + 1;
     }
-    return false;
+    return $match;
 }
 
 /**

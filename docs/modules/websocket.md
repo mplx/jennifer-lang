@@ -79,10 +79,10 @@ if ($m.kind == "close") {
 
 - **Client only.** A server-side upgrade would need an `httpd`
   connection-hijack hook (a separate, larger piece).
-- **Non-crypto masking key / nonce.** The 4-byte mask and the handshake nonce
-  come from `math`'s non-crypto RNG - neither is a security boundary (masking
-  defeats proxy cache poisoning; the nonce only needs to rarely repeat), so this
-  is correct, not a `crypto` gap.
+- **Crypto-grade masking key / nonce.** The 4-byte frame mask and the handshake
+  nonce come from the [`crypto`](../libraries/crypto.md) library, as RFC 6455
+  (section 5.3) requires: the mask must be "derived from a strong source of
+  entropy" and hard to predict frame to frame.
 - **No permessage-deflate / extensions, no subprotocol negotiation.** The
   `Sec-WebSocket-Protocol` / `-Extensions` headers are not sent.
 - **`receive` blocks per message** up to `timeoutMs`; there is no non-blocking

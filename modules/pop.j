@@ -4,7 +4,8 @@
 /**
  * A POP3 receive client (RFC 1939): the line-oriented status dialogue ("+OK" /
  * "-ERR") over the `net` system library, with plaintext, implicit TLS, or STLS,
- * and USER / PASS auth. Retrieved messages come back as strings, ready for the
+ * and auth by USER / PASS, XOAUTH2, CRAM-MD5, or SCRAM-SHA-1 / SCRAM-SHA-256.
+ * Retrieved messages come back as strings, ready for the
  * `mime` module to parse. Because it uses `net`, this module needs the default
  * `jennifer` binary (`jennifer-tiny` has no network stack). A session is
  * stateful: `connect`, then `stat` / `sizes` / `retrieve` / `deleteMessage`,
@@ -22,6 +23,8 @@
 use net;
 use strings;
 use convert;
+use hash;
+use encoding;
 import "./idna.j" as idna;
 import "./sasl.j" as sasl;
 
@@ -34,7 +37,7 @@ import "./sasl.j" as sasl;
  * @field security {string} "none", "tls", or "starttls"
  * @field user {string} the account username
  * @field pass {string} the password (or access token for xoauth2)
- * @field auth {string} "" for USER / PASS or "xoauth2" for SASL bearer
+ * @field auth {string} "" (default - USER / PASS), "auto" (pick the strongest mechanism the server offers, falling back to USER / PASS), "apop" (RFC 1939 APOP), "xoauth2", "cram" (CRAM-MD5), "scram-sha-1", or "scram-sha-256"
  */
 export def struct Options {
     host as string,
@@ -289,19 +292,144 @@ func dial(opts as Options) {
  */
 export func connect(opts as Options) {
     def conn as net.Conn init dial($opts);
-    expectOK(readLine($conn), "greeting");
+    def greeting as string init readLine($conn);
+    expectOK($greeting, "greeting");
     if ($opts.security == "starttls") {
         expectOK(command($conn, "STLS"), "STLS");
         $conn = net.startTLS($conn);
     }
-    if ($opts.auth == "xoauth2") {
-        def resp as string init "AUTH XOAUTH2 " + sasl.bearer($opts.user, $opts.pass);
-        expectOK(command($conn, $resp), "AUTH XOAUTH2");
-    } else {
-        expectOK(command($conn, "USER " + $opts.user), "USER");
-        expectOK(command($conn, "PASS " + $opts.pass), "PASS");
-    }
+    authenticate($conn, $opts, $greeting);
     return Session{conn: $conn};
+}
+
+# apopTimestamp extracts the "<...>" timestamp banner from a POP3 greeting
+# (RFC 1939), or "" when the server offers no APOP.
+func apopTimestamp(greeting as string) {
+    def lt as int init strings.indexOf($greeting, "<");
+    if ($lt < 0) {
+        return "";
+    }
+    def gt as int init strings.indexOf($greeting, ">");
+    if ($gt < $lt) {
+        return "";
+    }
+    return strings.substring($greeting, $lt, $gt + 1);
+}
+
+# apopDigest is the lowercase-hex MD5 of the timestamp banner concatenated with
+# the password - the APOP shared-secret proof (RFC 1939).
+func apopDigest(stamp as string, pass as string) {
+    return encoding.toText(hash.compute(convert.bytesFromString($stamp + $pass, "utf-8"), "md5"), "hex");
+}
+
+# apopAuth runs POP3 APOP (RFC 1939): the shared secret is proved by sending
+# "APOP <user> <hex>", where <hex> is MD5(timestamp banner + password). The
+# password itself never crosses the wire.
+func apopAuth(conn as net.Conn, opts as Options, greeting as string) {
+    def stamp as string init apopTimestamp($greeting);
+    if ($stamp == "") {
+        throw Error{kind: "pop3", message: "APOP: the server greeting carries no timestamp", file: "", line: 0, col: 0};
+    }
+    expectOK(command($conn, "APOP " + $opts.user + " " + apopDigest($stamp, $opts.pass)), "APOP");
+}
+
+# popChallenge extracts the base64 payload from a "+ <base64>" SASL continuation.
+func popChallenge(line as string) {
+    def t as string init strings.trim($line);
+    if (strings.startsWith($t, "+ ")) {
+        return strings.trim(strings.substring($t, 2, len($t)));
+    }
+    return "";
+}
+
+# popCapaMechs asks the server for its SASL mechanisms via CAPA (RFC 2449),
+# returning the names on the "SASL ..." capability line, or an empty list when
+# the server has no CAPA / no SASL line (the caller then uses USER / PASS).
+func popCapaMechs(conn as net.Conn) {
+    net.writeBytes($conn, convert.bytesFromString("CAPA\r\n", "utf-8"));
+    def body as string init "";
+    try {
+        $body = readMultiline($conn, "CAPA");
+    } catch (e) {
+        return [];
+    }
+    def out as list of string init [];
+    for (def line in strings.split($body, "\n")) {
+        def l as string init strings.trim($line);
+        if (strings.startsWith(strings.upper($l), "SASL ")) {
+            for (def tk in strings.split(strings.substring($l, 5, len($l)), " ")) {
+                if (not (strings.trim($tk) == "")) {
+                    $out[] = strings.trim($tk);
+                }
+            }
+        }
+    }
+    return $out;
+}
+
+# authenticate runs the POP3 auth exchange. "" is USER / PASS; "auto" probes
+# CAPA and picks the strongest mechanism (a SASL mechanism, else APOP when the
+# greeting offers it, else USER / PASS); an explicit opts.auth forces that
+# mechanism ("apop" for APOP).
+func authenticate(conn as net.Conn, opts as Options, greeting as string) {
+    def mech as string init $opts.auth;
+    if ($mech == "auto") {
+        $mech = sasl.negotiate(popCapaMechs($conn));
+        if ($mech == "" and not (apopTimestamp($greeting) == "")) {
+            $mech = "apop";
+        }
+    }
+    if ($mech == "apop") {
+        apopAuth($conn, $opts, $greeting);
+        return;
+    }
+    if ($mech == "xoauth2") {
+        expectOK(command($conn, "AUTH XOAUTH2 " + sasl.bearer($opts.user, $opts.pass)), "AUTH XOAUTH2");
+        return;
+    }
+    if ($mech == "cram") {
+        def chal as string init command($conn, "AUTH CRAM-MD5");
+        if (not strings.startsWith(strings.trim($chal), "+ ")) {
+            throw Error{kind: "pop3", message: "AUTH CRAM-MD5: " + strings.trim($chal), file: "", line: 0, col: 0};
+        }
+        expectOK(command($conn, sasl.cram($opts.user, $opts.pass, popChallenge($chal))), "CRAM-MD5 response");
+        return;
+    }
+    if ($mech == "scram-sha-1" or $mech == "scram-sha-256") {
+        scramAuth($conn, $opts, $mech);
+        return;
+    }
+    expectOK(command($conn, "USER " + $opts.user), "USER");
+    expectOK(command($conn, "PASS " + $opts.pass), "PASS");
+}
+
+# scramAuth runs the SCRAM exchange (RFC 5802) over POP3: the server-first and
+# server-final arrive as "+ ..." continuations; the client verifies the server
+# signature before accepting. A "+OK" after the client-final means the server
+# concluded without a separate server-final line.
+func scramAuth(conn as net.Conn, opts as Options, mech as string) {
+    def algo as string init "sha256";
+    def wire as string init "SCRAM-SHA-256";
+    if ($mech == "scram-sha-1") {
+        $algo = "sha1";
+        $wire = "SCRAM-SHA-1";
+    }
+    def sc as sasl.Scram init sasl.scramStart($opts.user, $algo);
+    def first as string init command($conn, "AUTH " + $wire + " " + sasl.scramClientFirst($sc));
+    if (not strings.startsWith(strings.trim($first), "+ ")) {
+        throw Error{kind: "pop3", message: $wire + " server-first: " + strings.trim($first), file: "", line: 0, col: 0};
+    }
+    $sc = sasl.scramClientFinal($sc, popChallenge($first), $opts.pass);
+    def final as string init command($conn, sasl.scramFinalToken($sc));
+    if (strings.startsWith(strings.trim($final), "+ ")) {
+        if (not sasl.scramVerify($sc, popChallenge($final))) {
+            command($conn, "*");
+            throw Error{kind: "pop3", message: $wire + ": server signature verification failed", file: "", line: 0, col: 0};
+        }
+        expectOK(command($conn, ""), $wire + " completion");
+        return;
+    }
+    expectOK($final, $wire);
 }
 
 /**

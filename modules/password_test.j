@@ -5,11 +5,12 @@
 #
 #     jennifer test modules/password_test.j
 #
-# Everything here is offline and deterministic: generation is exercised as a
-# property (generate(schema) conforms to schema, has the right length, and
-# meets the minimums) with the RNG seeded for reproducibility; validate,
-# complexity, and binaryLog are pure. password.j already `use`s math / strings /
-# lists / convert, so the overlay only adds testing.
+# Everything here is offline: generation is exercised as a property
+# (generate(schema) conforms to schema, has the right length, and meets the
+# minimums) over many crypto-random draws - the invariant holds every time, so
+# no seed is needed (crypto randomness is not seedable); validate, complexity,
+# and binaryLog are pure. password.j already `use`s crypto / strings / convert,
+# so the overlay only adds testing.
 use testing;
 
 func testBinaryLogExactPowersOfTwo() {
@@ -21,7 +22,6 @@ func testBinaryLogExactPowersOfTwo() {
 }
 
 func testDefaultGenerateConforms() {
-    math.randSeed(12345);
     def s as Schema init schema();
     def i as int init 0;
     while ($i < 50) {
@@ -34,7 +34,6 @@ func testDefaultGenerateConforms() {
 }
 
 func testGenerateVariableLengthInRange() {
-    math.randSeed(999);
     def s as Schema init withLength(schema(), 12, 20);
     def i as int init 0;
     while ($i < 50) {
@@ -46,7 +45,6 @@ func testGenerateVariableLengthInRange() {
 }
 
 func testGenerateNoSymbolsHasNoSymbols() {
-    math.randSeed(7);
     # disable symbols; the leftover minSymbols from the default must be ignored
     def s as Schema init withClasses(withLength(schema(), 24, 24), true, true, true, false);
     def i as int init 0;
@@ -60,7 +58,6 @@ func testGenerateNoSymbolsHasNoSymbols() {
 }
 
 func testGenerateExcludeAmbiguous() {
-    math.randSeed(42);
     def s as Schema init withoutAmbiguous(withLength(schema(), 40, 40));
     def i as int init 0;
     while ($i < 30) {

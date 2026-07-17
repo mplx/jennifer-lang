@@ -2,16 +2,15 @@
 
 Import with `import "password.j" as password;`. Generate passwords against a
 policy `Schema`, validate a candidate password against that policy, and estimate
-any password's strength in bits of entropy. Pure `.j` over `math` / `strings` /
-`lists` / `convert`; runs on both binaries.
+any password's strength in bits of entropy. Pure `.j` over `crypto` /
+`strings` / `convert`; runs on both binaries.
 
-> **Security note.** Randomness comes from `math`'s shared, seedable,
-> **non-cryptographic** RNG (the same source `uuid` draws from). It is
-> predictable to an attacker who can reconstruct the seed, so generated
-> passwords are **not** suitable for high-value secrets today. This swaps to a
-> crypto-grade source when the `crypto` library lands. Use it for convenience
-> passwords, fixtures, and policy checking - not for credentials that must
-> resist a determined attacker.
+> **Security note.** Randomness (character choice and the final shuffle) comes
+> from the [`crypto`](../libraries/crypto.md) library's crypto-grade source, so
+> a generated password is unpredictable and **safe to mint as a real
+> credential**. It is not seedable (crypto randomness has no reproducible
+> sequence). Storing passwords for later verification is a separate concern -
+> use a memory-hard hash for that, not this generator.
 
 ```jennifer
 import "password.j" as password;
@@ -112,7 +111,8 @@ the brute-force space," not "is this a good password."
 
 ## Scope
 
-- **Non-crypto randomness** (see the security note) - swaps to `crypto` later.
+- **Crypto-grade randomness** (see the security note) - generation draws from
+  the `crypto` library, so a generated password is safe as a real credential.
 - **Complexity is character-set entropy**, with no dictionary, keyboard-walk, or
   repeated-character analysis. It will happily call a common word "reasonable".
 - **Rune-based length**: `len` counts runes, so multi-byte characters count as
@@ -120,6 +120,6 @@ the brute-force space," not "is this a good password."
 
 ## See also
 
-- [uuid.md](../libraries/uuid.md) - the same non-crypto RNG caveat and
-  eventual crypto swap.
+- [crypto.md](../libraries/crypto.md) - the crypto-grade random source behind
+  password generation.
 - [modules/index.md](index.md) - the module catalog and import rules.

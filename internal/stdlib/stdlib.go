@@ -17,6 +17,7 @@ import (
 	"jennifer-lang.dev/jennifer/internal/lib/compress"
 	"jennifer-lang.dev/jennifer/internal/lib/convert"
 	"jennifer-lang.dev/jennifer/internal/lib/crc"
+	cryptolib "jennifer-lang.dev/jennifer/internal/lib/crypto"
 	"jennifer-lang.dev/jennifer/internal/lib/encoding"
 	"jennifer-lang.dev/jennifer/internal/lib/fs"
 	"jennifer-lang.dev/jennifer/internal/lib/hash"
@@ -53,6 +54,7 @@ func InstallAll(in *interpreter.Interpreter) {
 	timelib.Install(in)
 	hashlib.Install(in)
 	crclib.Install(in)
+	cryptolib.Install(in)
 	compresslib.Install(in)
 	archivelib.Install(in)
 	encodinglib.Install(in)

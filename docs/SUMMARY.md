@@ -29,6 +29,7 @@
 - [`compress`](libraries/compress.md)
 - [`convert`](libraries/convert.md)
 - [`crc`](libraries/crc.md)
+- [`crypto`](libraries/crypto.md)
 - [`encoding`](libraries/encoding.md)
 - [`fs`](libraries/fs.md)
 - [`hash`](libraries/hash.md)

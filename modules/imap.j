@@ -4,7 +4,8 @@
 /**
  * An IMAP4rev1 receive client (RFC 3501): tagged commands and untagged "*"
  * responses over the `net` system library, with plaintext / implicit TLS /
- * STARTTLS and LOGIN auth. A useful reading subset - SELECT, SEARCH, FETCH the
+ * STARTTLS and auth by LOGIN, XOAUTH2, CRAM-MD5, or SCRAM-SHA-1 / SCRAM-SHA-256.
+ * A useful reading subset - SELECT, SEARCH, FETCH the
  * whole message - not the full protocol. Retrieved messages come back as
  * strings for the `mime` module to parse. Uses `net`, so it needs the default
  * `jennifer` binary. A session is stateful: `connect`, `selectMailbox`,
@@ -38,7 +39,7 @@ import "./idna.j" as idna;
  * @field security {string} the transport, "" / "tls" (implicit) / "starttls"
  * @field user {string} the login username
  * @field pass {string} the login password, or the OAuth2 access token when auth is "xoauth2"
- * @field auth {string} the auth mechanism, "" (LOGIN) or "xoauth2" (SASL bearer via AUTHENTICATE)
+ * @field auth {string} the auth mechanism: "" (default - LOGIN), "auto" (probe CAPABILITY and pick the strongest mechanism, falling back to LOGIN), "xoauth2", "cram" (CRAM-MD5), "scram-sha-1", or "scram-sha-256"
  */
 export def struct Options {
     host as string,
@@ -253,8 +254,10 @@ func command(conn as net.Conn, line as string) {
     return readResponse($conn, TAG);
 }
 
-# readGreeting consumes the untagged "* OK" server greeting.
-func readGreeting(conn as net.Conn) {
+# readLine reads one CRLF-terminated line. No literal handling: used for the
+# greeting and the SASL AUTHENTICATE dialogue, where the server sends a single
+# line and waits (so there is no over-read into the next line).
+func readLine(conn as net.Conn) {
     def buf as bytes;
     def nl as int init -1;
     def scanFrom as int init 0;
@@ -286,7 +289,12 @@ func readGreeting(conn as net.Conn) {
             $scanFrom = 0;
         }
     }
-    def line as string init convert.stringFromBytes(byteSlice($buf, 0, $nl), "utf-8");
+    return convert.stringFromBytes(byteSlice($buf, 0, $nl), "utf-8");
+}
+
+# readGreeting consumes the untagged "* OK" server greeting.
+func readGreeting(conn as net.Conn) {
+    def line as string init readLine($conn);
     if (not strings.startsWith($line, "* OK")) {
         def msg as string init "greeting: " + strings.trim($line);
         throw Error{kind: "imap", message: $msg, file: "", line: 0, col: 0};
@@ -316,12 +324,103 @@ export func connect(opts as Options) {
         command($conn, "STARTTLS");
         $conn = net.startTLS($conn);
     }
-    if ($opts.auth == "xoauth2") {
-        command($conn, "AUTHENTICATE XOAUTH2 " + sasl.bearer($opts.user, $opts.pass));
-    } else {
-        command($conn, "LOGIN " + quoteArg($opts.user) + " " + quoteArg($opts.pass));
-    }
+    authenticate($conn, $opts);
     return Session{conn: $conn};
+}
+
+# writeLine sends one CRLF-terminated line.
+func writeLine(conn as net.Conn, line as string) {
+    net.writeBytes($conn, convert.bytesFromString($line + "\r\n", "utf-8"));
+}
+
+# imapChallenge extracts the base64 payload from a "+ <base64>" continuation.
+func imapChallenge(line as string) {
+    def t as string init strings.trim($line);
+    if (strings.startsWith($t, "+ ")) {
+        return strings.trim(strings.substring($t, 2, len($t)));
+    }
+    return "";
+}
+
+# requirePlus throws unless the line is a "+"/"+ ..." SASL continuation.
+func requirePlus(line as string, ctx as string) {
+    def t as string init strings.trim($line);
+    if (not (strings.startsWith($t, "+ ") or $t == "+")) {
+        throw Error{kind: "imap", message: $ctx + ": " + $t, file: "", line: 0, col: 0};
+    }
+}
+
+# imapCapaMechs asks CAPABILITY and returns the mechanism names from its
+# "AUTH=<mech>" capability tokens (or an empty list), so auth "" can pick the
+# strongest.
+func imapCapaMechs(conn as net.Conn) {
+    def resp as string init command($conn, "CAPABILITY");
+    def out as list of string init [];
+    for (def tk in strings.split(strings.replace($resp, "\r\n", " "), " ")) {
+        def t as string init strings.trim($tk);
+        if (strings.startsWith(strings.upper($t), "AUTH=")) {
+            $out[] = strings.substring($t, 5, len($t));
+        }
+    }
+    return $out;
+}
+
+# authenticate runs the IMAP auth. "" is LOGIN; "auto" probes CAPABILITY and
+# picks the strongest mechanism (falling back to LOGIN); an explicit opts.auth
+# forces that mechanism.
+func authenticate(conn as net.Conn, opts as Options) {
+    def mech as string init $opts.auth;
+    if ($mech == "auto") {
+        $mech = sasl.negotiate(imapCapaMechs($conn));
+    }
+    if ($mech == "xoauth2") {
+        command($conn, "AUTHENTICATE XOAUTH2 " + sasl.bearer($opts.user, $opts.pass));
+        return;
+    }
+    if ($mech == "cram") {
+        writeLine($conn, TAG + " AUTHENTICATE CRAM-MD5");
+        def chal as string init readLine($conn);
+        requirePlus($chal, "AUTHENTICATE CRAM-MD5");
+        writeLine($conn, sasl.cram($opts.user, $opts.pass, imapChallenge($chal)));
+        expectTaggedOK(readLine($conn), TAG);
+        return;
+    }
+    if ($mech == "scram-sha-1" or $mech == "scram-sha-256") {
+        scramAuth($conn, $opts, $mech);
+        return;
+    }
+    command($conn, "LOGIN " + quoteArg($opts.user) + " " + quoteArg($opts.pass));
+}
+
+# scramAuth runs the SCRAM exchange (RFC 5802) over IMAP AUTHENTICATE in the
+# non-initial-response form (the server sends an empty "+" first). The server
+# signature on the server-final is verified before the session is accepted.
+func scramAuth(conn as net.Conn, opts as Options, mech as string) {
+    def algo as string init "sha256";
+    def wire as string init "SCRAM-SHA-256";
+    if ($mech == "scram-sha-1") {
+        $algo = "sha1";
+        $wire = "SCRAM-SHA-1";
+    }
+    def sc as sasl.Scram init sasl.scramStart($opts.user, $algo);
+    writeLine($conn, TAG + " AUTHENTICATE " + $wire);
+    requirePlus(readLine($conn), $wire + " initial");
+    writeLine($conn, sasl.scramClientFirst($sc));
+    def first as string init readLine($conn);
+    requirePlus($first, $wire + " server-first");
+    $sc = sasl.scramClientFinal($sc, imapChallenge($first), $opts.pass);
+    writeLine($conn, sasl.scramFinalToken($sc));
+    def final as string init readLine($conn);
+    if (strings.startsWith(strings.trim($final), "+")) {
+        if (not sasl.scramVerify($sc, imapChallenge($final))) {
+            writeLine($conn, "*");
+            throw Error{kind: "imap", message: $wire + ": server signature verification failed", file: "", line: 0, col: 0};
+        }
+        writeLine($conn, "");
+        expectTaggedOK(readLine($conn), TAG);
+        return;
+    }
+    expectTaggedOK($final, TAG);
 }
 
 /**

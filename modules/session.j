@@ -9,8 +9,9 @@
  * default `jennifer` binary. Sessions are volatile (memcached evicts under
  * memory pressure), so treat them as a cache of soft state, not a store of
  * record. The JSON is stored base64-wrapped, so session values are binary-safe
- * (any UTF-8). Session IDs are UUID v4 from `math`'s non-crypto RNG - fine for
- * a cache key, not a security token on its own.
+ * (any UTF-8). Session IDs are UUID v4 drawn from the `crypto` library's
+ * crypto-grade random source (122 unguessable bits), so the id is safe to hand
+ * a client as the session's bearer token.
  * @module session
  * @example
  * def mc as memcache.Session init memcache.connect(memcache.Options{

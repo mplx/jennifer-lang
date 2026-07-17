@@ -9,12 +9,9 @@
  * reports whether a password meets the policy (and why not), and
  * `complexity(pw)` estimates a password's strength in bits of entropy.
  *
- * SECURITY NOTE: randomness comes from `math`'s shared, seedable, NON-crypto
- * RNG (the same source `uuid` uses) - it is predictable to an attacker who can
- * reconstruct the seed, so generated passwords are NOT suitable for
- * high-value secrets until this swaps to a crypto-grade source when the
- * `crypto` library lands. Do not use it to mint credentials that must resist a
- * determined attacker today. Pure `.j` over `math` / `strings` / `lists` /
+ * Randomness comes from the `crypto` library's crypto-grade source (character
+ * choice and the final shuffle), so a generated password is unpredictable and
+ * safe to mint as a real credential. Pure `.j` over `crypto` / `strings` /
  * `convert`; runs on both binaries.
  * @module password
  * @example
@@ -25,9 +22,8 @@
  * io.printf("%s  valid=%t  %s\n", $pw, password.validate($policy, $pw).valid,
  *           password.complexity($pw).label);
  */
-use math;
+use crypto;
 use strings;
-use lists;
 use convert;
 
 # Character-class pools. `SYMBOLS` is the default symbol set; a schema may
@@ -245,11 +241,26 @@ func pushRandom(acc as list of string, pool as string, n as int) {
     }
     def i as int init 0;
     while ($i < $n) {
-        def idx as int init math.randInt(0, len($pool) - 1);
+        def idx as int init crypto.randInt(0, len($pool) - 1);
         $acc[] = strings.substring($pool, $idx, $idx + 1);
         $i = $i + 1;
     }
     return $acc;
+}
+
+# shuffleChars returns a crypto-grade Fisher-Yates shuffle of `xs`. Used
+# instead of `lists.shuffle` (which draws from math's non-crypto RNG) so the
+# arrangement of a generated password is as unpredictable as its characters.
+func shuffleChars(xs as list of string) {
+    def i as int init len($xs) - 1;
+    while ($i > 0) {
+        def j as int init crypto.randInt(0, $i);
+        def tmp as string init $xs[$i];
+        $xs[$i] = $xs[$j];
+        $xs[$j] = $tmp;
+        $i = $i - 1;
+    }
+    return $xs;
 }
 
 # countIn counts how many characters of `pw` appear in `pool`.
@@ -292,7 +303,7 @@ export func generate(s as Schema) {
     def required as int init $minLo + $minUp + $minDig + $minSym;
     def target as int init $s.minLength;
     if ($s.maxLength > $s.minLength) {
-        $target = math.randInt($s.minLength, $s.maxLength);
+        $target = crypto.randInt($s.minLength, $s.maxLength);
     }
     if ($required > $target) {
         fail("class minimums (" + convert.toString($required) + ") exceed the length (" + convert.toString($target) + ")");
@@ -303,7 +314,7 @@ export func generate(s as Schema) {
     $chars = pushRandom($chars, classPool($s, "digits"), $minDig);
     $chars = pushRandom($chars, classPool($s, "symbols"), $minSym);
     $chars = pushRandom($chars, alphabet($s), $target - $required);
-    $chars = lists.shuffle($chars);
+    $chars = shuffleChars($chars);
     return strings.join($chars, "");
 }
 

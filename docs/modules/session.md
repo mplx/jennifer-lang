@@ -62,11 +62,11 @@ follow-on.
   restart, so a session can vanish before its TTL. Treat sessions as a cache of
   soft state (a shopping cart, a wizard step), not a store of record. Anything
   that must survive belongs in a database.
-- **Session IDs are UUID v4 from a non-crypto RNG** (see the
-  [`uuid`](../libraries/uuid.md) module - randomness draws from `math`'s
-  seedable source). That is fine for a cache key; a session ID used as an
-  authentication token wants a cryptographic source, which lands with the
-  planned `crypto` library.
+- **Session IDs are UUID v4 from a crypto-grade RNG** (see the
+  [`uuid`](../libraries/uuid.md) module - randomness draws from the
+  [`crypto`](../libraries/crypto.md) library). The 122 random bits are
+  unguessable, so the id is safe to hand a client as the session's bearer
+  token, not just a cache key.
 - **String values only.** A session is a `map of string to string`; encode
   richer values (numbers, nested data) yourself, e.g. via `json` or
   `convert.toString`.

@@ -15,6 +15,7 @@
  * def ok as bool init webhook.verify("{\"event\":\"ping\"}", $sig, "topsecret");
  */
 use hash;
+use crypto;
 use encoding;
 use convert;
 use strings;
@@ -43,21 +44,12 @@ export func sign(payload as string, secret as string) {
     return "sha256=" + hexMac($payload, $secret);
 }
 
-# equalConstantTime compares two strings without an early exit, so the check does
-# not leak via timing how many leading characters matched.
+# equalConstantTime compares two strings for equality without leaking, through
+# timing, how many leading characters matched. Delegates to crypto.hmacEqual
+# (Go's vetted subtle.ConstantTimeCompare) over the UTF-8 bytes.
 func equalConstantTime(a as string, b as string) {
-    if (not (len($a) == len($b))) {
-        return false;
-    }
-    def ab as bytes init convert.bytesFromString($a, "utf-8");
-    def bb as bytes init convert.bytesFromString($b, "utf-8");
-    def diff as int init 0;
-    def i as int init 0;
-    while ($i < len($ab)) {
-        $diff = $diff | ($ab[$i] ^ $bb[$i]);
-        $i = $i + 1;
-    }
-    return ($diff == 0);
+    return crypto.hmacEqual(convert.bytesFromString($a, "utf-8"),
+        convert.bytesFromString($b, "utf-8"));
 }
 
 /**

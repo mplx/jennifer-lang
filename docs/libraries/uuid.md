@@ -45,15 +45,16 @@ def b as string init uuid.generate("v7");
 # $a < $b  (string comparison reflects creation order)
 ```
 
-## Randomness caveat
+## Randomness
 
-v4/v7 randomness comes from `math`'s shared pseudo-random source - the
-same stream as `math.rand`, seedable with `math.randSeed`, and therefore
-**predictable**. Fine for identifiers; **not** for security tokens,
-session keys, or anything an attacker must not guess. A crypto-grade
-source lands with the future `crypto` library.
+v4/v7 randomness comes from the [`crypto`](crypto.md) library's
+crypto-grade source, so a generated UUID is **unguessable** - safe to
+use directly as a security token, session key, or bearer id. It is not
+seedable (crypto randomness has no reproducible sequence); for a fast,
+seedable, deliberately reproducible identifier stream, draw from
+[`math`](math.md) instead.
 
 ## See also
 
-- [math.md](math.md) - the shared RNG (`randSeed` also reseeds `uuid`).
+- [crypto.md](crypto.md) - the crypto-grade random source behind v4 / v7.
 - [cheatsheet.md](cheatsheet.md) - every builtin at a glance.
