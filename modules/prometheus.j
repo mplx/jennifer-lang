@@ -375,14 +375,6 @@ func parseResult(node as json.Value) {
     return Result{ resultType: $rtype, series: $series };
 }
 
-/**
- * Run an instant query against `base` (a Prometheus server URL) via
- * `/api/v1/query`, returning the parsed result set.
- * @param base {string} the Prometheus base URL (e.g. "http://localhost:9090")
- * @param promql {string} the PromQL expression
- * @return {Result} the parsed result set
- * @throws {Error} kind "prometheus" when the server reports a query error
- */
 # decodeBody decodes a Prometheus HTTP response, mapping a non-JSON body (a 502
 # HTML page or an auth portal) to a prometheus-kind error, not a raw json one.
 func decodeBody(resp as http.Response) {
@@ -395,6 +387,14 @@ func decodeBody(resp as http.Response) {
     return $node;
 }
 
+/**
+ * Run an instant query against `base` (a Prometheus server URL) via
+ * `/api/v1/query`, returning the parsed result set.
+ * @param base {string} the Prometheus base URL (e.g. "http://localhost:9090")
+ * @param promql {string} the PromQL expression
+ * @return {Result} the parsed result set
+ * @throws {Error} kind "prometheus" when the server reports a query error
+ */
 export func query(base as string, promql as string) {
     def url as string init joinBase($base, "/api/v1/query") + "?query=" + urlEncode($promql);
     def resp as http.Response init http.get($url, {});

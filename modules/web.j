@@ -1010,15 +1010,6 @@ func applyCors(ctx as Context, opts as CorsOptions) {
 
 # --- serving ----------------------------------------------------------------
 
-/**
- * Serve on an already-listening httpd.Server, dispatching each request to its
- * matched handler. Blocks until the server is shut down (httpd.accept then
- * errors and the loop exits). Use this when you want to hold the server handle
- * yourself - e.g. to shut it down from another task, or to serve from a
- * `spawn`. `web.run` is the listen-and-serve convenience over it.
- * @param app {App} the router
- * @param srv {httpd.Server} the already-listening server handle
- */
 # handleOne routes and answers a single accepted request. Any error it raises
 # is caught per-request in serveOn (turned into a 500), never ending the loop.
 func handleOne(app as App, req as httpd.Request) {
@@ -1044,6 +1035,15 @@ func handleOne(app as App, req as httpd.Request) {
     }
 }
 
+/**
+ * Serve on an already-listening httpd.Server, dispatching each request to its
+ * matched handler. Blocks until the server is shut down (httpd.accept then
+ * errors and the loop exits). Use this when you want to hold the server handle
+ * yourself - e.g. to shut it down from another task, or to serve from a
+ * `spawn`. `web.run` is the listen-and-serve convenience over it.
+ * @param app {App} the router
+ * @param srv {httpd.Server} the already-listening server handle
+ */
 export func serveOn(app as App, srv as httpd.Server) {
     while (true) {
         # Only httpd.accept failing (the server was shut down) ends the loop.

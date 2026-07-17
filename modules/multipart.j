@@ -167,12 +167,6 @@ func generateBoundary() {
     return $out;
 }
 
-/**
- * Build a form body with an explicit boundary (deterministic).
- * @param parts {list of Part} the parts
- * @param boundary {string} the boundary token (must not occur in any part body)
- * @return {Built} the Content-Type and encoded body
- */
 # escapeParam makes a value safe inside a quoted Content-Disposition parameter:
 # strip CR / LF (they would inject headers or a premature body separator) and
 # backslash-escape `\` and `"` so a filename like `a".txt` cannot break out.
@@ -182,6 +176,12 @@ func escapeParam(s as string) {
     return strings.replace($clean, "\"", "\\\"");
 }
 
+/**
+ * Build a form body with an explicit boundary (deterministic).
+ * @param parts {list of Part} the parts
+ * @param boundary {string} the boundary token (must not occur in any part body)
+ * @return {Built} the Content-Type and encoded body
+ */
 export func buildWith(parts as list of Part, boundary as string) {
     def body as bytes;
     for (def p in $parts) {

@@ -17,6 +17,7 @@
 use hash;
 use encoding;
 use convert;
+use strings;
 import "./http.j" as http;
 
 # The GitHub-convention signature header carrying the sha256= HMAC.

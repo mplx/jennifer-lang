@@ -13,7 +13,7 @@ import "../../modules/ipnet.j" as ipnet;
 
 # Canonical formatting (RFC 5952 for IPv6).
 io.printf("=== canonical addresses ===\n");
-for (def s in ["192.168.001.001", "2001:0db8:0000:0000:0000:0000:0000:0001", "::1", "fe80::1ff:fe23:4567:890a"]) {
+for (def s in ["192.168.1.1", "2001:0db8:0000:0000:0000:0000:0000:0001", "::1", "fe80::1ff:fe23:4567:890a"]) {
     io.printf("  %s -> %s\n", $s, ipnet.toString(ipnet.parseAddress($s)));
 }
 

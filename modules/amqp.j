@@ -84,6 +84,7 @@ export def struct Options {
  * An open connection (single channel).
  * @field socket {net.Conn} the underlying connection
  * @field channel {int} the channel number (always 1)
+ * @field frameMax {int} the negotiated maximum frame size (bytes)
  */
 export def struct Conn {
     socket as net.Conn,
