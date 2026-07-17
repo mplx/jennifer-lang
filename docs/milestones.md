@@ -1710,7 +1710,7 @@ source; pkg.go.dev serves the module under `jennifer-lang.dev/jennifer`.
 
 ### M19.9 - Audit-driven correctness + hardening pass
 
-**In progress.** A systematic sweep through the findings of a full
+**Done.** A systematic sweep through the findings of a full
 bug-and-performance audit of the interpreter (`internal/`) and the module
 library (`modules/`), worked in severity order: criticals first, then the
 value-semantics / type-safety holes, then module correctness, performance
@@ -1882,13 +1882,65 @@ Shipped so far:
   goroutine; `os` gains **`os.release(p)`** to drop a finished process handle
   (the registry no longer grows without bound for a per-job spawner).
 
-Remaining phases (tracked to completion under this milestone): the
-remaining module correctness and performance findings (mediums and lows),
-the interpreter and library long-tail (net / fs / os lifecycle, toml
-conformance, diagnostics), and a deliberate batch of pre-1.0 strictness
-changes (floored `%`, duplicate map-literal keys, int overflow,
-mixed-comparison precision, method/global name clashes, `$CONST` reads) -
-each of those with an explicit break note here when it lands.
+- **Interpreter + library long-tail (lows).** The remaining interpreter and
+  standard-library findings. Lexer: number literals accept ASCII digits only
+  (a non-ASCII digit is a clean lex error), and a leading UTF-8 BOM is
+  stripped. `toml` gained a full conformance pass: date-times are validated
+  (out-of-range fields rejected, local-time `asDatetime` anchored to the epoch
+  so its nanos are representable), string content rejects control bytes / lone
+  CR / a third hugging quote, the number grammar rejects leading zeros / bad
+  underscores / bare-dot floats, `\u` escapes reject surrogates and
+  out-of-range code points, table redefinition follows TOML 1.0's four
+  MUST-error rules, and a wrapped array-of-tables encodes instead of being
+  dropped. `json`: a `-0` decodes as float (sign preserved), object decode is
+  O(1)-per-key (was O(N^2)), and a JSON-pointer index that would overflow `int`
+  is rejected instead of panicking. Library correctness: `math.randInt`
+  rejection-samples to remove modulo bias; `strings.repeat` / `lists` range-
+  check before narrowing and cap the result; `io.printf` zero-fill groups
+  columnar; `time`'s `%z` parse enforces the +/-26h cap; the `testing` TAP /
+  text renderers escape newlines and `#`; hash / crc / compress streams hold a
+  per-stream mutex and gained a `discard` verb (leak-free abort);
+  `fs.writeString` propagates its close error; `os.run` / `os.spawn` cap
+  captured output, `os.wait` surfaces a non-exit failure, `os.kill` falls back
+  to a hard kill on Windows; `httpd.listenTLS` floors at TLS 1.2 and the unix-
+  socket listener only clears a confirmed-stale socket; `archive.unpack`
+  rejects zip-slip entry names. Parser / resolver: `CONST.field` parses (no
+  parenthesis workaround), a `ConstRefExpr` uses its resolver slot, the
+  for-header frame is pre-sized (body frame no longer oversized per iteration),
+  and an lvalue-chain expression statement is parsed once. Diagnostics: `lint`
+  descends into `spawn` bodies (L202) and `repeat ... until` conditions (L105),
+  a `# lint-disable` in an included file is honoured, the profiler's Chrome
+  trace puts each goroutine on its own track, and module-resolution stat
+  errors distinguish EACCES from not-found.
+- **Module correctness / performance long-tail (lows).** The remaining
+  `modules/` findings. Wire framing: `amqp` / `mqtt` / `mikrotik` accumulate
+  reads in place (O(N)); `websocket` parses the handshake status code exactly
+  and de-O(N^2)s the response read; `imap` answers an unexpected `+`
+  continuation so a failed AUTHENTICATE fails fast. HTTP: `http.j` skips caller
+  framing headers, joins repeated response headers, and throws on a truncated
+  chunked body; `web` uses a constant-time CSRF compare, validates cookie
+  name/value, rejects wildcard-origin-with-credentials CORS (adds `Vary`), and
+  parses `If-None-Match` lists / weak ETags; `telegram` / `prometheus` /
+  `oauth` guard their JSON decode and rethrow their own error kind. Formats:
+  `pdfwriter` transcodes text to WinAnsi (octal-escaped) and encodes Info
+  metadata correctly (name-escaped keys, UTF-16BE values), and omits `/Encoding`
+  for Symbol / ZapfDingbats; `barcode` rejects `*` in Code 39, validates a full
+  EAN check digit, scores QR mask rule 3 in both directions, inlines the GF(256)
+  multiply, and builds SVG / terminal output with `strings.join`; `label_zpl`
+  honours module width / QR magnification, rotates counter-clockwise, and `^FH`-
+  escapes barcode data; `markdown` splits link titles out of the href and
+  measures East-Asian width for table alignment; `mime` keeps an unterminated
+  final part and quotes RFC 5322 specials; `csv` joins fields instead of `+`.
+  Data / misc: `ipnet` rejects leading-zero octets and misplaced embedded IPv4;
+  `cron` widens its search horizon past the 2100 leap gap, validates numeric
+  fields, and treats `*/n` as unrestricted; `semver` fixes `>*` / `<*`, empty
+  OR-clauses, prerelease-only interval intersects, and reuses parsed versions;
+  `bucket` gains ListObjectsV2 pagination; `flatdb` uniquifies its temp file;
+  `gpio` wraps sysfs I/O in its own error kind; `docblock` reports the
+  construct's line, keeps an unterminated comment's tail, and bounds its
+  per-block source scan; `vcard` / `ical` split the value colon quote-aware;
+  `ansi.rgb` clamps its channels; `smtp` splits the envelope at the last `@`;
+  `idna` length-checks A-labels and maps the Unicode dot variants.
 
 ## M20 - system libraries
 
