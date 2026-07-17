@@ -289,6 +289,47 @@ func (i *Interpreter) bindModuleAlias(alias string, m *loadedModule, at parser.N
 	return nil
 }
 
+// findImpostorStruct walks v (struct fields, list elements, map keys and
+// values) for a struct whose name matches one of the module's own structs but
+// whose identity is not the module's. Depth-first; returns the first offender.
+// Allocation-free, same traversal shape as subtreeNeedsRetag.
+func findImpostorStruct(v Value, m *loadedModule) (Value, bool) {
+	switch v.Kind {
+	case KindStruct:
+		// An impostor is a *bare* struct (no module identity) whose name is
+		// module-owned: exactly what the outward retag would re-brand to the
+		// module's identity, completing the impersonation. A struct carrying a
+		// foreign identity instead - e.g. a `net.Conn` field named "Conn"
+		// nested in a genuine module struct - is never re-branded (its NS is
+		// not the module's) and would fail the param-type check on its own, so
+		// it is not an impostor and must not be flagged here.
+		if m.isOwnStruct(v.StructName) && v.StructNS == "" && v.ModPath == "" {
+			return v, true
+		}
+		for _, f := range v.Fields {
+			if imp, found := findImpostorStruct(f.Value, m); found {
+				return imp, true
+			}
+		}
+	case KindList:
+		for _, e := range v.List {
+			if imp, found := findImpostorStruct(e, m); found {
+				return imp, true
+			}
+		}
+	case KindMap:
+		for _, e := range v.Map {
+			if imp, found := findImpostorStruct(e.Key, m); found {
+				return imp, true
+			}
+			if imp, found := findImpostorStruct(e.Value, m); found {
+				return imp, true
+			}
+		}
+	}
+	return Value{}, false
+}
+
 // callModuleMethod dispatches `alias.method(args)` into the loaded module's
 // own interpreter: arguments are evaluated in the consumer's environment, and
 // the method body runs against the module's globals and methods (via
@@ -313,9 +354,11 @@ func (i *Interpreter) callModuleMethod(m *loadedModule, c *parser.QualifiedCallE
 		// own structs but whose identity is not the module's (a
 		// consumer-defined bare struct sharing the name). Without this it would
 		// pass the module's param-type check - which sees the module's structs
-		// as bare - then blow up mid-body or be re-branded on return.
-		if v.Kind == KindStruct && m.isOwnStruct(v.StructName) && !(v.StructNS == m.ns && v.ModPath == m.path) {
-			return Value{}, &runtimeError{Msg: fmt.Sprintf("argument %d to %s.%s: struct %q is not %s.%s (a consumer-defined struct cannot impersonate a module struct)", idx+1, m.ns, c.Callee, v.StructName, m.ns, v.StructName), File: file, Line: line, Col: col}
+		// as bare - then blow up mid-body or be re-branded on return. The check
+		// recurses: an impostor nested inside a list / map / struct field
+		// crosses the boundary just as unchecked as a top-level one.
+		if imp, found := findImpostorStruct(v, m); found {
+			return Value{}, &runtimeError{Msg: fmt.Sprintf("argument %d to %s.%s: struct %q is not %s.%s (a consumer-defined struct cannot impersonate a module struct)", idx+1, m.ns, c.Callee, imp.StructName, m.ns, imp.StructName), File: file, Line: line, Col: col}
 		}
 		// Cross the boundary inward: a module struct the consumer holds is
 		// tagged `(module-stem, name)`; inside the module it is bare.

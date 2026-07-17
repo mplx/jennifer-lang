@@ -439,3 +439,27 @@ func TestSlowBodyTimesOut(t *testing.T) {
 		t.Errorf("stalled body status = %d, want 400", resp.StatusCode)
 	}
 }
+
+// A request that is never pulled off the accept queue (the program is stuck
+// between listen and accept) must not park its handler goroutine forever; it
+// answers 503 after respondTimeout.
+func TestNeverAcceptedRequestTimesOut(t *testing.T) {
+	ResetForTest()
+	old := respondTimeout
+	respondTimeout = 150 * time.Millisecond
+	defer func() { respondTimeout = old }()
+
+	srv, addr := startServer(t)
+	defer shutdownFn(noCtx, []Value{srv})
+
+	// No acceptFn call at all: the reqs channel is never drained.
+	resp, err := http.Get("http://" + addr + "/")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("never-accepted request status = %d, want 503", resp.StatusCode)
+	}
+}

@@ -352,3 +352,40 @@ io.printf("wrote tag=[%s] n=%d\n", $p.tag, $p.inner.n);`,
 		t.Errorf("got %q, want %q", out, want)
 	}
 }
+
+// The impostor check must recurse: a consumer struct impersonating a module
+// struct hidden inside a list (or map / struct field) crosses the boundary
+// just as unchecked as a top-level one - and would be re-branded to the
+// module's identity on the way back out.
+func TestModuleRejectsNestedImpostorStruct(t *testing.T) {
+	geo := `export def struct Point { x as int };
+		export func firstX(ps as list of Point) { return $ps[0]; }`
+	_, err := runModuleMainTree(t, map[string]string{
+		"geo.j": geo,
+		"main.j": `import "./geo.j" as g; use io;
+			def struct Point { name as string };
+			def xs as list of Point init [Point{ name: "nope" }];
+			def back as g.Point init g.firstX($xs);
+			io.printf("%s\n", "unreachable");`,
+	})
+	if err == nil {
+		t.Fatal("expected a nested impostor-struct error")
+	}
+	if !strings.Contains(err.Error(), "impersonate") {
+		t.Errorf("error should mention impersonation: %v", err)
+	}
+	// Genuine module structs nested in a list still cross fine.
+	out, err := runModuleMainTree(t, map[string]string{
+		"geo.j": geo,
+		"main.j": `import "./geo.j" as g; use io;
+			def xs as list of g.Point init [g.Point{ x: 7 }];
+			def back as g.Point init g.firstX($xs);
+			io.printf("%d\n", $back.x);`,
+	})
+	if err != nil {
+		t.Fatalf("genuine nested module struct should be accepted: %v", err)
+	}
+	if strings.TrimSpace(out) != "7" {
+		t.Errorf("got %q, want 7", strings.TrimSpace(out))
+	}
+}

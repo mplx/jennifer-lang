@@ -329,22 +329,21 @@ func (d *decoder) parseArrayTableHeader(root *interpreter.Value) (*interpreter.V
 		}
 	}
 	last := segs[len(segs)-1]
+	lastKey := interpreter.StringVal(last)
 	// Find or create the array under `last`, then append a fresh table element.
-	for i := range cur.Map {
-		if cur.Map[i].Key.Str == last {
-			v := &cur.Map[i].Value
-			// The key must be an array *of tables* created by an earlier
-			// [[header]] - not a static array (`a = []`) sharing the KindList.
-			if v.Kind != interpreter.KindList || !d.arrays[key] {
-				return nil, d.errf("key %q is not an array of tables", last)
-			}
-			v.List = append(v.List, mapVal(nil))
-			d.arrayIdx[key]++
-			d.curPath = segs
-			return &v.List[len(v.List)-1], nil
+	if pos := cur.LookupKey(lastKey); pos >= 0 {
+		v := &cur.Map[pos].Value
+		// The key must be an array *of tables* created by an earlier
+		// [[header]] - not a static array (`a = []`) sharing the KindList.
+		if v.Kind != interpreter.KindList || !d.arrays[key] {
+			return nil, d.errf("key %q is not an array of tables", last)
 		}
+		v.List = append(v.List, mapVal(nil))
+		d.arrayIdx[key]++
+		d.curPath = segs
+		return &v.List[len(v.List)-1], nil
 	}
-	cur.Map = append(cur.Map, interpreter.MapEntry{Key: interpreter.StringVal(last), Value: listVal([]interpreter.Value{mapVal(nil)})})
+	cur.UpsertKey(lastKey, listVal([]interpreter.Value{mapVal(nil)}))
 	d.arrays[key] = true
 	d.arrayIdx[key] = 0
 	d.curPath = segs
@@ -354,26 +353,28 @@ func (d *decoder) parseArrayTableHeader(root *interpreter.Value) (*interpreter.V
 
 // descendTable returns a pointer to the child table named key under cur,
 // creating an empty table if absent. An array-of-tables child descends into its
-// last element (so `[a.b]` after `[[a]]` targets the newest `a`).
+// last element (so `[a.b]` after `[[a]]` targets the newest `a`). Lookups and
+// inserts go through the Value hash index (LookupKey/UpsertKey) so building a
+// wide table stays O(N), not O(N^2).
 func (d *decoder) descendTable(cur *interpreter.Value, key string) (*interpreter.Value, error) {
-	for i := range cur.Map {
-		if cur.Map[i].Key.Str == key {
-			v := &cur.Map[i].Value
-			switch v.Kind {
-			case interpreter.KindMap:
-				return v, nil
-			case interpreter.KindList:
-				if len(v.List) == 0 || v.List[len(v.List)-1].Kind != interpreter.KindMap {
-					return nil, d.errf("key %q is not a table", key)
-				}
-				return &v.List[len(v.List)-1], nil
-			default:
-				return nil, d.errf("key %q is not a table", key)
-			}
-		}
+	k := interpreter.StringVal(key)
+	pos := cur.LookupKey(k)
+	if pos < 0 {
+		cur.UpsertKey(k, mapVal(nil))
+		return &cur.Map[len(cur.Map)-1].Value, nil
 	}
-	cur.Map = append(cur.Map, interpreter.MapEntry{Key: interpreter.StringVal(key), Value: mapVal(nil)})
-	return &cur.Map[len(cur.Map)-1].Value, nil
+	v := &cur.Map[pos].Value
+	switch v.Kind {
+	case interpreter.KindMap:
+		return v, nil
+	case interpreter.KindList:
+		if len(v.List) == 0 || v.List[len(v.List)-1].Kind != interpreter.KindMap {
+			return nil, d.errf("key %q is not a table", key)
+		}
+		return &v.List[len(v.List)-1], nil
+	default:
+		return nil, d.errf("key %q is not a table", key)
+	}
 }
 
 // ----- key/value pairs -----------------------------------------------------
@@ -407,12 +408,11 @@ func (d *decoder) parseKeyValue(current *interpreter.Value) error {
 		}
 	}
 	last := segs[len(segs)-1]
-	for i := range cur.Map {
-		if cur.Map[i].Key.Str == last {
-			return d.errf("duplicate key %q", last)
-		}
+	lastKey := interpreter.StringVal(last)
+	if cur.LookupKey(lastKey) >= 0 {
+		return d.errf("duplicate key %q", last)
 	}
-	cur.Map = append(cur.Map, interpreter.MapEntry{Key: interpreter.StringVal(last), Value: val})
+	cur.UpsertKey(lastKey, val)
 	// A value that is itself an inline table is closed: no later dotted key or
 	// header may extend it.
 	if val.Kind == interpreter.KindMap {
@@ -797,11 +797,11 @@ func (d *decoder) skipArrayGaps() {
 
 func (d *decoder) parseInlineTable() (interpreter.Value, error) {
 	d.advance() // '{'
-	entries := []interpreter.MapEntry{}
+	tbl := mapVal(nil)
 	d.skipInlineWS()
 	if d.peek() == '}' {
 		d.advance()
-		return mapVal(entries), nil
+		return tbl, nil
 	}
 	for {
 		d.skipInlineWS()
@@ -819,8 +819,7 @@ func (d *decoder) parseInlineTable() (interpreter.Value, error) {
 		if err != nil {
 			return interpreter.Value{}, err
 		}
-		entries, err = inlineAssign(entries, segs, val, d)
-		if err != nil {
+		if err := inlineAssign(&tbl, segs, val, d); err != nil {
 			return interpreter.Value{}, err
 		}
 		d.skipInlineWS()
@@ -829,43 +828,36 @@ func (d *decoder) parseInlineTable() (interpreter.Value, error) {
 			d.advance()
 		case '}':
 			d.advance()
-			return mapVal(entries), nil
+			return tbl, nil
 		default:
 			return interpreter.Value{}, d.errf("expected ',' or '}' in inline table")
 		}
 	}
 }
 
-// inlineAssign sets a (possibly dotted) key inside an inline table's entry list,
-// creating intermediate tables as needed.
-func inlineAssign(entries []interpreter.MapEntry, segs []string, val interpreter.Value, d *decoder) ([]interpreter.MapEntry, error) {
+// inlineAssign sets a (possibly dotted) key inside an inline table, creating
+// intermediate tables as needed. Duplicate detection and inserts go through
+// the Value hash index so a wide inline table builds in O(N).
+func inlineAssign(tbl *interpreter.Value, segs []string, val interpreter.Value, d *decoder) error {
+	k := interpreter.StringVal(segs[0])
 	if len(segs) == 1 {
-		for i := range entries {
-			if entries[i].Key.Str == segs[0] {
-				return nil, d.errf("duplicate key %q", segs[0])
-			}
+		if tbl.LookupKey(k) >= 0 {
+			return d.errf("duplicate key %q", segs[0])
 		}
-		return append(entries, interpreter.MapEntry{Key: interpreter.StringVal(segs[0]), Value: val}), nil
+		tbl.UpsertKey(k, val)
+		return nil
 	}
 	// Dotted: descend/create a sub-table.
-	for i := range entries {
-		if entries[i].Key.Str == segs[0] {
-			if entries[i].Value.Kind != interpreter.KindMap {
-				return nil, d.errf("key %q is not a table", segs[0])
-			}
-			sub, err := inlineAssign(entries[i].Value.Map, segs[1:], val, d)
-			if err != nil {
-				return nil, err
-			}
-			entries[i].Value = mapVal(sub)
-			return entries, nil
-		}
+	pos := tbl.LookupKey(k)
+	if pos < 0 {
+		tbl.UpsertKey(k, mapVal(nil))
+		pos = len(tbl.Map) - 1
 	}
-	sub, err := inlineAssign(nil, segs[1:], val, d)
-	if err != nil {
-		return nil, err
+	sub := &tbl.Map[pos].Value
+	if sub.Kind != interpreter.KindMap {
+		return d.errf("key %q is not a table", segs[0])
 	}
-	return append(entries, interpreter.MapEntry{Key: interpreter.StringVal(segs[0]), Value: mapVal(sub)}), nil
+	return inlineAssign(sub, segs[1:], val, d)
 }
 
 // ----- numbers and datetimes -----------------------------------------------
@@ -1117,9 +1109,24 @@ func classifyNumber(tok string, d *decoder) (interpreter.Value, error) {
 }
 
 // validateUnderscores rejects TOML underscore misuse: a `_` must sit between
-// two base digits. strconv strips underscores before parsing, so `1__0`, `_1`,
-// and `1_` would otherwise parse fine.
+// two digits *of the token's base*. strconv strips underscores before
+// parsing, so `1__0`, `_1`, and `1_` would otherwise parse fine - and the
+// digit class must match the base, or decimal `1_e5` slips through with `e`
+// counting as a hex digit.
 func validateUnderscores(tok string) bool {
+	digit := func(c byte) bool { return c >= '0' && c <= '9' }
+	if len(tok) > 2 && tok[0] == '0' {
+		switch tok[1] {
+		case 'x', 'X':
+			digit = func(c byte) bool {
+				return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
+			}
+		case 'o', 'O':
+			digit = func(c byte) bool { return c >= '0' && c <= '7' }
+		case 'b', 'B':
+			digit = func(c byte) bool { return c == '0' || c == '1' }
+		}
+	}
 	for i := 0; i < len(tok); i++ {
 		if tok[i] != '_' {
 			continue
@@ -1127,15 +1134,11 @@ func validateUnderscores(tok string) bool {
 		if i == 0 || i == len(tok)-1 {
 			return false
 		}
-		if !isBaseDigit(tok[i-1]) || !isBaseDigit(tok[i+1]) {
+		if !digit(tok[i-1]) || !digit(tok[i+1]) {
 			return false
 		}
 	}
 	return true
-}
-
-func isBaseDigit(c byte) bool {
-	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
 }
 
 // validateDecimalGrammar enforces TOML's decimal integer/float rules on an

@@ -241,6 +241,13 @@ func makeHandler(st *serverState) http.Handler {
 		case <-st.closing:
 			http.Error(w, "server shutting down", http.StatusServiceUnavailable)
 			return
+		case <-time.After(respondTimeout):
+			// The program isn't draining the accept queue (stuck between
+			// listen and accept, or accepting too slowly). Without this arm
+			// the handler goroutine, its admission slot, and the client
+			// connection would all park until server shutdown.
+			http.Error(w, "server not accepting requests", http.StatusServiceUnavailable)
+			return
 		}
 
 		select {

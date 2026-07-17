@@ -792,15 +792,51 @@ func (v Value) Equal(o Value) bool {
 			if len(v.Map) != len(o.Map) {
 				return false
 			}
-			for _, a := range v.Map {
-				found := false
-				for _, b := range o.Map {
-					if a.Key.Equal(b.Key) && a.Value.Equal(b.Value) {
-						found = true
-						break
-					}
+			// Fast path: index o's keys. Requires o's keys hashable and
+			// unique (the normal case - duplicate map literals are
+			// rejected); each v entry must then hit a distinct o entry with
+			// an equal value. O(n) instead of O(n*m).
+			oIdx := make(map[string]int, len(o.Map))
+			indexable := true
+			for i := range o.Map {
+				enc, ok := mapKeyEncode(o.Map[i].Key)
+				if !ok {
+					indexable = false
+					break
 				}
-				if !found {
+				if _, dup := oIdx[enc]; dup {
+					indexable = false
+					break
+				}
+				oIdx[enc] = i
+			}
+			if indexable {
+				seen := make([]bool, len(o.Map))
+				for _, a := range v.Map {
+					enc, ok := mapKeyEncode(a.Key)
+					if !ok {
+						// A non-hashable (compound) key cannot equal any of
+						// o's hashable scalar keys.
+						return false
+					}
+					pos, ok := oIdx[enc]
+					if !ok || seen[pos] || !a.Value.Equal(o.Map[pos].Value) {
+						return false
+					}
+					seen[pos] = true
+				}
+				return true
+			}
+			// Degenerate maps (duplicate or non-hashable keys): a one-way
+			// containment check plus the length test is fooled by duplicates
+			// ({a,a} vs {a,b}), so check containment in BOTH directions.
+			for _, a := range v.Map {
+				if !mapContainsEntry(o, a) {
+					return false
+				}
+			}
+			for _, b := range o.Map {
+				if !mapContainsEntry(v, b) {
 					return false
 				}
 			}
@@ -815,6 +851,17 @@ func (v Value) Equal(o Value) bool {
 	}
 	if v.Kind == KindFloat && o.Kind == KindInt {
 		return compareIntFloat(o.Int, v.Float) == 0
+	}
+	return false
+}
+
+// mapContainsEntry reports whether m holds an entry with an equal key AND an
+// equal value. Linear; only used by Equal's degenerate-map fallback.
+func mapContainsEntry(m Value, e MapEntry) bool {
+	for i := range m.Map {
+		if m.Map[i].Key.Equal(e.Key) && m.Map[i].Value.Equal(e.Value) {
+			return true
+		}
 	}
 	return false
 }

@@ -25,6 +25,11 @@ const maxHandleRead = 256 << 20
 // the open mode so read ops on a write-mode handle (and vice versa)
 // error at the boundary rather than crashing at the syscall.
 type handleState struct {
+	// mu guards sticky and the bufio.Reader / *os.File I/O state against
+	// concurrent use from spawned tasks (bufio.Reader is not goroutine-safe;
+	// even eof's Peek races a concurrent read). Held across whole operations
+	// - file I/O is short-blocking, so no deadline-interrupt concern.
+	mu     sync.Mutex
 	f      *os.File
 	reader *bufio.Reader // populated for read/append; nil for write-only
 	mode   string        // "read" | "write" | "append"
@@ -166,6 +171,8 @@ func closeFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	}
 	delete(handles, id)
 	handlesMu.Unlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.f != nil {
 		if cerr := h.f.Close(); cerr != nil {
 			return interpreter.Null(), fmt.Errorf("fs.close: %s: %v", h.path, cerr)
@@ -198,6 +205,8 @@ func readLineFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if err != nil {
 		return interpreter.Null(), err
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if err := requireReadMode("fs.readLine", h); err != nil {
 		return interpreter.Null(), err
 	}
@@ -245,6 +254,8 @@ func readCharsFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if err != nil {
 		return interpreter.Null(), err
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if err := requireReadMode("fs.readChars", h); err != nil {
 		return interpreter.Null(), err
 	}
@@ -298,6 +309,8 @@ func readBytesDispatchFn(ctx interpreter.BuiltinCtx, args []Value) (Value, error
 	if err != nil {
 		return interpreter.Null(), err
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if err := requireReadMode("fs.readBytes", h); err != nil {
 		return interpreter.Null(), err
 	}
@@ -344,6 +357,8 @@ func writeHandleStringFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) 
 	if err != nil {
 		return interpreter.Null(), err
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if err := requireWriteMode("fs.writeString", h); err != nil {
 		return interpreter.Null(), err
 	}
@@ -371,6 +386,8 @@ func writeHandleBytesFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if err != nil {
 		return interpreter.Null(), err
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if err := requireWriteMode("fs.writeBytes", h); err != nil {
 		return interpreter.Null(), err
 	}
@@ -392,6 +409,8 @@ func eofFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if err != nil {
 		return interpreter.Null(), err
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if h.sticky {
 		return interpreter.BoolVal(true), nil
 	}

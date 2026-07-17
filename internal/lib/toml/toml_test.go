@@ -427,3 +427,39 @@ func TestDecodeHeaderThroughInlineTable(t *testing.T) {
 		}
 	}
 }
+
+// Underscore validation must use the token's own base: in a decimal number
+// `e` is an exponent marker, not a digit, so `1_e5` is a MUST-error (it used
+// to slip through the hex digit class and decode as 100000).
+func TestDecodeUnderscoreBaseAware(t *testing.T) {
+	bad := []string{"x = 1_e5", "x = 1e_5", "x = 1.5_e2", "x = 0b1_2", "x = 0o1_8"}
+	for _, src := range bad {
+		if _, err := decodeToml(src); err == nil {
+			t.Errorf("expected error decoding %q", src)
+		}
+	}
+	good := map[string]interface{}{
+		"x = 1_000":       int64(1000),
+		"x = 1e5_0":       float64(1e50),
+		"x = 0xdead_beef": int64(0xdeadbeef),
+		"x = 0b1_0":       int64(2),
+	}
+	for src, want := range good {
+		tree, err := decodeToml(src)
+		if err != nil {
+			t.Errorf("%q should decode, got %v", src, err)
+			continue
+		}
+		v := get(t, tree, "/x")
+		switch w := want.(type) {
+		case int64:
+			if v.Int != w {
+				t.Errorf("%q = %d, want %d", src, v.Int, w)
+			}
+		case float64:
+			if v.Float != w {
+				t.Errorf("%q = %g, want %g", src, v.Float, w)
+			}
+		}
+	}
+}

@@ -478,3 +478,45 @@ func TestReadBytesPartialViaHandle(t *testing.T) {
 		t.Errorf("got %q, want %q", out, "4 4 2")
 	}
 }
+
+// A file handle shared between a spawned task and the main task must not race:
+// handleState's per-handle mutex guards sticky and the bufio.Reader, so
+// concurrent readLine / eof calls are serialized rather than corrupting reader
+// state (bufio.Reader is not goroutine-safe). Run under -race to verify.
+func TestHandleConcurrentAccessIsRaceFree(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "lines.txt")
+	var content strings.Builder
+	for i := 0; i < 500; i++ {
+		fmt.Fprintf(&content, "line-%d\n", i)
+	}
+	if err := os.WriteFile(tmp, []byte(content.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runProg(t, fmt.Sprintf(`
+		use io;
+		use fs;
+		use task;
+		def f as fs.File init fs.open(%q, "read");
+		def t as task of int init spawn {
+			def n as int init 0;
+			while (not fs.eof($f)) {
+				try { fs.readLine($f); $n = $n + 1; } catch (e) { break; }
+			}
+			return $n;
+		};
+		def m as int init 0;
+		while (not fs.eof($f)) {
+			try { fs.readLine($f); $m = $m + 1; } catch (e) { break; }
+		}
+		def n as int init task.wait($t);
+		io.printf("%%d", $n + $m);
+		fs.close($f);
+	`, tmp))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// Between them the two tasks must have read every line exactly once.
+	if out != "500" {
+		t.Errorf("total lines read = %s, want 500", out)
+	}
+}
