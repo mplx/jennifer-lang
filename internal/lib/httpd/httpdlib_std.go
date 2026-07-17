@@ -61,6 +61,23 @@ const readHeaderTimeout = 15 * time.Second
 // lower it.
 var bodyReadTimeout = 60 * time.Second
 
+// writeTimeout bounds how long the response write may take. Like the body
+// read, the write happens while holding an admission slot, so without this a
+// client that stops reading the response (a slow-read Slowloris, or just a
+// stalled large download) pins its slot until the socket send buffer drains -
+// 256 such clients stall the whole server. Armed per-response via
+// ResponseController rather than http.Server.WriteTimeout so it bounds the
+// whole write from its start, not from request receipt, and can be generous
+// enough for large legitimate downloads. A var so tests can lower it.
+var writeTimeout = 5 * time.Minute
+
+// idleTimeout bounds how long an idle keep-alive connection may sit between
+// requests. ReadHeaderTimeout does not cover the idle gap, so without this a
+// client can open many keep-alives, send one request each, then idle forever -
+// a goroutine + fd per connection with no bound (connection-exhaustion
+// Slowloris). A var so tests can lower it (read at server construction).
+var idleTimeout = 2 * time.Minute
+
 // respondTimeout bounds how long a handler goroutine parks waiting for the
 // program to answer an accepted request. If the program never responds (e.g.
 // it threw between accept and respond), the handler answers 500 and unparks so
@@ -280,6 +297,13 @@ func makeHandler(st *serverState) http.Handler {
 		headers := rs.respHeaders
 		rs.mu.Unlock()
 
+		// Bound the response write so a client that stops reading can't pin
+		// this handler's admission slot (held until return) until the socket
+		// send buffer drains. Armed here, at the start of the write, so a large
+		// legitimate download gets the full writeTimeout rather than a budget
+		// shared with request receipt.
+		_ = rc.SetWriteDeadline(time.Now().Add(writeTimeout))
+
 		// Apply the handler's headers first, so a Cache-Control / CORS /
 		// Set-Cookie set before serveFile / serveDir is preserved (ServeFile
 		// adds its own headers without clearing these).
@@ -398,6 +422,7 @@ func newServer(ln net.Listener) *serverState {
 	st.srv = &http.Server{
 		Handler:           makeHandler(st),
 		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
 	}
 	return st
 }

@@ -463,3 +463,103 @@ func TestNeverAcceptedRequestTimesOut(t *testing.T) {
 		t.Errorf("never-accepted request status = %d, want 503", resp.StatusCode)
 	}
 }
+
+// A client that stops reading the response must not pin its handler (and its
+// admission slot) forever: the per-response write deadline aborts the stalled
+// write. Without it, a large body to a non-reading client blocks in w.Write
+// until the connection dies on its own.
+func TestSlowReadResponseTimesOut(t *testing.T) {
+	ResetForTest()
+	old := writeTimeout
+	writeTimeout = 300 * time.Millisecond
+	defer func() { writeTimeout = old }()
+
+	srv, addr := startServer(t)
+	defer shutdownFn(noCtx, []Value{srv})
+
+	// Body larger than the combined kernel send + receive buffers (wmem_max +
+	// tcp_rmem max, ~36 MiB on this host), so the write genuinely blocks on a
+	// non-reading client rather than being absorbed - only then does the
+	// deadline get exercised.
+	big := strings.Repeat("x", 128<<20)
+	serveOnce(srv, func(req Value) {
+		_, _ = respondFn(noCtx, []Value{req, interpreter.IntVal(200), interpreter.StringVal(big)})
+	})
+
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	fmt.Fprintf(c, "GET / HTTP/1.1\r\nHost: %s\r\n\r\n", addr)
+
+	// Do NOT read while the server writes: the kernel buffers fill (~36 MiB)
+	// and the write blocks. Past writeTimeout the deadline must fire, aborting
+	// the write and closing the connection. Wait well past the deadline, then
+	// drain: with the fix the socket holds the buffered prefix followed by EOF
+	// (server closed), so the drain finishes fast. Without it the server is
+	// still blocked in w.Write, the connection stays open, and the drain blocks
+	// on the read deadline instead.
+	time.Sleep(1500 * time.Millisecond) // >> writeTimeout (300ms)
+	c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	start := time.Now()
+	buf := make([]byte, 64<<10)
+	var readErr error
+	for {
+		_, readErr = c.Read(buf)
+		if readErr != nil {
+			break
+		}
+	}
+	elapsed := time.Since(start)
+	if os.IsTimeout(readErr) {
+		t.Errorf("server did not abort the stalled write: drain hit the read deadline after %v (connection stayed open)", elapsed)
+	}
+	if elapsed > 2*time.Second {
+		t.Errorf("drain ran %v (want fast EOF); server likely did not close", elapsed)
+	}
+}
+
+// An idle keep-alive connection must be closed by the server after
+// idleTimeout: ReadHeaderTimeout does not bound the gap between requests, so
+// without IdleTimeout a client could hold a goroutine + fd open forever by
+// sending one request then idling (connection-exhaustion Slowloris).
+func TestIdleKeepAliveTimesOut(t *testing.T) {
+	ResetForTest()
+	oldIdle := idleTimeout
+	idleTimeout = 300 * time.Millisecond
+	defer func() { idleTimeout = oldIdle }()
+
+	srv, addr := startServer(t)
+	defer shutdownFn(noCtx, []Value{srv})
+
+	serveOnce(srv, func(req Value) {
+		_, _ = respondFn(noCtx, []Value{req, interpreter.IntVal(200), interpreter.StringVal("hi")})
+	})
+
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	// One complete request/response, then go idle (send nothing more).
+	fmt.Fprintf(c, "GET / HTTP/1.1\r\nHost: %s\r\n\r\n", addr)
+	br := bufio.NewReader(c)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+
+	// The idle connection must be closed by the server well inside this bound.
+	c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	start := time.Now()
+	_, readErr := br.Read(make([]byte, 1))
+	if os.IsTimeout(readErr) {
+		t.Errorf("idle connection was not closed: read hit its deadline after %v", time.Since(start))
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("idle close took %v (want ~idleTimeout)", elapsed)
+	}
+}
