@@ -1289,6 +1289,13 @@ func (p *parser) parseAnd() (Expr, error) {
 }
 
 func (p *parser) parseNot() (Expr, error) {
+	// A pending seed (parseExprFrom) is the already-parsed leading operand,
+	// so the next token sits in binary-operator position: `$x[0] - 1` must
+	// not read the `-` as a prefix operator. Skip the prefix match and let
+	// the descent reach parsePrimaryAtom, which consumes the seed.
+	if p.seed != nil {
+		return p.parseComparison()
+	}
 	if t, ok := p.match(lexer.TOKEN_NOT); ok {
 		operand, err := p.parseNot()
 		if err != nil {
@@ -1656,6 +1663,11 @@ func (p *parser) parseQualifiedTail(prefix lexer.Token) (Expr, error) {
 // Right-associative: `--x` is `-(-x)`, `~~x` is `~(~x)`. Mixing is
 // allowed: `-~x` is `-(~x)`.
 func (p *parser) parseUnaryMinus() (Expr, error) {
+	// With a seed pending the leading operand already exists; `-` / `~` here
+	// would be a binary operator (or an error), never a prefix. See parseNot.
+	if p.seed != nil {
+		return p.parsePrimary()
+	}
 	if t, ok := p.match(lexer.TOKEN_MINUS); ok {
 		// The most-negative int literal, e.g. -9223372036854775808 (=
 		// math.MinInt64) and its 0x/0o/0b forms, has magnitude 2^63 - one past

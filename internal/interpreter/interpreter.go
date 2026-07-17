@@ -3290,7 +3290,10 @@ func (i *Interpreter) registerTask(state *TaskState) {
 	if len(i.tasks) >= i.taskCompactAt {
 		kept := i.tasks[:0]
 		for _, t := range i.tasks {
-			if t != nil && !t.Observed.Load() {
+			// A task discarded while still running must stay registered:
+			// hasLiveTasks relies on the registry to keep the REPL from
+			// mutating shared tables under a live goroutine.
+			if t != nil && (!t.Observed.Load() || !t.IsDone()) {
 				kept = append(kept, t)
 			}
 		}

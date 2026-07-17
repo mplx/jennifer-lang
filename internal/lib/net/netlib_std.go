@@ -40,6 +40,16 @@ type connState struct {
 	r      *bufio.Reader
 	sticky bool
 	host   string // bare hostname dialled (for a later startTLS); empty for accepted conns
+
+	// readMu serializes the blocking reads on r (readBytes and the eof
+	// probe). The eof probe arms a short deadline on the shared conn; if it
+	// ran while another task sat in a blocking read, that read would fail
+	// with a spurious timeout. eof only TryLocks it, so a conn with a read
+	// in flight reports "not EOF" instead of blocking.
+	readMu sync.Mutex
+	// deadline is the deadline last armed via net.setDeadline (zero when
+	// cleared), so the eof probe can restore it instead of wiping it.
+	deadline time.Time
 }
 
 type listenerState struct {
@@ -378,7 +388,9 @@ func readBytesFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	s.mu.Lock()
 	r := s.r
 	s.mu.Unlock()
+	s.readMu.Lock()
 	read, rerr := r.Read(buf)
+	s.readMu.Unlock()
 	if rerr != nil {
 		if errors.Is(rerr, io.EOF) {
 			s.mu.Lock()
@@ -446,6 +458,7 @@ func setDeadlineFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	}
 	s.mu.Lock()
 	c := s.c
+	s.deadline = when
 	s.mu.Unlock()
 	if derr := c.SetDeadline(when); derr != nil {
 		return interpreter.Null(), fmt.Errorf("net.setDeadline: %v", derr)
@@ -497,8 +510,17 @@ func eofFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	}
 	r, c := s.r, s.c
 	s.mu.Unlock()
+	// If another task is blocked in readBytes right now, answer "not EOF"
+	// without touching the reader at all: bufio.Reader is not
+	// goroutine-safe (even Buffered() races a blocked Read), and arming the
+	// probe deadline would spuriously time that read out. The blocked
+	// reader discovers EOF itself (sticky).
+	if !s.readMu.TryLock() {
+		return interpreter.BoolVal(false), nil
+	}
 	// Buffered data means definitely not EOF, decided without any I/O.
 	if r.Buffered() > 0 {
+		s.readMu.Unlock()
 		return interpreter.BoolVal(false), nil
 	}
 	// Otherwise probe *without blocking indefinitely on the peer*: a bare
@@ -507,12 +529,15 @@ func eofFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	// turn to write. A short read deadline makes Peek return io.EOF when the
 	// peer has closed (the pending FIN surfaces at once, well inside the
 	// window) or a timeout ("no data yet", not EOF) on an open, idle
-	// connection. The probe deadline is then cleared; callers re-arm their own
-	// deadline before the next read (net.setDeadline), as the streaming
-	// clients already do.
+	// connection. Afterwards the deadline armed via net.setDeadline (if any)
+	// is restored.
+	s.mu.Lock()
+	userDeadline := s.deadline
+	s.mu.Unlock()
 	_ = c.SetReadDeadline(time.Now().Add(eofProbeTimeout))
 	_, peekErr := r.Peek(1)
-	_ = c.SetReadDeadline(time.Time{})
+	_ = c.SetReadDeadline(userDeadline)
+	s.readMu.Unlock()
 	if errors.Is(peekErr, io.EOF) {
 		s.mu.Lock()
 		s.sticky = true

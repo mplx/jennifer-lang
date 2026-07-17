@@ -69,10 +69,11 @@ func mapVal(entries []interpreter.MapEntry) interpreter.Value {
 // decodeToml parses a full TOML document into the root table (a KindMap).
 func decodeToml(src string) (interpreter.Value, error) {
 	d := &decoder{
-		src:     src,
-		defined: map[string]bool{},
-		arrays:  map[string]bool{},
-		inline:  map[string]bool{},
+		src:      src,
+		defined:  map[string]bool{},
+		arrays:   map[string]bool{},
+		inline:   map[string]bool{},
+		arrayIdx: map[string]int{},
 	}
 	return d.run()
 }
@@ -101,13 +102,37 @@ type decoder struct {
 	defined map[string]bool
 	arrays  map[string]bool
 	inline  map[string]bool
-	curPath []string // dotted path of the current [header] context (for key paths)
+	// arrayIdx tracks, per array of tables (keyed by its own stateKey), the
+	// index of its current (newest) element. stateKey embeds these indices so
+	// redefinition state is scoped per element.
+	arrayIdx map[string]int
+	curPath  []string // dotted path of the current [header] context (for key paths)
 }
 
-// pathKey encodes a dotted path into a single map key. A NUL separator can't
-// collide with a bare key and is vanishingly unlikely in a quoted key.
-func pathKey(segs []string) string {
-	return strings.Join(segs, "\x00")
+// stateKey encodes a dotted path for the redefinition-state maps. Each
+// *proper* prefix that names an array of tables is tagged with the index of
+// that array's current element, because every [[header]] opens a fresh
+// element namespace: `[fruit.physical]` under the second [[fruit]] is a
+// different table than under the first, and must not trip the
+// defined-more-than-once check. The final segment carries no index - the key
+// identifies the path itself, not a child of its newest element.
+func (d *decoder) stateKey(segs []string) string {
+	var b strings.Builder
+	for i, seg := range segs {
+		if i > 0 {
+			b.WriteByte(0)
+		}
+		b.WriteString(seg)
+		if i < len(segs)-1 {
+			if idx, ok := d.arrayIdx[b.String()]; ok {
+				// The \x00 separator can't appear in a bare key and the
+				// \x00\x01 index tag is vanishingly unlikely in a quoted key,
+				// so neither collides with a plain path.
+				fmt.Fprintf(&b, "\x00\x01%d", idx)
+			}
+		}
+	}
+	return b.String()
 }
 
 func (d *decoder) errf(format string, a ...interface{}) error {
@@ -238,7 +263,7 @@ func (d *decoder) parseTableHeader(root *interpreter.Value) (*interpreter.Value,
 		return nil, d.errf("expected ']' to close table header")
 	}
 	d.advance()
-	key := pathKey(segs)
+	key := d.stateKey(segs)
 	dotted := strings.Join(segs, ".")
 	// A second [header] for the same path, or a [header] on an existing
 	// array-of-tables, is a TOML MUST-error.
@@ -248,8 +273,12 @@ func (d *decoder) parseTableHeader(root *interpreter.Value) (*interpreter.Value,
 	if d.arrays[key] {
 		return nil, d.errf("%q is an array of tables, not a table", dotted)
 	}
-	if d.inline[key] {
-		return nil, d.errf("cannot extend inline table %q with a header", dotted)
+	// A header may not extend a closed inline table, neither directly nor
+	// through one ([a.b] with a = {x = 1}).
+	for i := range segs {
+		if d.inline[d.stateKey(segs[:i+1])] {
+			return nil, d.errf("cannot extend inline table %q with a header", strings.Join(segs[:i+1], "."))
+		}
 	}
 	cur := root
 	for _, seg := range segs {
@@ -280,15 +309,17 @@ func (d *decoder) parseArrayTableHeader(root *interpreter.Value) (*interpreter.V
 	}
 	d.advance()
 	d.advance()
-	key := pathKey(segs)
+	key := d.stateKey(segs)
 	dotted := strings.Join(segs, ".")
 	// A [[header]] whose path names a plain table ([header]) or a closed inline
-	// table is a MUST-error.
+	// table (directly or through one) is a MUST-error.
 	if d.defined[key] {
 		return nil, d.errf("%q is a table, not an array of tables", dotted)
 	}
-	if d.inline[key] {
-		return nil, d.errf("cannot extend inline table %q as an array of tables", dotted)
+	for i := range segs {
+		if d.inline[d.stateKey(segs[:i+1])] {
+			return nil, d.errf("cannot extend inline table %q as an array of tables", strings.Join(segs[:i+1], "."))
+		}
 	}
 	cur := root
 	for i := 0; i < len(segs)-1; i++ {
@@ -308,11 +339,14 @@ func (d *decoder) parseArrayTableHeader(root *interpreter.Value) (*interpreter.V
 				return nil, d.errf("key %q is not an array of tables", last)
 			}
 			v.List = append(v.List, mapVal(nil))
+			d.arrayIdx[key]++
+			d.curPath = segs
 			return &v.List[len(v.List)-1], nil
 		}
 	}
 	cur.Map = append(cur.Map, interpreter.MapEntry{Key: interpreter.StringVal(last), Value: listVal([]interpreter.Value{mapVal(nil)})})
 	d.arrays[key] = true
+	d.arrayIdx[key] = 0
 	d.curPath = segs
 	v := &cur.Map[len(cur.Map)-1].Value
 	return &v.List[0], nil
@@ -364,7 +398,7 @@ func (d *decoder) parseKeyValue(current *interpreter.Value) error {
 	cur := current
 	for i := 0; i < len(segs)-1; i++ {
 		// A dotted key may not reach through a closed inline table.
-		if d.inline[pathKey(full[:len(d.curPath)+i+1])] {
+		if d.inline[d.stateKey(full[:len(d.curPath)+i+1])] {
 			return d.errf("cannot extend inline table %q", strings.Join(full[:len(d.curPath)+i+1], "."))
 		}
 		cur, err = d.descendTable(cur, segs[i])
@@ -382,7 +416,7 @@ func (d *decoder) parseKeyValue(current *interpreter.Value) error {
 	// A value that is itself an inline table is closed: no later dotted key or
 	// header may extend it.
 	if val.Kind == interpreter.KindMap {
-		d.inline[pathKey(full)] = true
+		d.inline[d.stateKey(full)] = true
 	}
 	return nil
 }

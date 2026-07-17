@@ -6,8 +6,10 @@
 package httpdlib
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -403,5 +405,37 @@ func TestUnansweredRequestTimesOut(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("unanswered request status = %d, want 500", resp.StatusCode)
+	}
+}
+
+// A client that trickles its request body must not hold an admission slot
+// forever: the body read runs under bodyReadTimeout and answers 400 when it
+// expires (body-read Slowloris protection).
+func TestSlowBodyTimesOut(t *testing.T) {
+	ResetForTest()
+	old := bodyReadTimeout
+	bodyReadTimeout = 200 * time.Millisecond
+	defer func() { bodyReadTimeout = old }()
+
+	srv, addr := startServer(t)
+	defer shutdownFn(noCtx, []Value{srv})
+
+	// Raw client: send headers declaring a body, then stall mid-body.
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	fmt.Fprintf(c, "POST / HTTP/1.1\r\nHost: %s\r\nContent-Length: 1000\r\n\r\npartial", addr)
+
+	c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("stalled body status = %d, want 400", resp.StatusCode)
 	}
 }

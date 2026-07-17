@@ -465,3 +465,120 @@ func TestSetDeadlineClearRestoresRead(t *testing.T) {
 		t.Errorf("got %q, want %q", out, "z")
 	}
 }
+
+// The eof probe arms its own short read deadline on the shared conn. It must
+// restore the deadline set via net.setDeadline afterwards - if it cleared it,
+// a subsequent read on a stalled peer would block forever, the exact hang
+// setDeadline exists to prevent.
+func TestEOFRestoresUserDeadline(t *testing.T) {
+	addr := pickListenerAddr(t)
+	l, err := stdnet.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	accepted := make(chan stdnet.Conn, 1)
+	go func() {
+		c, aErr := l.Accept()
+		if aErr != nil {
+			return
+		}
+		accepted <- c // keep open, never write
+	}()
+
+	done := make(chan struct{})
+	var out string
+	var runErr error
+	go func() {
+		out, runErr = runProg(t, fmt.Sprintf(`
+			use io;
+			use net;
+			def c as net.Conn init net.connect(%q);
+			net.setDeadline($c, 200);
+			io.printf("eof=%%t\n", net.eof($c));
+			try {
+				def b as bytes init net.readBytes($c, 1);
+				io.printf("read=%%d\n", len($b));
+			} catch (e) {
+				io.printf("err=%%s\n", $e.message);
+			}
+			net.close($c);
+		`, addr))
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("readBytes blocked: eof cleared the user-set deadline")
+	}
+	if runErr != nil {
+		t.Fatalf("run: %v", runErr)
+	}
+	want := "eof=false\nerr=net.readBytes: read timed out\n"
+	if out != want {
+		t.Errorf("got %q, want %q", out, want)
+	}
+	if c := <-accepted; c != nil {
+		c.Close()
+	}
+}
+
+// While another task is blocked in readBytes, an eof poll must not arm its
+// probe deadline on the shared conn - that would spuriously time the blocked
+// read out. It skips the probe (TryLock) and reports "not EOF"; the reader
+// then receives the peer's data intact.
+func TestEOFDoesNotDisturbConcurrentReader(t *testing.T) {
+	addr := pickListenerAddr(t)
+	l, err := stdnet.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go func() {
+		c, aErr := l.Accept()
+		if aErr != nil {
+			return
+		}
+		time.Sleep(300 * time.Millisecond) // long enough for many eof polls
+		_, _ = c.Write([]byte("hello"))
+		_ = c.Close()
+	}()
+
+	done := make(chan struct{})
+	var out string
+	var runErr error
+	go func() {
+		out, runErr = runProg(t, fmt.Sprintf(`
+			use io;
+			use net;
+			use task;
+			use convert;
+			def c as net.Conn init net.connect(%q);
+			def rd as task of string init spawn {
+				def b as bytes init net.readBytes($c, 5);
+				return convert.stringFromBytes($b, "utf-8");
+			};
+			def i as int init 0;
+			while ($i < 20) {
+				if (net.eof($c)) { break; }
+				$i = $i + 1;
+			}
+			io.printf("got=%%s\n", task.wait($rd));
+			net.close($c);
+		`, addr))
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent reader / eof poll deadlocked")
+	}
+	if runErr != nil {
+		t.Fatalf("run: %v", runErr)
+	}
+	if out != "got=hello\n" {
+		t.Errorf("got %q, want %q", out, "got=hello\n")
+	}
+}

@@ -355,3 +355,75 @@ func TestDecodeTruncatedDatetimes(t *testing.T) {
 		}
 	}
 }
+
+// Redefinition state must be scoped per array-of-tables element: every
+// [[header]] opens a fresh element namespace, so a sub-table or inline-table
+// key that already appeared under an earlier element is legal again.
+func TestDecodeArrayOfTablesElementScoping(t *testing.T) {
+	// The TOML 1.0 spec's own fruit example.
+	fruit := `
+[[fruit]]
+name = "apple"
+[fruit.physical]
+color = "red"
+[[fruit.variety]]
+name = "red delicious"
+[[fruit]]
+name = "banana"
+[fruit.physical]
+color = "yellow"
+[[fruit.variety]]
+name = "plantain"
+`
+	tree, err := decodeToml(fruit)
+	if err != nil {
+		t.Fatalf("spec fruit example must decode, got: %v", err)
+	}
+	if v := get(t, tree, "/fruit/1/physical/color"); v.Str != "yellow" {
+		t.Errorf("fruit[1].physical.color = %q", v.Str)
+	}
+	if v := get(t, tree, "/fruit/1/variety/0/name"); v.Str != "plantain" {
+		t.Errorf("fruit[1].variety[0].name = %q", v.Str)
+	}
+
+	// Inline tables under the same key across elements are independent too.
+	srv := `
+[[srv]]
+net = { ip = "1.1.1.1" }
+[[srv]]
+net = { ip = "2.2.2.2" }
+`
+	tree, err = decodeToml(srv)
+	if err != nil {
+		t.Fatalf("per-element inline tables must decode, got: %v", err)
+	}
+	if v := get(t, tree, "/srv/1/net/ip"); v.Str != "2.2.2.2" {
+		t.Errorf("srv[1].net.ip = %q", v.Str)
+	}
+
+	// Within ONE element the redefinition rules still bite.
+	bad := []string{
+		"[[f]]\n[f.p]\nx = 1\n[f.p]\ny = 2",            // same sub-table twice in one element
+		"[[f]]\nnet = { ip = \"1\" }\nnet.ip2 = \"2\"", // extend own inline table
+		"[[f]]\n[f.p]\nx = 1\n[[f.p]]",                 // sub-table redefined as array
+	}
+	for _, src := range bad {
+		if _, err := decodeToml(src); err == nil {
+			t.Errorf("expected error decoding %q", src)
+		}
+	}
+}
+
+// A [header] or [[header]] may not reach THROUGH a closed inline table
+// either - not just name one exactly.
+func TestDecodeHeaderThroughInlineTable(t *testing.T) {
+	bad := []string{
+		"a = { x = 1 }\n[a.b]\ny = 2",
+		"a = { x = 1 }\n[[a.b]]\ny = 2",
+	}
+	for _, src := range bad {
+		if _, err := decodeToml(src); err == nil {
+			t.Errorf("expected error decoding %q", src)
+		}
+	}
+}

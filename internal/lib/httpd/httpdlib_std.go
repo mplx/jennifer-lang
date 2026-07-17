@@ -53,6 +53,14 @@ const maxBodyBytes = 10 << 20 // 10 MiB
 // headers (Slowloris protection).
 const readHeaderTimeout = 15 * time.Second
 
+// bodyReadTimeout bounds how long a client may take to deliver its request
+// body. The body is buffered while holding one of the maxInFlight admission
+// slots, so without this bound 256 deliberately slow uploads would pin every
+// slot indefinitely and stall the whole server (body-read Slowloris). 60 s
+// for up to maxBodyBytes still admits a ~1.4 Mbps uplink. A var so tests can
+// lower it.
+var bodyReadTimeout = 60 * time.Second
+
 // respondTimeout bounds how long a handler goroutine parks waiting for the
 // program to answer an accepted request. If the program never responds (e.g.
 // it threw between accept and respond), the handler answers 500 and unparks so
@@ -201,15 +209,26 @@ func makeHandler(st *serverState) http.Handler {
 		// Read one byte past the cap so an over-limit body is detectable:
 		// it must be REJECTED with 413, never silently truncated - a
 		// truncated-but-complete-looking body defeats body-signature
-		// verification and smuggles content past inspection.
+		// verification and smuggles content past inspection. The read runs
+		// under bodyReadTimeout (armed on the connection, cleared after) so a
+		// trickling client can't hold its admission slot forever.
+		rc := http.NewResponseController(w)
+		_ = rc.SetReadDeadline(time.Now().Add(bodyReadTimeout))
 		body, rerr := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
+		_ = rc.SetReadDeadline(time.Time{})
 		if rerr != nil {
-			// A mid-body client disconnect leaves a truncated body; answer 400
-			// here rather than hand the interpreter a silently-short request.
+			// A mid-body client disconnect (or bodyReadTimeout expiry) leaves a
+			// truncated body; answer 400 here rather than hand the interpreter
+			// a silently-short request. Connection: close makes the server skip
+			// its keepalive body drain, which would otherwise block on the
+			// bytes that never arrived (the deadline is already cleared).
+			w.Header().Set("Connection", "close")
 			http.Error(w, "error reading request body", http.StatusBadRequest)
 			return
 		}
 		if int64(len(body)) > maxBodyBytes {
+			// Same drain concern: the client may still be streaming the rest.
+			w.Header().Set("Connection", "close")
 			http.Error(w, "request body exceeds the server's limit", http.StatusRequestEntityTooLarge)
 			return
 		}

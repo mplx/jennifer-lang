@@ -440,3 +440,29 @@ func TestMostNegativeIntLiteral(t *testing.T) {
 		t.Error("-9223372036854775809 should be a range error")
 	}
 }
+
+// A statement that starts with an lvalue chain but continues with a binary
+// operator flows through tryParseIndexAssign's seeded re-parse. The pending
+// seed is the leading operand, so a following `-` (or `~`/`not`) must bind
+// as a BINARY operator, never as a prefix on whatever comes next.
+func TestSeededExprStmtBinaryMinus(t *testing.T) {
+	cases := []struct{ src, want string }{
+		{`$x[0] - 1;`, "ExprStmt((Index(Var($x), Int(0)) - Int(1)))"},
+		{`$x[0] - [1][0];`, "ExprStmt((Index(Var($x), Int(0)) - Index(List[Int(1)], Int(0))))"},
+		{`$x[0] - -1;`, "ExprStmt((Index(Var($x), Int(0)) - (- Int(1))))"},
+	}
+	for _, c := range cases {
+		prog, err := Parse(c.src)
+		if err != nil {
+			t.Errorf("parse %q: %v", c.src, err)
+			continue
+		}
+		if len(prog.TopLevel) != 1 {
+			t.Errorf("%q: expected one stmt, got %d", c.src, len(prog.TopLevel))
+			continue
+		}
+		if got := Sprint(prog.TopLevel[0]); got != c.want {
+			t.Errorf("%q:\n got %s\nwant %s", c.src, got, c.want)
+		}
+	}
+}
