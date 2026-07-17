@@ -80,26 +80,25 @@ func byteSlice(buf as bytes, start as int, end as int) {
     return $out;
 }
 
-# crlfIndex returns the index of the CR of the first CRLF at or after `from`,
-# or -1 if none is present yet.
-func crlfIndex(buf as bytes, from as int) {
-    def i as int init $from;
-    def n as int init len($buf);
-    while ($i + 1 < $n) {
-        if ($buf[$i] == 13 and $buf[$i + 1] == 10) {
-            return $i;
-        }
-        $i = $i + 1;
-    }
-    return -1;
-}
-
 # recvLine reads one CRLF-terminated line, returning it (without the CRLF, as a
 # string - protocol lines are ASCII) and the raw byte remainder after it.
 func recvLine(session as Session, buf as bytes) {
     def b as bytes init $buf;
+    def scanFrom as int init 0;
     while (true) {
-        def nl as int init crlfIndex($b, 0);
+        # Scan for CRLF by indexing $b in place, resuming near the buffer end
+        # (1-byte overlap for a straddling CRLF). Passing the whole growing
+        # buffer to a helper each pass would deep-copy it (value semantics), so
+        # a server sending a very long line would be O(n^2).
+        def blen as int init len($b);
+        def nl as int init -1;
+        def si as int init $scanFrom;
+        while ($si + 1 < $blen and $nl < 0) {
+            if ($b[$si] == 13 and $b[$si + 1] == 10) {
+                $nl = $si;
+            }
+            $si = $si + 1;
+        }
         if ($nl >= 0) {
             return Line{text: convert.stringFromBytes(byteSlice($b, 0, $nl), "utf-8"),
                 rest: byteSlice($b, $nl + 2, len($b))};
@@ -115,6 +114,10 @@ func recvLine(session as Session, buf as bytes) {
         while ($j < len($chunk)) {
             $b[] = $chunk[$j];
             $j = $j + 1;
+        }
+        $scanFrom = $blen - 1;
+        if ($scanFrom < 0) {
+            $scanFrom = 0;
         }
     }
     return Line{text: "", rest: emptyBytes()};

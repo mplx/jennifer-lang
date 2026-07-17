@@ -169,23 +169,6 @@ func byteSlice(buf as bytes, start as int, end as int) {
     return $out;
 }
 
-# crlfIndex returns the index of the CR of the first CRLF at or after `from`,
-# or -1 if none is present yet.
-func crlfIndex(buf as bytes, from as int) {
-    def i as int init $from;
-    if ($i < 0) {
-        $i = 0;
-    }
-    def n as int init len($buf);
-    while ($i + 1 < $n) {
-        if ($buf[$i] == 13 and $buf[$i + 1] == 10) {
-            return $i;
-        }
-        $i = $i + 1;
-    }
-    return -1;
-}
-
 # readResponse accumulates a full IMAP response - untagged lines, literals read
 # by their byte count, then the tagged completion - and throws on NO / BAD. The
 # consumed prefix of `buf` (bytes 0..pos) is exactly the response; it is decoded
@@ -193,13 +176,27 @@ func crlfIndex(buf as bytes, from as int) {
 func readResponse(conn as net.Conn, tag as string) {
     def buf as bytes;
     def pos as int init 0;
+    def scanFrom as int init 0;
     while (true) {
-        # Find the next CRLF at or after the cursor, reading as needed. The
-        # scan resumes near the buffer end (with a 1-byte overlap for a CRLF
-        # straddling a read boundary), so it never rescans the whole buffer.
-        def nl as int init crlfIndex($buf, $pos);
-        def scan as int init len($buf);
-        while ($nl < 0) {
+        # Find the next CRLF at or after the cursor by indexing $buf in place -
+        # handing the whole growing buffer to a helper each pass would deep-copy
+        # it (value semantics) and make a many-line response O(n^2). The scan
+        # resumes near the buffer end (1-byte overlap for a CRLF straddling a
+        # read boundary), so it never rescans the whole buffer. When more data
+        # is needed we read a chunk and `continue`, re-entering this same scan.
+        def blen as int init len($buf);
+        def nl as int init -1;
+        def si as int init $scanFrom;
+        if ($si < $pos) {
+            $si = $pos;
+        }
+        while ($si + 1 < $blen and $nl < 0) {
+            if ($buf[$si] == 13 and $buf[$si + 1] == 10) {
+                $nl = $si;
+            }
+            $si = $si + 1;
+        }
+        if ($nl < 0) {
             net.setDeadline($conn, TIMEOUT_MS);
             def chunk as bytes init net.readBytes($conn, 512);
             if (len($chunk) == 0) {
@@ -210,15 +207,12 @@ func readResponse(conn as net.Conn, tag as string) {
                 $buf[] = $chunk[$k];
                 $k = $k + 1;
             }
-            def from as int init $scan - 1;
-            if ($from < $pos) {
-                $from = $pos;
-            }
-            $nl = crlfIndex($buf, $from);
-            $scan = len($buf);
+            $scanFrom = $blen - 1;   # overlap 1 byte for a straddling CRLF
+            continue;
         }
         def line as string init convert.stringFromBytes(byteSlice($buf, $pos, $nl), "utf-8");
         $pos = $nl + 2;
+        $scanFrom = $pos;   # next line's scan starts at the new cursor
         # An unexpected `+ ...` continuation (e.g. a SASL error mid-AUTHENTICATE)
         # would otherwise read as an untagged line and the loop would block until
         # timeout. Answer with an empty line so the server sends its tagged NO.
@@ -242,6 +236,7 @@ func readResponse(conn as net.Conn, tag as string) {
                 }
             }
             $pos = $pos + $litlen;
+            $scanFrom = $pos;
             continue;
         }
         if (isTagged($line, $tag)) {
@@ -262,6 +257,7 @@ func command(conn as net.Conn, line as string) {
 func readGreeting(conn as net.Conn) {
     def buf as bytes;
     def nl as int init -1;
+    def scanFrom as int init 0;
     while ($nl < 0) {
         net.setDeadline($conn, TIMEOUT_MS);
         def chunk as bytes init net.readBytes($conn, 512);
@@ -269,12 +265,26 @@ func readGreeting(conn as net.Conn) {
             $nl = len($buf);
             break;
         }
+        def before as int init len($buf);
         def k as int init 0;
         while ($k < len($chunk)) {
             $buf[] = $chunk[$k];
             $k = $k + 1;
         }
-        $nl = crlfIndex($buf, 0);
+        # Scan from the overlap point, indexing $buf in place (a helper taking
+        # the whole buffer would deep-copy it each pass).
+        def blen as int init len($buf);
+        def si as int init $scanFrom;
+        while ($si + 1 < $blen and $nl < 0) {
+            if ($buf[$si] == 13 and $buf[$si + 1] == 10) {
+                $nl = $si;
+            }
+            $si = $si + 1;
+        }
+        $scanFrom = $before - 1;
+        if ($scanFrom < 0) {
+            $scanFrom = 0;
+        }
     }
     def line as string init convert.stringFromBytes(byteSlice($buf, 0, $nl), "utf-8");
     if (not strings.startsWith($line, "* OK")) {

@@ -178,29 +178,6 @@ func lfIndex(buf as bytes, from as int) {
     return -1;
 }
 
-# dotBodyEnd returns the byte index where a multi-line body ends (the start of
-# the terminating "." line's `\r\n.\r\n`, or 0 for an empty body), or -1 when
-# the terminator has not yet arrived. Scanning resumes from `from` (the caller
-# rewinds it a few bytes so a terminator straddling a read boundary is still
-# found), keeping the whole read loop linear in the body size.
-func dotBodyEnd(buf as bytes, from as int) {
-    def n as int init len($buf);
-    # Empty body: the first line is ".".
-    if ($n >= 3 and $buf[0] == 46 and $buf[1] == 13 and $buf[2] == 10) {
-        return 0;
-    }
-    def i as int init $from;
-    if ($i < 0) {
-        $i = 0;
-    }
-    while ($i + 4 < $n) {
-        if ($buf[$i] == 13 and $buf[$i + 1] == 10 and $buf[$i + 2] == 46 and $buf[$i + 3] == 13 and $buf[$i + 4] == 10) {
-            return $i;
-        }
-        $i = $i + 1;
-    }
-    return -1;
-}
 
 # readLine reads one CRLF-terminated status line (single-line responses do not
 # over-read: the server sends the line and waits). The chunk is appended into
@@ -253,20 +230,39 @@ func readMultiline(conn as net.Conn, ctx as string) {
     expectOK(stripCR(convert.stringFromBytes(byteSlice($buf, 0, $nl), "utf-8")), $ctx);
     def body as bytes init byteSlice($buf, $nl + 1, len($buf));
     def scanFrom as int init 0;
-    while (dotBodyEnd($body, $scanFrom) < 0) {
+    while (true) {
+        # Scan for the terminating "\r\n.\r\n" (or a lone "." first line = empty
+        # body) by reading $body in place. Passing the whole growing body to a
+        # helper each pass would deep-copy it (value semantics) and make a large
+        # message O(n^2); indexing it directly here keeps the read loop O(n).
+        def blen as int init len($body);
+        def found as bool init $blen >= 3 and $body[0] == 46 and $body[1] == 13 and $body[2] == 10;
+        def si as int init $scanFrom;
+        if ($si < 0) {
+            $si = 0;
+        }
+        while ($si + 4 < $blen and not $found) {
+            if ($body[$si] == 13 and $body[$si + 1] == 10 and $body[$si + 2] == 46 and $body[$si + 3] == 13 and $body[$si + 4] == 10) {
+                $found = true;
+            }
+            $si = $si + 1;
+        }
+        if ($found) {
+            return parseDotBody(convert.stringFromBytes($body, "utf-8"));
+        }
         net.setDeadline($conn, TIMEOUT_MS);
         def chunk as bytes init net.readBytes($conn, 512);
         if (len($chunk) == 0) {
             return parseDotBody(convert.stringFromBytes($body, "utf-8"));
         }
+        # Rewind the scan a few bytes so a "\r\n.\r\n" straddling this read
+        # boundary is still detected; the loop stays linear overall.
         def prev as int init len($body);
         def j as int init 0;
         while ($j < len($chunk)) {
             $body[] = $chunk[$j];
             $j = $j + 1;
         }
-        # Rewind the scan a few bytes so a "\r\n.\r\n" straddling this read
-        # boundary is still detected; the loop stays linear overall.
         $scanFrom = prev - 4;
         if ($scanFrom < 0) {
             $scanFrom = 0;
