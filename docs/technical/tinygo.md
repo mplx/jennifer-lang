@@ -64,6 +64,8 @@ full surface.
 | ------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `os`    | `os.run`, `os.spawn`, `os.wait`, `os.poll`, `os.kill` | Runtime error pointing at the default `jennifer` binary. The `os/exec` subprocess surface: unimplemented in TinyGo on host targets, and absent by nature on embedded / WASM. Not the same "recompile" story as `net` - see the note below. |
 | `net`   | Every entry point (TCP, UDP, DNS)                     | Runtime error pointing at the default `jennifer` binary. Our stock `jennifer-tiny` registers no netdev driver, so `net` is stubbed. Build-tag split: `netlib_tinygo.go` returns friendly errors. Not a hard TinyGo limit - see the note below. |
+| `httpd` | Every entry point (`listen`, `accept`, `respond`, ...) | Runtime error pointing at the default `jennifer` binary. The HTTP/1.1 server engine is over Go `net/http`, so it is stubbed for the same reason as `net` (no netdev driver): `httpdlib_tinygo.go` returns friendly errors, and a rebuild with a network stack restores it. |
+| `term`  | Every entry point (`makeRaw`, `restore`, `size`, `readByte`) | Runtime error pointing at the default `jennifer` binary. Terminal control needs `golang.org/x/term` (which the tiny build excludes) *and* a controlling TTY (which a minimal / embedded target may not have). Build-tag split like `net`: `termlib_tinygo.go` returns friendly errors. |
 
 ### `net` on TinyGo is a build choice, not a hard limit
 
@@ -122,10 +124,14 @@ gap on host targets and simply absent on embedded / WASM.
 The constants and the env / argv / flag helpers in `os`
 (`os.PLATFORM`, `os.ARCH`, `os.EOL`, `os.DIRSEP`, `os.PATHSEP`,
 `os.ARGS`, `os.getEnv`, `os.hasFlag`, `os.flag`) all work fully
-on both binaries. Every other shipped library (`io`, `convert`,
-`math`, `strings`, `lists`, `maps`, `meta`, `time`, `hash`,
-`crc`, `encoding`, `task`, `fs`, `regex`, `testing`) has full
-TinyGo support.
+on both binaries. Every shipped library except the three stubbed ones above
+(`net`, `httpd`, `term`) and the `os/exec` slice of `os` has **full TinyGo
+support on both binaries** - `io`, `convert`, `math`, `strings`, `lists`,
+`maps`, `meta`, `time`, `hash`, `crc`, `crypto`, `compress`, `archive`,
+`encoding`, `json`, `toml`, `xml`, `yaml`, `intl`, `task`, `fs`, `regex`,
+`testing`, and `uuid`. `yaml` is the one carrying a third-party dependency
+(`gopkg.in/yaml.v3`), verified to build *and* run under TinyGo 0.41; every
+other library is Go standard library or hand-rolled.
 
 **Development subcommands are default-binary only.** `jennifer-tiny`
 is a run-only interpreter: `run` and `repl` execute Jennifer source,

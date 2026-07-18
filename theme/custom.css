@@ -43,3 +43,46 @@
     width: auto;
     display: block;
 }
+
+/*
+ * PDF print sizing. The docs website keeps mdBook's on-screen rem-based sizes
+ * (body 1.6rem = 16px); the single-file manual PDF - scripts/gen-pdf.sh renders
+ * book-output/print.html through headless Chrome - is sized here in physical
+ * `pt` so paragraphs and headings match what a word processor uses for a printed
+ * document (Word's body is ~11pt), rather than the 16px screen body which prints
+ * oversized. These rules apply only in `print` media, so the website is
+ * untouched. Scoped to `.content` so the (print-hidden) menu wordmark and
+ * keyboard-help headings are not affected.
+ */
+@media print {
+    .content main {
+        font-size: 11pt;
+        line-height: 1.45;
+    }
+    .content p,
+    .content li,
+    .content td,
+    .content th,
+    .content blockquote {
+        font-size: 11pt;
+    }
+    .content h1 {
+        font-size: 20pt;
+    }
+    .content h2 {
+        font-size: 16pt;
+    }
+    .content h3 {
+        font-size: 13pt;
+    }
+    .content h4,
+    .content h5,
+    .content h6 {
+        font-size: 11pt;
+    }
+    .content code,
+    .content pre,
+    .content pre code {
+        font-size: 9.5pt;
+    }
+}

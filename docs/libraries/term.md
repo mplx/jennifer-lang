@@ -19,7 +19,7 @@ error (a minimal / embedded target may have no controlling terminal).
 
 | Call | Returns | Notes |
 | ---- | ------- | ----- |
-| `term.makeRaw(stream)` | `term.State` | Put a terminal (`"stdin"`) into raw mode; returns a handle for `restore`. |
+| `term.makeRaw(stream)` | `term.State` | Put the terminal into raw mode; `stream` must be `"stdin"` (raw mode governs input). Returns a handle for `restore`. |
 | `term.restore(state)` | `null` | Undo `makeRaw`, restoring the terminal. The handle is single-use. |
 | `term.size(stream)` | `term.Size` | The terminal's `{rows, cols}` (query `"stdout"`). |
 | `term.readByte()` | `int` | The next raw byte from stdin (`0`-`255`), or `-1` at end of input. |

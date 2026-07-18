@@ -46,11 +46,17 @@ def struct amqp.Options { host as string, port as int, user as string, password 
 
 | Call | Returns | |
 | ---- | ------- | - |
-| `amqp.declareQueue(c, name, durable)` | `QueueInfo` | declare a queue (`""` name = server-generated); `durable` survives a restart |
+| `amqp.declareQueue(c, name, durable)` | `QueueInfo` | declare a classic queue (`""` name = server-generated); `durable` survives a restart |
+| `amqp.declareQuorumQueue(c, name)` | `QueueInfo` | declare a quorum queue (`x-queue-type=quorum`); always durable, name required |
 | `amqp.publish(c, exchange, routingKey, body)` | | publish a `bytes` body |
 | `amqp.publishText(c, exchange, routingKey, text)` | | publish a UTF-8 string |
 
 `declareQueue` returns `QueueInfo{name, messageCount, consumerCount}`.
+`declareQuorumQueue` declares a **quorum queue** - a Raft-replicated, always-durable
+queue type for high availability - by sending the `x-queue-type=quorum` argument.
+Quorum queues cannot be server-named, so `name` must be non-empty, and there is no
+`durable` flag (they are always durable). Do not also declare the same name as a
+classic queue: a re-declare must use the same type.
 `publish` sends the method frame, a content-header frame (body size), and a body
 frame. Use exchange `""` (the default exchange) to route straight to a queue by
 name via `routingKey`.

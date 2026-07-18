@@ -1613,73 +1613,154 @@ encode (`encodeAll`) and per-node style control.
 
 ### M20.4 - `intl`
 
-**Done.** Message catalogs and locale-aware translation. Named **`intl`**
-(letters only, matching JavaScript's `Intl`), not `i18n`: a Jennifer library
-namespace cannot contain a digit - the same letters-only rule that forced `iic`
-(not `i2c`) and `pbkdf` (not `pbkdf2`). A **system library**, not a `.j` module,
-for two independent reasons: it needs **global mutable state** (the current
-locale plus loaded catalogs), which a declarations-only module cannot hold; and
-it needs **performance** - Jennifer's `map` is a linear-scan `[]MapEntry`, so a
-large catalog looked up per call would be O(n), whereas the library holds
-catalogs in a Go `map[string]string` (O(1)). The state is per-interpreter
-(closed over in `Install`, so nothing leaks between runs) and RWMutex-guarded so
-a `spawn`ed reader cannot race a load or a locale change.
-
-Surface: `intl.load(lang, catalog)` (a `map of string to string`, a literal or
-built from `json` / `toml` / `yaml`; loading a language again merges, and the
-**first** language loaded becomes the default), `intl.setLocale(lang)` /
-`intl.locale()`, `intl.tr(key)` (translate through the fallback chain: current
-locale -> its base language, region stripped `de-AT` -> `de` -> the default
-(first-loaded) language -> the key itself, so a missing key is visible), and
-`intl.tr(key, params)` for named interpolation (`"Hello, {name}"`; a non-string
-param is rendered to its display form, an unknown placeholder stays literal, and
-`{{` / `}}` escape a literal brace). Interpolation is single-pass (a substituted
-value is never re-scanned, so no recursive-expansion blow-up) and its output is
-**capped at 1 MiB, checked incrementally** so an amplification bomb from an
-untrusted catalog (`"{x}"` repeated a million times) errors *before* the
-oversized string is built rather than driving the process toward OOM.
-Pluralization (CLDR per-language plural rules), an `intl.loadFile(path)`
-convenience, catalog reset / replace (`load` is merge-only today), and
-locale-aware *value* formatting (number / date grouping) are follow-ons.
-
-No gettext-style `_()`: `_` is not a valid Jennifer method name (letters-only;
-`_` is reserved for constant-name separators), and a bare `tr()` builtin does
-not clear the `len` promotion bar (translation is not useful to nearly every
-program). Ambient-global `_()` is also exactly what stances 2 (explicit) and 7
-(namespaced, no globals) rule out - so the call is `intl.tr("key")` (or
-`use intl as t; t.tr("key")`). Extending `printf` for translation is rejected
-(see [technical/rejected.md](technical/rejected.md)): translation is content
-substitution from stateful external data, not presentation of the value in
-hand. Locale-aware *value* formatting (number / date grouping) is a separate,
-open `printf` question.
+**Done.** Message catalogs and locale-aware translation, named **`intl`**
+(letters only, matching JS `Intl`) not `i18n` per the letters-only rule that
+forced `iic` / `pbkdf`. A **system library** not a `.j` module for two reasons:
+it holds global mutable state (current locale + loaded catalogs) a declarations-
+only module cannot, and it keeps each catalog in a Go `map[string]string` for
+O(1) lookup where Jennifer's linear-scan `map` would be O(n) per call; the state
+is per-interpreter (closed over in `Install`) and RWMutex-guarded for `spawn`
+safety. Surface: `intl.load(lang, catalog)` (a `map of string to string`, a
+literal or decoded from `json` / `toml` / `yaml`; re-loading a language merges,
+and the first language loaded is the default), `intl.setLocale` / `intl.locale`,
+and `intl.tr(key[, params])` translating through a fallback chain (current locale
+-> its base language `de-AT` -> `de` -> the default language -> the key itself,
+so a gap stays visible) with `{name}` interpolation (`{{`/`}}` escape, non-string
+params stringified, unknown placeholders left literal). Interpolation is
+single-pass (a substituted value is never re-scanned - no recursive blow-up) and
+its output is capped at 1 MiB, checked incrementally, so an amplification bomb
+from an untrusted catalog errors before the oversized string is built rather than
+toward OOM. No gettext `_()` (not a valid method name, and an ambient global is
+exactly what stances 2 / 7 rule out); `printf`-for-translation is rejected (see
+[rejected.md](technical/rejected.md)) - translation is content substitution, not
+presentation. Follow-ons: pluralization, `loadFile`, catalog reset / replace
+(`load` is merge-only), and locale-aware *value* formatting.
 
 ### M20.5 - `term`
 
 **Done.** A `term` system library exposing the terminal host capabilities a TUI
 needs and pure `.j` cannot reach: **raw mode** (`term.makeRaw(stream)` ->
-`term.State`, `term.restore(state)` - unbuffered, no-echo input, a single-use
+`term.State` / `term.restore(state)` - unbuffered, no-echo input; a single-use
 handle so a stale restore can't clobber a live terminal), **terminal size**
 (`term.size(stream)` -> `term.Size{rows, cols}`), and **raw single-byte reads**
-(`term.readByte()` -> int, `0`-`255` or `-1` at end of input - bytes, not decoded
-keys; escape-sequence decoding is the TUI layer's job). Built on
-`golang.org/x/term` - already a repository dependency scoped to the REPL's line
-editor (`cmd/jennifer/lineedit.go`), now also a build-tag-gated *library*
-dependency. Raw mode / size operate on the real terminal device by fd (like
-`os.isTerminal`); `readByte` reads the interpreter's input reader, so it composes
-with the raw mode set on stdin and stays testable. Raw-mode verbs and `readByte`
-are refused in the REPL (it owns the terminal for its own editor).
+(`term.readByte()` -> int, `0`-`255` or `-1` at EOF - bytes, not decoded keys;
+escape-sequence decoding is the TUI layer's job). Over `golang.org/x/term` (the
+REPL line editor's dependency, now also a build-tag-gated *library* dependency);
+raw mode / size operate on the real terminal device by fd (like `os.isTerminal`),
+`readByte` reads the interpreter's input reader (so it composes with raw stdin and
+stays testable), and raw-mode verbs / `readByte` are refused in the REPL (it owns
+the terminal). Build-tag split like `net`: real over `x/term` on the default
+`jennifer`, a friendly-error stub on `jennifer-tiny` (a minimal target may have no
+TTY, and the tiny build excludes `x/term`). The enabler for interactive TUIs (the
+pure-ANSI screen control / key decoding / rendering sit in the
+[M21.1](#m211---screen--tui-module) `screen` / `tui` module on top); output-only
+TUIs need only `ansi` + `os.isTerminal`. `examples/term.j` is a guarded
+interactive demo needing a real TTY, so it is not a golden test.
 
-Build-tag split like `net` / `os`: the real implementation (over `x/term`) on the
-default `jennifer`, a friendly-error stub on `jennifer-tiny` (embedded / minimal
-targets may have no controlling TTY, and the tiny build excludes `x/term`). This
-is the **enabler for interactive TUIs**; the pure-ANSI screen control, key
-decoding, and rendering sit in the [M21.1](#m211---screen--tui-module) `screen` /
-`tui` module on top. Output-only TUIs (dashboards, progress bars) need neither
-this library nor raw mode - just `ansi` + `os.isTerminal`. `examples/term.j` is a
-guarded interactive demo (a raw-mode key reader); it needs a real TTY, so it is
-not a golden test.
+### M20.6 - signals (diagnostics + `os` polling API)
 
-### M20.6 - device I/O (`serial` / `spi` / `iic` / `gpio`)
+Unix-signal support, in two independent pieces that share one small hook. The
+guiding constraint: a traditional async handler running arbitrary `.j` at an
+arbitrary instruction boundary would shatter the single-threaded, value-semantics,
+no-data-races-by-construction model - so nothing runs `.j` from a signal context.
+A signal only sets an atomic flag; the program (or the interpreter) acts on it at
+a **safe point**. Cooperative, never preemptive.
+
+- **`SIGUSR1` -> live interpreter diagnostics (dump-and-continue).** `kill -USR1
+  <pid>` prints, to **stderr**, a Jennifer-level snapshot - current
+  `file:line:col`, the method call stack, loop depth, and active `spawn` / `task`
+  count - and keeps running (unlike Go's dump-and-die `SIGQUIT`). This is the
+  answer to "it's stuck in a loop, *where*?". Printing the position from the
+  signal goroutine while the tree-walker mutates it would be a data race, so the
+  interpreter must **publish its position atomically at a per-statement
+  checkpoint** and the handler reads that snapshot. That checkpoint is the same
+  hook cooperative loop-cancellation will need, so this milestone establishes it.
+- **Script-facing signals -> an opt-in polling API on `os`.**
+  `os.catchSignal(name)` starts trapping a signal; `os.gotSignal(name) -> bool`
+  polls-and-clears the flag (or `os.getSignal() -> string` returns the last name,
+  `""` if none). Names are strings (`"usr1"`, `"usr2"`, `"int"`, `"term"`,
+  `"hup"`) - letters-only-clean and the natural spelling. The flagship case is a
+  user-defined `SIGUSR2` ("reload config", "rotate", "toggle verbose"), but the
+  high-value one is **graceful shutdown**: an `httpd` / `web` server or a `term`
+  TUI catching `SIGTERM` / `SIGINT` to close connections, `term.restore`, and
+  remove temp files before exiting.
+  ```jennifer
+  os.catchSignal("term");
+  while ($running) {
+      serveOneRequest();
+      if (os.gotSignal("term")) { $running = false; }   # poll at a safe point
+  }
+  shutdownCleanly();
+  ```
+
+**Trapping is opt-in per signal, so defaults survive.** `SIGUSR1` / `SIGUSR2`
+must be trapped (their default action is to kill the process), but
+`SIGINT` / `SIGTERM` keep their default **terminate** disposition until the
+program calls `os.catchSignal` - otherwise a normal script would silently stop
+responding to Ctrl-C (today an interactive foreground `jennifer run` is killed by
+Ctrl-C; a backgrounded one inherits `SIG_IGN` per job-control convention, which
+Go preserves). Polling latency is real and explicit: a tight loop that never
+polls will not see the signal.
+
+**The host interrupt sits above the script API - a caught signal never traps the
+user in a loop.** Two rules keep an escape:
+
+- **A double `SIGINT` force-aborts.** Once a program has opted into catching
+  `SIGINT`, the *first* Ctrl-C is the script's (sets the poll flag); a *second*
+  Ctrl-C bypasses the trap and forces the host to abort. So a script that catches
+  `SIGINT` and then never polls is still stoppable with Ctrl-C Ctrl-C, not only a
+  `kill -9` from another terminal (the humane pattern many CLIs use).
+- **The REPL reserves `SIGINT` for itself.** `os.catchSignal("int")` is a no-op
+  in REPL context (like `term.makeRaw` / `readByte`, which are refused there - the
+  REPL owns the terminal), so Ctrl-C in the REPL always unwinds the current
+  evaluation back to the prompt rather than being swallowed by a script's trap.
+  That unwind is the interpreter-level interrupt (the checkpoint below), distinct
+  from and above the script's cooperative polling.
+
+**Terminal restoration on abort.** Raw mode is terminal-*driver* state that
+outlives the process, so a script that calls `term.makeRaw` and then aborts - an
+uncaught error, `exit`, or the double-Ctrl-C above - would leave the shell wedged
+(no echo, no line editing), unlike a leaked file which the OS reclaims. Jennifer
+has no `finally`, but the CLI does not need one: `term`'s raw-mode registry (from
+[M20.5](#m205---term)) already tracks every un-restored session, so the CLI
+restores them at process teardown. A Go `defer termlib.RestoreAll()` around the
+interpreter run covers normal exit, an uncaught error / throw, `exit`, a panic
+unwind, and any unwind-based abort - which is *why* the double-Ctrl-C abort
+unwinds to the CLI rather than a hard `os.Exit` (that would skip the defer); a
+handler for the terminating signals (`SIGINT` / `SIGTERM` / `SIGHUP` / `SIGQUIT`)
+restores before the process dies, since their default action skips deferred
+cleanup. `SIGKILL` is the one unrecoverable case (uncatchable by definition, as
+for any raw-mode program in any language); a wedged terminal is still recoverable
+by the user with `reset` / `stty sane`. This teardown-restore is a small
+extension of the M20.5 registry (an exported `RestoreAll`), fixes a real current
+gap - today a `jennifer run` script that raw-modes stdin and errors leaves the
+terminal raw - and is delivered here because the double-Ctrl-C abort makes it
+load-bearing. (Non-terminal host state - temp files from `fs.makeTempFile`, open
+`fs` / `net` handles - is either OS-reclaimed on exit or a mere leak, not a
+wedge; a general `finally` / defer language feature is the eventual answer there
+and is tracked separately.)
+
+**Platform.** `SIGUSR1` / `SIGUSR2` / `SIGHUP` are Unix-only (the name -> signal
+mapping is build-tag split like `net` / `term`, so they only compile on Unix);
+`os.catchSignal` on an unsupported signal or platform is a positioned error, not
+a crash. **Aborting a script on Windows is unaffected**: Ctrl-C arrives as
+`CTRL_C_EVENT`, which Go's runtime maps to the interrupt and terminates on by
+default (and the double-Ctrl-C escape rides the same path) - that route does not
+go through this library. Only the `SIGUSR1` live-dump and the Unix-specific
+`os.catchSignal` names are Linux-only, an accepted limitation on the best-effort
+Windows target.
+
+This milestone precedes - and forces the safe-checkpoint hook for - the larger
+**cooperative loop-cancellation** work: the interpreter checking a host cancel
+flag at each loop iteration / statement boundary so a runaway loop is
+interruptible and the REPL's Ctrl-C actually unwinds (today, and under this
+milestone alone, a REPL loop is still kill-from-outside because raw mode delivers
+Ctrl-C as a byte and there is no checkpoint - not a regression, just not yet
+fixed). That follow-on is where the double-Ctrl-C and REPL-reserved-`SIGINT`
+rules above become live. `os.kill` (today `SIGTERM`-only to an `os.spawn` child)
+may also grow a signal-name argument here.
+
+### M20.7 - device I/O (`serial` / `spi` / `iic` / `gpio`)
 
 Device-I/O libraries for embedded / single-board-computer hosts, all reaching
 the Linux `/dev` + `ioctl` interface that `.j` and plain `fs` cannot: `serial` /
@@ -1718,7 +1799,7 @@ supported platform), a friendly-error stub elsewhere. Default binary; a
 `machine` package is a different, microcontroller-level API - these target the
 Linux `/dev` + `ioctl` interface). Together they complete the SBC I/O story.
 
-### M20.7 - `sql` (MySQL / MariaDB + PostgreSQL)
+### M20.8 - `sql` (MySQL / MariaDB + PostgreSQL)
 
 A relational-database client library over Go's `database/sql`, shipping the
 two **client-server** engines: MySQL / MariaDB (`go-sql-driver/mysql`) and
@@ -1870,7 +1951,7 @@ default binary. Discipline as usual.
 
 ### M21.5 - `orm` module
 
-A relational mapper layered over the [M20.7 `sql`](#m207---sql-mysql--mariadb--postgresql)
+A relational mapper layered over the [M20.8 `sql`](#m208---sql-mysql--mariadb--postgresql)
 library (its **hard prerequisite** - no `sql`, no `orm`), and a good stress-test
 of how far the module system stretches. Jennifer's semantics dictate the shape,
 and it is **Data Mapper, not Active Record**: structs are value-semantic and

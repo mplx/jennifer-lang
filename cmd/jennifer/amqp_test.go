@@ -5,6 +5,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -117,6 +118,108 @@ func serveAMQP(ln net.Listener) {
 	amqpReadFrame(r)                      // Basic.Ack
 	amqpReadFrame(r)                      // Connection.Close
 	amqpWriteMethod(conn, 0, 10, 51, nil) // Connection.Close-Ok
+}
+
+// serveAMQPQuorum handshakes, captures one Queue.Declare frame (sent on `got`),
+// and replies Declare-Ok echoing the queue name. It lets the test assert that a
+// declareQuorumQueue call put the x-queue-type=quorum arguments and the durable
+// flag on the wire.
+func serveAMQPQuorum(ln net.Listener, got chan<- []byte) {
+	conn, err := ln.Accept()
+	if err != nil {
+		close(got)
+		return
+	}
+	defer conn.Close()
+	r := bufio.NewReader(conn)
+
+	hdr := make([]byte, 8)
+	if _, err := io.ReadFull(r, hdr); err != nil {
+		close(got)
+		return
+	}
+	start := []byte{0, 9, 0, 0, 0, 0}
+	start = amqpLongStr(start, "PLAIN")
+	start = amqpLongStr(start, "en_US")
+	amqpWriteMethod(conn, 0, 10, 10, start)
+	amqpReadFrame(r)                                                 // Start-Ok
+	amqpWriteMethod(conn, 0, 10, 30, []byte{0, 0, 0, 2, 0, 0, 0, 0}) // Tune
+	amqpReadFrame(r)                                                 // Tune-Ok
+	amqpReadFrame(r)                                                 // Connection.Open
+	amqpWriteMethod(conn, 0, 10, 41, []byte{0})                      // Open-Ok
+	amqpReadFrame(r)                                                 // Channel.Open
+	amqpWriteMethod(conn, 1, 20, 11, []byte{0, 0, 0, 0})             // Channel.Open-Ok
+
+	_, decl, err := amqpReadFrame(r) // Queue.Declare
+	if err != nil {
+		close(got)
+		return
+	}
+	got <- decl
+
+	qLen := int(decl[6])
+	qname := string(decl[7 : 7+qLen])
+	declOk := amqpShortStr(nil, qname)
+	declOk = append(declOk, 0, 0, 0, 0, 0, 0, 0, 0) // message-count 0, consumer-count 0
+	amqpWriteMethod(conn, 1, 50, 11, declOk)
+
+	amqpReadFrame(r)                      // Connection.Close
+	amqpWriteMethod(conn, 0, 10, 51, nil) // Close-Ok
+}
+
+// TestAmqpQuorumQueue proves declareQuorumQueue sends Queue.Declare with the
+// durable flag set and an x-queue-type=quorum arguments field-table.
+func TestAmqpQuorumQueue(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	got := make(chan []byte, 1)
+	go serveAMQPQuorum(ln, got)
+
+	addr := ln.Addr().(*net.TCPAddr)
+	amqpMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "amqp.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+import %q as amqp;
+def opts as amqp.Options init amqp.withPort(amqp.options("127.0.0.1", "guest", "guest"), %d);
+def c as amqp.Conn init amqp.connect($opts);
+def qi as amqp.QueueInfo init amqp.declareQuorumQueue($c, "critical");
+testing.assertEqual($qi.name, "critical");
+amqp.close($c);`, amqpMod, addr.Port)
+	progPath := filepath.Join(dir, "amqp.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("quorum program failed with code %d", code)
+	}
+
+	decl := <-got
+	if decl == nil {
+		t.Fatal("broker captured no Queue.Declare frame")
+	}
+	// decl = class(2) method(2) reserved(2) name(shortstr) flags(1) arguments-table.
+	if decl[0] != 0 || decl[1] != 50 || decl[2] != 0 || decl[3] != 10 {
+		t.Fatalf("not a Queue.Declare: class/method = %d/%d", uint16(decl[0])<<8|uint16(decl[1]), uint16(decl[2])<<8|uint16(decl[3]))
+	}
+	qLen := int(decl[6])
+	flags := decl[7+qLen]
+	if flags&2 == 0 {
+		t.Errorf("durable flag not set: flags = 0x%02x", flags)
+	}
+	// The expected x-queue-type=quorum field-table.
+	want := binary.BigEndian.AppendUint32(nil, 24)
+	want = amqpShortStr(want, "x-queue-type")
+	want = append(want, 'S')
+	want = amqpLongStr(want, "quorum")
+	if gotTable := decl[8+qLen:]; !bytes.Equal(gotTable, want) {
+		t.Errorf("arguments table = %x, want %x", gotTable, want)
+	}
 }
 
 // TestAmqpRoundTrip drives the amqp client through connect / declareQueue /

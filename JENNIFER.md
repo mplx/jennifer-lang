@@ -775,7 +775,9 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   `withPort` / `withVhost`) runs the full handshake (protocol header,
   `Connection.Start`/`Start-Ok` SASL PLAIN, `Tune`/`Tune-Ok`, `Open`/`Open-Ok`,
   `Channel.Open`) and returns a `Conn`. `declareQueue(c, name, durable) ->
-  QueueInfo{name, messageCount, consumerCount}`; `publish(c, exchange, routingKey,
+  QueueInfo{name, messageCount, consumerCount}` (a classic queue) or
+  `declareQuorumQueue(c, name)` (a replicated, always-durable quorum queue, via
+  the `x-queue-type=quorum` argument); `publish(c, exchange, routingKey,
   bytesBody)` / `publishText(c, exchange, routingKey, text)` send method +
   content-header + body frames (exchange "" routes to a queue by name);
   `get(c, queue, autoAck) -> Message{empty, deliveryTag, exchange, routingKey, body}`
