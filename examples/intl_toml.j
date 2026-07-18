@@ -16,7 +16,11 @@ use fs;
 use toml;
 use intl;
 
-/** Read a flat "key = value" TOML catalog into a map of string to string. */
+/**
+ * Read a flat "key = value" TOML catalog into a map of string to string.
+ * @param path {string} the path to a TOML catalog file
+ * @return {map of string to string} the key -> template pairs to hand intl.load
+ */
 func loadCatalog(path as string) {
     def doc as toml.Value init toml.decode(fs.readString($path));
     def out as map of string to string init {};
