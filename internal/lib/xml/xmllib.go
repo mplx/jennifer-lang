@@ -92,6 +92,13 @@ func encodeFn(args []interpreter.Value, pretty bool) (interpreter.Value, error) 
 // content; an element containing any text child is emitted inline so its
 // character data stays byte-exact.
 func encodeNode(sb *strings.Builder, n interpreter.Value, pretty bool, depth int) error {
+	// Guard the recursion: a tree built deep via xml.append in a loop (or a
+	// value printed with %v) would otherwise overflow the Go stack, an
+	// uncatchable crash. Matches the decode-side maxDepth; deeper than that
+	// cannot come from decode anyway.
+	if depth >= maxDepth {
+		return fmt.Errorf("element nesting exceeds %d levels", maxDepth)
+	}
 	switch nodeKind(n) {
 	case "text":
 		t, _ := mapField(n, "text")
@@ -168,7 +175,11 @@ func escapeText(sb *strings.Builder, s string) {
 	}
 }
 
-// escapeAttr escapes a (double-quoted) attribute value.
+// escapeAttr escapes a (double-quoted) attribute value. Whitespace other than
+// the plain space is emitted as a character reference: a compliant parser
+// normalizes a *literal* tab / newline / CR in an attribute value to a space,
+// so escaping them keeps the exact bytes across a round-trip (a reference is
+// not normalized).
 func escapeAttr(sb *strings.Builder, s string) {
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
@@ -178,6 +189,12 @@ func escapeAttr(sb *strings.Builder, s string) {
 			sb.WriteString("&lt;")
 		case '"':
 			sb.WriteString("&quot;")
+		case '\t':
+			sb.WriteString("&#9;")
+		case '\n':
+			sb.WriteString("&#10;")
+		case '\r':
+			sb.WriteString("&#13;")
 		default:
 			sb.WriteByte(s[i])
 		}

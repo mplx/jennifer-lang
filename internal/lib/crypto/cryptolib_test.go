@@ -58,14 +58,39 @@ func TestPBKDFBounds(t *testing.T) {
 		_, err := pbkdf2Fn(noCtx, []interpreter.Value{pw, salt, interpreter.IntVal(iter), interpreter.IntVal(keyLen), algo})
 		return err
 	}
-	if call(maxPBKDFIterations+1, 32) == nil {
-		t.Error("over-limit iterations should error")
-	}
 	if call(1000, maxKeyLen+1) == nil {
 		t.Error("over-limit keyLen should error")
 	}
+	// The work bound is on blocks*iterations, not either factor alone: a large
+	// keyLen paired with a huge iteration count (individually plausible) is the
+	// days-of-CPU case and must be rejected before it runs.
+	if call(maxPBKDFWork, maxKeyLen) == nil {
+		t.Error("keyLen*iterations over the work limit should error")
+	}
+	// sha256 = 32-byte blocks: 32768 blocks at 1MiB, so >maxPBKDFWork/32768 iters must fail.
+	if call(maxPBKDFWork/32768+1, maxKeyLen) == nil {
+		t.Error("work just over the limit should error")
+	}
+	// A modest single-block derivation (well under the work budget) is allowed
+	// and cheap; the full-budget allowed case is ~20s of real work, so it is not
+	// exercised here.
 	if err := call(100000, 32); err != nil {
 		t.Errorf("sane pbkdf params should derive a key: %v", err)
+	}
+}
+
+// crypto.hkdf must reject an over-large length before the int() cast so a
+// 32-bit target cannot truncate a huge length to a small accepted value and
+// return a shorter-than-requested key.
+func TestHKDFLengthBound(t *testing.T) {
+	secret := interpreter.BytesVal([]byte("secret"))
+	empty := interpreter.BytesVal(nil)
+	algo := interpreter.StringVal("sha256")
+	if _, err := hkdfFn(noCtx, []interpreter.Value{secret, empty, empty, interpreter.IntVal(maxKeyLen + 1), algo}); err == nil {
+		t.Error("over-limit hkdf length should error")
+	}
+	if _, err := hkdfFn(noCtx, []interpreter.Value{secret, empty, empty, interpreter.IntVal(32), algo}); err != nil {
+		t.Errorf("sane hkdf length should derive a key: %v", err)
 	}
 }
 

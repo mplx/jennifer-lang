@@ -223,3 +223,77 @@ func TestPathDialect(t *testing.T) {
 		t.Error("no-match get should error")
 	}
 }
+
+// Deeply-nested input must fail with a catchable error, not overflow the Go
+// stack (uncatchable, since the interpreter has no recover()).
+func TestDecodeDepthCap(t *testing.T) {
+	deep := strings.Repeat("<a>", maxDepth+50) + "x" + strings.Repeat("</a>", maxDepth+50)
+	if _, err := decodeXML(deep); err == nil {
+		t.Error("over-deep document should error")
+	} else if !strings.Contains(err.Error(), "nesting exceeds") {
+		t.Errorf("want a nesting-depth error, got %v", err)
+	}
+	// A document right at the cap still decodes.
+	ok := strings.Repeat("<a>", maxDepth-1) + "x" + strings.Repeat("</a>", maxDepth-1)
+	if _, err := decodeXML(ok); err != nil {
+		t.Errorf("document within the cap should decode: %v", err)
+	}
+}
+
+// Encoding a tree built deeper than the cap must error, not overflow the stack.
+func TestEncodeDepthCap(t *testing.T) {
+	node := elementNode("a", nil, nil)
+	for i := 0; i < maxDepth+50; i++ {
+		node = elementNode("a", nil, []interpreter.Value{node})
+	}
+	var sb strings.Builder
+	if err := encodeNode(&sb, node, false, 0); err == nil {
+		t.Error("encoding an over-deep tree should error")
+	}
+}
+
+// A name may not contain characters that terminate other syntax; accepting them
+// would let a malformed name round-trip through encode as un-escaped markup.
+func TestDecodeRejectsInvalidNameChars(t *testing.T) {
+	for _, src := range []string{`<a&b>x</a&b>`, `<a b&c="v"/>`, `<a"b/>`, `<a'b/>`} {
+		if _, err := decodeXML(src); err == nil {
+			t.Errorf("expected error decoding %q (invalid name char)", src)
+		}
+	}
+}
+
+// Numeric character references outside XML 1.0's Char production (e.g. NUL and
+// other C0 controls) are rejected; tab/LF/CR and normal code points pass.
+func TestCharRefValidation(t *testing.T) {
+	for _, bad := range []string{`<r>&#0;</r>`, `<r>&#8;</r>`, `<r>&#xB;</r>`, `<r>&#xFFFE;</r>`} {
+		if _, err := decodeXML(bad); err == nil {
+			t.Errorf("expected error decoding illegal char ref %q", bad)
+		}
+	}
+	for _, ok := range []string{`<r>&#9;</r>`, `<r>&#10;</r>`, `<r>&#65;</r>`, `<r>&#x41;</r>`} {
+		if _, err := decodeXML(ok); err != nil {
+			t.Errorf("valid char ref %q should decode: %v", ok, err)
+		}
+	}
+}
+
+// Attribute values normalize literal whitespace to a space, while the encoder
+// escapes whitespace as character references so exact bytes survive a round-trip.
+func TestAttrWhitespaceNormalization(t *testing.T) {
+	get := strGetter(t)
+	// Literal tab/newline in the source normalize to spaces.
+	rv := mustDecode(t, "<x a=\"p\nq\tr\"/>")
+	if got := get(attrFn(noCtx, []interpreter.Value{rv, interpreter.StringVal("a")})); got != "p q r" {
+		t.Errorf("literal whitespace not normalized: %q", got)
+	}
+	// A built value with whitespace encodes to refs and round-trips exactly.
+	el, _ := setAttrFn(noCtx, []interpreter.Value{wrap(elementNode("x", nil, nil)), interpreter.StringVal("a"), interpreter.StringVal("p\nq")})
+	enc := get(encodeFn([]interpreter.Value{el}, false))
+	if !strings.Contains(enc, "&#10;") {
+		t.Errorf("newline should encode as a reference, got %q", enc)
+	}
+	back := mustDecode(t, enc)
+	if got := get(attrFn(noCtx, []interpreter.Value{back, interpreter.StringVal("a")})); got != "p\nq" {
+		t.Errorf("round-trip lost the newline: %q", got)
+	}
+}

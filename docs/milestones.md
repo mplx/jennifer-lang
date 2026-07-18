@@ -1564,77 +1564,52 @@ general password store.
 
 ### M20.2 - `xml`
 
-**Done.** Hand-rolled XML encode / decode (no `encoding/xml`, which is
-reflect-heavy and TinyGo-hostile - the same reason `json` / `toml` are
-hand-rolled), over an opaque `xml.Value` (`KindObject`), the natural mirror
-target for the `json.Value` read / write vocabulary
-([M16.16](#m1616---jsonvalue)) - the same opaque-handle plus path-addressed
-accessor shape, with an XPath-style path dialect in place of JSON Pointer.
-
-- **The tree.** An element tree (not JSON's map / list / scalar): each
-  element has a tag name, ordered attributes, and ordered, possibly-duplicated
-  children that mix elements and text. Encoded as an ordered `map` per node so
-  it is an ordinary interpreter Value the KindObject can wrap; text and element
-  children are kept in document order so mixed content and whitespace round-trip.
-- **Decode.** `xml.decode(s) -> xml.Value` parses elements, attributes, text,
-  CDATA (as text), the five predefined entities and numeric character
-  references (unknown entity = error), and skips comments / processing
-  instructions / an XML declaration / a DOCTYPE. Namespace prefixes are kept
-  verbatim (`ns:tag`); `xmlns` declarations are ordinary attributes. Errors
-  carry line / column.
-- **Read.** `typeOf`, `tag`, `text`, `attr`, `hasAttr`, `attrs`, `children`,
-  plus path-addressed `get` / `findAll` / `has`. The path dialect is
-  `/`-separated steps of `name`, `name[k]` (1-based k-th same-named element
-  child), or `*`, relative to the passed node.
-- **Encode / build.** `xml.encode` / `xml.encodePretty` (pretty indents
-  element-only content, inlines any element with a text child so character
-  data stays byte-exact). A non-mutating build surface - `element`, `setAttr`,
-  `setText`, `append` - each returning a fresh handle.
-- **Deferred.** Full namespace resolution (prefixes stay lexical) and richer
-  XPath (predicates, `@attr` / `text()` path steps) are future extensions.
+**Done.** Hand-rolled XML encode / decode (no `encoding/xml`, reflect-heavy and
+TinyGo-hostile - the reason `json` / `toml` are hand-rolled too), over an opaque
+`xml.Value` (`KindObject`) mirroring the `json.Value` read / write vocabulary
+([M16.16](#m1616---jsonvalue)) but over an element tree (a tag name + ordered
+attributes + ordered, possibly-duplicated element/text children, each node an
+ordered `map` so mixed content and whitespace round-trip) with an XPath-style
+path dialect (`/`-separated `name` / `name[k]` 1-based / `*`) in place of JSON
+Pointer. `xml.decode(s)` parses elements, attributes, text, CDATA (as text), the
+five predefined entities + numeric references (unknown = error), and skips
+comments / PIs / the XML declaration / a DOCTYPE; namespace prefixes kept
+verbatim (`ns:tag`, `xmlns` an ordinary attribute), errors carry line / column.
+Read: `typeOf` / `tag` / `text` / `attr` / `hasAttr` / `attrs` / `children` plus
+path-addressed `get` / `findAll` / `has`. Encode: `xml.encode` / `encodePretty`
+(pretty indents element-only content, inlines any element with a text child so
+character data stays byte-exact); non-mutating build surface `element` /
+`setAttr` / `setText` / `append`, each a fresh handle. Deferred: full namespace
+resolution (prefixes stay lexical) and richer XPath (predicates, `@attr` /
+`text()` steps).
 
 ### M20.3 - `yaml`
 
-**Done.** A system library because full YAML - anchors / aliases, flow *and*
-block styles, implicit typing, multi-document streams - is impractical in `.j`
-and has no Go stdlib. Unlike `xml`, that means a **Go dependency**
-(`gopkg.in/yaml.v3`): the one place a config parser earns one, since a
-hand-rolled full YAML is a project of its own. The dependency was verified
-TinyGo-clean (it builds *and* runs under TinyGo 0.41 / Go 1.26 on both binaries;
-the documented-subset fallback was not needed), and it is the project's first
-non-CLI-scoped external dependency.
-
-The design mirrors [`toml`](#m188---toml-system-library) exactly, which mirrors
-[`json`](#m1616---jsonvalue): an opaque `yaml.Value` (`KindObject`) walked by the
-same read accessors (`typeOf` / `get` / `has` / `keys` / `length` / `as*` /
-`isNull`, addressed by JSON Pointer) and edited by the same non-mutating write
-surface (`map` / `list` / `set` / `insert` / `append` / `remove` / `move`), plus
-`asDatetime` / `isDatetime` for the timestamp scalar (as `toml` surfaces its
-date-times).
-
-- **Decode.** `yaml.decode(s) -> yaml.Value` for one document (a multi-document
-  stream is an error pointing at `decodeAll`; an empty string is `null`) and
-  `yaml.decodeAll(s) -> list of yaml.Value` for a `---`-separated stream. The
-  yaml.v3 Node tree is walked into the interpreter Value tree, preserving
-  mapping order; scalars are typed by YAML's implicit resolution (int / float /
-  bool / null / timestamp / string), a `!!binary` scalar becomes `bytes`, and a
-  non-scalar mapping key is rejected. Anchors and aliases resolve **by value**
-  (each alias an independent copy, so no shared state), and `<<` **merge keys**
-  apply (an explicit key wins over a merged one, an earlier merge source over a
-  later one). Because yaml.v3 is a recursive-descent parser (a deeply-nested
-  document recurses per level on the calling goroutine's stack, which overflows
-  fatally on jennifer-tiny's fixed 2 MiB stack - measured at ~350 levels, well
-  under yaml.v3's own 10000 cap), a raw-text depth pre-scan rejects nesting past
-  128 levels *before* the parse runs; a five-million-node budget likewise stops
-  an alias bomb. Both are catchable errors rather than a stack or memory kill.
-- **Encode.** `yaml.encode` renders **flow style** (compact, `{a: 1, b: [x, y]}`)
-  and `yaml.encodePretty` **block style** (readable) - YAML's own analogue of
-  json's compact / pretty pair. A native `map` / `list` / struct / scalar
-  encodes directly; `bytes` becomes `!!binary`, a `time.Time` a timestamp. Block
-  style preserves a timestamp's type on round-trip; flow style quotes it.
-
-Deferred: emitting a multi-document stream (`encodeAll`) and per-node style
-control are future extensions if demand appears.
+**Done.** Full YAML 1.2 encode / decode over an opaque `yaml.Value`
+(`KindObject`), mirroring [`toml`](#m188---toml-system-library) /
+[`json`](#m1616---jsonvalue) exactly: the same read accessors (`typeOf` / `get`
+/ `has` / `keys` / `length` / `as*` / `isNull`, JSON-Pointer-addressed) and
+non-mutating write surface (`map` / `list` / `set` / `insert` / `append` /
+`remove` / `move`), plus `asDatetime` / `isDatetime` for the timestamp scalar.
+`yaml.decode(s)` handles one document (a multi-doc stream errors, pointing at
+`yaml.decodeAll(s) -> list of yaml.Value`; empty is `null`); scalars type by
+YAML implicit resolution, `!!binary` becomes `bytes`, a non-scalar mapping key
+is rejected, anchors / aliases resolve **by value** (independent copies), and
+`<<` **merge keys** apply (own key wins, earlier source wins). `yaml.encode` is
+flow style (compact, `{a: 1, b: [x, y]}`) and `encodePretty` block style -
+YAML's analogue of json's compact / pretty pair; `bytes` encodes as `!!binary`,
+a `time.Time` as a timestamp (block preserves the type on round-trip, flow
+quotes it). Unlike the hand-rolled `json` / `toml` / `xml`, the parse is
+delegated to `gopkg.in/yaml.v3` - the one place a config parser earns a Go
+dependency (full YAML, with anchors / flow+block / implicit typing / streams, is
+a project of its own), verified TinyGo-clean (builds *and* runs on both binaries
+under TinyGo 0.41 / Go 1.26; the project's first non-CLI-scoped dependency).
+Because yaml.v3 is recursive-descent (deeply-nested input recurses per level and
+overflows jennifer-tiny's fixed 2 MiB stack fatally at ~350 levels, under
+yaml.v3's own 10000 cap), a raw-text depth pre-scan rejects nesting past 128
+levels *before* the parse, and a five-million-node budget caps an alias bomb -
+both catchable errors, not a stack or memory kill. Deferred: multi-document
+encode (`encodeAll`) and per-node style control.
 
 ### M20.4 - `i18n`
 

@@ -26,6 +26,13 @@ type decoder struct {
 	pos int
 }
 
+// maxDepth caps element nesting. parseElement/parseContent recurse one Go frame
+// per level, and a Go stack overflow is a fatal, uncatchable crash (the
+// interpreter has no recover()), so an unbounded depth would make any untrusted
+// document a remote kill switch. 1000 matches json/toml and is far beyond any
+// real document.
+const maxDepth = 1000
+
 // errf tags an error with the line/column of the current position.
 func (d *decoder) errf(format string, a ...any) error {
 	line, col := 1, 1
@@ -49,6 +56,25 @@ func (d *decoder) startsWith(prefix string) bool {
 
 func isSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\r' || c == '\n' }
 
+// isXMLChar reports whether r is allowed by XML 1.0's Char production: tab, LF,
+// CR, then #x20..#xD7FF, #xE000..#xFFFD, #x10000..#x10FFFF. This excludes NUL
+// and the other C0 controls (which utf8.ValidRune would otherwise accept), so a
+// numeric reference like `&#0;` is rejected rather than injecting a control byte.
+func isXMLChar(r rune) bool {
+	switch {
+	case r == 0x9 || r == 0xA || r == 0xD:
+		return true
+	case r >= 0x20 && r <= 0xD7FF:
+		return true
+	case r >= 0xE000 && r <= 0xFFFD:
+		return true
+	case r >= 0x10000 && r <= 0x10FFFF:
+		return true
+	default:
+		return false
+	}
+}
+
 func (d *decoder) skipSpace() {
 	for !d.eof() && isSpace(d.peek()) {
 		d.pos++
@@ -65,7 +91,7 @@ func decodeXML(src string) (interpreter.Value, error) {
 	if d.eof() || d.peek() != '<' {
 		return interpreter.Value{}, d.errf("expected a root element")
 	}
-	root, err := d.parseElement()
+	root, err := d.parseElement(0)
 	if err != nil {
 		return interpreter.Value{}, err
 	}
@@ -148,8 +174,12 @@ func (d *decoder) skipDoctype() error {
 }
 
 // parseElement parses a start tag, its content, and its end tag (or a
-// self-closing tag). d.pos is at the opening '<'.
-func (d *decoder) parseElement() (interpreter.Value, error) {
+// self-closing tag). d.pos is at the opening '<'. depth is the current nesting
+// level, capped to keep the recursion from overflowing the Go stack.
+func (d *decoder) parseElement(depth int) (interpreter.Value, error) {
+	if depth >= maxDepth {
+		return interpreter.Value{}, d.errf("element nesting exceeds %d levels", maxDepth)
+	}
 	d.pos++ // '<'
 	name, err := d.parseName()
 	if err != nil {
@@ -162,7 +192,7 @@ func (d *decoder) parseElement() (interpreter.Value, error) {
 	if selfClose {
 		return elementNode(name, attrs, nil), nil
 	}
-	children, err := d.parseContent(name)
+	children, err := d.parseContent(name, depth)
 	if err != nil {
 		return interpreter.Value{}, err
 	}
@@ -170,13 +200,19 @@ func (d *decoder) parseElement() (interpreter.Value, error) {
 }
 
 // parseName reads an element or attribute name: a run of characters up to
-// whitespace or one of `/ > =`.
+// whitespace or one of `/ > =`. A name may not contain `< & " '` (which
+// terminate other syntax) - accepting them would let a malformed name round-trip
+// through encode as un-escaped markup (e.g. a tag name `a&b` re-emitted as
+// `<a&b>`, where `&b` reads as an entity to the next consumer).
 func (d *decoder) parseName() (string, error) {
 	start := d.pos
 	for !d.eof() {
 		c := d.peek()
 		if isSpace(c) || c == '>' || c == '/' || c == '=' {
 			break
+		}
+		if c == '<' || c == '&' || c == '"' || c == '\'' {
+			return "", d.errf("invalid character %q in a name", string(c))
 		}
 		d.pos++
 	}
@@ -253,6 +289,19 @@ func (d *decoder) parseAttValue() (string, error) {
 				return "", e
 			}
 			b.WriteString(r)
+		case c == '\t' || c == '\n' || c == ' ':
+			// Attribute-value normalization: a literal whitespace character
+			// becomes a space (a whitespace char *reference* is left as-is,
+			// handled by the '&' case above).
+			b.WriteByte(' ')
+			d.pos++
+		case c == '\r':
+			// A literal CR (or CR-LF) normalizes to a single space.
+			b.WriteByte(' ')
+			d.pos++
+			if !d.eof() && d.peek() == '\n' {
+				d.pos++
+			}
 		default:
 			b.WriteByte(c)
 			d.pos++
@@ -261,7 +310,8 @@ func (d *decoder) parseAttValue() (string, error) {
 }
 
 // parseContent reads an element's children up to and including its `</name>`.
-func (d *decoder) parseContent(name string) ([]interpreter.Value, error) {
+// depth is the nesting level of the owning element, passed to child elements.
+func (d *decoder) parseContent(name string, depth int) ([]interpreter.Value, error) {
 	var children []interpreter.Value
 	for {
 		if d.eof() {
@@ -298,7 +348,7 @@ func (d *decoder) parseContent(name string) ([]interpreter.Value, error) {
 		case d.startsWith("<!"):
 			return nil, d.errf("unexpected declaration inside element <%s>", name)
 		default:
-			child, err := d.parseElement()
+			child, err := d.parseElement(depth + 1)
 			if err != nil {
 				return nil, err
 			}
@@ -386,7 +436,7 @@ func (d *decoder) parseReference() (string, error) {
 		} else {
 			code, err = strconv.ParseInt(ent[1:], 10, 32)
 		}
-		if err != nil || code < 0 || code > utf8.MaxRune || !utf8.ValidRune(rune(code)) {
+		if err != nil || code < 0 || code > utf8.MaxRune || !isXMLChar(rune(code)) {
 			d.pos = amp
 			return "", d.errf("invalid character reference &%s;", ent)
 		}

@@ -228,6 +228,14 @@ func hkdfFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 	if length <= 0 {
 		return interpreter.Null(), fmt.Errorf("crypto.hkdf: length must be > 0, got %d", length)
 	}
+	// Reject an over-large length before the int() cast. On a 64-bit build
+	// hkdf.Key would reject it anyway (max 255*hashLen), but on a 32-bit target
+	// (jennifer-tiny) a value like 1<<40 could truncate to a small int that
+	// HKDF accepts, silently yielding a shorter-than-requested key. maxKeyLen is
+	// far above any real HKDF output, so this is a safe explicit bound.
+	if length > maxKeyLen {
+		return interpreter.Null(), fmt.Errorf("crypto.hkdf: length (%d) exceeds the %d-byte limit", length, maxKeyLen)
+	}
 	key, kerr := hkdf.Key(h, args[0].Bytes, args[1].Bytes, string(args[2].Bytes), int(length))
 	if kerr != nil {
 		return interpreter.Null(), fmt.Errorf("crypto.hkdf: %v", kerr)
@@ -235,16 +243,20 @@ func hkdfFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.Val
 	return interpreter.BytesVal(key), nil
 }
 
-// maxKeyLen bounds a derived-key length. Real keys are tens of bytes; 1 MiB is
-// generous and keeps a large keyLen from allocating gigabytes and pinning a
-// core (PBKDF2 output work is proportional to keyLen). maxPBKDFIterations caps
-// the stretch factor: it is far above any legitimate value (OWASP suggests
-// hundreds of thousands) but stops an untrusted iteration count - e.g. a
-// hostile SCRAM server's `i=` - from running effectively forever with no
-// interrupt.
+// maxKeyLen bounds the derived-key length so the output allocation is bounded
+// (real keys are tens of bytes; 1 MiB is far beyond any legitimate use).
+//
+// maxPBKDFWork bounds the actual compute: PBKDF2 runs one PRF chain per output
+// block - ceil(keyLen / hashLen) blocks - each `iterations` rounds, so the work
+// is the *product* blocks*iterations, not either factor alone. Bounding them
+// separately still lets a caller pair a large keyLen with a huge iteration
+// count and peg a core for days; this caps the product instead. 1e8 leaves
+// generous headroom over real use (OWASP suggests ~600k iterations for a
+// single-block key = 6e5 work) while keeping the worst case to a bounded ~20s.
+// It also caps a hostile SCRAM server's `i=` (there keyLen is one block).
 const (
-	maxKeyLen          = 1 << 20     // 1 MiB
-	maxPBKDFIterations = 100_000_000 // 1e8
+	maxKeyLen    = 1 << 20     // 1 MiB
+	maxPBKDFWork = 100_000_000 // blocks * iterations ceiling (~1e8)
 )
 
 // pbkdf2Fn implements `crypto.pbkdf(password, salt, iterations, keyLen, algo)
@@ -271,14 +283,18 @@ func pbkdf2Fn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.V
 	if iterations <= 0 {
 		return interpreter.Null(), fmt.Errorf("crypto.pbkdf: iterations must be > 0, got %d", iterations)
 	}
-	if iterations > maxPBKDFIterations {
-		return interpreter.Null(), fmt.Errorf("crypto.pbkdf: iterations (%d) exceeds the %d limit", iterations, maxPBKDFIterations)
-	}
 	if keyLen <= 0 {
 		return interpreter.Null(), fmt.Errorf("crypto.pbkdf: keyLen must be > 0, got %d", keyLen)
 	}
 	if keyLen > maxKeyLen {
 		return interpreter.Null(), fmt.Errorf("crypto.pbkdf: keyLen (%d) exceeds the %d-byte limit", keyLen, maxKeyLen)
+	}
+	// Bound the total work (blocks * iterations). Divide rather than multiply so
+	// the check itself cannot overflow int64; blocks >= 1 since keyLen >= 1.
+	hashLen := int64(h().Size())
+	blocks := (keyLen + hashLen - 1) / hashLen
+	if iterations > maxPBKDFWork/blocks {
+		return interpreter.Null(), fmt.Errorf("crypto.pbkdf: work (%d blocks x %d iterations) exceeds the %d limit; lower keyLen or iterations", blocks, iterations, maxPBKDFWork)
 	}
 	key, kerr := pbkdf2.Key(h, string(args[0].Bytes), args[1].Bytes, int(iterations), int(keyLen))
 	if kerr != nil {
