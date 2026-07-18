@@ -23,4 +23,7 @@ walk entries: 7
 line: one
 line: two
 line: three
+makeTempFile isFile = true
+makeTempDir  isDir  = true
+temp cleaned        = true
 cleanup: exists = false

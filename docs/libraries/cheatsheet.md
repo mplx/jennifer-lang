@@ -69,6 +69,8 @@ flat lookup view, not authoritative.
 | [`fs`](fs.md)`.walk(path)`                            | Depth-first, sorted, includes `path`. Returns `list of fs.Stat`. Skips symlinks.                                                    |
 | [`fs`](fs.md)`.writeBytes(path, content)` / `.writeBytes($f, b)` | Whole-file overwrite (path form) or write via handle (fs.File form).                                                      |
 | [`fs`](fs.md)`.writeString(path, content)` / `.writeString($f, s)` | Whole-file overwrite (path form) or write via handle (fs.File form).                                                    |
+| [`fs`](fs.md)`.makeTempFile([dir[, prefix[, suffix]]])` | Create a unique empty file (atomic, `0600`); returns its path. `dir=""` = system temp; parent must exist. |
+| [`fs`](fs.md)`.makeTempDir([dir[, prefix]])`          | Create a unique directory (atomic, `0700`); returns its path. Only the leaf is created (not `mkdir -p`).                            |
 | [`hash`](hash.md)`.compute(b, algo)`                  | One-shot digest. `algo` is `"md5"`, `"sha1"`, `"sha256"`, or `"sha512"`. Returns raw bytes.                                         |
 | [`hash`](hash.md)`.hmac(key, message, algo)`          | Keyed-hash MAC (RFC 2104) over the same algorithms; raw bytes out. For JWT / TOTP / SigV4 / webhook signatures.                     |
 | [`hash`](hash.md)`.discard($s)`                       | Drop a `hash.Stream` without computing its digest; releases its state.                                                             |

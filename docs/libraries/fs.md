@@ -101,6 +101,52 @@ fs.mkdirAll("build/output/cache");        # explicit intent
 fs.removeAll("build/output/cache");       # explicit intent
 ```
 
+## Temporary files and directories
+
+`fs.makeTempFile` and `fs.makeTempDir` create a fresh, uniquely-named entry and
+return its **path**. Creation is atomic - the OS reserves the name, so two
+concurrent callers never collide - and restrictive (`0600` for a file, `0700`
+for a directory), so scratch data holding secrets is not world-readable. They
+return a path (not an open handle) so the result drops straight into the ordinary
+path-based verbs.
+
+| Call | Returns | Notes |
+| ---- | ------- | ----- |
+| `fs.makeTempFile([dir[, prefix[, suffix]]])` | `string` | Create an empty unique file; returns its path. |
+| `fs.makeTempDir([dir[, prefix]])` | `string` | Create a unique directory; returns its path. |
+
+Arguments are positional and trailing-optional, `""` meaning the default:
+
+- `dir` - where to create it. `""` (or omitted) uses the system temp directory
+  (`os.tempDir()` - `$TMPDIR` else `/tmp` on Linux). An explicit `dir` **must
+  already exist**: only the final unique component is created (like `fs.mkdir`,
+  not `fs.mkdirAll`), so run `fs.mkdirAll` first if the parent is missing.
+- `prefix` / `suffix` - name the entry around the random component; `suffix`
+  gives a file a real extension. Neither may contain a path separator or NUL
+  (that would escape the target directory), which is a positioned error.
+
+```jennifer
+use fs;
+
+# A scratch file in the system temp dir, cleaned up when done.
+def report as string init fs.makeTempFile("", "report-", ".json");
+fs.writeString($report, $payload);
+# ... use it ...
+fs.remove($report);
+
+# A scratch directory under an existing build tree (create the parent first).
+fs.mkdirAll("build");
+def work as string init fs.makeTempDir("build", "job-");
+# ... write files under $work ...
+fs.removeAll($work);
+```
+
+Both are **strict**: any OS failure - a read-only filesystem, no permission, a
+missing parent directory, or a name the filesystem cannot hold - is a catchable
+error, never a fabricated directory tree or a name mangled to fit. Jennifer has
+no `finally`, so cleanup is explicit: pair every `makeTemp*` with an
+`fs.remove` / `fs.removeAll` (see the concurrency and error notes below).
+
 ## File handles
 
 For line-oriented reads and files that don't fit comfortably in

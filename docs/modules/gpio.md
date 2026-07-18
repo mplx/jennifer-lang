@@ -10,7 +10,7 @@ LED from a five-line script:
 
 ```jennifer
 import "gpio.j" as gpio;
-gpio.setup(17, "out");
+gpio.setup(17, gpio.OUT);
 gpio.write(17, 1);   # LED on
 gpio.write(17, 0);   # LED off
 gpio.release(17);
@@ -23,12 +23,15 @@ handle is needed:
 
 | Call | Returns | |
 | ---- | ------- | - |
-| `gpio.setup(pin, direction)` | `null` | Export `pin` and set its direction: `"in"` or `"out"`. |
+| `gpio.setup(pin, direction)` | `null` | Export `pin` and set its direction: `gpio.IN` or `gpio.OUT`. |
 | `gpio.write(pin, value)` | `null` | Set an output pin's value: `0` or `1`. |
 | `gpio.read(pin)` | `int` | Read a pin's current value (`0` / `1`). |
 | `gpio.release(pin)` | `null` | Unexport `pin`. |
 
-A bad direction (not `"in"` / `"out"`) or a value other than `0` / `1` throws
+The direction is passed as one of two exported constants, `gpio.IN` / `gpio.OUT`
+(matching RPi.GPIO's `GPIO.IN` / `GPIO.OUT`). Their values are the sysfs strings
+`"in"` / `"out"`, so a raw string still works, but the constant is the readable
+form. A bad direction (not `gpio.IN` / `gpio.OUT`) or a value other than `0` / `1` throws
 `Error{kind: "gpio"}`. When the sysfs GPIO tree is absent - not a GPIO-capable
 host, or sysfs GPIO disabled - every call throws a clear positioned
 `Error{kind: "gpio"}` ("base directory not found: ...") rather than crashing.

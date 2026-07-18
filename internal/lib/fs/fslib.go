@@ -82,6 +82,11 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "list", listFn)
 	in.RegisterNamespaced(LibraryName, "walk", walkFn)
 
+	// Temporary-entry creation (temp.go): unique name, atomic create, path
+	// returned. Strict - any OS failure is a catchable error.
+	in.RegisterNamespaced(LibraryName, "makeTempFile", makeTempFileFn)
+	in.RegisterNamespaced(LibraryName, "makeTempDir", makeTempDirFn)
+
 	// File-handle surface lives in handles.go.
 	installHandles(in)
 }

@@ -22,7 +22,7 @@ os.setEnv("JENNIFER_GPIO_BASE", $mock);
 
 # --- the actual GPIO program ------------------------------------------------
 io.printf("setup pin 17 as output\n");
-gpio.setup(17, "out");
+gpio.setup(17, gpio.OUT);
 
 for (def i as int init 0; $i < 3; $i = $i + 1) {
     gpio.write(17, 1);

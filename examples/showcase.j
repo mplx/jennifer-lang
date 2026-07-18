@@ -509,27 +509,23 @@ def many as list of task of int init [
 ];
 io.printf("waitAll      = %a\n", task.waitAll($many));
 
-# --- fs (whole-file round-trip in a scratch subdir) ---
+# --- fs (whole-file round-trip in a unique scratch dir) ---
 #
-# Uses a fresh subdirectory in the current working directory so
-# the demo cleans up after itself and produces the same output
-# regardless of where the interpreter was launched.
+# fs.makeTempDir hands back a fresh, uniquely-named directory (created
+# atomically, so parallel runs never collide); the demo writes into it
+# and removes it, so the output is identical wherever it was launched.
 use fs;
 
-def const SHOWCASE_DIR as string init "showcase-fs-tmp";
-if (fs.exists(SHOWCASE_DIR)) {
-    fs.removeAll(SHOWCASE_DIR);
-}
-fs.mkdirAll(SHOWCASE_DIR);
-fs.writeString(SHOWCASE_DIR + "/hi.txt", "hello, fs\n");
+def scratch as string init fs.makeTempDir("", "showcase-");
+fs.writeString($scratch + "/hi.txt", "hello, fs\n");
 io.printf("=== fs ===\n");
-io.printf("read back    = %s", fs.readString(SHOWCASE_DIR + "/hi.txt"));
-io.printf("isFile       = %t\n", fs.isFile(SHOWCASE_DIR + "/hi.txt"));
-io.printf("isDir        = %t\n", fs.isDir(SHOWCASE_DIR));
-def stat as fs.Stat init fs.stat(SHOWCASE_DIR + "/hi.txt");
+io.printf("read back    = %s", fs.readString($scratch + "/hi.txt"));
+io.printf("isFile       = %t\n", fs.isFile($scratch + "/hi.txt"));
+io.printf("isDir        = %t\n", fs.isDir($scratch));
+def stat as fs.Stat init fs.stat($scratch + "/hi.txt");
 io.printf("stat size    = %d\n", $stat.size);
-fs.removeAll(SHOWCASE_DIR);
-io.printf("cleanup      = %t\n", not fs.exists(SHOWCASE_DIR));
+fs.removeAll($scratch);
+io.printf("cleanup      = %t\n", not fs.exists($scratch));
 
 # --- net (in-process TCP echo) ---
 #

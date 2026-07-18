@@ -5,9 +5,10 @@
  * Exercises the `fs` library.
  * Shows whole-file read/write/append, metadata predicates + fs.stat, the
  * two-verbs pattern for directory create (mkdir vs mkdirAll) and delete
- * (remove vs removeAll), directory listing + walk, and buffered file handles
- * for a line-by-line read loop. Uses a fresh subdirectory next to the source
- * file so re-runs stay clean; wipes it on the way out with fs.removeAll.
+ * (remove vs removeAll), directory listing + walk, buffered file handles for a
+ * line-by-line read loop, and fs.makeTempFile / fs.makeTempDir for uniquely-
+ * named scratch entries. Uses a fresh subdirectory next to the source file so
+ * re-runs stay clean; wipes it on the way out with fs.removeAll.
  * @module fs
  */
 
@@ -91,6 +92,19 @@ while (not fs.eof($f)) {
     io.printf("line: %s\n", $line);
 }
 fs.close($f);
+
+# ---- temp files / dirs (unique names in the system temp dir) ----
+# makeTempFile / makeTempDir create a fresh, uniquely-named entry atomically
+# (0600 file / 0700 dir) and return its path; the caller removes it (no
+# finally in the language). dir "" means the system temp dir (os.tempDir()).
+def tf as string init fs.makeTempFile("", "fsdemo-", ".txt");
+fs.writeString($tf, "scratch\n");
+io.printf("makeTempFile isFile = %t\n", fs.isFile($tf));
+fs.remove($tf);
+def td as string init fs.makeTempDir("", "fsdemo-");
+io.printf("makeTempDir  isDir  = %t\n", fs.isDir($td));
+fs.removeAll($td);
+io.printf("temp cleaned        = %t\n", not fs.exists($tf) and not fs.exists($td));
 
 # ---- cleanup ----
 fs.removeAll(ROOT);

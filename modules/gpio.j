@@ -17,7 +17,7 @@
  * @module gpio
  * @example
  * import "gpio.j" as gpio;
- * gpio.setup(17, "out");
+ * gpio.setup(17, gpio.OUT);
  * gpio.write(17, 1);
  * gpio.release(17);
  */
@@ -30,6 +30,13 @@ use time;
 
 def const DEFAULT_BASE as string init "/sys/class/gpio";
 def const BASE_ENV as string init "JENNIFER_GPIO_BASE";
+
+# Pin-direction values for gpio.setup. These are the sysfs `direction` strings,
+# exported as named constants so callers write `gpio.setup(17, gpio.OUT)` rather
+# than a bare `"out"` (matching RPi.GPIO's `GPIO.IN` / `GPIO.OUT`). A raw "in" /
+# "out" string still works, since the constant values are exactly those strings.
+export def const IN as string init "in";
+export def const OUT as string init "out";
 
 # base resolves the sysfs GPIO root: the JENNIFER_GPIO_BASE override if set,
 # else /sys/class/gpio.
@@ -74,14 +81,14 @@ func gpioRead(path as string) {
 }
 
 /**
- * Export a pin and set its direction ("in" or "out").
+ * Export a pin and set its direction (gpio.IN or gpio.OUT).
  * @param pin {int} the GPIO pin number
- * @param direction {string} the pin direction, "in" or "out"
- * @throws {Error} when direction is not "in"/"out", or the sysfs GPIO tree is absent
+ * @param direction {string} the pin direction, gpio.IN or gpio.OUT (the "in" / "out" strings)
+ * @throws {Error} when direction is not gpio.IN/gpio.OUT, or the sysfs GPIO tree is absent
  */
 export func setup(pin as int, direction as string) {
-    if (not ($direction == "in" or $direction == "out")) {
-        throw Error{ kind: "gpio", message: "gpio.setup: direction must be \"in\" or \"out\", got \"" + $direction + "\"", file: "", line: 0, col: 0 };
+    if (not ($direction == IN or $direction == OUT)) {
+        throw Error{ kind: "gpio", message: "gpio.setup: direction must be gpio.IN (\"" + IN + "\") or gpio.OUT (\"" + OUT + "\"), got \"" + $direction + "\"", file: "", line: 0, col: 0 };
     }
     def dir as string init base();
     requireBase($dir);

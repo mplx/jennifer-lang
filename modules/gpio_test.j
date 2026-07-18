@@ -32,14 +32,14 @@ func tearDown() {
 }
 
 func testSetupWritesExportAndDirection() {
-    setup(17, "out");
+    setup(17, OUT);
     def dir as string init mockBase();
     testing.assertEqual(strings.trim(fs.readString($dir + "/export")), "17");
     testing.assertEqual(strings.trim(fs.readString($dir + "/gpio17/direction")), "out");
 }
 
 func testWriteReadRoundTrip() {
-    setup(17, "out");
+    setup(17, OUT);
     write(17, 1);
     testing.assertEqual(read(17), 1);
     write(17, 0);
@@ -47,7 +47,7 @@ func testWriteReadRoundTrip() {
 }
 
 func testReleaseWritesUnexport() {
-    setup(17, "out");
+    setup(17, OUT);
     release(17);
     def dir as string init mockBase();
     testing.assertEqual(strings.trim(fs.readString($dir + "/unexport")), "17");
@@ -56,7 +56,7 @@ func testReleaseWritesUnexport() {
 # setupMissing points the base at a directory that does not exist.
 func setupMissing() {
     os.setEnv("JENNIFER_GPIO_BASE", "/no/such/gpio/base/here");
-    setup(17, "out");
+    setup(17, OUT);
 }
 
 func testMissingBaseErrors() {
@@ -70,7 +70,7 @@ func testInvalidDirection() {
 }
 
 func writeTwo() {
-    setup(17, "out");
+    setup(17, OUT);
     write(17, 2);
 }
 
@@ -82,11 +82,11 @@ func testInvalidValue() {
 # EBUSY on real sysfs); it should still update the direction. The mock tree
 # would happily overwrite export, so this asserts the write is actually skipped.
 func testResetupSkipsExport() {
-    setup(17, "out");
+    setup(17, OUT);
     def dir as string init mockBase();
     # Overwrite the export file so a second export write is detectable.
     fs.writeString($dir + "/export", "CLEARED");
-    setup(17, "in");
+    setup(17, IN);
     testing.assertEqual(strings.trim(fs.readString($dir + "/export")), "CLEARED");
     testing.assertEqual(strings.trim(fs.readString($dir + "/gpio17/direction")), "in");
 }
