@@ -150,9 +150,10 @@ func decodeStream(src string) ([]interpreter.Value, error) {
 // scalar or comment, so it can only ever *over*-estimate depth (rejecting a
 // pathological document), never under-estimate it (letting a crash through).
 func guardDepth(src string) error {
-	flow := 0         // running [ { depth (multi-line flow persists)
-	var indents []int // indentation columns of open block levels (increasing)
-	blockLevels := 0  // depth contribution of the current line (indents + dashes)
+	flow := 0               // running [ { depth (multi-line flow persists)
+	var indents []int       // indentation columns of open block levels (increasing)
+	blockLevels := 0        // depth contribution of the current line (indents + dashes)
+	blockScalarIndent := -1 // header indent while inside a |/> block scalar, else -1
 	atLineStart := true
 	i, n := 0, len(src)
 
@@ -164,6 +165,25 @@ func guardDepth(src string) error {
 			for i < n && src[i] == ' ' {
 				indent++
 				i++
+			}
+			// Inside a |/> block scalar, its more-indented lines (and blank lines)
+			// are literal content, not structure: skip them without counting, so
+			// a scalar whose text happens to deepen in indentation is not mistaken
+			// for nesting. A non-blank line no deeper than the header ends it. This
+			// cannot hide real nesting: yaml.v3 never parses structure in the lines
+			// following a |/> indicator - they are scalar content or continuation.
+			if blockScalarIndent >= 0 {
+				blank := i >= n || src[i] == '\n' || src[i] == '\r'
+				if blank || indent > blockScalarIndent {
+					for i < n && src[i] != '\n' {
+						i++
+					}
+					if i < n {
+						i++
+					}
+					continue
+				}
+				blockScalarIndent = -1
 			}
 			// A blank or comment-only line does not change block structure.
 			if i >= n || src[i] == '\n' || src[i] == '\r' || src[i] == '#' {
@@ -194,6 +214,18 @@ func guardDepth(src string) error {
 			}
 			if blockLevels+flow > maxParseDepth {
 				return tooDeep
+			}
+			// If this line's value is a |/> block scalar, its indented content
+			// follows; enter block-scalar mode so those lines are skipped.
+			if introducesBlockScalar(src, i, n) {
+				blockScalarIndent = indent
+				for i < n && src[i] != '\n' {
+					i++
+				}
+				if i < n {
+					i++
+				}
+				continue
 			}
 			atLineStart = false
 			continue
@@ -257,6 +289,102 @@ func guardDepth(src string) error {
 	return nil
 }
 
+// introducesBlockScalar reports whether the line beginning at `start` (already
+// past its indentation and any block-sequence dashes) ends with a block-scalar
+// header indicator: `|` or `>`, optionally followed by an indentation digit and
+// a chomping `+`/`-`, then optional trailing comment. It skips over quoted
+// scalars and a trailing comment so a `|` inside a value is not mistaken for the
+// indicator. Used only to mark a scalar's following lines as content; it never
+// needs to be exact, because a line ending in `|`/`>` never has real nesting
+// after it, so a loose match cannot let deep nesting slip past the guard.
+func introducesBlockScalar(src string, start, n int) bool {
+	i := start
+	contentEnd := start // one past the last non-space, non-comment character
+	for i < n && src[i] != '\n' && src[i] != '\r' {
+		switch src[i] {
+		case '\'':
+			i++
+			for i < n && src[i] != '\n' {
+				if src[i] == '\'' {
+					if i+1 < n && src[i+1] == '\'' {
+						i += 2
+						continue
+					}
+					i++
+					break
+				}
+				i++
+			}
+			contentEnd = i
+		case '"':
+			i++
+			for i < n && src[i] != '\n' {
+				if src[i] == '\\' {
+					i += 2
+					continue
+				}
+				if src[i] == '"' {
+					i++
+					break
+				}
+				i++
+			}
+			contentEnd = i
+		case '#':
+			if i == start || src[i-1] == ' ' || src[i-1] == '\t' {
+				for i < n && src[i] != '\n' {
+					i++
+				}
+			} else {
+				i++
+				contentEnd = i
+			}
+		case ' ', '\t':
+			i++
+		default:
+			i++
+			contentEnd = i
+		}
+	}
+	j := contentEnd - 1
+	if j < start {
+		return false
+	}
+	for j > start && (src[j] >= '0' && src[j] <= '9' || src[j] == '+' || src[j] == '-') {
+		j--
+	}
+	if src[j] != '|' && src[j] != '>' {
+		return false
+	}
+	if j == start {
+		return true
+	}
+	p := src[j-1]
+	return p == ' ' || p == '\t' || p == ':'
+}
+
+// isIntegerText reports whether s is a plain optionally-signed run of decimal
+// digits (an integer literal, no '.' / exponent). Used to spot an integer that
+// overflowed int64 and was re-tagged !!float, so its exact digits are kept.
+func isIntegerText(s string) bool {
+	if s == "" {
+		return false
+	}
+	i := 0
+	if s[0] == '+' || s[0] == '-' {
+		i = 1
+	}
+	if i >= len(s) {
+		return false
+	}
+	for ; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // node converts one yaml.Node into an interpreter Value.
 func (c *converter) node(n *yaml.Node, depth int) (interpreter.Value, error) {
 	if depth > maxNestingDepth {
@@ -308,6 +436,11 @@ func (c *converter) mapping(n *yaml.Node, depth int) (interpreter.Value, error) 
 		}
 		if keyNode.Kind != yaml.ScalarNode {
 			return interpreter.Value{}, fmt.Errorf("yaml.decode: mapping key must be scalar, got node kind %d", keyNode.Kind)
+		}
+		// Duplicate keys would produce a map with a repeated key, breaking the
+		// unique-key invariant; reject them (as json / toml / xml decode do).
+		if seen[keyNode.Value] {
+			return interpreter.Value{}, fmt.Errorf("yaml.decode: duplicate mapping key %q", keyNode.Value)
 		}
 		val, err := c.node(n.Content[i+1], depth+1)
 		if err != nil {
@@ -396,14 +529,19 @@ func (c *converter) scalar(n *yaml.Node) (interpreter.Value, error) {
 		if err := n.Decode(&i); err == nil {
 			return interpreter.IntVal(i), nil
 		}
-		// Too big for int64 (or unsigned): fall back to float, then to string,
-		// so no value is ever silently truncated.
-		var f float64
-		if err := n.Decode(&f); err == nil {
-			return interpreter.FloatVal(f), nil
-		}
+		// Too big for int64: keep the verbatim digits as a string rather than a
+		// float. A float64 cannot hold a 20+-digit integer exactly, so a float
+		// fallback would silently corrupt an id / counter; the string keeps every
+		// digit and the caller can convert deliberately if it wants a number.
 		return interpreter.StringVal(n.Value), nil
 	case "!!float":
+		// yaml.v3 re-tags an integer too large for int64 as !!float. Such a value
+		// is all digits (no '.' / exponent); keep its exact text as a string
+		// rather than a lossy float64 - a 20+-digit id or counter must not
+		// silently change value. Genuine floats (with '.' / 'e') decode normally.
+		if isIntegerText(n.Value) {
+			return interpreter.StringVal(n.Value), nil
+		}
 		var f float64
 		if err := n.Decode(&f); err != nil {
 			return interpreter.StringVal(n.Value), nil

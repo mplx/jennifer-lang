@@ -302,6 +302,12 @@ func asDatetimeFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpret
 		return interpreter.Null(), fmt.Errorf("yaml.asDatetime: node is a %s, not a datetime", yamlNodeType(node))
 	}
 	var t stdtime.Time
+	// Route through the same depth guard as decode. The text is a timestamp
+	// scalar (no nesting), so this never rejects a real value; it just keeps
+	// every yaml.Unmarshal call behind the guard as a matter of principle.
+	if err := guardDepth(text); err != nil {
+		return interpreter.Null(), fmt.Errorf("yaml.asDatetime: %v", err)
+	}
 	if err := yaml.Unmarshal([]byte(text), &t); err != nil {
 		return interpreter.Null(), fmt.Errorf("yaml.asDatetime: %v", err)
 	}

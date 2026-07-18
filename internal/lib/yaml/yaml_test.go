@@ -368,3 +368,141 @@ func TestNodeTypeVocabulary(t *testing.T) {
 		t.Errorf("mapping reported as %q, want map", got)
 	}
 }
+
+// guardDepth must reject deep nesting of every structural kind, protecting
+// yaml.v3's parser stack, while a block scalar's increasingly-indented content
+// (literal text, not nesting) must NOT be mistaken for depth.
+func TestGuardDepth(t *testing.T) {
+	deep := []string{
+		strings.Repeat("[", maxParseDepth+50) + "x" + strings.Repeat("]", maxParseDepth+50), // flow
+		strings.Repeat("- ", maxParseDepth+50) + "x",                                        // compact seq
+		buildIndentedNesting(maxParseDepth + 50),                                            // block mapping
+	}
+	for _, src := range deep {
+		if _, err := decodeYaml(src); err == nil {
+			t.Errorf("deep nesting should be rejected: %.40q...", src)
+		}
+	}
+	// A block scalar whose content indentation increases is valid YAML with no
+	// real nesting; it must decode, not be rejected as "too deep".
+	var sb strings.Builder
+	sb.WriteString("text: |\n")
+	for i := 0; i < maxParseDepth*3; i++ {
+		sb.WriteString("  ")
+		sb.WriteString(strings.Repeat(" ", i))
+		sb.WriteString("x\n")
+	}
+	if _, err := decodeYaml(sb.String()); err != nil {
+		t.Errorf("a deeply-indented block scalar is valid and must decode: %v", err)
+	}
+	// A plain scalar ending in '|' is NOT a block scalar, so deep flow after it
+	// must still be caught (no bypass).
+	bypass := "key: value|\n  " + strings.Repeat("[", maxParseDepth+50) + "x"
+	if _, err := decodeYaml(bypass); err == nil {
+		t.Error("deep flow after a non-block-scalar line must still be rejected")
+	}
+}
+
+func buildIndentedNesting(depth int) string {
+	var sb strings.Builder
+	for i := 0; i < depth; i++ {
+		sb.WriteString(strings.Repeat(" ", i))
+		sb.WriteString("k:\n")
+	}
+	sb.WriteString(strings.Repeat(" ", depth))
+	sb.WriteString("v: x")
+	return sb.String()
+}
+
+// An alias bomb expands exponentially only when followed by value; the node
+// budget must turn it into a catchable error, and a cyclic alias must hit the
+// recursion cap - neither may OOM or hang.
+func TestAliasBombAndCycle(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("l0: &a0 [x,x,x,x,x,x,x,x,x]\n")
+	for i := 1; i <= 22; i++ {
+		sb.WriteString("l")
+		sb.WriteString(itoa(i))
+		sb.WriteString(": &a")
+		sb.WriteString(itoa(i))
+		sb.WriteString(" [")
+		for j := 0; j < 9; j++ {
+			if j > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString("*a")
+			sb.WriteString(itoa(i - 1))
+		}
+		sb.WriteString("]\n")
+	}
+	if _, err := decodeYaml(sb.String()); err == nil {
+		t.Error("alias bomb should be rejected by the node budget")
+	}
+	if _, err := decodeYaml("a: &x\n  self: *x\n"); err == nil {
+		t.Error("cyclic alias should be rejected by the depth cap")
+	}
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	return string(b)
+}
+
+// Duplicate mapping keys are rejected (as json / toml / xml decode do).
+func TestDuplicateKeyRejected(t *testing.T) {
+	if _, err := decodeYaml("a: 1\nb: 2\na: 3"); err == nil {
+		t.Error("duplicate mapping key should be rejected")
+	}
+	// A merge key supplying an already-present key is fine (own key wins).
+	if _, err := decodeYaml("base: &b {x: 1}\nd:\n  x: 2\n  <<: *b"); err != nil {
+		t.Errorf("merge overlapping an explicit key should be allowed: %v", err)
+	}
+}
+
+// A string whose text resolves to another type must round-trip as a string:
+// the encoder tags it !!str so yaml.v3 quotes it.
+func TestEncodeQuotesTypeAmbiguousStrings(t *testing.T) {
+	for _, s := range []string{"true", "false", "null", "~", "123", "1.5"} {
+		rv := mustDecode(t, "v: \""+s+"\"")
+		enc, err := encodeFn([]interpreter.Value{rv}, false)
+		if err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+		back, err := decodeYaml(enc.Str)
+		if err != nil {
+			t.Fatalf("re-decode %q: %v", enc.Str, err)
+		}
+		if got := typeAt(t, wrap(back), "/v"); got != "string" {
+			t.Errorf("%q round-tripped to %s, want string (encoded: %s)", s, got, enc.Str)
+		}
+	}
+}
+
+// An integer too large for int64 keeps its exact digits (as a string), not a
+// lossy float; genuine floats and in-range ints are unaffected.
+func TestHugeIntKeepsExactDigits(t *testing.T) {
+	rv := mustDecode(t, "big: 99999999999999999999999999\nneg: -12345678901234567890123")
+	if got := typeAt(t, rv, "/big"); got != "string" {
+		t.Errorf("huge int type = %s, want string", got)
+	}
+	if got := strAt(t, rv, "/big"); got != "99999999999999999999999999" {
+		t.Errorf("huge int lost digits: %q", got)
+	}
+	if got := typeAt(t, rv, "/neg"); got != "string" {
+		t.Errorf("huge negative int type = %s, want string", got)
+	}
+	ok := mustDecode(t, "f: 3.14\nsci: 1e6\nn: 42")
+	if got := typeAt(t, ok, "/f"); got != "float" {
+		t.Errorf("3.14 type = %s, want float", got)
+	}
+	if got := typeAt(t, ok, "/n"); got != "int" {
+		t.Errorf("42 type = %s, want int", got)
+	}
+}

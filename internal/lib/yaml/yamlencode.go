@@ -63,9 +63,12 @@ func valueToNode(v interpreter.Value, flow bool) (*yaml.Node, error) {
 	case interpreter.KindFloat:
 		return scalarNode("!!float", formatYamlFloat(v.Float)), nil
 	case interpreter.KindString:
-		// No tag: let yaml.v3 pick quoting so a string that looks like another
-		// type (`"true"`, `"42"`) is quoted and round-trips as a string.
-		return &yaml.Node{Kind: yaml.ScalarNode, Value: v.Str}, nil
+		// Tag `!!str` explicitly. Without it yaml.v3 emits a plain scalar, and a
+		// string whose text resolves to another type (`"true"`, `"42"`, `"null"`)
+		// comes back mistyped on the next decode. With the tag, yaml.v3 quotes
+		// exactly those ambiguous values (and leaves ordinary strings plain), so
+		// the round-trip preserves the string type.
+		return scalarNode("!!str", v.Str), nil
 	case interpreter.KindBytes:
 		return scalarNode("!!binary", base64.StdEncoding.EncodeToString(v.Bytes)), nil
 	case interpreter.KindList:

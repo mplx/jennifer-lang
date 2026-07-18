@@ -73,9 +73,12 @@ Scalars are typed by YAML's implicit resolution: `42` is an `int` (decimal,
 `0x` hex, and `0o` octal all resolve), `3.14` a `float` (`.inf` / `.nan`
 included), `true` / `false` a `bool`, `~` / `null` a `null`, a timestamp a
 `datetime`, and everything else a `string`. A quoted scalar keeps its string
-type (`"42"` stays a string). Mappings become maps in document order; sequences
-become lists; a `!!binary` scalar decodes to `bytes`. A non-scalar mapping key
-(a `? [a, b]` complex key) is rejected.
+type (`"42"` stays a string), and `yaml.encode` round-trips it faithfully -
+a string that reads like another type is re-quoted on output. An integer too
+large for a 64-bit `int` is kept as its exact-digit `string` rather than a
+lossy `float`. Mappings become maps in document order; sequences become lists;
+a `!!binary` scalar decodes to `bytes`. A non-scalar mapping key (a `? [a, b]`
+complex key) and a **duplicate mapping key** are both rejected.
 
 `yaml.decode` guards against resource-exhaustion input with normal (catchable)
 decode errors: a raw-text pre-scan rejects structural nesting deeper than 128
