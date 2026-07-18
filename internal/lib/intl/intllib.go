@@ -216,7 +216,11 @@ func interpolate(s string, params map[string]string) (string, error) {
 		return s, nil
 	}
 	var b strings.Builder
-	b.Grow(len(s))
+	// Pre-size to the template, but never beyond the output cap: a multi-MiB
+	// template value from an untrusted catalog must not force a matching
+	// allocation up front, since the interpolation loop errors once the running
+	// output passes maxTranslationBytes anyway.
+	b.Grow(min(len(s), maxTranslationBytes))
 	for i := 0; i < len(s); {
 		// Bounds the running output regardless of write kind, so accumulation from
 		// repeated substitutions or long literal runs cannot exceed the cap.
