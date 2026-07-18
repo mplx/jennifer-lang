@@ -162,7 +162,7 @@ expr        = orExpr ;
 orExpr      = andExpr { "or" andExpr } ;
 andExpr     = notExpr { "and" notExpr } ;
 notExpr     = "not" notExpr | compExpr ;
-compExpr    = addExpr { ("<" | ">" | "<=" | ">=" | "==") addExpr } ;
+compExpr    = addExpr { ("<" | ">" | "<=" | ">=" | "==" | "!=") addExpr } ;
 addExpr     = mulExpr { ("+" | "-") mulExpr } ;
 mulExpr     = unaryExpr { ("*" | "/" | "//" | "%") unaryExpr } ;
 unaryExpr   = "-" unaryExpr | primary ;
@@ -241,7 +241,7 @@ mapLit      = "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
   produces a parse error with a hint to drop the `$` (it's reserved for
   use-site references).
 - Operator precedence (lowest to highest): `or`, `and`, unary `not`,
-  comparison `< > <= >= ==`, additive `+ -`, multiplicative `* / %`, unary
+  comparison `< > <= >= == !=`, additive `+ -`, multiplicative `* / %`, unary
   `-`. Binary operators are left-associative; `not` and unary `-` are
   right-associative (`not not x` and `--x` are both valid).
 - `and` and `or` **short-circuit**: the right operand is not evaluated when

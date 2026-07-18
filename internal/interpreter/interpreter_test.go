@@ -243,6 +243,44 @@ io.printf("%t %t %t %t", $n == $f, $n > $f, $f < $n, $n <= $f);`)
 	if err != nil || eq != "true" {
 		t.Errorf("5 == 5.0: out=%q err=%v", eq, err)
 	}
+	// `!=` is the exact negation of `==`, including the large-int case. Uses
+	// variables so the literal folder doesn't pre-compute it (folder leaves mixed
+	// int/float comparisons to the runtime for exactly this reason).
+	ne, err := run(t, `use io;
+def n as int init 9007199254740993;
+def f as float init 9007199254740992.0;
+io.printf("%t %t", $n != $f, $n != $n);`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if ne != "true false" {
+		t.Errorf("!= exact got %q, want %q", ne, "true false")
+	}
+}
+
+// `!=` is a full comparison operator across every comparable kind, exactly the
+// negation of `==`.
+func TestNotEqualOperator(t *testing.T) {
+	out, err := run(t, `use io;
+io.printf("%t %t %t %t %t\n", 1 != 2, 1 != 1, "a" != "b", true != false, null != null);
+def a as list of int init [1, 2]; def b as list of int init [1, 3];
+io.printf("%t\n", $a != $b);`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if out != "true false true true false\ntrue\n" {
+		t.Errorf("got %q", out)
+	}
+	// Precedence matches `==`: comparison binds tighter than `and`, and `!=`
+	// sits at the same rung as `==` (below the bit ops). `2 & 3 != 2` parses as
+	// `(2 & 3) != 2` -> `2 != 2` -> false.
+	p, err := run(t, `use io; io.printf("%t %t", 3 != 4 and 1 != 2, 2 & 3 != 2);`)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if p != "true false" {
+		t.Errorf("precedence got %q, want %q", p, "true false")
+	}
 }
 
 // A method may not share its name with a top-level variable or constant (the

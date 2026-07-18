@@ -744,6 +744,7 @@ const (
 	OpLe
 	OpGe
 	OpEq
+	OpNeq // != - the negation of OpEq (same operand rules)
 	OpAnd
 	OpOr
 
@@ -779,6 +780,8 @@ func (o BinaryOp) String() string {
 		return ">="
 	case OpEq:
 		return "=="
+	case OpNeq:
+		return "!="
 	case OpAnd:
 		return "and"
 	case OpOr:
@@ -800,7 +803,7 @@ func (o BinaryOp) String() string {
 // IsComparison reports whether the op is a comparison (result type is bool).
 func (o BinaryOp) IsComparison() bool {
 	switch o {
-	case OpLt, OpGt, OpLe, OpGe, OpEq:
+	case OpLt, OpGt, OpLe, OpGe, OpEq, OpNeq:
 		return true
 	}
 	return false

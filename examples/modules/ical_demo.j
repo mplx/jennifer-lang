@@ -39,7 +39,7 @@ def back as ical.Calendar init ical.parse($text);
 io.printf("=== parsed %d events (prodid %s) ===\n", len($back.events), $back.prodid);
 for (def ev in $back.events) {
     io.printf("- %s  %s -> %s\n", $ev.summary, time.iso($ev.start), time.iso($ev.end));
-    if (not ($ev.location == "")) {
+    if ($ev.location != "") {
         io.printf("    at: %s\n", $ev.location);
     }
 }

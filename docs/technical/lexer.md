@@ -17,7 +17,7 @@ A hand-written, single-pass scanner.
 | Iteration keyword        | `IN`                                                                                                                                                        |
 | Keyword operators        | `AND`, `OR`, `NOT`                                                                                                                                          |
 | Arithmetic operators     | `PLUS` (`+`), `MINUS` (`-`), `STAR` (`*`), `SLASH` (`/`), `DIV` (`//`), `PERCENT` (`%`)                                                                     |
-| Comparison operators     | `LT` (`<`), `GT` (`>`), `LE` (`<=`), `GE` (`>=`), `EQ` (`==`)                                                                                               |
+| Comparison operators     | `LT` (`<`), `GT` (`>`), `LE` (`<=`), `GE` (`>=`), `EQ` (`==`), `NEQ` (`!=`)                                                                                 |
 | Assignment               | `ASSIGN` (`=`)                                                                                                                                              |
 | Grouping and punctuation | `LBRACE` (`{`), `RBRACE` (`}`), `LPAREN` (`(`), `RPAREN` (`)`), `LBRACKET` (`[`), `RBRACKET` (`]`), `SEMI` (`;`), `COMMA` (`,`), `COLON` (`:`), `DOT` (`.`) |
 
@@ -26,9 +26,11 @@ introduces a method (TOKEN_FUNC). `import` (TOKEN_IMPORT) is for **file
 imports** (`import "path.j";`); `use` (TOKEN_USE) is for **library imports**
 (`use io;`). `DOT` (`.`) no longer appears in import syntax (paths are
 strings now) and is reserved for future expression use.
-Comparison tokens `LE`, `GE`, `EQ` are two-character (`<=`, `>=`, `==`) and
-are recognized by a one-character lookahead from `<`, `>`, `=`. `RETURN`
-is the keyword behind `return [EXPR];` (see [grammar.md](grammar.md)).
+Comparison tokens `LE`, `GE`, `EQ`, `NEQ` are two-character (`<=`, `>=`, `==`,
+`!=`) and are recognized by a one-character lookahead from `<`, `>`, `=`, `!`.
+`!` exists **only** as the lead of `!=` (logical negation is the word `not`); a
+bare `!` is a positioned lex error whose message points at both `not` and `!=`.
+`RETURN` is the keyword behind `return [EXPR];` (see [grammar.md](grammar.md)).
 
 `VARREF` carries the variable name *without* the leading `$`.
 `STRING` carries the value *with* escape sequences already processed and *without*

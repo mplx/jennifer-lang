@@ -114,7 +114,7 @@ def page as xml.Value init xml.append(xml.element("page"), $note);
   catchable error rather than overflowing the stack. No entity is expanded
   beyond the five predefined names and numeric references, so there is no
   entity-expansion ("billion laughs") blow-up, and nothing is fetched
-  externally — an unknown or external entity is simply an error.
+  externally - an unknown or external entity is simply an error.
 
 ## See also
 

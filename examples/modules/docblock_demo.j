@@ -71,7 +71,7 @@ for (def s in $doc.structs) {
 io.printf("constants:\n");
 for (def c in $doc.consts) {
     io.printf("  %s as %s", $c.name, $c.type);
-    if (not ($c.deprecated == "")) {
+    if ($c.deprecated != "") {
         io.printf("  [deprecated: %s]", $c.deprecated);
     }
     io.printf("\n");

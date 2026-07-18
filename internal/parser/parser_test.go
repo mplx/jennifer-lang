@@ -50,6 +50,21 @@ func TestParseOperatorPrecedence(t *testing.T) {
 	}
 }
 
+// `!=` parses at the comparison rung, looser than the bit ops (Python-style),
+// so `2 & 3 != 2` groups as `(2 & 3) != 2`, mirroring `==`.
+func TestParseNotEqualPrecedence(t *testing.T) {
+	src := `func app() { def r as bool init 2 & 3 != 2; }`
+	prog, err := Parse(src)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	got := Sprint(prog.Methods[0].Body.Stmts[0])
+	want := "Define($r as bool = ((Int(2) & Int(3)) != Int(2)))"
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
 func TestParseParenGrouping(t *testing.T) {
 	src := `func app() { def r as int init (1 + 2) * 3; }`
 	prog, err := Parse(src)

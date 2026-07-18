@@ -11,9 +11,9 @@
 | `%`                  | modulo (`int` only); **floored**, matching `//`          |
 | unary `-`            | numeric negation (`int`/`float`)                         |
 | `<`, `>`, `<=`, `>=` | numeric comparison (exact across `int`/`float`); `bool`  |
-| `==`                 | equality; same-kind plus exact `int`/`float`; `bool`     |
+| `==`, `!=`           | equality / inequality; same-kind plus exact `int`/`float`; `bool` |
 | `and`, `or`          | logical; both operands `bool`; short-circuit             |
-| `not`                | unary logical negation; operand `bool`                   |
+| `not`                | unary logical negation; operand `bool` (there is no `!`) |
 | `&`, `|`, `^`        | bitwise AND / OR / XOR on `int`                          |
 | `<<`, `>>`           | left / arithmetic right shift on `int`                   |
 | unary `~`            | bitwise NOT on `int` (`~x == -x - 1`)                    |

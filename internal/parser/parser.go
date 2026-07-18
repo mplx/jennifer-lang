@@ -1343,6 +1343,8 @@ func (p *parser) parseComparison() (Expr, error) {
 			op = OpGe
 		case lexer.TOKEN_EQ:
 			op = OpEq
+		case lexer.TOKEN_NEQ:
+			op = OpNeq
 		default:
 			return left, nil
 		}

@@ -143,6 +143,7 @@ func TestConstantCondition(t *testing.T) {
 	}{
 		{"if true", `func f() { if (true) { return 1; } }`, 1},
 		{"self compare", `func f(x as int) { if ($x == $x) { return 1; } }`, 1},
+		{"self compare neq", `func f(x as int) { if ($x != $x) { return 1; } }`, 1},
 		{"while true no escape", `func f() { while (true) { def a as int init 1; } }`, 1},
 		{"while true with break", `func f() { while (true) { break; } }`, 0},
 		{"while true with return", `func f() { while (true) { return 1; } }`, 0},

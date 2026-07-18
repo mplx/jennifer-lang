@@ -2971,10 +2971,13 @@ func (i *Interpreter) evalUnary(u *parser.UnaryExpr, env *Environment) (Value, e
 }
 
 func (i *Interpreter) evalComparison(op parser.BinaryOp, lv, rv Value, file string, line, col int) (Value, error) {
-	// `==` works for any same-kind comparison (and across int/float). Other
-	// comparisons require numeric operands.
+	// `==` / `!=` work for any same-kind comparison (and across int/float); `!=`
+	// is exactly the negation of `==`. Other comparisons require numeric operands.
 	if op == parser.OpEq {
 		return BoolVal(lv.Equal(rv)), nil
+	}
+	if op == parser.OpNeq {
+		return BoolVal(!lv.Equal(rv)), nil
 	}
 	// pure-int fast path. Every numeric `for` loop
 	// (`$i < N`, `$i <= max`) hits this per iteration and would

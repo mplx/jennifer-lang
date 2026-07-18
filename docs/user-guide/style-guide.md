@@ -11,7 +11,7 @@ nothing here will surprise you.
 ## Spacing
 
 - **One space around every binary operator**: `$i = 1 + 2;`, not
-  `$i=1+2;`. Applies to `+ - * / // % < > <= >= == and or` and `=`.
+  `$i=1+2;`. Applies to `+ - * / // % < > <= >= == != and or` and `=`.
 - **Unary `-` hugs its operand**: `-5`, `-$x`, `-fact($n - 1)`. No space
   between the `-` and the value it negates.
 - **Word-form unary operators take a space**: `not $ok`, never `not$ok`.

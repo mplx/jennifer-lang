@@ -87,11 +87,12 @@ const (
 	TOKEN_PERCENT // %
 
 	// Comparison operators
-	TOKEN_LT // <
-	TOKEN_GT // >
-	TOKEN_LE // <=
-	TOKEN_GE // >=
-	TOKEN_EQ // ==
+	TOKEN_LT  // <
+	TOKEN_GT  // >
+	TOKEN_LE  // <=
+	TOKEN_GE  // >=
+	TOKEN_EQ  // ==
+	TOKEN_NEQ // !=
 
 	// Bitwise operators
 	TOKEN_BIT_AND // & - bitwise AND on int
@@ -187,6 +188,7 @@ var tokenNames = map[TokenType]string{
 	TOKEN_LE:          "LE",
 	TOKEN_GE:          "GE",
 	TOKEN_EQ:          "EQ",
+	TOKEN_NEQ:         "NEQ",
 	TOKEN_BIT_AND:     "BIT_AND",
 	TOKEN_BIT_OR:      "BIT_OR",
 	TOKEN_BIT_XOR:     "BIT_XOR",

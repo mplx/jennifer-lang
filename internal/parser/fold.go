@@ -150,6 +150,8 @@ func tryFoldBinary(ex *BinaryExpr) Expr {
 				return &BoolLit{pos: ex.pos, Value: l || r}
 			case OpEq:
 				return &BoolLit{pos: ex.pos, Value: l == r}
+			case OpNeq:
+				return &BoolLit{pos: ex.pos, Value: l != r}
 			}
 			return nil
 		}
@@ -157,8 +159,13 @@ func tryFoldBinary(ex *BinaryExpr) Expr {
 
 	// Null equality with anything only folds when both sides are
 	// null literals (matches the runtime's Value.Equal on null).
-	if litIsNull(left) && litIsNull(right) && ex.Op == OpEq {
-		return &BoolLit{pos: ex.pos, Value: true}
+	if litIsNull(left) && litIsNull(right) {
+		switch ex.Op {
+		case OpEq:
+			return &BoolLit{pos: ex.pos, Value: true}
+		case OpNeq:
+			return &BoolLit{pos: ex.pos, Value: false}
+		}
 	}
 
 	// Numeric ops. Extract both sides as float first (int auto-
@@ -191,6 +198,8 @@ func tryFoldBinary(ex *BinaryExpr) Expr {
 		switch ex.Op {
 		case OpEq:
 			return &BoolLit{pos: ex.pos, Value: li == ri}
+		case OpNeq:
+			return &BoolLit{pos: ex.pos, Value: li != ri}
 		case OpLt:
 			return &BoolLit{pos: ex.pos, Value: li < ri}
 		case OpGt:
@@ -201,9 +210,21 @@ func tryFoldBinary(ex *BinaryExpr) Expr {
 			return &BoolLit{pos: ex.pos, Value: li >= ri}
 		}
 	}
+	// A mixed int/float comparison must stay exact: promoting the int operand to
+	// float64 here loses precision above 2^53 and would diverge from the runtime's
+	// exact compareIntFloat (the language guarantees mixed comparison is exact, so
+	// 9007199254740993 == 9007199254740992.0 is false). Leave it unfolded and let
+	// the runtime decide. This guards only comparisons; mixed-int/float arithmetic
+	// below stays folded, matching the language's int->float arithmetic promotion.
+	if ex.Op.IsComparison() && lIsInt != rIsInt {
+		return nil
+	}
+	// Remaining comparisons here are float/float, which are already exact.
 	switch ex.Op {
 	case OpEq:
 		return &BoolLit{pos: ex.pos, Value: lf == rf}
+	case OpNeq:
+		return &BoolLit{pos: ex.pos, Value: lf != rf}
 	case OpLt:
 		return &BoolLit{pos: ex.pos, Value: lf < rf}
 	case OpGt:

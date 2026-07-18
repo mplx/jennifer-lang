@@ -3,7 +3,10 @@
 
 package lexer
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTokenizeSimpleProgram(t *testing.T) {
 	src := `use io;
@@ -354,17 +357,36 @@ func TestTokenizeFloatLiterals(t *testing.T) {
 }
 
 func TestTokenizeComparisonOperators(t *testing.T) {
-	toks, err := Tokenize("< > <= >= == =")
+	toks, err := Tokenize("< > <= >= == != =")
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	want := []TokenType{TOKEN_LT, TOKEN_GT, TOKEN_LE, TOKEN_GE, TOKEN_EQ, TOKEN_ASSIGN, TOKEN_EOF}
+	want := []TokenType{TOKEN_LT, TOKEN_GT, TOKEN_LE, TOKEN_GE, TOKEN_EQ, TOKEN_NEQ, TOKEN_ASSIGN, TOKEN_EOF}
 	if len(toks) != len(want) {
 		t.Fatalf("got %d tokens, want %d: %v", len(toks), len(want), toks)
 	}
 	for i, w := range want {
 		if toks[i].Type != w {
 			t.Errorf("tok %d: got %s, want %s", i, toks[i].Type, w)
+		}
+	}
+	// The `!=` token keeps its two-char lexeme so `jennifer fmt` re-emits it.
+	if toks[5].Lexeme != "!=" {
+		t.Errorf("NEQ lexeme: got %q, want %q", toks[5].Lexeme, "!=")
+	}
+}
+
+// A bare `!` is not an operator (logical negation is the word `not`); it lexes
+// to a positioned error that points at both `not` and `!=`.
+func TestTokenizeBareBangIsFriendlyError(t *testing.T) {
+	_, err := Tokenize("$x = ! $y")
+	if err == nil {
+		t.Fatal("expected a lex error for bare '!', got nil")
+	}
+	msg := err.Error()
+	for _, want := range []string{"'!'", "not", "!="} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q should mention %q", msg, want)
 		}
 	}
 }

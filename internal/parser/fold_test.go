@@ -124,6 +124,47 @@ func TestFoldLargeIntComparisonExact(t *testing.T) {
 	}
 }
 
+// `!=` folds like `==` for literal operands.
+func TestFoldNotEqual(t *testing.T) {
+	for _, tc := range []struct {
+		src  string
+		want bool
+	}{
+		{`def r as bool init 1 != 2;`, true},
+		{`def r as bool init 3 != 3;`, false},
+		{`def r as bool init 1.5 != 2.5;`, true},
+		{`def r as bool init true != false;`, true},
+		{`def r as bool init null != null;`, false},
+	} {
+		prog := mustResolve(t, tc.src)
+		bin := firstStmtExpr(t, prog).(*BinaryExpr)
+		if bin.Folded == nil {
+			t.Fatalf("%s: expected Folded literal, got nil", tc.src)
+		}
+		lit, ok := bin.Folded.(*BoolLit)
+		if !ok || lit.Value != tc.want {
+			t.Errorf("%s: Folded got %+v, want BoolLit(%t)", tc.src, bin.Folded, tc.want)
+		}
+	}
+}
+
+// A mixed int/float comparison must NOT fold: promoting the int to float64 loses
+// precision above 2^53, so the fold defers to the runtime's exact compareIntFloat
+// (9007199254740993 vs 9007199254740992.0 are distinct). Both `==` and `!=`.
+func TestFoldMixedIntFloatComparisonNotFolded(t *testing.T) {
+	for _, src := range []string{
+		`def r as bool init 9007199254740993 == 9007199254740992.0;`,
+		`def r as bool init 9007199254740993 != 9007199254740992.0;`,
+		`def r as bool init 1 < 2.0;`,
+	} {
+		prog := mustResolve(t, src)
+		bin := firstStmtExpr(t, prog).(*BinaryExpr)
+		if bin.Folded != nil {
+			t.Errorf("%s: mixed int/float comparison should stay unfolded, got %+v", src, bin.Folded)
+		}
+	}
+}
+
 func TestFoldBitOps(t *testing.T) {
 	prog := mustResolve(t, `def r as int init 0xff & 0x0f;`)
 	root := firstStmtExpr(t, prog)

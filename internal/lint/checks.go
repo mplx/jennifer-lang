@@ -384,7 +384,7 @@ func constantCond(e parser.Expr) (string, bool) {
 			switch n.Op {
 			case parser.OpEq, parser.OpLe, parser.OpGe:
 				return "comparison of a value with itself is always true", true
-			case parser.OpLt, parser.OpGt:
+			case parser.OpLt, parser.OpGt, parser.OpNeq:
 				return "comparison of a value with itself is always false", true
 			}
 		}

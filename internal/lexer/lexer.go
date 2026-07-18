@@ -147,6 +147,15 @@ func (l *Lexer) Next() (Token, error) {
 			return Token{Type: TOKEN_EQ, Lexeme: "==", Line: startLine, Col: startCol}, nil
 		}
 		return Token{Type: TOKEN_ASSIGN, Lexeme: "=", Line: startLine, Col: startCol}, nil
+	case ch == '!':
+		l.advance()
+		if next, ok := l.peek(0); ok && next == '=' {
+			l.advance()
+			return Token{Type: TOKEN_NEQ, Lexeme: "!=", Line: startLine, Col: startCol}, nil
+		}
+		// A bare `!` is not an operator in Jennifer: logical negation is the word
+		// `not`, and `!=` is the only use of `!`. Point at both.
+		return Token{}, &LexError{File: l.file, Msg: "unexpected character '!'; use `not` for logical negation, or `!=` for inequality", Line: startLine, Col: startCol}
 	case ch == '<':
 		l.advance()
 		if next, ok := l.peek(0); ok && next == '=' {

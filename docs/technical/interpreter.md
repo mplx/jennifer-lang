@@ -387,7 +387,16 @@ Two moves close out the optimization pass:
   (division by zero, negative shift count) leave the node
   unfolded so the runtime hits the same error at the same
   source position - the fold pass never surfaces a parse-time
-  error the runtime wouldn't have raised.
+  error the runtime wouldn't have raised. Two exactness
+  carve-outs mirror the runtime: an int/int comparison folds on
+  the exact `int64` values (not a lossy `float64`), and a
+  **mixed int/float comparison is left unfolded entirely** so the
+  runtime's exact `compareIntFloat` decides it - promoting the
+  int to `float64` at fold time would lose precision above 2^53
+  and make `9007199254740993 == 9007199254740992.0` wrongly fold
+  to `true`. `!=` folds wherever `==` does (it is the negation).
+  Mixed int/float *arithmetic* still folds (the int->float
+  promotion there matches the language's arithmetic semantics).
 ## Execution model
 
 1. `Interpreter.Run(prog)` calls `parser.Resolve(prog)` first
