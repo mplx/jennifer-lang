@@ -1708,7 +1708,59 @@ terminal on a bare `SIGTERM` / untrapped `SIGINT` (whose default action skips th
 `defer`). `os.kill` gaining a signal-name argument is also open; `SIGKILL` stays
 unrecoverable (uncatchable, as for any program).
 
-### M20.7 - device I/O (`serial` / `spi` / `iic` / `gpio`)
+### M20.7 - `defer` (deterministic cleanup)
+
+A `defer CALL(args);` statement that schedules a single call to run when its
+enclosing block exits, on **every** exit path. The motivating problem is resource
+cleanup for the handle libraries - `fs.close` / `fs.sync`, `term.restore`,
+`net.close`, `os.Process` release, the M20.9 `sql` client's connections - which
+today needs a verbose `try { ... } catch (e) { close(); throw $e; }` plus a
+second close on the success path, and silently breaks the moment someone adds an
+early `return`. `defer` collapses that to one line placed right next to the
+acquisition.
+
+Semantics:
+
+- **Single call, not a block.** `defer fs.close($f);` takes a call expression,
+  never a `{ ... }` body. This is what sidesteps Java `finally`'s notorious
+  footgun (a `return` / `throw` inside `finally` swallowing the try's exception
+  or overriding its return): the hazard is simply unrepresentable.
+- **Arguments evaluated now, call runs later.** `defer fs.close($f);` captures
+  `$f`'s current value at the `defer` line and runs the call at scope exit. With
+  value semantics and handle-into-registry resources, capturing the handle value
+  is exactly right, and it needs **no closures** (which Jennifer deliberately
+  lacks) - the defer model falls out of value semantics rather than fighting them.
+- **Block-scoped, LIFO.** Deferred calls run at the end of the enclosing `{}`
+  block, last-registered first. Block scope (not Go's function scope) means a
+  `defer` inside a loop body runs at the end of each iteration - fixing Go's
+  best-known `defer`-in-a-loop pile-up. A top-level `defer` runs at program end.
+- **Runs on every exit:** fall-through, `return`, `break`, `continue`, a `throw`
+  unwind, and `exit`. That universality is the whole point.
+- **Does not cross the method or `spawn` boundary** (same rule as `break` /
+  `return` / `continue`): a method's defers run at that method's scope exit, not
+  the caller's.
+- A `throw` from within a deferred call propagates; if the block was already
+  unwinding an error, the deferred call's error supersedes (documented, like
+  Go's panic-in-defer).
+
+The pairing with `fs.sync` matters for durability: `defer` the `close` (cleanup
+you do not inspect), but call `fs.sync` explicitly and check it - a durability
+failure must surface *before* the program tells the user "safe to remove", not as
+a deferred call running too late on the way out.
+
+Not `finally`: rejected as redundant with `defer` + `try` / `catch`, carrying
+Java's return/throw-in-finally footguns, and violating one-obvious-way. Student
+familiarity is its only advantage and does not outweigh a cleaner, safer
+construct that also fits the value-semantics / no-closures model. A
+`rejected.md` entry records the decision.
+
+Implementation: a new `defer` keyword; `execBlock` tracks a per-block list of
+pending calls (only blocks that register a defer allocate one) and runs them LIFO
+before returning or propagating any control-flow / error signal. No `reflect`,
+TinyGo-clean. The CLI already models the idea at the Go level
+(`defer termlib.RestoreAll()`); this brings it into the language.
+
+### M20.8 - device I/O (`serial` / `spi` / `iic` / `gpio`)
 
 Device-I/O libraries for embedded / single-board-computer hosts, all reaching
 the Linux `/dev` + `ioctl` interface that `.j` and plain `fs` cannot: `serial` /
@@ -1747,7 +1799,7 @@ supported platform), a friendly-error stub elsewhere. Default binary; a
 `machine` package is a different, microcontroller-level API - these target the
 Linux `/dev` + `ioctl` interface). Together they complete the SBC I/O story.
 
-### M20.8 - `sql` (MySQL / MariaDB + PostgreSQL)
+### M20.9 - `sql` (MySQL / MariaDB + PostgreSQL)
 
 A relational-database client library over Go's `database/sql`, shipping the
 two **client-server** engines: MySQL / MariaDB (`go-sql-driver/mysql`) and
@@ -1899,7 +1951,7 @@ default binary. Discipline as usual.
 
 ### M21.5 - `orm` module
 
-A relational mapper layered over the [M20.8 `sql`](#m208---sql-mysql--mariadb--postgresql)
+A relational mapper layered over the [M20.9 `sql`](#m209---sql-mysql--mariadb--postgresql)
 library (its **hard prerequisite** - no `sql`, no `orm`), and a good stress-test
 of how far the module system stretches. Jennifer's semantics dictate the shape,
 and it is **Data Mapper, not Active Record**: structs are value-semantic and

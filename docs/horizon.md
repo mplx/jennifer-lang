@@ -26,7 +26,7 @@ brings in a whole new dependency; the specialised-domain libraries are
 indefinite-in-count families.
 
 Each carries a stable **`DRAFT#`** handle so it can be referenced and later
-graduated into a numbered milestone (e.g. "shift `DRAFT#9` to `M20.9`").
+graduated into a numbered milestone (e.g. "shift `DRAFT#9` to `M21.9`").
 Handles are assigned once and **retired on graduation** - never reused, and
 never renumbered when the list is reordered - so a reference stays valid for
 the life of the idea. `DRAFT#` is deliberately *not* a milestone number; an
@@ -521,7 +521,7 @@ A grab-bag, recorded when it comes up.
   core.
 - **SQLite (`sql` engine backend).** The client-server half of relational
   support - MySQL / MariaDB + PostgreSQL - is committed as
-  [M20.8](milestones.md) (a `sql` system library over Go's `database/sql`,
+  [M20.9](milestones.md) (a `sql` system library over Go's `database/sql`,
   pure-Go drivers). SQLite stays parked here, and it is worth being precise
   about *why*, because it is not the reason it first looks like. SQLite is
   **also** just a pure-Go `database/sql` driver - `modernc.org/sqlite`,
@@ -529,20 +529,20 @@ A grab-bag, recorded when it comes up.
   `pgx`, cross-compiling cleanly like any pure-Go package (the cgo
   `mattn/go-sqlite3`, which *does* break static / cross-compile / TinyGo and
   needs a C toolchain, is rejected in its favor). So integration effort and
-  API are identical to M20.8's two drivers; SQLite is in every practical
+  API are identical to M20.9's two drivers; SQLite is in every practical
   sense "just a third driver" for the same library, sharing its surface and
   opaque `sql.Row` result shape.
   The one real difference is **weight**. `modernc.org/sqlite` is the entire
   SQLite C source transpiled to Go plus `modernc.org/libc` (a Go libc
   reimplementation) - multiple MB of generated code, versus the
-  hand-written, few-hundred-KB protocol clients M20.8 ships. Baking that into
+  hand-written, few-hundred-KB protocol clients M20.9 ships. Baking that into
   every default `jennifer` bloats the binary for the many users who only ever
   touch a network database. That, and only that, is why SQLite is gated as a
   **build-tag opt-in** (`-tags sqlite`), surfaced as a `jennifer-full`
   release artifact - a build *variant* of the default binary, not a third
   supported brand. The binary ladder becomes `jennifer-tiny` (DBs stubbed) ⊂
   `jennifer` (MySQL + Postgres) ⊂ `jennifer-full` (+ SQLite). The dependency
-  break from "libraries stay dependency-free" is already accepted at M20.8;
+  break from "libraries stay dependency-free" is already accepted at M20.9;
   SQLite adds size, not a new principle.
   **TinyGo** is the one place SQLite is categorically worse, and it is
   architectural, not a build choice: `modernc.org/sqlite`'s libc emulation
@@ -554,7 +554,7 @@ A grab-bag, recorded when it comes up.
   file-based store is exactly what a minimal embedded target would most want,
   and it is the one database that binary can't have with current tooling.
   Because SQLite is really just another driver, the only open call is timing:
-  fold it into M20.8 behind the `-tags sqlite` gate, or keep it deferred here
+  fold it into M20.9 behind the `-tags sqlite` gate, or keep it deferred here
   until the `jennifer-full` variant earns its place in the release / CI /
   packaging matrix. Contrast the text-protocol stores `redis` / `memcache`,
   pure Jennifer over `net`, which need none of this.

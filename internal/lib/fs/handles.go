@@ -70,6 +70,7 @@ func installHandles(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "readBytes", readBytesDispatchFn)
 	in.RegisterNamespaced(LibraryName, "writeString", writeHandleStringFn)
 	in.RegisterNamespaced(LibraryName, "writeBytes", writeHandleBytesFn)
+	in.RegisterNamespaced(LibraryName, "sync", syncFn)
 	in.RegisterNamespaced(LibraryName, "eof", eofFn)
 }
 
@@ -177,6 +178,34 @@ func closeFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 		if cerr := h.f.Close(); cerr != nil {
 			return interpreter.Null(), fmt.Errorf("fs.close: %s: %v", h.path, cerr)
 		}
+	}
+	return interpreter.Null(), nil
+}
+
+// syncFn implements fs.sync(fs.File): flush the file's written data all the way
+// to the storage device (fsync), not just to the OS. `close` only guarantees the
+// bytes reach the kernel; `sync` is what makes them durable - the "safe to remove
+// the USB stick" step. Handle stays open afterwards. Write/append handles only
+// (a read handle has nothing to flush).
+func syncFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
+	if len(args) != 1 {
+		return interpreter.Null(), fmt.Errorf("fs.sync expects 1 argument (fs.File), got %d", len(args))
+	}
+	id, err := extractFileID("fs.sync", args[0])
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	h, err := resolveHandle("fs.sync", id)
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if err := requireWriteMode("fs.sync", h); err != nil {
+		return interpreter.Null(), err
+	}
+	if serr := h.f.Sync(); serr != nil {
+		return interpreter.Null(), fmt.Errorf("fs.sync: %s: %v", h.path, serr)
 	}
 	return interpreter.Null(), nil
 }

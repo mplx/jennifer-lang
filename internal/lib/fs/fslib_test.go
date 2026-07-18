@@ -375,6 +375,132 @@ func TestHandleWriteMode(t *testing.T) {
 	}
 }
 
+// TestHandleSync - fs.sync flushes a write handle to disk without closing it,
+// and the data is readable afterwards. The handle stays usable (sync, then more
+// writes, then close).
+func TestHandleSync(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "sync.txt")
+	_, err := runProg(t, fmt.Sprintf(`
+		use fs;
+		def f as fs.File init fs.open(%q, "write");
+		fs.writeString($f, "durable\n");
+		fs.sync($f);
+		fs.writeString($f, "more\n");
+		fs.close($f);
+	`, tmp))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	got, rerr := os.ReadFile(tmp)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if string(got) != "durable\nmore\n" {
+		t.Errorf("got %q", string(got))
+	}
+}
+
+// TestHandleSyncRejectsReadMode - sync on a read handle errors (nothing to
+// flush), pointing at the write/append modes.
+func TestHandleSyncRejectsReadMode(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "r.txt")
+	if werr := os.WriteFile(tmp, []byte("x"), 0o644); werr != nil {
+		t.Fatal(werr)
+	}
+	_, err := runProg(t, fmt.Sprintf(`
+		use fs;
+		def f as fs.File init fs.open(%q, "read");
+		fs.sync($f);
+	`, tmp))
+	if err == nil {
+		t.Fatal("expected fs.sync to reject a read-mode handle")
+	}
+	if !strings.Contains(err.Error(), "fs.sync") || !strings.Contains(err.Error(), "write") {
+		t.Errorf("error should name fs.sync and the write mode: %v", err)
+	}
+}
+
+// TestHandleSyncAfterCloseErrors - sync on a closed handle is a positioned
+// error, not a crash (same use-after-close contract as the other verbs).
+func TestHandleSyncAfterCloseErrors(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "c.txt")
+	_, err := runProg(t, fmt.Sprintf(`
+		use fs;
+		def f as fs.File init fs.open(%q, "write");
+		fs.close($f);
+		fs.sync($f);
+	`, tmp))
+	if err == nil {
+		t.Fatal("expected fs.sync after close to error")
+	}
+	if !strings.Contains(err.Error(), "not open") {
+		t.Errorf("error should say the handle is not open: %v", err)
+	}
+}
+
+// TestHandleSyncAppendMode - sync is allowed on an append-mode handle (append
+// writes are durable too), not just write mode.
+func TestHandleSyncAppendMode(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "app.txt")
+	if werr := os.WriteFile(tmp, []byte("base\n"), 0o644); werr != nil {
+		t.Fatal(werr)
+	}
+	_, err := runProg(t, fmt.Sprintf(`
+		use fs;
+		def f as fs.File init fs.open(%q, "append");
+		fs.writeString($f, "added\n");
+		fs.sync($f);
+		fs.sync($f);
+		fs.close($f);
+	`, tmp))
+	if err != nil {
+		t.Fatalf("run: %v (append-mode sync + double-sync should be fine)", err)
+	}
+	got, rerr := os.ReadFile(tmp)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if string(got) != "base\nadded\n" {
+		t.Errorf("got %q", string(got))
+	}
+}
+
+// fs.sync from a spawned task, concurrent with writes from the main task on the
+// same shared handle, must not race: syncFn takes the same per-handle mutex the
+// write path does, and a sync that loses the race to a concurrent close returns
+// a catchable error rather than crashing. Run under -race to verify.
+func TestHandleSyncConcurrentIsRaceFree(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "sync-race.txt")
+	out, err := runProg(t, fmt.Sprintf(`
+		use io;
+		use fs;
+		use task;
+		def f as fs.File init fs.open(%q, "write");
+		def t as task of int init spawn {
+			def n as int init 0;
+			while ($n < 100) {
+				try { fs.sync($f); } catch (e) { break; }
+				$n = $n + 1;
+			}
+			return $n;
+		};
+		def m as int init 0;
+		while ($m < 100) {
+			fs.writeString($f, "x");
+			$m = $m + 1;
+		}
+		def n as int init task.wait($t);
+		io.printf("%%d", $m + $n);
+		fs.close($f);
+	`, tmp))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if out != "200" {
+		t.Errorf("total = %s, want 200 (100 writes + 100 syncs)", out)
+	}
+}
+
 // TestHandleUnknownMode - unknown mode string errors at the boundary
 // with the supported set listed.
 func TestHandleUnknownMode(t *testing.T) {

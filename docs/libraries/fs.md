@@ -179,6 +179,7 @@ Unknown mode strings error with the known set listed.
 | `fs.readBytes($f, n)`      | `bytes`    | Up to `n` bytes. Partial result on EOF, sticky-EOF flip.                 |
 | `fs.writeString($f, s)`    | `null`     | Read-mode handle errors.                                                  |
 | `fs.writeBytes($f, b)`     | `null`     | Read-mode handle errors.                                                  |
+| `fs.sync($f)`              | `null`     | Flush written data to the storage device (fsync); handle stays open. Read-mode handle errors. |
 | `fs.eof($f)`               | `bool`     | Looks ahead: true iff the next read would error / return partial.        |
 
 The canonical read-loop:
@@ -200,6 +201,28 @@ fs.close($f);
 tight. `fs.eof` looks one byte ahead (through the buffered
 reader) so a file ending cleanly with `\n` still trips the
 guard after the last line comes out.
+
+**Durability: `sync` vs `close`.** `fs.close` guarantees the bytes reach the
+*operating system*, not the *disk* - the OS may still hold them in its cache
+after close returns. `fs.sync($f)` forces the file's written data all the way to
+the storage device (an `fsync`) and leaves the handle open. This is the "safe to
+remove the USB stick" step: sync explicitly and let a failure surface *before*
+you tell the user it is safe, rather than discovering the write never landed:
+
+```jennifer
+use fs;
+use io;
+
+def f as fs.File init fs.open("/media/usb/report.csv", "write");
+fs.writeString($f, $payload);
+fs.sync($f);                           # push it to the device; errors if the write failed
+io.printf("safe to remove the stick\n");
+fs.close($f);
+```
+
+`fs.sync` requires a write- or append-mode handle (a read handle has nothing to
+flush). Note `fsync` covers the OS side; a removable device's own internal cache
+is the job of the OS eject / unmount.
 
 ### Polymorphic verbs (path vs handle)
 
