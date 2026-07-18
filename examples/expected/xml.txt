@@ -1,0 +1,18 @@
+root tag: catalog
+books: 2
+  book a1 -> Go & XML
+  book a2 -> More
+book[1] price: 39
+has book/title: true
+has book/isbn:  false
+built: <page><note level="info">1 &lt; 2 &amp; ok</note></page>
+pretty:
+<catalog>
+  <book id="a1">
+    <title>Go &amp; XML</title>
+    <price>39</price>
+  </book>
+  <book id="a2">
+    <title>More</title>
+  </book>
+</catalog>

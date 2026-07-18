@@ -49,6 +49,7 @@
 - [`time`](libraries/time.md)
 - [`toml`](libraries/toml.md)
 - [`uuid`](libraries/uuid.md)
+- [`xml`](libraries/xml.md)
 
 # Modules
 

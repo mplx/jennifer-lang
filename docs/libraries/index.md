@@ -50,6 +50,7 @@ rebuilt with a network stack runs `net` too; see the
 | [`time`](time.md)         | `use time;`     | full                                                    | instant/duration arithmetic, calendar + Unix accessors, fixed-offset zones (`time.zone`, `time.inZone`, `time.UTC`, `time.local`), strftime format/parse, ISO round-trip; structs `time.Time`, `time.Duration`, `time.Zone` |
 | [`toml`](toml.md)         | `use toml;`     | full                                                    | RFC-conformant TOML 1.0 `toml.encode`/`encodePretty`/`decode`. Same opaque `toml.Value` + read / walk / write surface as `json`, name for name, addressed by JSON Pointer; adds `toml.asDatetime` (backed by `time.Time`) for TOML's native date-times. |
 | [`uuid`](uuid.md)         | `use uuid;`     | full                                                    | RFC 9562 UUIDs. `uuid.generate("v4")` (random) / `generate("v7")` (time-ordered) + `parse`/`isValid`/`version` + constant `NIL`. Version tag is a string arg; draws from the `crypto` library's crypto-grade random source (unguessable, safe as a security token). |
+| [`xml`](xml.md)           | `use xml;`      | full                                                    | XML `xml.decode`/`encode`/`encodePretty` over an opaque `xml.Value`, designed like `json`/`toml`. Element tree with ordered attributes + children + mixed text; accessors `tag`/`text`/`attr`/`attrs`/`children`, XPath-style `get`/`findAll`/`has`, and a build surface `element`/`setAttr`/`setText`/`append`. |
 
 A quick taste:
 

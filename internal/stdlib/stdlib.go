@@ -37,6 +37,7 @@ import (
 	"jennifer-lang.dev/jennifer/internal/lib/time"
 	"jennifer-lang.dev/jennifer/internal/lib/toml"
 	"jennifer-lang.dev/jennifer/internal/lib/uuid"
+	xmllib "jennifer-lang.dev/jennifer/internal/lib/xml"
 )
 
 // InstallAll activates every standard library on a fresh interpreter. Order is
@@ -60,6 +61,7 @@ func InstallAll(in *interpreter.Interpreter) {
 	encodinglib.Install(in)
 	jsonlib.Install(in)
 	tomllib.Install(in)
+	xmllib.Install(in)
 	tasklib.Install(in)
 	fslib.Install(in)
 	netlib.Install(in)

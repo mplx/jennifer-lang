@@ -266,6 +266,12 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   the **same opaque-value, read / walk / write surface as `json`, name for
   name** (JSON Pointer addressing), plus `asDatetime` (backed by `time.Time`)
   for TOML's native date-times. The config format Jennifer ships (not INI).
+- **`xml`** - `decode`/`encode`/`encodePretty` over an opaque `xml.Value`,
+  designed like `json`/`toml` but an element tree (ordered attributes + children
+  + mixed text). Read: `tag`/`text`/`attr`/`hasAttr`/`attrs`/`children`,
+  `typeOf`; navigate with an XPath-style path (`name`, `name[k]` 1-based, `*`)
+  via `get`/`findAll`/`has`; build with `element`/`setAttr`/`setText`/`append`.
+  Entities + numeric refs decode; namespace prefixes kept verbatim.
 - **`httpd`** - HTTP/1.1 server engine over `net/http`. Pull loop (no handler
   callbacks): `httpd.listen(addr)` -> `Server`, then loop
   `httpd.accept($srv)` -> `Request` and `httpd.respond($req, status, body)`;

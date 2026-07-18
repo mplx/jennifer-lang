@@ -1578,13 +1578,34 @@ both binaries (TinyGo 0.41 carries the Go 1.24 KDF packages). Surface:
 
 ### M20.2 - `xml`
 
-Hand-rolled like `json` (Go's `encoding/xml` is reflect-heavy, so
-TinyGo-hostile). A genuinely complex tree - attributes + ordered,
-possibly-duplicated children + mixed text + namespaces + entities - whose
-byte-level parsing is too slow in `.j`. Also the natural mirror target for
-the `json.Value` read / write vocabulary
-([M16.16](#m1616---jsonvalue)): the same opaque-handle plus path-addressed
-accessor shape (an XPath-style path dialect in place of JSON Pointer).
+**Done.** Hand-rolled XML encode / decode (no `encoding/xml`, which is
+reflect-heavy and TinyGo-hostile - the same reason `json` / `toml` are
+hand-rolled), over an opaque `xml.Value` (`KindObject`), the natural mirror
+target for the `json.Value` read / write vocabulary
+([M16.16](#m1616---jsonvalue)) - the same opaque-handle plus path-addressed
+accessor shape, with an XPath-style path dialect in place of JSON Pointer.
+
+- **The tree.** An element tree (not JSON's map / list / scalar): each
+  element has a tag name, ordered attributes, and ordered, possibly-duplicated
+  children that mix elements and text. Encoded as an ordered `map` per node so
+  it is an ordinary interpreter Value the KindObject can wrap; text and element
+  children are kept in document order so mixed content and whitespace round-trip.
+- **Decode.** `xml.decode(s) -> xml.Value` parses elements, attributes, text,
+  CDATA (as text), the five predefined entities and numeric character
+  references (unknown entity = error), and skips comments / processing
+  instructions / an XML declaration / a DOCTYPE. Namespace prefixes are kept
+  verbatim (`ns:tag`); `xmlns` declarations are ordinary attributes. Errors
+  carry line / column.
+- **Read.** `typeOf`, `tag`, `text`, `attr`, `hasAttr`, `attrs`, `children`,
+  plus path-addressed `get` / `findAll` / `has`. The path dialect is
+  `/`-separated steps of `name`, `name[k]` (1-based k-th same-named element
+  child), or `*`, relative to the passed node.
+- **Encode / build.** `xml.encode` / `xml.encodePretty` (pretty indents
+  element-only content, inlines any element with a text child so character
+  data stays byte-exact). A non-mutating build surface - `element`, `setAttr`,
+  `setText`, `append` - each returning a fresh handle.
+- **Deferred.** Full namespace resolution (prefixes stay lexical) and richer
+  XPath (predicates, `@attr` / `text()` path steps) are future extensions.
 
 ### M20.3 - `yaml`
 

@@ -96,8 +96,8 @@ matching an external protocol: SCRAM-SHA-1 (MongoDB, XMPP) requires
   hash passwords.
 - **PBKDF2** is for passwords: the `iterations` count makes each guess
   expensive, so pick the largest value the deployment can afford (capped
-  at 100,000,000 so an untrusted count — e.g. a hostile SCRAM server's
-  `i=` — cannot spin forever). `keyLen` is capped at 1 MiB; real keys are
+  at 100,000,000 so an untrusted count - e.g. a hostile SCRAM server's
+  `i=` - cannot spin forever). `keyLen` is capped at 1 MiB; real keys are
   tens of bytes. It unblocks SASL SCRAM (see the [`sasl`](../modules/sasl.md)
   module) and password-based key wrapping.
 
