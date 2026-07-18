@@ -148,6 +148,12 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 		emitNodeField(b, "expr", v.Expr, indent+1)
 		endObj(b, indent)
 
+	case *parser.DeferStmt:
+		startObj(b, indent)
+		emitTypeAndPos(b, "DeferStmt", v, indent+1)
+		emitNodeField(b, "call", v.Call, indent+1)
+		endObj(b, indent)
+
 	case *parser.IntLit:
 		startObj(b, indent)
 		emitTypeAndPos(b, "IntLit", v, indent+1)

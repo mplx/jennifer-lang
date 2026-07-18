@@ -81,7 +81,7 @@ hljs.registerLanguage("x86asm",function(){"use strict";return function(s){return
     keyword:
       "export def const func struct use include import as of to init " +
       "if elseif else while for in repeat until break continue return exit " +
-      "try catch throw spawn and or not",
+      "try catch throw defer spawn and or not",
     built_in: "len",
     type: "int float string bool bytes list map task",
     literal: "true false null",

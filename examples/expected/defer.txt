@@ -1,0 +1,9 @@
+acquire db
+acquire file
+  work 1
+  done 1
+  work 2
+  done 2
+processed 2 items
+release file
+release db

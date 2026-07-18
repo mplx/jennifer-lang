@@ -504,6 +504,37 @@ type ThrowStmt struct {
 
 func (*ThrowStmt) stmtNode() {}
 
+// DeferStmt: `defer CALL(args);` schedules a single call to run when the
+// enclosing block exits, on every exit path (fall-through, return, break,
+// continue, throw, exit), last-registered-first. Call is a *CallExpr or
+// *QualifiedCallExpr (the parser rejects anything else); its arguments are
+// evaluated at the defer site, the call runs at block exit.
+type DeferStmt struct {
+	pos
+	Call Expr
+}
+
+func (*DeferStmt) stmtNode() {}
+
+// PreEval wraps an already-computed runtime value so it can stand in an
+// expression position. It exists only for the interpreter's `defer` machinery:
+// arguments are evaluated at the defer site, then the captured values are spliced
+// back into the call's argument list and fed through the normal call path. The
+// payload is stored as `any` so the parser package stays free of an interpreter
+// import; the interpreter's evalExpr type-asserts it back to a Value.
+type PreEval struct {
+	pos
+	Value any
+}
+
+func (*PreEval) exprNode() {}
+
+// NewPreEval builds a PreEval carrying value v at the given source position.
+// Exported so the interpreter can construct one (the pos field is unexported).
+func NewPreEval(v any, file string, line, col int) *PreEval {
+	return &PreEval{pos: pos{File: file, Line: line, Col: col}, Value: v}
+}
+
 // ExprStmt: a bare expression terminated by `;` (used for calls like `printf(...)`).
 type ExprStmt struct {
 	pos
@@ -965,6 +996,8 @@ func Sprint(n Node) string {
 		return fmt.Sprintf("Try(%s, catch %s %s)", Sprint(v.Body), v.CatchName, Sprint(v.CatchBody))
 	case *ThrowStmt:
 		return fmt.Sprintf("Throw(%s)", Sprint(v.Value))
+	case *DeferStmt:
+		return fmt.Sprintf("Defer(%s)", Sprint(v.Call))
 	case *ExprStmt:
 		return fmt.Sprintf("ExprStmt(%s)", Sprint(v.Expr))
 	case *IntLit:

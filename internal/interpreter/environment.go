@@ -73,6 +73,10 @@ func releaseBlockEnv(e *Environment) {
 	e.root = nil
 	e.profChild = 0
 	e.slots = e.slots[:0]
+	// Drop any deferred calls so a pooled frame never carries a stale one into
+	// its next use. finishFrame runs them before release, so this is normally
+	// already empty; nil it out to release the backing for GC.
+	e.deferred = nil
 	envPool.Put(e)
 }
 
@@ -118,6 +122,11 @@ type Environment struct {
 	// interpreter would be raced by parallel spawn bodies. Only ever
 	// touched through env.root while statement profiling is active.
 	profChild time.Duration
+	// deferred holds this frame's `defer`red calls, appended as each
+	// DeferStmt runs and executed LIFO by finishFrame when the frame exits
+	// (see execDefer / finishFrame). nil for the overwhelming majority of
+	// frames (no defer), so the frame-exit check is a cheap len == 0 test.
+	deferred []deferredCall
 }
 
 // rootFor computes the root marker for a fresh Environment. When

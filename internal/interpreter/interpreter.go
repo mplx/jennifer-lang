@@ -863,6 +863,11 @@ func (i *Interpreter) Run(prog *parser.Program) error {
 		i.prof.Start(time.Now())
 	}
 	res, err := i.execStmts(prog.TopLevel, i.global)
+	// Top-level `defer`s run at program end, on every exit path (including an
+	// `exit`, which finishFrame preserves over a failing defer).
+	if len(i.global.deferred) > 0 {
+		res, err = i.finishFrame(i.global, res, err)
+	}
 	if err != nil {
 		return err
 	}
@@ -1135,11 +1140,15 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 	if err := i.loadModuleImports(prog, true); err != nil {
 		return Null(), err
 	}
+	// A top-level `defer` in the REPL runs at the end of the input that
+	// registered it (each input is its own top-level frame). Run them on every
+	// exit path; on an error path the original error wins over a defer failure.
 	last := Null()
 	for _, st := range prog.TopLevel {
 		if es, ok := st.(*parser.ExprStmt); ok {
 			v, err := i.evalExpr(es.Expr, i.global)
 			if err != nil {
+				i.runDeferredCalls(i.global)
 				return Null(), err
 			}
 			last = v
@@ -1148,11 +1157,16 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 		last = Null()
 		res, err := i.execStmt(st, i.global)
 		if err != nil {
+			i.runDeferredCalls(i.global)
 			return Null(), err
 		}
 		if res.hasBreak || res.hasContinue {
+			i.runDeferredCalls(i.global)
 			return Null(), unhandledLoopFlowError(res)
 		}
+	}
+	if derr := i.runDeferredCalls(i.global); derr != nil {
+		return Null(), derr
 	}
 	return last, nil
 }
@@ -1198,6 +1212,12 @@ func (r blockResult) flowsOut() bool {
 func (i *Interpreter) execBlock(b *parser.Block, parent *Environment) (blockResult, error) {
 	env := borrowBlockEnv(parent, b.NumSlots)
 	res, err := i.execStmts(b.Stmts, env)
+	// Fast path: the vast majority of blocks register no defer, so skip the
+	// (non-inlined) finishFrame call - and its by-value blockResult copy - with a
+	// cheap length check. finishFrame re-checks, so this is purely an optimization.
+	if len(env.deferred) > 0 {
+		res, err = i.finishFrame(env, res, err)
+	}
 	releaseBlockEnv(env)
 	return res, err
 }
@@ -1286,6 +1306,8 @@ func (i *Interpreter) execStmtRaw(s parser.Stmt, env *Environment) (blockResult,
 		return i.execTry(st, env)
 	case *parser.ThrowStmt:
 		return blockResult{}, i.execThrow(st, env)
+	case *parser.DeferStmt:
+		return blockResult{}, i.execDefer(st, env)
 	case *parser.ExprStmt:
 		if _, err := i.evalExpr(st.Expr, env); err != nil {
 			return blockResult{}, err
@@ -2200,6 +2222,9 @@ func (i *Interpreter) execForEach(st *parser.ForEachStmt, env *Environment) (blo
 			return blockResult{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
 		}
 		res, err := i.execStmts(st.Body.Stmts, iterEnv)
+		if len(iterEnv.deferred) > 0 {
+			res, err = i.finishFrame(iterEnv, res, err)
+		}
 		releaseBlockEnv(iterEnv)
 		return res, err
 	}
@@ -2404,6 +2429,109 @@ func (i *Interpreter) execThrow(st *parser.ThrowStmt, env *Environment) error {
 	return &ErrorSignal{Value: v.Copy(), File: file, Line: line, Col: col}
 }
 
+// deferredCall is a `defer`red call: the original call expression plus its
+// arguments already evaluated (and snapshotted) at the defer site. Only the args
+// are captured early - the callee dispatch happens when the call runs, by feeding
+// the captured values back through the normal call path as PreEval literals.
+type deferredCall struct {
+	call parser.Expr // *parser.CallExpr or *parser.QualifiedCallExpr
+	args []Value
+}
+
+// execDefer evaluates the deferred call's arguments now and records the call on
+// the current frame; the call itself runs when the frame exits (finishFrame).
+func (i *Interpreter) execDefer(st *parser.DeferStmt, env *Environment) error {
+	argExprs := deferCallArgs(st.Call)
+	args := make([]Value, len(argExprs))
+	for idx, a := range argExprs {
+		v, err := i.evalExpr(a, env)
+		if err != nil {
+			return err
+		}
+		// Snapshot the argument value at the defer site (Go's defer semantics):
+		// a later mutation of the source binding must not change what the
+		// deferred call receives. Copy is cheap for scalars and handle structs.
+		args[idx] = v.Copy()
+	}
+	env.deferred = append(env.deferred, deferredCall{call: st.Call, args: args})
+	return nil
+}
+
+// deferCallArgs returns the argument expressions of the two call shapes the
+// parser allows after `defer`.
+func deferCallArgs(call parser.Expr) []parser.Expr {
+	switch c := call.(type) {
+	case *parser.CallExpr:
+		return c.Args
+	case *parser.QualifiedCallExpr:
+		return c.Args
+	}
+	return nil
+}
+
+// finishFrame runs env's deferred calls (LIFO) as the frame exits and merges
+// their outcome with the frame's result. It is a no-op (and allocation-free)
+// when the frame registered no defer - the common case. A deferred call that
+// errors supersedes a normal / return / break / continue / throw outcome (Go's
+// panic-in-defer rule), but never an ExitSignal: exit is the strongest,
+// uncatchable escape, so it still runs the defers but is not overridden by one
+// that fails.
+func (i *Interpreter) finishFrame(env *Environment, res blockResult, err error) (blockResult, error) {
+	if len(env.deferred) == 0 {
+		return res, err
+	}
+	derr := i.runDeferredCalls(env)
+	if derr == nil {
+		return res, err
+	}
+	if _, isExit := err.(*ExitSignal); isExit {
+		return res, err
+	}
+	return blockResult{}, derr
+}
+
+// runDeferredCalls invokes env.deferred in LIFO order, always running every one
+// (a failure does not stop the rest - cleanup should complete). Returns the last
+// error a deferred call produced, or nil, and clears the frame's list first so a
+// deferred call cannot re-enter its own frame's list.
+func (i *Interpreter) runDeferredCalls(env *Environment) error {
+	d := env.deferred
+	env.deferred = nil
+	var derr error
+	for j := len(d) - 1; j >= 0; j-- {
+		if e := i.invokeDeferred(d[j], env); e != nil {
+			derr = e
+		}
+	}
+	return derr
+}
+
+// invokeDeferred runs one captured call by splicing its snapshotted arguments
+// back into a shallow clone of the call expression as PreEval literals, then
+// dispatching through the normal call path - so user methods, namespaced
+// builtins, and module functions all run unchanged (the clone preserves the
+// resolver's pre-stamped Method / Fn pointers).
+func (i *Interpreter) invokeDeferred(dc deferredCall, env *Environment) error {
+	file, line, col := posFor(dc.call)
+	litArgs := make([]parser.Expr, len(dc.args))
+	for k, v := range dc.args {
+		litArgs[k] = parser.NewPreEval(v, file, line, col)
+	}
+	switch c := dc.call.(type) {
+	case *parser.CallExpr:
+		clone := *c
+		clone.Args = litArgs
+		_, err := i.evalCall(&clone, env)
+		return err
+	case *parser.QualifiedCallExpr:
+		clone := *c
+		clone.Args = litArgs
+		_, err := i.evalQualifiedCall(&clone, env)
+		return err
+	}
+	return nil
+}
+
 // execTry runs the body and, if it produces a catchable error
 // (*ErrorSignal from `throw`, or *runtimeError from a builtin /
 // language operation), runs the handler with the catch variable
@@ -2417,6 +2545,11 @@ func (i *Interpreter) execTry(st *parser.TryStmt, env *Environment) (blockResult
 	// a zeroed slot in the enclosing frame that reads as null.
 	bodyEnv := borrowBlockEnv(env, st.Body.NumSlots)
 	res, err := i.execStmts(st.Body.Stmts, bodyEnv)
+	// Body defers run at body exit, before the catch. A defer that throws is
+	// itself catchable here (it is lexically part of the try body).
+	if len(bodyEnv.deferred) > 0 {
+		res, err = i.finishFrame(bodyEnv, res, err)
+	}
 	releaseBlockEnv(bodyEnv)
 	if err == nil {
 		return res, nil
@@ -2459,6 +2592,9 @@ func (i *Interpreter) execTry(st *parser.TryStmt, env *Environment) (blockResult
 		return blockResult{}, &runtimeError{Msg: err.Error(), File: st.CatchFile, Line: st.CatchLine, Col: st.CatchCol}
 	}
 	res, err = i.execStmts(st.CatchBody.Stmts, catchEnv)
+	if len(catchEnv.deferred) > 0 {
+		res, err = i.finishFrame(catchEnv, res, err)
+	}
 	releaseBlockEnv(catchEnv)
 	return res, err
 }
@@ -2479,6 +2615,10 @@ func (i *Interpreter) evalBool(e parser.Expr, env *Environment, ctx string) (boo
 
 func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 	switch ex := e.(type) {
+	case *parser.PreEval:
+		// A value captured at a `defer` site, spliced back into the call's
+		// argument list (see invokeDeferred). Return it verbatim.
+		return ex.Value.(Value), nil
 	case *parser.IntLit:
 		return IntVal(ex.Value), nil
 	case *parser.FloatLit:

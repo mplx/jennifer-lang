@@ -65,6 +65,28 @@ func TestParseNotEqualPrecedence(t *testing.T) {
 	}
 }
 
+// `defer` parses to a DeferStmt wrapping the call; a namespaced call keeps its
+// QualifiedCallExpr shape so the interpreter can dispatch it normally.
+func TestParseDeferStmt(t *testing.T) {
+	prog, err := Parse(`func app() { defer fs.close($f); }`)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	got := Sprint(prog.Methods[0].Body.Stmts[0])
+	want := "Defer(QCall(fs.close, Var($f)))"
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// `defer` on a non-call is a parse error pointing at the required form.
+func TestParseDeferRejectsNonCall(t *testing.T) {
+	_, err := Parse(`func app() { defer 1 + 2; }`)
+	if err == nil || !contains(err.Error(), "requires a function call") {
+		t.Errorf("expected defer-needs-a-call error, got %v", err)
+	}
+}
+
 func TestParseParenGrouping(t *testing.T) {
 	src := `func app() { def r as int init (1 + 2) * 3; }`
 	prog, err := Parse(src)

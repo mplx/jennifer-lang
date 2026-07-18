@@ -61,6 +61,7 @@ statement   = defineStmt
             | forEachStmt
             | tryStmt
             | throwStmt
+            | deferStmt
             | exprStmt ;
 
 tryStmt     = "try" block "catch" "(" IDENT ")" block ;
@@ -73,6 +74,17 @@ throwStmt   = "throw" expr ";" ;
                                        (* expr may produce any
                                           value; convention is an
                                           `Error` struct. *)
+deferStmt   = "defer" call ";" ;
+                                       (* `call` is a plain call
+                                          (`cleanup()`) or a
+                                          namespaced / module call
+                                          (`fs.close($f)`) - any
+                                          other expr is a parse
+                                          error. Args evaluate at the
+                                          defer site; the call runs
+                                          when the enclosing block
+                                          exits, LIFO, on every exit
+                                          path. Block-scoped. *)
 
 returnStmt  = "return" [ expr ] ";" ;
 

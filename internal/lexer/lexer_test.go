@@ -391,6 +391,20 @@ func TestTokenizeBareBangIsFriendlyError(t *testing.T) {
 	}
 }
 
+func TestTokenizeDeferKeyword(t *testing.T) {
+	toks, err := Tokenize("defer cleanup();")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if toks[0].Type != TOKEN_DEFER {
+		t.Errorf("first token = %s, want DEFER", toks[0].Type)
+	}
+	// `defer` is a keyword, not an identifier.
+	if toks[1].Type != TOKEN_IDENT || toks[1].Lexeme != "cleanup" {
+		t.Errorf("second token = %s(%q), want IDENT(cleanup)", toks[1].Type, toks[1].Lexeme)
+	}
+}
+
 func TestTokenizeM2Keywords(t *testing.T) {
 	src := "const if elseif else while for true false null float bool return"
 	toks, err := Tokenize(src)

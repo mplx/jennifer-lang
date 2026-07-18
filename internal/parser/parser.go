@@ -496,6 +496,8 @@ func (p *parser) parseStatement() (Stmt, error) {
 		return p.parseTry()
 	case lexer.TOKEN_THROW:
 		return p.parseThrow()
+	case lexer.TOKEN_DEFER:
+		return p.parseDefer()
 	case lexer.TOKEN_VARREF:
 		// `$x = expr ;` is a simple assignment.
 		if p.peekN(1).Type == lexer.TOKEN_ASSIGN {
@@ -763,6 +765,36 @@ func (p *parser) parseThrow() (Stmt, error) {
 	return &ThrowStmt{
 		pos:   pos{File: tk.File, Line: tk.Line, Col: tk.Col},
 		Value: expr,
+	}, nil
+}
+
+// parseDefer parses `defer CALL(args);`. The deferred thing must be a call - a
+// user method (`defer cleanup();`) or a namespaced / module call
+// (`defer fs.close($f);`). Anything else (a bare value, an operator expression,
+// an index/field access) is a parse error: `defer` schedules a call, and the
+// single-call form is what keeps a `return` / `throw` from hiding inside it.
+func (p *parser) parseDefer() (Stmt, error) {
+	tk, _ := p.match(lexer.TOKEN_DEFER)
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	switch expr.(type) {
+	case *CallExpr, *QualifiedCallExpr:
+		// ok: a method call or a namespaced / module call.
+	default:
+		l, c := expr.Pos()
+		return nil, &ParseError{
+			Msg:  "`defer` requires a function call, e.g. `defer fs.close($f);`",
+			File: expr.Filename(), Line: l, Col: c,
+		}
+	}
+	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate defer"); err != nil {
+		return nil, err
+	}
+	return &DeferStmt{
+		pos:  pos{File: tk.File, Line: tk.Line, Col: tk.Col},
+		Call: expr,
 	}, nil
 }
 

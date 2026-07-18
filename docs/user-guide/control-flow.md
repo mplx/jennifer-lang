@@ -344,10 +344,69 @@ won't be able to read `.kind` / `.message` off it. Use
 the current `try`/`catch` to the next enclosing `try`. Same value
 unless replaced.
 
-### No `finally` in v1
+### No `finally`
 
-Jennifer does not have a `finally` clause yet. The pattern is
-"do the cleanup explicitly in both branches" until a real cleanup
-need surfaces (probably with file handles in a future `fs`
-library).
+Jennifer has no `finally` clause, and won't - `defer` (below) covers the same
+need without `finally`'s footguns.
+
+## `defer` (deterministic cleanup)
+
+`defer CALL(args);` schedules a single call to run when the **enclosing block**
+exits - on **every** exit path: normal fall-through, `return`, `break`,
+`continue`, a `throw` that unwinds through it, and `exit`. It is the clean way to
+pair "acquire a resource" with "release it", right next to each other:
+
+```jennifer
+use fs;
+use io;
+
+func dumpFirst(path as string) {
+    def f as fs.File init fs.open($path, "read");
+    defer fs.close($f);                 # runs however this function exits
+
+    if (fs.eof($f)) { return; }         # <- fs.close($f) runs here
+    io.printf("%s\n", fs.readLine($f)); # <- and here, on normal exit
+}
+```
+
+Rules:
+
+- **The deferred thing must be a call** - a method call (`defer cleanup();`) or a
+  namespaced / module call (`defer fs.close($f);`). A non-call
+  (`defer 1 + 2;`) is a parse error. Because it is a single call, not a block,
+  there is no way to smuggle a `return` or `throw` into the cleanup.
+- **Arguments are evaluated at the `defer` line; the call runs at block exit.**
+  `defer io.printf("done %s\n", $path);` captures `$path`'s value now.
+- **LIFO.** Several defers in one block run last-registered-first, so resources
+  release in reverse acquisition order:
+
+  ```jennifer
+  def db as sql.Conn init sql.connect(...);
+  defer sql.close($db);                  # released last
+  def f as fs.File init fs.open(...);
+  defer fs.close($f);                    # released first
+  ```
+
+- **Block-scoped.** A `defer` runs at the end of its enclosing `{ }`, so one
+  inside a loop body runs at the end of **each iteration** (no pile-up):
+
+  ```jennifer
+  for (def name in $files) {
+      def f as fs.File init fs.open($name, "read");
+      defer fs.close($f);                # closes at the end of this iteration
+      process($f);
+  }
+  ```
+
+  A top-level `defer` runs at program end.
+- **Does not cross the method or `spawn` boundary** (like `break` / `return`): a
+  method's defers run when that method returns, not in its caller.
+- A deferred call that **throws** propagates and is catchable; if the block was
+  already unwinding an error, the deferred error supersedes it. An `exit` is
+  never superseded - defers still run, but the exit code stands.
+
+For durability specifically (flushing to disk), `defer` the `close` but call
+`fs.sync` explicitly and check it - see [fs](../libraries/fs.md); a durability
+failure should surface before you tell the user "done", not from a deferred call
+running on the way out.
 

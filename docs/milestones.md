@@ -1710,8 +1710,8 @@ unrecoverable (uncatchable, as for any program).
 
 ### M20.7 - `defer` (deterministic cleanup)
 
-A `defer CALL(args);` statement that schedules a single call to run when its
-enclosing block exits, on **every** exit path. The motivating problem is resource
+**Done.** A `defer CALL(args);` statement that schedules a single call to run when
+its enclosing block exits, on **every** exit path. The motivating problem is resource
 cleanup for the handle libraries - `fs.close` / `fs.sync`, `term.restore`,
 `net.close`, `os.Process` release, the M20.9 `sql` client's connections - which
 today needs a verbose `try { ... } catch (e) { close(); throw $e; }` plus a

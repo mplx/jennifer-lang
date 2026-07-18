@@ -3,6 +3,30 @@
 Proposals that were considered and explicitly turned down. Recorded here so
 the same ideas don't come back as fresh suggestions next session.
 
+## `finally` clause (`try { } finally { }`)
+
+Considered as the cleanup construct, alongside `defer`, when resource-holding
+libraries (`fs`, `term`, the planned `sql`) made "release this no matter how the
+block exits" a real need.
+
+Rejected in favor of `defer` (which shipped) because:
+
+- **Java's footgun.** A `return` or `throw` inside a `finally` silently swallows
+  the try's exception or overrides its return value - a notorious, hard-to-spot
+  bug. `defer CALL(args);` takes a *single call*, not a block, so that hazard is
+  unrepresentable rather than merely discouraged.
+- **`defer` co-locates acquire and release** (`open` then `defer close` on the
+  next line) and scales to N resources by LIFO unwinding, where `finally` nests
+  into pyramids and separates open (top) from close (bottom).
+- **It fits the language.** With value semantics and handle-into-registry
+  resources, `defer`'s "capture args now, run the call at block exit" needs no
+  closures (which Jennifer lacks); the model falls out of value semantics.
+- **One-obvious-way.** Shipping both `finally` and `defer` would be two
+  constructs for one job. Student familiarity is `finally`'s only real edge, and
+  `defer` is trivially teachable ("cleanup that runs when the block exits").
+
+See [M20.7](../milestones.md) for the `defer` design.
+
 ## Increment / decrement (`++`/`--`)
 
 Considered: postfix `$i++` and prefix `++$i`.

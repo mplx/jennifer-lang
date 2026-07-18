@@ -424,6 +424,10 @@ func (r *resolver) resolveStmt(s Stmt) error {
 		return nil
 	case *ThrowStmt:
 		return r.resolveExpr(st.Value)
+	case *DeferStmt:
+		// The deferred call's arguments are evaluated at the defer site, so its
+		// callee + args resolve exactly like a normal call expression here.
+		return r.resolveExpr(st.Call)
 	case *TryStmt:
 		// The try body is its own block scope (its own runtime frame at
 		// execTry). Its `def`s do not leak into the enclosing frame, so a

@@ -149,6 +149,25 @@ try {
 builtins raise (out-of-range, missing key, etc.), wrapped into `Error`.
 `exit`/`return`/`break`/`continue` are control flow, not catchable.
 
+### Cleanup with `defer`
+
+```jennifer
+use fs;
+func write(path as string) {
+    def f as fs.File init fs.open($path, "write");
+    defer fs.close($f);         # runs when the block exits, however it exits
+    fs.writeString($f, "data\n");
+}
+```
+
+`defer CALL(args);` schedules a **call** (method / namespaced / module call - a
+non-call is a parse error) to run when the **enclosing block** exits, on every
+path (`return`/`break`/`continue`/`throw`/`exit`/fall-through), **LIFO**.
+Arguments are evaluated at the `defer` line; the call runs at block exit.
+Block-scoped (a `defer` in a loop body runs each iteration); does not cross a
+method or `spawn` boundary. A deferred throw propagates and supersedes a pending
+error (never an `exit`). There is no `finally`.
+
 ## Methods
 
 ```jennifer
