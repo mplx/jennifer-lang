@@ -46,6 +46,7 @@
 - [`regex`](libraries/regex.md)
 - [`strings`](libraries/strings.md)
 - [`task`](libraries/task.md)
+- [`term`](libraries/term.md)
 - [`testing`](libraries/testing.md)
 - [`time`](libraries/time.md)
 - [`toml`](libraries/toml.md)

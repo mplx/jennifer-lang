@@ -295,6 +295,12 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   request accessors `method`/`path`/`query`/`header`/`body`/`remoteAddr`, plus
   `setHeader`/`serveFile`/`serveDir`/`shutdown`. `spawn` several accept loops
   for a worker pool. Default binary only (`jennifer-tiny` stubs it).
+- **`term`** - terminal control for interactive TUIs: `term.makeRaw(stream)` ->
+  `term.State` and `term.restore(state)` (raw mode: unbuffered, no-echo input),
+  `term.size(stream)` -> `term.Size{rows, cols}`, `term.readByte()` -> int (one
+  raw byte from stdin, `-1` at EOF; bytes, not decoded keys). Over
+  `golang.org/x/term`; default binary only (`jennifer-tiny` stubs it). Refused in
+  the REPL. Output-only TUIs need only `ansi` + `os.isTerminal`.
 - **`time`**, **`fs`**, **`net`**, **`regex`**, **`hash`**, **`crc`**,
   **`crypto`**, **`compress`**, **`archive`**, **`encoding`**, **`uuid`**,
   **`meta`**, **`testing`** - clock, files, sockets, RE2 regex, digests,

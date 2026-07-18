@@ -34,6 +34,7 @@ import (
 	"jennifer-lang.dev/jennifer/internal/lib/regex"
 	"jennifer-lang.dev/jennifer/internal/lib/strings"
 	"jennifer-lang.dev/jennifer/internal/lib/task"
+	termlib "jennifer-lang.dev/jennifer/internal/lib/term"
 	"jennifer-lang.dev/jennifer/internal/lib/testing"
 	"jennifer-lang.dev/jennifer/internal/lib/time"
 	"jennifer-lang.dev/jennifer/internal/lib/toml"
@@ -70,6 +71,7 @@ func InstallAll(in *interpreter.Interpreter) {
 	fslib.Install(in)
 	netlib.Install(in)
 	httpdlib.Install(in)
+	termlib.Install(in)
 	regexlib.Install(in)
 	testinglib.Install(in)
 	uuidlib.Install(in)

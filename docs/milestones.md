@@ -1655,18 +1655,29 @@ open `printf` question.
 
 ### M20.5 - `term`
 
-A `term` system library exposing the terminal host capabilities a TUI needs
-and pure `.j` cannot reach: **raw mode** (`makeRaw` / `restore` - unbuffered,
-no-echo input), **terminal size** (`size -> rows, cols`), and raw single-key
-reads from stdin. It reuses `golang.org/x/term` - already a repository
-dependency scoped to the REPL's line editor (`cmd/jennifer/lineedit.go`) - so
-it largely exposes a capability the interpreter already exercises. Build-tag
-split like `net` / `os`: a friendly-error stub on `jennifer-tiny` (embedded /
-minimal targets may have no controlling TTY). This is the **enabler for
-interactive TUIs**; the pure-ANSI screen control, key decoding, and rendering
-sit in the [M21.1](#m211---screen--tui-module) `screen` / `tui` module on top.
-Output-only TUIs (dashboards, progress bars) need neither this library nor raw
-mode - just `ansi` + `os.isTerminal`.
+**Done.** A `term` system library exposing the terminal host capabilities a TUI
+needs and pure `.j` cannot reach: **raw mode** (`term.makeRaw(stream)` ->
+`term.State`, `term.restore(state)` - unbuffered, no-echo input, a single-use
+handle so a stale restore can't clobber a live terminal), **terminal size**
+(`term.size(stream)` -> `term.Size{rows, cols}`), and **raw single-byte reads**
+(`term.readByte()` -> int, `0`-`255` or `-1` at end of input - bytes, not decoded
+keys; escape-sequence decoding is the TUI layer's job). Built on
+`golang.org/x/term` - already a repository dependency scoped to the REPL's line
+editor (`cmd/jennifer/lineedit.go`), now also a build-tag-gated *library*
+dependency. Raw mode / size operate on the real terminal device by fd (like
+`os.isTerminal`); `readByte` reads the interpreter's input reader, so it composes
+with the raw mode set on stdin and stays testable. Raw-mode verbs and `readByte`
+are refused in the REPL (it owns the terminal for its own editor).
+
+Build-tag split like `net` / `os`: the real implementation (over `x/term`) on the
+default `jennifer`, a friendly-error stub on `jennifer-tiny` (embedded / minimal
+targets may have no controlling TTY, and the tiny build excludes `x/term`). This
+is the **enabler for interactive TUIs**; the pure-ANSI screen control, key
+decoding, and rendering sit in the [M21.1](#m211---screen--tui-module) `screen` /
+`tui` module on top. Output-only TUIs (dashboards, progress bars) need neither
+this library nor raw mode - just `ansi` + `os.isTerminal`. `examples/term.j` is a
+guarded interactive demo (a raw-mode key reader); it needs a real TTY, so it is
+not a golden test.
 
 ### M20.6 - device I/O (`serial` / `spi` / `iic` / `gpio`)
 

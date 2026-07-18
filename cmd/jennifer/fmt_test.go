@@ -87,6 +87,14 @@ func TestFmtPreservesRuntimeBehavior(t *testing.T) {
 				t.Skipf("%s prints wall-clock timings; output varies between runs", name)
 				return
 			}
+			// term.j drives raw-mode terminal input: run interactively it would
+			// block on a key read (and could disrupt the terminal running the
+			// tests). It guards on os.isTerminal, so it never produces golden
+			// output; skip it here rather than risk a hang.
+			if name == "term.j" {
+				t.Skipf("%s reads raw terminal input; not runnable non-interactively", name)
+				return
+			}
 			path := filepath.Join(dir, name)
 			origOut, err := runProgramOutput(path, "")
 			if err != nil {
