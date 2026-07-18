@@ -59,12 +59,19 @@ if (not os.isTerminal("stdin")) {
 ```
 
 **Always restore.** Raw mode is a property of the terminal device, not the
-process, so a program that exits without calling `term.restore` leaves the shell
-in raw mode. Jennifer has no `finally`, so put the `restore` on every path out -
-and note that in raw mode the newline is no longer cooked, so prints need an
-explicit `\r\n`. The `term.State` handle is **single-use**: a second
-`term.restore` of the same handle is an error, so a live terminal is never
-clobbered by a stale handle.
+process, so a program that exits still in raw mode would leave the shell there.
+Jennifer has no `finally`, so put the `restore` on every path out - and note that
+in raw mode the newline is no longer cooked, so prints need an explicit `\r\n`.
+The `term.State` handle is **single-use**: a second `term.restore` of the same
+handle is an error, so a live terminal is never clobbered by a stale handle.
+
+As a **backstop**, the `jennifer` CLI cooks the terminal back on the way out even
+when your program doesn't - a normal exit, an `exit`, an uncaught error, a panic,
+or an uncaught terminating signal (`SIGINT` / `SIGTERM` / `SIGHUP`, re-raised so
+the process still dies as usual). This is a safety net for a crash, not a
+substitute for `restore`: it only runs as the process ends, so a long-running
+program that means to leave raw mode mid-run must still call `restore` itself, and
+a `kill -9` (`SIGKILL`) is uncatchable and bypasses it.
 
 ## Reading keys
 

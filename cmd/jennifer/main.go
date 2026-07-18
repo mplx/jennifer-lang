@@ -342,9 +342,15 @@ func runFileHook(path string, searchDirs []string, vendorFlag string, afterParse
 	// aborts before `term.restore` - an uncaught error, `exit`, or a panic - the
 	// shell would be left wedged (no echo, no line editing). Jennifer has no
 	// `finally`, but the CLI has Go's defer: restore any raw-mode terminal on the
-	// way out. (SIGKILL and a bare terminating signal are not covered here; a
-	// terminating-signal handler is part of the cooperative-cancellation work.)
+	// way out.
 	defer termlib.RestoreAll()
+	// The defer above does not run when a terminating signal (SIGINT / SIGTERM /
+	// SIGHUP) takes its default disposition, since that kills the process without
+	// unwinding. installTermSignalRestore traps those: an *uncaught* one restores
+	// the terminal and then re-raises to die as normal; a signal the script caught
+	// via os.catchSignal is left to the script. SIGKILL remains uncoverable.
+	stopTermRestore := installTermSignalRestore()
+	defer stopTermRestore()
 	in := interpreter.New()
 	installLibraries(in)
 	// Enable `import "..."` module resolution: local imports resolve

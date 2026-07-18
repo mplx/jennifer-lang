@@ -124,6 +124,24 @@ func gotSignalFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interprete
 	return interpreter.BoolVal(pending[idx].Swap(false)), nil
 }
 
+// SignalCaught reports whether the program has armed the named signal via
+// os.catchSignal (name is a Jennifer signal name: "int" / "term" / "hup" / ...).
+// The CLI's terminal-restore handler consults this so it never usurps a signal
+// the script is handling cooperatively: for a caught signal the script's own poll
+// loop owns the response and its eventual clean exit runs the RestoreAll defer,
+// so the CLI handler stays out of the way; only an *uncaught* terminating signal
+// takes the restore-and-die path. Read under armMu, so it observes a consistent
+// arm state.
+func SignalCaught(name string) bool {
+	idx, _, ok := lookupSignal(name)
+	if !ok {
+		return false
+	}
+	armMu.Lock()
+	defer armMu.Unlock()
+	return sigChans[idx] != nil
+}
+
 func signalNameArg(fnName string, args []interpreter.Value) (string, error) {
 	if len(args) != 1 {
 		return "", fmt.Errorf("%s expects 1 argument (signal name), got %d", fnName, len(args))

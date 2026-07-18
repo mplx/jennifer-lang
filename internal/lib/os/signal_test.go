@@ -59,6 +59,32 @@ func TestCatchAndPollSignal(t *testing.T) {
 	}
 }
 
+// TestSignalCaught proves the CLI-coordination predicate: a signal reads as
+// caught only after os.catchSignal arms it, and never for an unknown name. This
+// is what keeps the terminal-restore handler from usurping a signal the script
+// is handling cooperatively.
+func TestSignalCaught(t *testing.T) {
+	resetSignalsForTest()
+	defer resetSignalsForTest()
+
+	if SignalCaught("term") {
+		t.Error("SignalCaught(\"term\") before catch should be false")
+	}
+	if SignalCaught("bogus") {
+		t.Error("SignalCaught of an unknown signal should be false")
+	}
+	if _, err := catchSignalFn(interpreter.BuiltinCtx{}, []interpreter.Value{sv("term")}); err != nil {
+		t.Fatalf("catchSignal: %v", err)
+	}
+	if !SignalCaught("term") {
+		t.Error("SignalCaught(\"term\") after catch should be true")
+	}
+	// A different, un-armed signal stays false.
+	if SignalCaught("hup") {
+		t.Error("SignalCaught(\"hup\") without a catch should be false")
+	}
+}
+
 func TestSignalErrors(t *testing.T) {
 	resetSignalsForTest()
 	defer resetSignalsForTest()
