@@ -245,6 +245,25 @@ v7 version   = 7
 valid        = true
 parse bytes  = 16
 NIL          = 00000000-0000-0000-0000-000000000000
+=== crypto ===
+randBytes len= 16
+randInt range= true
+hmacEqual    = true / false
+pbkdf        = 6f4ad8c78ec365c060e648eb694ee40d
+hkdf len     = 32
+=== compress ===
+gzip rt ok   = true
+shrank       = true
+=== archive ===
+entries=1 name=a.txt data=alpha
+=== toml ===
+title=jen port=8080
+=== xml ===
+tag=book id=1 title=Go & XML
+=== yaml ===
+name=jen nums=3
+=== intl ===
+tr=Hallo, Welt!
 === testing ===
 ran=2 passed=1 failed=1
 === done ===

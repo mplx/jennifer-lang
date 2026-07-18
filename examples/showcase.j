@@ -593,6 +593,77 @@ io.printf("valid        = %t\n", uuid.isValid(uuid.generate("v4")));
 io.printf("parse bytes  = %d\n", len(uuid.parse(uuid.generate("v4"))));
 io.printf("NIL          = %s\n", uuid.NIL);
 
+# --- crypto (crypto-grade random, constant-time compare, KDFs) ---
+# randBytes / randInt are unpredictable, so assert facts, not values;
+# pbkdf / hkdf are deterministic functions, so their output is stable.
+use crypto;
+
+io.printf("=== crypto ===\n");
+def cpw as bytes init convert.bytesFromString("pw", "utf-8");
+def csalt as bytes init convert.bytesFromString("salt", "utf-8");
+def cinfo as bytes;
+io.printf("randBytes len= %d\n", len(crypto.randBytes(16)));
+io.printf("randInt range= %t\n", crypto.randInt(1, 6) >= 1 and crypto.randInt(1, 6) <= 6);
+io.printf("hmacEqual    = %t / %t\n", crypto.hmacEqual($cpw, $cpw), crypto.hmacEqual($cpw, $csalt));
+io.printf("pbkdf        = %s\n",
+    encoding.toText(crypto.pbkdf($cpw, $csalt, 1, 16, "sha256"), "hex"));
+io.printf("hkdf len     = %d\n", len(crypto.hkdf($cpw, $csalt, $cinfo, 32, "sha256")));
+
+# --- compress (byte-stream pack / unpack) ---
+# Packed bytes vary with the zlib version, so assert the round-trip and
+# that a repetitive input shrinks, not the exact compressed bytes.
+use compress;
+
+io.printf("=== compress ===\n");
+def craw as bytes init convert.bytesFromString(strings.repeat("compress me ", 50), "utf-8");
+def crt as bytes init compress.unpack(compress.pack($craw, "gzip"), "gzip");
+io.printf("gzip rt ok   = %t\n",
+    convert.stringFromBytes($crt, "utf-8") == strings.repeat("compress me ", 50));
+io.printf("shrank       = %t\n", len(compress.pack($craw, "gzip")) < len($craw));
+
+# --- archive (tar / zip containers over bytes) ---
+use archive;
+
+io.printf("=== archive ===\n");
+def aentry as archive.Entry init archive.Entry{
+    name: "a.txt", data: convert.bytesFromString("alpha", "utf-8"), mode: 0o644, mtime: 1700000000
+};
+def aback as list of archive.Entry init archive.unpack(archive.pack([$aentry], "tar"), "tar");
+io.printf("entries=%d name=%s data=%s\n",
+    len($aback), $aback[0].name, convert.stringFromBytes($aback[0].data, "utf-8"));
+
+# --- toml (opaque toml.Value, JSON-Pointer accessors, like json) ---
+use toml;
+
+io.printf("=== toml ===\n");
+def tdoc as toml.Value init toml.decode("title = \"jen\"\n[server]\nport = 8080\n");
+io.printf("title=%s port=%d\n", toml.asString($tdoc, "/title"), toml.asInt($tdoc, "/server/port"));
+
+# --- xml (opaque xml.Value, element tree, XPath-style paths) ---
+use xml;
+
+io.printf("=== xml ===\n");
+def xdoc as xml.Value init xml.decode("<book id=\"1\"><title>Go &amp; XML</title></book>");
+io.printf("tag=%s id=%s title=%s\n",
+    xml.tag($xdoc), xml.attr($xdoc, "id"), xml.text(xml.get($xdoc, "title")));
+
+# --- yaml (opaque yaml.Value, same accessors as json / toml) ---
+use yaml;
+
+io.printf("=== yaml ===\n");
+def ydoc as yaml.Value init yaml.decode("name: jen\nnums: [1, 2, 3]\n");
+io.printf("name=%s nums=%d\n",
+    yaml.asString($ydoc, "/name"), yaml.length(yaml.get($ydoc, "/nums")));
+
+# --- intl (message catalogs + locale-aware translation) ---
+use intl;
+
+io.printf("=== intl ===\n");
+intl.load("en", {"hi": "Hello, {name}!"});
+intl.load("de", {"hi": "Hallo, {name}!"});
+intl.setLocale("de");
+io.printf("tr=%s\n", intl.tr("hi", {"name": "Welt"}));
+
 # --- testing (name-based dispatch, per-process accumulator) ---
 #
 # testing.run invokes a zero-arg method by name, catches user throws
