@@ -1639,9 +1639,11 @@ presentation. Follow-ons: pluralization, `loadFile`, catalog reset / replace
 ### M20.5 - `term`
 
 **Done.** A `term` system library exposing the terminal host capabilities a TUI
-needs and pure `.j` cannot reach: **raw mode** (`term.makeRaw(stream)` ->
-`term.State` / `term.restore(state)` - unbuffered, no-echo input; a single-use
-handle so a stale restore can't clobber a live terminal), **terminal size**
+needs and pure `.j` cannot reach: **raw mode** (`term.makeRaw("stdin")` ->
+`term.State` / `term.restore(state)` - unbuffered, no-echo input; raw mode is
+stdin-only, and the handle is single-use so a stale restore can't clobber a live
+terminal, its backing registry capped so an unbalanced `makeRaw` without a
+matching `restore` errors rather than leaking unbounded), **terminal size**
 (`term.size(stream)` -> `term.Size{rows, cols}`), and **raw single-byte reads**
 (`term.readByte()` -> int, `0`-`255` or `-1` at EOF - bytes, not decoded keys;
 escape-sequence decoding is the TUI layer's job). Over `golang.org/x/term` (the
@@ -1659,106 +1661,52 @@ interactive demo needing a real TTY, so it is not a golden test.
 
 ### M20.6 - signals (diagnostics + `os` polling API)
 
-Unix-signal support, in two independent pieces that share one small hook. The
-guiding constraint: a traditional async handler running arbitrary `.j` at an
-arbitrary instruction boundary would shatter the single-threaded, value-semantics,
-no-data-races-by-construction model - so nothing runs `.j` from a signal context.
-A signal only sets an atomic flag; the program (or the interpreter) acts on it at
-a **safe point**. Cooperative, never preemptive.
+**Done.** Unix-signal support in cooperative pieces (a delivered signal only sets
+an atomic flag; nothing runs `.j` in a signal context, so the single-threaded /
+value-semantics model holds):
 
-- **`SIGUSR1` -> live interpreter diagnostics (dump-and-continue).** `kill -USR1
-  <pid>` prints, to **stderr**, a Jennifer-level snapshot - current
-  `file:line:col`, the method call stack, loop depth, and active `spawn` / `task`
-  count - and keeps running (unlike Go's dump-and-die `SIGQUIT`). This is the
-  answer to "it's stuck in a loop, *where*?". Printing the position from the
-  signal goroutine while the tree-walker mutates it would be a data race, so the
-  interpreter must **publish its position atomically at a per-statement
-  checkpoint** and the handler reads that snapshot. That checkpoint is the same
-  hook cooperative loop-cancellation will need, so this milestone establishes it.
-- **Script-facing signals -> an opt-in polling API on `os`.**
-  `os.catchSignal(name)` starts trapping a signal; `os.gotSignal(name) -> bool`
-  polls-and-clears the flag (or `os.getSignal() -> string` returns the last name,
-  `""` if none). Names are strings (`"usr1"`, `"usr2"`, `"int"`, `"term"`,
-  `"hup"`) - letters-only-clean and the natural spelling. The flagship case is a
-  user-defined `SIGUSR2` ("reload config", "rotate", "toggle verbose"), but the
-  high-value one is **graceful shutdown**: an `httpd` / `web` server or a `term`
-  TUI catching `SIGTERM` / `SIGINT` to close connections, `term.restore`, and
-  remove temp files before exiting.
-  ```jennifer
-  os.catchSignal("term");
-  while ($running) {
-      serveOneRequest();
-      if (os.gotSignal("term")) { $running = false; }   # poll at a safe point
-  }
-  shutdownCleanly();
-  ```
+- **`SIGUSR1` -> live interpreter diagnostics.** `kill -USR1 <pid>` makes the
+  interpreter print a one-shot snapshot to stderr - a fixed labeled block:
+  timestamp, current `.j` `file:line:col`, spawned / live task counts, goroutine
+  count, and heap / sys memory + GC count - and keep running (dump-and-continue,
+  unlike Go's dump-and-die `SIGQUIT`). A method-name call stack and loop depth
+  are a planned addition (they need call-frame tracking). The handler only sets
+  `Interpreter.diagReq` (atomic); the snapshot prints on the interpreter
+  goroutine at its next loop-iteration / method-call checkpoint
+  (`if i.diagReq.Load()` - a plain memory load, free on the hot path), so it is
+  race-free. This answers "stuck in a loop, *where*?". Wired by the CLI
+  (`cmd/jennifer/diag_unix.go`, built on `unix` so both binaries get it), so
+  `os.catchSignal("usr1")` is reserved (a positioned error pointing at `usr2`).
+  The block is labeled (time, position, spawned / live tasks, goroutines,
+  heap / sys memory + GCs). A richer snapshot (method-name call stack, loop
+  depth) is a later refinement.
+- **Script-facing signals -> `os.catchSignal(name)` / `os.gotSignal(name)`.** Opt
+  into trapping (`"int"` / `"term"` / `"hup"` / `"usr2"`), then poll-and-clear
+  whether it arrived. The flagship is graceful shutdown - a server / TUI catching
+  `SIGTERM` to close connections, `term.restore`, and clean up before exiting.
+  Trapping is **opt-in per signal**, so `SIGINT` / `SIGTERM` keep their default
+  terminate disposition until the program catches them (a normal script is still
+  stopped by Ctrl-C). Process-global state (signals are a process property),
+  build-tag split (`signal_unix.go` real on `unix` / `signal_other.go` stub on
+  `!unix`) so Windows errors cleanly rather than fail to compile the Unix-only
+  `SIGUSR1` / `SIGUSR2` / `SIGHUP`. TinyGo has full `os/signal`, so both binaries
+  handle signals on a Unix host - `jennifer-tiny`'s cooperative scheduler only
+  defers *observation* to a yield point (a pure CPU-bound loop may not see a
+  signal until it blocks / sleeps; the OS-level trap still suppresses the default
+  terminate). The default `jennifer` (preemptive) has no such latency.
+- **Terminal restore on abort.** `term.RestoreAll()` (over the M20.5 registry)
+  plus `defer termlib.RestoreAll()` in the CLI run path put the terminal back if a
+  `.j` script raw-modes stdin and then aborts (an uncaught error, `exit`, a panic
+  unwind) - Jennifer has no `finally`, but the CLI has Go's defer. Fixes a real
+  M20.5 gap where a raw-moded script that errored left the shell wedged.
 
-**Trapping is opt-in per signal, so defaults survive.** `SIGUSR1` / `SIGUSR2`
-must be trapped (their default action is to kill the process), but
-`SIGINT` / `SIGTERM` keep their default **terminate** disposition until the
-program calls `os.catchSignal` - otherwise a normal script would silently stop
-responding to Ctrl-C (today an interactive foreground `jennifer run` is killed by
-Ctrl-C; a backgrounded one inherits `SIG_IGN` per job-control convention, which
-Go preserves). Polling latency is real and explicit: a tight loop that never
-polls will not see the signal.
-
-**The host interrupt sits above the script API - a caught signal never traps the
-user in a loop.** Two rules keep an escape:
-
-- **A double `SIGINT` force-aborts.** Once a program has opted into catching
-  `SIGINT`, the *first* Ctrl-C is the script's (sets the poll flag); a *second*
-  Ctrl-C bypasses the trap and forces the host to abort. So a script that catches
-  `SIGINT` and then never polls is still stoppable with Ctrl-C Ctrl-C, not only a
-  `kill -9` from another terminal (the humane pattern many CLIs use).
-- **The REPL reserves `SIGINT` for itself.** `os.catchSignal("int")` is a no-op
-  in REPL context (like `term.makeRaw` / `readByte`, which are refused there - the
-  REPL owns the terminal), so Ctrl-C in the REPL always unwinds the current
-  evaluation back to the prompt rather than being swallowed by a script's trap.
-  That unwind is the interpreter-level interrupt (the checkpoint below), distinct
-  from and above the script's cooperative polling.
-
-**Terminal restoration on abort.** Raw mode is terminal-*driver* state that
-outlives the process, so a script that calls `term.makeRaw` and then aborts - an
-uncaught error, `exit`, or the double-Ctrl-C above - would leave the shell wedged
-(no echo, no line editing), unlike a leaked file which the OS reclaims. Jennifer
-has no `finally`, but the CLI does not need one: `term`'s raw-mode registry (from
-[M20.5](#m205---term)) already tracks every un-restored session, so the CLI
-restores them at process teardown. A Go `defer termlib.RestoreAll()` around the
-interpreter run covers normal exit, an uncaught error / throw, `exit`, a panic
-unwind, and any unwind-based abort - which is *why* the double-Ctrl-C abort
-unwinds to the CLI rather than a hard `os.Exit` (that would skip the defer); a
-handler for the terminating signals (`SIGINT` / `SIGTERM` / `SIGHUP` / `SIGQUIT`)
-restores before the process dies, since their default action skips deferred
-cleanup. `SIGKILL` is the one unrecoverable case (uncatchable by definition, as
-for any raw-mode program in any language); a wedged terminal is still recoverable
-by the user with `reset` / `stty sane`. This teardown-restore is a small
-extension of the M20.5 registry (an exported `RestoreAll`), fixes a real current
-gap - today a `jennifer run` script that raw-modes stdin and errors leaves the
-terminal raw - and is delivered here because the double-Ctrl-C abort makes it
-load-bearing. (Non-terminal host state - temp files from `fs.makeTempFile`, open
-`fs` / `net` handles - is either OS-reclaimed on exit or a mere leak, not a
-wedge; a general `finally` / defer language feature is the eventual answer there
-and is tracked separately.)
-
-**Platform.** `SIGUSR1` / `SIGUSR2` / `SIGHUP` are Unix-only (the name -> signal
-mapping is build-tag split like `net` / `term`, so they only compile on Unix);
-`os.catchSignal` on an unsupported signal or platform is a positioned error, not
-a crash. **Aborting a script on Windows is unaffected**: Ctrl-C arrives as
-`CTRL_C_EVENT`, which Go's runtime maps to the interrupt and terminates on by
-default (and the double-Ctrl-C escape rides the same path) - that route does not
-go through this library. Only the `SIGUSR1` live-dump and the Unix-specific
-`os.catchSignal` names are Linux-only, an accepted limitation on the best-effort
-Windows target.
-
-This milestone precedes - and forces the safe-checkpoint hook for - the larger
-**cooperative loop-cancellation** work: the interpreter checking a host cancel
-flag at each loop iteration / statement boundary so a runaway loop is
-interruptible and the REPL's Ctrl-C actually unwinds (today, and under this
-milestone alone, a REPL loop is still kill-from-outside because raw mode delivers
-Ctrl-C as a byte and there is no checkpoint - not a regression, just not yet
-fixed). That follow-on is where the double-Ctrl-C and REPL-reserved-`SIGINT`
-rules above become live. `os.kill` (today `SIGTERM`-only to an `os.spawn` child)
-may also grow a signal-name argument here.
+Deferred to the **cooperative loop-cancellation** follow-on, for which this
+milestone establishes the checkpoint hook: an interruptible runaway loop, a REPL
+Ctrl-C that unwinds to the prompt, the double-Ctrl-C force-abort, the
+REPL-reserved-`SIGINT` rule, and a terminating-signal handler that restores the
+terminal on a bare `SIGTERM` / untrapped `SIGINT` (whose default action skips the
+`defer`). `os.kill` gaining a signal-name argument is also open; `SIGKILL` stays
+unrecoverable (uncatchable, as for any program).
 
 ### M20.7 - device I/O (`serial` / `spi` / `iic` / `gpio`)
 

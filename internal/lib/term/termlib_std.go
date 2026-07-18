@@ -28,11 +28,38 @@ type rawEntry struct {
 	prev *term.State
 }
 
+// maxRawStates bounds the live raw-mode registry. Real use holds one entry (a
+// terminal is put in raw mode once, maybe a few nested sessions); a program
+// that calls makeRaw in a loop without a matching restore would otherwise grow
+// the map without bound. Far above any legitimate count, so it only trips on a
+// leak, and turns that into a catchable error.
+const maxRawStates = 256
+
 var (
 	statesMu sync.Mutex
 	states   = map[int]*rawEntry{}
 	nextID   int
 )
+
+// RestoreAll restores every terminal still in raw mode (an un-restored makeRaw)
+// and empties the registry. The CLI calls it at process teardown - a normal
+// exit, an uncaught error, `exit`, or a panic unwind - so a `.j` script that
+// enters raw mode and aborts before term.restore does not leave the shell wedged
+// (no echo, no line editing). Raw mode is terminal-device state that outlives the
+// process, so this cleanup matters more than a leaked file the OS reclaims.
+// Jennifer has no `finally`; the CLI's Go `defer` is where this runs.
+func RestoreAll() {
+	statesMu.Lock()
+	defer statesMu.Unlock()
+	for id, e := range states {
+		// Guard nil defensively: this is a last-resort teardown handler and must
+		// never panic (a real entry always has a saved state).
+		if e != nil && e.prev != nil {
+			_ = term.Restore(e.fd, e.prev)
+		}
+		delete(states, id)
+	}
+}
 
 // ResetForTest clears the raw-mode registry between tests.
 func ResetForTest() {
@@ -78,16 +105,27 @@ func makeRawFn(ctx interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if err != nil {
 		return interpreter.Null(), err
 	}
+	// Raw mode governs input processing (echo, line buffering), so it is a
+	// stdin concept. Refuse stdout / stderr rather than silently reconfiguring
+	// the shared terminal device through the wrong fd.
+	if args[0].Str != "stdin" {
+		return interpreter.Null(), fmt.Errorf("term.makeRaw: raw mode applies to input; use \"stdin\" (got %q)", args[0].Str)
+	}
 	fd := int(f.Fd())
+	// Hold the lock across MakeRaw so the cap check and the insert are atomic and
+	// the terminal is never put in raw mode when the registry is already full.
+	statesMu.Lock()
+	defer statesMu.Unlock()
+	if len(states) >= maxRawStates {
+		return interpreter.Null(), fmt.Errorf("term.makeRaw: too many active raw-mode states (limit %d); each makeRaw needs a matching term.restore", maxRawStates)
+	}
 	prev, rerr := term.MakeRaw(fd)
 	if rerr != nil {
 		return interpreter.Null(), fmt.Errorf("term.makeRaw: %s is not a terminal or cannot enter raw mode: %v", args[0].Str, rerr)
 	}
-	statesMu.Lock()
 	id := nextID
 	nextID++
 	states[id] = &rawEntry{fd: fd, prev: prev}
-	statesMu.Unlock()
 	return interpreter.NamespacedStructVal(LibraryName, "State", []interpreter.StructField{
 		{Name: "id", Value: interpreter.IntVal(int64(id))},
 	}), nil
@@ -149,11 +187,15 @@ func readByteFn(ctx interpreter.BuiltinCtx, args []Value) (Value, error) {
 		return interpreter.IntVal(-1), nil
 	}
 	var buf [1]byte
-	n, err := ctx.In.Read(buf[:])
-	if n > 0 {
+	// io.ReadFull retries a (0, nil) read - which io.Reader permits and which
+	// does NOT mean end-of-input - instead of the bare Read that mistook it for
+	// EOF; it reports io.EOF only at a genuine end. For a 1-byte buffer it still
+	// returns the instant one byte is available (raw-mode immediacy is kept).
+	n, err := io.ReadFull(ctx.In, buf[:])
+	if n == 1 {
 		return interpreter.IntVal(int64(buf[0])), nil
 	}
-	if err == nil || err == io.EOF {
+	if err == io.EOF {
 		return interpreter.IntVal(-1), nil
 	}
 	return interpreter.Null(), fmt.Errorf("term.readByte: %v", err)

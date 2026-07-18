@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -138,7 +139,15 @@ type Interpreter struct {
 	// coordinate via their own `done` channels).
 	tasksMu       sync.Mutex
 	tasks         []*TaskState
-	taskCompactAt int // registry length that triggers pruning observed tasks
+	taskCompactAt int   // registry length that triggers pruning observed tasks
+	spawnTotal    int64 // monotonic count of every task spawned this run (registry prunes, so len(tasks) is not a total); for diagnostics
+
+	// diagReq is set by RequestDiagnostics (wired to SIGUSR1 by the CLI) and
+	// checked at loop-iteration / method-call checkpoints. A signal goroutine
+	// only stores the flag; the snapshot is printed on the interpreter goroutine,
+	// so it reads interpreter state race-free. The per-checkpoint Load is a plain
+	// memory load (free on the hot path); the flag is false unless SIGUSR1 fired.
+	diagReq atomic.Bool
 
 	// Profiling (optional dev feature; nil = off, the only cost on the hot
 	// path being a nil check). Set via SetProfiler; the concrete collector
@@ -2170,6 +2179,9 @@ func (i *Interpreter) execForEach(st *parser.ForEachStmt, env *Environment) (blo
 	}
 
 	emit := func(iter Value) (blockResult, error) {
+		if i.diagReq.Load() {
+			i.dumpDiagnostics(st)
+		}
 		// Each iteration opens its own scope so the binding is fresh. The
 		// iterator and the body's defs share this one frame (matching the
 		// resolver, which numbers the iterator slot 0 and body defs after
@@ -2257,6 +2269,9 @@ func (i *Interpreter) execIf(st *parser.IfStmt, env *Environment) (blockResult, 
 
 func (i *Interpreter) execWhile(st *parser.WhileStmt, env *Environment) (blockResult, error) {
 	for {
+		if i.diagReq.Load() {
+			i.dumpDiagnostics(st)
+		}
 		cond, err := i.evalBool(st.Cond, env, "`while` condition")
 		if err != nil {
 			return blockResult{}, err
@@ -2293,6 +2308,9 @@ func (i *Interpreter) execFor(st *parser.ForStmt, env *Environment) (blockResult
 		}
 	}
 	for {
+		if i.diagReq.Load() {
+			i.dumpDiagnostics(st)
+		}
 		if st.Cond != nil {
 			cond, err := i.evalBool(st.Cond, forEnv, "`for` condition")
 			if err != nil {
@@ -2329,6 +2347,9 @@ func (i *Interpreter) execFor(st *parser.ForStmt, env *Environment) (blockResult
 // !cond`). Same break/continue handling as the other loops.
 func (i *Interpreter) execRepeat(st *parser.RepeatStmt, env *Environment) (blockResult, error) {
 	for {
+		if i.diagReq.Load() {
+			i.dumpDiagnostics(st)
+		}
 		res, err := i.execBlock(st.Body, env)
 		if err != nil {
 			return blockResult{}, err
@@ -3301,7 +3322,69 @@ func (i *Interpreter) registerTask(state *TaskState) {
 		i.taskCompactAt = 2*len(i.tasks) + 16
 	}
 	i.tasks = append(i.tasks, state)
+	i.spawnTotal++
 	i.tasksMu.Unlock()
+}
+
+// RequestDiagnostics asks the interpreter to print a one-shot diagnostic
+// snapshot - the current source position and the spawned-task count - to Err at
+// its next loop-iteration or method-call checkpoint, then keep running. It is
+// safe to call from a signal-handler goroutine: it only stores an atomic flag;
+// the snapshot itself runs on the interpreter goroutine. The CLI wires this to
+// SIGUSR1 (`kill -USR1 <pid>`), so a program stuck in a loop can be asked
+// "where?" without stopping it. If the interpreter is idle (not inside a loop or
+// call), the snapshot appears at the next checkpoint reached.
+func (i *Interpreter) RequestDiagnostics() { i.diagReq.Store(true) }
+
+// dumpDiagnostics prints the snapshot and clears the request. Called from a
+// checkpoint (on the interpreter goroutine) only when diagReq is set, so it reads
+// interpreter state without a data race. The format is a fixed, documented block
+// (see docs/libraries/os.md) - labeled lines between an `=== ... ===` header and
+// a matching rule, on stderr, so it is human-readable and greppable:
+//
+//	=== jennifer diagnostics (SIGUSR1) ===
+//	time:       2026-01-02T15:04:05Z07:00
+//	executing:  path/to/file.j:42:5
+//	tasks:      3 spawned, 2 live
+//	goroutines: 6
+//	memory:     heap 12.4 MiB (sys 68.0 MiB), 14 GCs
+//	======================================
+func (i *Interpreter) dumpDiagnostics(node positioned) {
+	i.diagReq.Store(false)
+	w := i.Err
+	if w == nil {
+		w = os.Stderr
+	}
+	file, line, col := posOf(node)
+
+	i.tasksMu.Lock()
+	spawned := i.spawnTotal
+	live := 0
+	for _, t := range i.tasks {
+		if t != nil && !t.IsDone() {
+			live++
+		}
+	}
+	i.tasksMu.Unlock()
+
+	// The runtime read (ReadMemStats stops the world briefly) is behind a
+	// build-tag helper: fine for a rare, user-triggered dump, and TinyGo's
+	// runtime.MemStats omits NumGC (the dump never runs there anyway).
+	goroutines, heap, sys, numGC := runtimeSnapshot()
+
+	const header = "=== jennifer diagnostics (SIGUSR1) ==="
+	fmt.Fprintf(w, "\n%s\n", header)
+	fmt.Fprintf(w, "time:       %s\n", time.Now().Format(time.RFC3339))
+	fmt.Fprintf(w, "executing:  %s:%d:%d\n", file, line, col)
+	fmt.Fprintf(w, "tasks:      %d spawned, %d live\n", spawned, live)
+	fmt.Fprintf(w, "goroutines: %d\n", goroutines)
+	fmt.Fprintf(w, "memory:     heap %s (sys %s), %d GCs\n", mib(heap), mib(sys), numGC)
+	fmt.Fprintln(w, strings.Repeat("=", len(header)))
+}
+
+// mib renders a byte count as a one-decimal MiB string for the diagnostics dump.
+func mib(b uint64) string {
+	return fmt.Sprintf("%.1f MiB", float64(b)/(1024*1024))
 }
 
 // hasLiveTasks reports whether any spawned task is still running.

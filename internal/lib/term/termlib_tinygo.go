@@ -19,6 +19,11 @@ import (
 // ResetForTest is a no-op under TinyGo since no state exists.
 func ResetForTest() {}
 
+// RestoreAll is a no-op under TinyGo: the `term` library is stubbed there, so no
+// raw-mode registry exists to restore. Defined so the CLI's teardown call
+// compiles for both binaries.
+func RestoreAll() {}
+
 // unavailable is the shared error every stub returns.
 func unavailable(fnName string) (Value, error) {
 	return interpreter.Null(), fmt.Errorf("%s: `jennifer-tiny` (TinyGo build) has no terminal control; use the default `jennifer` binary", fnName)

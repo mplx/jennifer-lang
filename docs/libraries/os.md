@@ -41,6 +41,82 @@ function - see
 | `os.cwd()`         | string       | Absolute path of the current working directory. Errors only if it can't be determined. |
 | `os.homeDir()`     | string       | The current user's home directory (`$HOME` on Unix, `%USERPROFILE%` on Windows). Errors if unresolved. |
 | `os.tempDir()`     | string       | Directory for temporary files (`$TMPDIR` or `/tmp` on Unix; the `%TMP%`/`%TEMP%` location on Windows). Never errors; the directory is not created. |
+| `os.catchSignal(name)` | null     | Start trapping a Unix signal so the program can react to it (see "Signals"). |
+| `os.gotSignal(name)` | bool      | Whether `name` has arrived since the last poll, clearing the flag. |
+
+### Signals
+
+`os.catchSignal(name)` opts into trapping a signal, and `os.gotSignal(name)` polls
+whether it has arrived (clearing the flag). The model is **cooperative, never
+preemptive**: a delivered signal only sets a flag; your program reacts at a point
+of its own choosing, so no Jennifer code runs in a signal context and the
+value-semantics guarantees hold. `name` is one of `"int"`, `"term"`, `"hup"`,
+`"usr2"` (letters-only, lowercased, no `SIG` prefix). The main use is a
+**graceful shutdown**:
+
+```jennifer
+use os;
+
+os.catchSignal("term");                  # opt in (also "int" / "hup" / "usr2")
+def running as bool init true;
+while ($running) {
+    serveOneRequest();
+    if (os.gotSignal("term")) { $running = false; }   # poll at a safe point
+}
+shutdownCleanly();                       # close connections, remove temp files, ...
+```
+
+**Trapping is opt-in per signal**, so defaults survive: until you call
+`os.catchSignal("int")`, Ctrl-C still terminates the program as usual (a script
+that never traps SIGINT is stopped by Ctrl-C; one that traps it must poll). A
+signal never caught is never pending, so a stray `os.gotSignal` is harmless. Note
+the trade-off: a program that catches a signal and then never polls will not see
+it (polling latency is real and explicit).
+
+**`"usr1"` is reserved** for interpreter diagnostics and cannot be caught:
+`kill -USR1 <pid>` makes the interpreter print a one-shot snapshot to stderr and
+keep running - the answer to "my program is stuck in a loop, *where*?". Use
+`"usr2"` for a program-defined signal. The snapshot is a fixed, labeled block
+(delivered at the next loop / method-call boundary):
+
+```
+=== jennifer diagnostics (SIGUSR1) ===
+time:       2026-01-02T15:04:05+01:00
+executing:  path/to/program.j:42:5
+tasks:      3 spawned, 2 live
+goroutines: 6
+memory:     heap 12.4 MiB (sys 68.0 MiB), 14 GCs
+=======================================
+```
+
+- **time** - when the snapshot was taken (RFC 3339), to line it up with logs.
+- **executing** - the `.j` source position at the current loop / call checkpoint.
+- **tasks** - `spawn`ed tasks this run: total spawned and how many are still live.
+- **goroutines** - the process goroutine count (tracks the spawn workers plus the
+  interpreter).
+- **memory** - runtime heap in use, memory obtained from the OS, and GC count -
+  the "is it growing while stuck?" read.
+
+A method-name **call stack** and loop depth are a planned addition (they need
+call-frame tracking in the interpreter). The dump rides the Unix `SIGUSR1`
+wiring, so it is Unix-only - but it works on **both** binaries there, `jennifer`
+and `jennifer-tiny` (subject to the scheduler note below); `kill -USR1` never
+terminates either binary.
+
+Signals are **Unix-only**, and work on both binaries on a Unix host (`SIGUSR1` /
+`SIGUSR2` / `SIGHUP` do not exist on Windows, where `os.catchSignal` is a
+positioned error rather than a crash). Aborting a script is unaffected: Ctrl-C on
+Windows terminates through the OS, not through this library.
+
+**`jennifer-tiny` scheduler note.** The TinyGo binary runs a **cooperative**
+single-thread scheduler (`-scheduler=tasks`), so a delivered signal - both an
+`os.gotSignal` flag and the `SIGUSR1` dump - is observed only when the program
+reaches a scheduler yield point (a `time.sleep`, blocking I/O, a `spawn`
+handoff). The trap itself is installed at the OS level, so a signal never
+terminates the program; but a **pure CPU-bound loop** with no yield can defer the
+observation indefinitely. Programs that block or sleep (servers, poll loops with
+`time.sleep`) see signals normally. The default `jennifer` binary uses a
+preemptive scheduler and has no such latency.
 
 ### Terminal detection
 

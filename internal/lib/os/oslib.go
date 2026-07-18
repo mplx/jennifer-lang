@@ -65,6 +65,8 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "cwd", cwdFn)
 	in.RegisterNamespaced(LibraryName, "homeDir", homeDirFn)
 	in.RegisterNamespaced(LibraryName, "tempDir", tempDirFn)
+	in.RegisterNamespaced(LibraryName, "catchSignal", catchSignalFn)
+	in.RegisterNamespaced(LibraryName, "gotSignal", gotSignalFn)
 
 	in.RegisterNamespacedConst(LibraryName, "PLATFORM", interpreter.StringVal(runtime.GOOS))
 	in.RegisterNamespacedConst(LibraryName, "ARCH", interpreter.StringVal(runtime.GOARCH))

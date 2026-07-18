@@ -257,7 +257,10 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   slice shuffle range`. Non-mutating (they return new lists).
 - **`maps`** - `keys values has delete merge`. `has` before a missing-key read.
 - **`os`** - `getEnv`, `hasFlag`/`flag`, `isTerminal`, `run`/`spawn`;
-  constants `PLATFORM ARCH EOL DIRSEP PATHSEP ARGS`.
+  `catchSignal(name)`/`gotSignal(name)` to trap and poll a Unix signal
+  (`"int"`/`"term"`/`"hup"`/`"usr2"`; cooperative, opt-in, for graceful shutdown;
+  `"usr1"` reserved for `kill -USR1` interpreter diagnostics). Constants
+  `PLATFORM ARCH EOL DIRSEP PATHSEP ARGS`.
 - **`json`** - `encode`/`encodePretty`/`decode`. `decode` returns an opaque
   `json.Value` walked by JSON Pointer accessors (`get`/`asInt`/`asString`/
   `typeOf`/`has`/`keys`/`length`/...) and edited by non-mutating writers

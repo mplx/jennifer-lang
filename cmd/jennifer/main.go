@@ -14,6 +14,7 @@ import (
 	"jennifer-lang.dev/jennifer/internal/lexer"
 	metalib "jennifer-lang.dev/jennifer/internal/lib/meta"
 	"jennifer-lang.dev/jennifer/internal/lib/os"
+	termlib "jennifer-lang.dev/jennifer/internal/lib/term"
 	"jennifer-lang.dev/jennifer/internal/module"
 	"jennifer-lang.dev/jennifer/internal/parser"
 	"jennifer-lang.dev/jennifer/internal/preproc"
@@ -337,6 +338,13 @@ func runFileHook(path string, searchDirs []string, vendorFlag string, afterParse
 	if afterParse != nil {
 		afterParse()
 	}
+	// A `.j` script can put the terminal in raw mode via `term.makeRaw`. If it
+	// aborts before `term.restore` - an uncaught error, `exit`, or a panic - the
+	// shell would be left wedged (no echo, no line editing). Jennifer has no
+	// `finally`, but the CLI has Go's defer: restore any raw-mode terminal on the
+	// way out. (SIGKILL and a bare terminating signal are not covered here; a
+	// terminating-signal handler is part of the cooperative-cancellation work.)
+	defer termlib.RestoreAll()
 	in := interpreter.New()
 	installLibraries(in)
 	// Enable `import "..."` module resolution: local imports resolve
@@ -347,6 +355,10 @@ func runFileHook(path string, searchDirs []string, vendorFlag string, afterParse
 	// `@scope/package` deck imports resolve under the vendor root: --vendor, else
 	// JENNIFER_VENDOR, else the nearest `vendor/` above this file.
 	in.SetVendorRoot(module.FindVendorRoot(vendorFlag, baseDir))
+	// SIGUSR1 -> a live diagnostics snapshot from the interpreter (where is it
+	// executing?), printed and then execution continues. No-op on non-Unix.
+	stopDiag := installDiagSignal(in)
+	defer stopDiag()
 	runErr := in.Run(prog)
 
 	// The exit-time loud-fail. Even when Run returned cleanly,

@@ -170,6 +170,7 @@ flat lookup view, not authoritative.
 | [`os`](os.md)`.cwd()`                                 | Absolute path of the current working directory.                                                                                     |
 | [`os`](os.md)`.homeDir()`                             | Current user's home directory (`$HOME` / `%USERPROFILE%`).                                                                          |
 | [`os`](os.md)`.tempDir()`                             | Temp-file directory (`$TMPDIR`/`/tmp`; `%TMP%` on Windows). Never errors.                                                          |
+| [`os`](os.md)`.catchSignal(name)` / `.gotSignal(name)` | Opt into trapping a Unix signal (`"int"`/`"term"`/`"hup"`/`"usr2"`) / poll-and-clear whether it arrived. Cooperative; `"usr1"` reserved for `kill -USR1` diagnostics. |
 | [`os`](os.md)`.kill(p)`                               | Send SIGTERM to spawned process `$p`.                                                                                               |
 | [`os`](os.md)`.poll(p)`                               | True if spawned process `$p` has exited (a following `os.wait` returns immediately).                                                |
 | [`os`](os.md)`.release(p)`                            | Drop a finished process handle from the registry (frees captured output); errors if `$p` still runs.                                |

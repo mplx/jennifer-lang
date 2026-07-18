@@ -6,6 +6,7 @@
 package termlib
 
 import (
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -147,5 +148,89 @@ func TestSize(t *testing.T) {
 	}
 	if !haveRows || !haveCols {
 		t.Errorf("term.Size missing rows/cols: %v", v.Fields)
+	}
+}
+
+// makeRaw is a stdin concept; stdout / stderr (valid streams for size) are
+// refused so the terminal is not reconfigured through the wrong fd.
+func TestMakeRawStdinOnly(t *testing.T) {
+	for _, s := range []string{"stdout", "stderr"} {
+		_, err := makeRawFn(interpreter.BuiltinCtx{}, []Value{interpreter.StringVal(s)})
+		if err == nil || !strings.Contains(err.Error(), "stdin") {
+			t.Errorf("makeRaw(%q) should be refused with a stdin hint, got %v", s, err)
+		}
+	}
+}
+
+// A leaked registry (makeRaw without restore) is bounded: past the cap makeRaw
+// returns a catchable error rather than growing the map without limit. The cap
+// is checked before term.MakeRaw, so this holds without a real terminal.
+func TestMakeRawRegistryCap(t *testing.T) {
+	ResetForTest()
+	defer ResetForTest()
+	statesMu.Lock()
+	for i := 0; i < maxRawStates; i++ {
+		states[i] = &rawEntry{}
+	}
+	statesMu.Unlock()
+	_, err := makeRawFn(interpreter.BuiltinCtx{}, []Value{interpreter.StringVal("stdin")})
+	if err == nil || !strings.Contains(err.Error(), "too many active raw-mode states") {
+		t.Errorf("makeRaw past the cap should error, got %v", err)
+	}
+}
+
+// RestoreAll (the CLI teardown net) empties the registry and never panics, even
+// on an already-empty registry. It restores real raw-mode sessions in the CLI's
+// deferred cleanup; here we assert the bookkeeping (a real term.Restore needs a
+// TTY, exercised end-to-end elsewhere).
+func TestRestoreAllClears(t *testing.T) {
+	ResetForTest()
+	RestoreAll() // empty registry: must not panic
+	statesMu.Lock()
+	states[1] = &rawEntry{} // a placeholder entry (nil prev -> skipped, not restored)
+	states[2] = &rawEntry{}
+	statesMu.Unlock()
+	RestoreAll()
+	statesMu.Lock()
+	n := len(states)
+	statesMu.Unlock()
+	if n != 0 {
+		t.Errorf("RestoreAll left %d entries, want 0", n)
+	}
+}
+
+// A reader may legally return (0, nil) - which is NOT end-of-input; readByte
+// must retry it and deliver the next byte, and report -1 only at a real EOF.
+type stutterReader struct{ steps []string }
+
+func (r *stutterReader) Read(p []byte) (int, error) {
+	if len(r.steps) == 0 {
+		return 0, io.EOF
+	}
+	s := r.steps[0]
+	r.steps = r.steps[1:]
+	if s == "" { // a (0, nil) "nothing happened" read
+		return 0, nil
+	}
+	p[0] = s[0]
+	return 1, nil
+}
+
+func TestReadByteRetriesEmptyRead(t *testing.T) {
+	ctx := interpreter.BuiltinCtx{In: &stutterReader{steps: []string{"", "", "A"}}}
+	v, err := readByteFn(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Int != int64('A') {
+		t.Errorf("readByte after empty reads = %d, want %d ('A')", v.Int, 'A')
+	}
+	// After the steps are exhausted, a real EOF yields -1.
+	v, err = readByteFn(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Int != -1 {
+		t.Errorf("readByte at EOF = %d, want -1", v.Int)
 	}
 }
