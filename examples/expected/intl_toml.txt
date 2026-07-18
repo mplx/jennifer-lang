@@ -1,0 +1,5 @@
+locale: de
+Hallo, Welt!
+Auf Wiedersehen
+You have 3 items in your cart
+cleanup: exists = false

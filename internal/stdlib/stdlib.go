@@ -22,6 +22,7 @@ import (
 	"jennifer-lang.dev/jennifer/internal/lib/fs"
 	"jennifer-lang.dev/jennifer/internal/lib/hash"
 	"jennifer-lang.dev/jennifer/internal/lib/httpd"
+	intllib "jennifer-lang.dev/jennifer/internal/lib/intl"
 	"jennifer-lang.dev/jennifer/internal/lib/io"
 	"jennifer-lang.dev/jennifer/internal/lib/json"
 	"jennifer-lang.dev/jennifer/internal/lib/lists"
@@ -64,6 +65,7 @@ func InstallAll(in *interpreter.Interpreter) {
 	tomllib.Install(in)
 	xmllib.Install(in)
 	yamllib.Install(in)
+	intllib.Install(in)
 	tasklib.Install(in)
 	fslib.Install(in)
 	netlib.Install(in)

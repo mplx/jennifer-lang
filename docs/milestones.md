@@ -1611,31 +1611,43 @@ levels *before* the parse, and a five-million-node budget caps an alias bomb -
 both catchable errors, not a stack or memory kill. Deferred: multi-document
 encode (`encodeAll`) and per-node style control.
 
-### M20.4 - `i18n`
+### M20.4 - `intl`
 
-Message catalogs and locale-aware translation. A **system library**, not a
-`.j` module, for two independent reasons: it needs **global mutable state**
-(the current locale plus loaded catalogs), which a declarations-only module
-cannot hold; and it needs **performance** - Jennifer's `map` is a linear-scan
-`[]MapEntry`, so a large catalog looked up per call would be O(n), whereas the
-library holds catalogs in a Go `map[string]string` (O(1)). The
-`map of string to string` a caller passes is fine as the *load* interface (a
-one-time ingest); the per-lookup scan is what the library avoids.
+**Done.** Message catalogs and locale-aware translation. Named **`intl`**
+(letters only, matching JavaScript's `Intl`), not `i18n`: a Jennifer library
+namespace cannot contain a digit - the same letters-only rule that forced `iic`
+(not `i2c`) and `pbkdf` (not `pbkdf2`). A **system library**, not a `.j` module,
+for two independent reasons: it needs **global mutable state** (the current
+locale plus loaded catalogs), which a declarations-only module cannot hold; and
+it needs **performance** - Jennifer's `map` is a linear-scan `[]MapEntry`, so a
+large catalog looked up per call would be O(n), whereas the library holds
+catalogs in a Go `map[string]string` (O(1)). The state is per-interpreter
+(closed over in `Install`, so nothing leaks between runs) and RWMutex-guarded so
+a `spawn`ed reader cannot race a load or a locale change.
 
-Surface: `i18n.load(lang, catalog)` (a `map of string to string`, built from
-`json` today or `yaml` here at M20.3, or a literal), `i18n.setLocale(lang)` /
-`i18n.locale()`, `i18n.tr(key)` (translate in the current locale; fallback
-locale -> default lang -> the key itself, so a missing key is visible), and
-`i18n.tr(key, params)` for named interpolation (`"Hello, {name}"`).
-Pluralization (CLDR per-language plural rules) and an `i18n.loadFile(path)`
-convenience are follow-ons.
+Surface: `intl.load(lang, catalog)` (a `map of string to string`, a literal or
+built from `json` / `toml` / `yaml`; loading a language again merges, and the
+**first** language loaded becomes the default), `intl.setLocale(lang)` /
+`intl.locale()`, `intl.tr(key)` (translate through the fallback chain: current
+locale -> its base language, region stripped `de-AT` -> `de` -> the default
+(first-loaded) language -> the key itself, so a missing key is visible), and
+`intl.tr(key, params)` for named interpolation (`"Hello, {name}"`; a non-string
+param is rendered to its display form, an unknown placeholder stays literal, and
+`{{` / `}}` escape a literal brace). Interpolation is single-pass (a substituted
+value is never re-scanned, so no recursive-expansion blow-up) and its output is
+**capped at 1 MiB, checked incrementally** so an amplification bomb from an
+untrusted catalog (`"{x}"` repeated a million times) errors *before* the
+oversized string is built rather than driving the process toward OOM.
+Pluralization (CLDR per-language plural rules), an `intl.loadFile(path)`
+convenience, catalog reset / replace (`load` is merge-only today), and
+locale-aware *value* formatting (number / date grouping) are follow-ons.
 
 No gettext-style `_()`: `_` is not a valid Jennifer method name (letters-only;
 `_` is reserved for constant-name separators), and a bare `tr()` builtin does
 not clear the `len` promotion bar (translation is not useful to nearly every
 program). Ambient-global `_()` is also exactly what stances 2 (explicit) and 7
-(namespaced, no globals) rule out - so the call is `i18n.tr("key")` (or
-`use i18n as t; t.tr("key")`). Extending `printf` for translation is rejected
+(namespaced, no globals) rule out - so the call is `intl.tr("key")` (or
+`use intl as t; t.tr("key")`). Extending `printf` for translation is rejected
 (see [technical/rejected.md](technical/rejected.md)): translation is content
 substitution from stateful external data, not presentation of the value in
 hand. Locale-aware *value* formatting (number / date grouping) is a separate,
@@ -1656,12 +1668,14 @@ sit in the [M21.1](#m211---screen--tui-module) `screen` / `tui` module on top.
 Output-only TUIs (dashboards, progress bars) need neither this library nor raw
 mode - just `ansi` + `os.isTerminal`.
 
-### M20.6 - hardware buses (`serial` / `spi` / `iic`)
+### M20.6 - device I/O (`serial` / `spi` / `iic` / `gpio`)
 
-Device-bus I/O libraries for embedded / single-board-computer hosts - the
-syscall-backed siblings of the sysfs-backed `gpio` module
-([M18.11](#m1811---gpio-module)). Each needs `ioctl` / `termios`, which `.j` and
-plain `fs` cannot reach, so they are Go **system libraries**, not modules:
+Device-I/O libraries for embedded / single-board-computer hosts, all reaching
+the Linux `/dev` + `ioctl` interface that `.j` and plain `fs` cannot: `serial` /
+`spi` / `iic` are the three buses, and `gpio` here is the character-device
+(`/dev/gpiochipN`) form of the sysfs-backed `gpio` **module**
+([M18.11](#m1811---gpio-module)). Each needs `ioctl` / `termios`, so they are Go
+**system libraries**, not modules:
 
 - **`serial`** - open a serial port (`/dev/ttyUSB0`, `/dev/ttyAMA0`), configure
   it (baud rate, data bits, parity, stop bits via `termios`), then `read` /
@@ -1673,13 +1687,25 @@ plain `fs` cannot reach, so they are Go **system libraries**, not modules:
   `write` register bytes via the `I2C_SLAVE` `ioctl`. Named **`iic`** (Inter-IC)
   rather than `i2c` because a library namespace is letters-only (no digit, like
   `bucket` not `s3`); candidates `iic` / `twi` / `wire`, settled at build time.
+- **`gpio`** - the `/dev/gpiochipN` character-device interface (the
+  `GPIO_V2_LINE_*` ioctls: request lines with a direction, then read / write /
+  watch), the mainline-supported GPIO API since `/sys/class/gpio` was deprecated
+  and compiled out of some kernels. This is precisely the "swapped for a
+  `/dev/gpiochip` ioctl system library, no change to `.j` scripts" successor the
+  [M18.11](#m1811---gpio-module) module's own docs already name - so it lands
+  here **only when forced** (a target that ships without sysfs GPIO), *not* as a
+  replacement: the sysfs `.j` module stays the default (it costs the language
+  nothing and runs on the hobbyist Pi kernels it targets), and the library
+  reuses the module's pin-keyed shape (`setup` / `read` / `write` / `release`)
+  so scripts move over unchanged. The one open call is whether the two then
+  unify behind a single selectable-backend surface (stance 1) or stay a
+  module / library pair chosen by deployment.
 
 Build-tag split like `net` / `os`: the real implementation on Linux (the
 supported platform), a friendly-error stub elsewhere. Default binary; a
 `jennifer-tiny` rebuilt for a specific board could include them (TinyGo's
 `machine` package is a different, microcontroller-level API - these target the
-Linux `/dev` + `ioctl` interface). Together with `gpio` they complete the SBC
-I/O story.
+Linux `/dev` + `ioctl` interface). Together they complete the SBC I/O story.
 
 ### M20.7 - `sql` (MySQL / MariaDB + PostgreSQL)
 

@@ -1,0 +1,7 @@
+Hello, World!
+locale is de
+Hallo, Welt!
+You have 3 items in your cart
+Servus, Welt!
+Auf Wiedersehen
+checkout.button

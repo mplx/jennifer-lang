@@ -281,6 +281,14 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   (own key wins). `encode` is flow (compact `{a: 1}`); `encodePretty` is block
   (readable). Backed by `gopkg.in/yaml.v3` (the one library with a Go
   dependency; TinyGo-clean).
+- **`intl`** - internationalization: message catalogs + locale-aware
+  translation. `intl.load(lang, catalog)` ingests a `map of string to string`
+  (first language loaded is the default); `intl.setLocale(lang)` /
+  `intl.locale()`; `intl.tr(key)` / `intl.tr(key, params)` translates with
+  `{name}` placeholder interpolation (`{{`/`}}` escape a literal brace) and a
+  fallback chain (current locale -> its base language -> default language -> the
+  key itself, so a missing translation is visible). Named `intl` (letters-only,
+  like JS `Intl`), not `i18n`; there is no ambient `_()`.
 - **`httpd`** - HTTP/1.1 server engine over `net/http`. Pull loop (no handler
   callbacks): `httpd.listen(addr)` -> `Server`, then loop
   `httpd.accept($srv)` -> `Request` and `httpd.respond($req, status, body)`;

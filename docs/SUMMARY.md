@@ -34,6 +34,7 @@
 - [`fs`](libraries/fs.md)
 - [`hash`](libraries/hash.md)
 - [`httpd`](libraries/httpd.md)
+- [`intl`](libraries/intl.md)
 - [`io`](libraries/io.md)
 - [`json`](libraries/json.md)
 - [`lists`](libraries/lists.md)
