@@ -563,6 +563,10 @@ func (i *Interpreter) declTypesStmt(s parser.Stmt) {
 		i.declTypesExpr(st.Code)
 	case *parser.ThrowStmt:
 		i.declTypesExpr(st.Value)
+	case *parser.DeferStmt:
+		// A spawn (whose body a goroutine re-executes) can hide in the
+		// deferred call's arguments: `defer f(spawn { ... });`.
+		i.declTypesExpr(st.Call)
 	case *parser.TryStmt:
 		i.declTypesBlock(st.Body)
 		i.declTypesBlock(st.CatchBody)

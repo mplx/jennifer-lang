@@ -292,6 +292,9 @@ func dial(opts as Options) {
  */
 export func connect(opts as Options) {
     def conn as net.Conn init dial($opts);
+    # A greeting / STLS / auth failure must not leak the socket; on success the
+    # caller owns the open connection. (The handle id survives net.startTLS.)
+    errdefer net.close($conn);
     def greeting as string init readLine($conn);
     expectOK($greeting, "greeting");
     if ($opts.security == "starttls") {
@@ -493,8 +496,10 @@ export func deleteMessage(session as Session, n as int) {
  * @param session {Session} the live session
  */
 export func quit(session as Session) {
+    # The socket is shut even when the QUIT dialogue throws (a dead server
+    # must not leak the fd).
+    defer net.close($session.conn);
     command($session.conn, "QUIT");
-    net.close($session.conn);
 }
 
 /**

@@ -381,9 +381,9 @@ Rules:
   release in reverse acquisition order:
 
   ```jennifer
-  def db as sql.Conn init sql.connect(...);
-  defer sql.close($db);                  # released last
-  def f as fs.File init fs.open(...);
+  def conn as net.Conn init net.connect("db.local:6379");
+  defer net.close($conn);                # released last
+  def f as fs.File init fs.open("query.log", "write");
   defer fs.close($f);                    # released first
   ```
 
@@ -409,4 +409,62 @@ For durability specifically (flushing to disk), `defer` the `close` but call
 `fs.sync` explicitly and check it - see [fs](../libraries/fs.md); a durability
 failure should surface before you tell the user "done", not from a deferred call
 running on the way out.
+
+## `errdefer` (undo on error only)
+
+`errdefer CALL(args);` is `defer`'s error-path sibling: same single-call form,
+same argument snapshot at the `errdefer` line, same LIFO stack - but the call
+runs **only when the enclosing block exits with a propagating error** (a `throw`
+or a runtime error). On fall-through, `return`, `break`, `continue`, and `exit`
+it is skipped.
+
+Reach for it when success must **keep** the resource and only failure should
+release it - the classic connect-then-handshake, where a plain `defer` would
+close the very connection you mean to hand to the caller:
+
+```jennifer
+func connect(addr as string) {
+    def c as net.Conn init net.connect($addr);
+    errdefer net.close($c);        # a failed handshake must not leak the socket
+    handshake($c);                 # may throw partway through
+    return Session{conn: $c};      # success: the caller owns the open conn
+}
+```
+
+Rules beyond `defer`'s:
+
+- **One teardown stack.** `defer` and `errdefer` in the same block run in one
+  last-registered-first pass; on an error exit both kinds fire, on a normal exit
+  the `errdefer` entries are skipped.
+- **A failing defer arms the errdefers.** If a plain deferred call throws during
+  teardown, the block is now exiting with an error - `errdefer` entries later in
+  the teardown (registered earlier) do run.
+- **`exit` is not an error.** A deliberate `exit` runs plain defers but skips
+  errdefers, and the exit code stands.
+- **Keep the undo call unlikely to throw.** An errdefer only ever runs while an
+  error is already propagating, and if the undo call *itself* throws, its error
+  supersedes the original (the same rule as `defer`) - the catch handler then
+  sees the cleanup failure, not the root cause. A close on a handle you own is
+  fine; anything that can plausibly fail belongs in explicit error handling.
+- **Block-scoped, like `defer` - and unlike Zig.** An `errdefer` registered
+  inside an `if` (or any inner block) is resolved when *that block* exits: leave
+  the `if` normally and the errdefer is gone, even if the function throws two
+  lines later. Register the errdefer in the same block that should own the
+  undo - for the connect pattern, the function body, right after the acquire:
+
+  ```jennifer
+  def c as net.Conn init net.connect($addr);
+  errdefer net.close($c);            # function-body scope: armed until return
+  if ($opts.tls) {
+      $c = net.startTLS($c);         # NOT here - this block exits right away
+  }
+  handshake($c);
+  ```
+
+In the REPL, each input is its own frame (as with `defer`): an input that errors
+runs its errdefers, an input that succeeds discards them - they do not carry
+over to later inputs.
+
+If cleanup must happen on *every* path (a temp file, a one-shot request's
+socket), use `defer`; `errdefer` is only for the acquire-or-undo shape.
 

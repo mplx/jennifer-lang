@@ -297,3 +297,35 @@ func TestKnownIDs(t *testing.T) {
 		t.Fatalf("catalog should list all 14 IDs")
 	}
 }
+
+// TestDeferLint proves the lint walkers descend into `defer CALL(args);` - a
+// variable read only inside a deferred call's arguments is a real use (no L101
+// false positive on the canonical `defer fs.close($f);` pattern), suppression
+// does not overreach, and a spawn hiding in a defer argument still counts for
+// L202 nesting.
+func TestDeferLint(t *testing.T) {
+	cfg := lint.DefaultConfig()
+	t.Run("use only in defer arg is a use", func(t *testing.T) {
+		src := `func f() { def msg as string init "x"; defer g($msg); }`
+		diags := lintSrc(t, src, only("L101"), cfg)
+		if got := countID(diags, "L101"); got != 0 {
+			t.Fatalf("L101 count = %d, want 0 (defer arg is a use): %v", got, diags)
+		}
+	})
+	t.Run("unused var beside a defer still flagged", func(t *testing.T) {
+		src := `func f() { def dead as int init 1; def msg as string init "x"; defer g($msg); }`
+		diags := lintSrc(t, src, only("L101"), cfg)
+		if got := countID(diags, "L101"); got != 1 {
+			t.Fatalf("L101 count = %d, want 1 (dead is still unused): %v", got, diags)
+		}
+	})
+	t.Run("spawn in defer arg counts for nesting", func(t *testing.T) {
+		nestCfg := lint.DefaultConfig()
+		nestCfg.MaxNesting = 1
+		src := `func f() { if (true) { defer g(spawn { return 1; }); } }`
+		diags := lintSrc(t, src, only("L202"), nestCfg)
+		if got := countID(diags, "L202"); got != 1 {
+			t.Fatalf("L202 count = %d, want 1 (spawn body nests inside the if): %v", got, diags)
+		}
+	})
+}

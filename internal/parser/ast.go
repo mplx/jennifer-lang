@@ -509,9 +509,17 @@ func (*ThrowStmt) stmtNode() {}
 // continue, throw, exit), last-registered-first. Call is a *CallExpr or
 // *QualifiedCallExpr (the parser rejects anything else); its arguments are
 // evaluated at the defer site, the call runs at block exit.
+//
+// OnError marks the `errdefer` variant: the call runs only when the block is
+// exiting because an error is propagating (a `throw` or a runtime error) -
+// it is skipped on fall-through, `return`, `break`, `continue`, and `exit`.
+// The two variants share this node so every statement walker (resolver, lint,
+// AST dump) treats them identically; only the interpreter's frame teardown
+// consults the flag.
 type DeferStmt struct {
 	pos
-	Call Expr
+	Call    Expr
+	OnError bool
 }
 
 func (*DeferStmt) stmtNode() {}
@@ -997,6 +1005,9 @@ func Sprint(n Node) string {
 	case *ThrowStmt:
 		return fmt.Sprintf("Throw(%s)", Sprint(v.Value))
 	case *DeferStmt:
+		if v.OnError {
+			return fmt.Sprintf("Errdefer(%s)", Sprint(v.Call))
+		}
 		return fmt.Sprintf("Defer(%s)", Sprint(v.Call))
 	case *ExprStmt:
 		return fmt.Sprintf("ExprStmt(%s)", Sprint(v.Expr))

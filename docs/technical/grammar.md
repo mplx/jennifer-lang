@@ -3,246 +3,25 @@
 The authoritative grammar for what the parser accepts, plus a quick tour of
 the AST node table and the parser's structure.
 
-## Grammar - EBNF
+## The grammar, in two notations
 
-This grammar describes the token stream **after** preprocessing - file
-splices (`include STRING ;`) are expanded before the parser runs, so
-they don't appear here. Library imports (`use IDENT ;`) and module
-imports (`import STRING [ "as" IDENT ] ;`) do reach the parser: `use`
-becomes an `ImportStmt`, `import` a `ModuleImportStmt`.
+The grammar lives in two companion files, one per notation:
 
-Terminals in CAPITALS are token classes from the lexer (see
-[Lexer > Token types](lexer.md#token-types)); quoted strings are keywords or
-punctuation that match the corresponding token's lexeme.
+- **[EBNF](grammar_ebnf.md)** - the declarative view: what shapes the
+  language contains. Start here to learn or look up the syntax.
+- **[PEG](grammar_peg.md)** - the operational view: ordered choice and
+  predicates encoding exactly the decisions the recursive-descent parser
+  makes (which alternative wins, and which orderings are load-bearing).
+  Start here to understand or modify the parser.
 
-```ebnf
-program     = { useStmt | moduleImport | exported | methodDef | structDef | statement } EOF ;
-exported    = "export" ( methodDef | structDef | constDefine ) ;
-                                       (* `export` publishes a name from a
-                                          module; it may only precede a
-                                          `func`, `def struct`, or `def const`.
-                                          Whether a program may contain
-                                          `export` at all (module vs script)
-                                          is decided at load time, not by the
-                                          grammar. *)
-useStmt     = "use" IDENT [ "as" IDENT ] ";" ;      (* library import; the
-                                                       optional "as ALIAS"
-                                                       renames the namespace
-                                                       at the use site *)
-moduleImport = "import" STRING [ "as" IDENT ] ";" ;  (* module import; the
-                                                       STRING path must end
-                                                       in ".j". Top-level
-                                                       only - a module is a
-                                                       declaration, so an
-                                                       import inside a block
-                                                       is a parse error *)
-methodDef   = "func" IDENT "(" [ paramList ] ")" block ;
-paramList   = param { "," param } ;
-param       = IDENT "as" type ;
-block       = "{" { statement } "}" ;
+Both describe the token stream **after** preprocessing (`include` splices
+are already expanded; `use` / `import` do reach the parser), with terminals
+written as lexer token classes ([Lexer > Token types](lexer.md#token-types)).
+They describe the same language and must be kept in sync - when the syntax
+changes, update **both**, in the same commit that changes the parser. The
+parser (`internal/parser/parser.go`) is the source of truth.
 
-structDef   = "def" "struct" IDENT "{" structField { "," structField } [ "," ] "}" ";" ;
-                                       (* top-level only;
-                                          IDENT names the struct type;
-                                          field names follow the IDENT
-                                          rule too. Hoisted before the
-                                          first top-level statement runs. *)
-structField = IDENT "as" type ;
-
-statement   = defineStmt
-            | assignStmt
-            | indexAssign
-            | fieldAssign
-            | appendStmt
-            | returnStmt
-            | ifStmt
-            | whileStmt
-            | forStmt
-            | forEachStmt
-            | tryStmt
-            | throwStmt
-            | deferStmt
-            | exprStmt ;
-
-tryStmt     = "try" block "catch" "(" IDENT ")" block ;
-                                       (* IDENT is the catch
-                                          binding, follows the
-                                          iteration-variable name rule
-                                          (letters only). No `finally`
-                                          in v1. *)
-throwStmt   = "throw" expr ";" ;
-                                       (* expr may produce any
-                                          value; convention is an
-                                          `Error` struct. *)
-deferStmt   = "defer" call ";" ;
-                                       (* `call` is a plain call
-                                          (`cleanup()`) or a
-                                          namespaced / module call
-                                          (`fs.close($f)`) - any
-                                          other expr is a parse
-                                          error. Args evaluate at the
-                                          defer site; the call runs
-                                          when the enclosing block
-                                          exits, LIFO, on every exit
-                                          path. Block-scoped. *)
-
-returnStmt  = "return" [ expr ] ";" ;
-
-constDefine = "def" "const" IDENT "as" type "init" expr ";" ; (* the const
-                                          form of defineStmt - the only `def`
-                                          an `export` may mark *)
-defineStmt  = "def" [ "const" ] IDENT "as" type [ "init" expr ] ";" ;
-                                       (* constants require "init" and an
-                                          uppercase name matching
-                                          [A-Z]+(_[A-Z]+)* (uppercase
-                                          chunks joined by single `_`;
-                                          no leading, trailing or
-                                          consecutive `_`); variables may
-                                          omit "init" and get zero-value,
-                                          and use the letters-only IDENT
-                                          form *)
-
-assignStmt  = VARREF "=" expr ";" ;
-
-indexAssign = VARREF lvalueTail { lvalueTail } "[" expr "]" "=" expr ";" ;
-                                       (* l-value chain ending in `[index]`;
-                                          root is a VARREF. Tail
-                                          steps may freely mix `[index]`
-                                          and `.field`. *)
-
-fieldAssign = VARREF lvalueTail { lvalueTail } "." IDENT "=" expr ";" ;
-                                       (* l-value chain ending in `.field`.
-                                          Root is a VARREF; tail
-                                          may mix `[index]` and `.field`. *)
-
-lvalueTail  = "[" expr "]" | "." IDENT ;
-
-appendStmt  = VARREF "[" "]" "=" expr ";" ;
-                                       (* append sugar: write-only
-                                          target meaning "the position
-                                          just past the end of the
-                                          list"; read use `e[]` is a
-                                          parse error. Only one bare
-                                          VARREF root - chained forms
-                                          like `$xs[0][]` are not supported
-                                          (yet). *)
-
-ifStmt      = "if" "(" expr ")" block
-              { "elseif" "(" expr ")" block }
-              [ "else" block ] ;
-
-whileStmt   = "while" "(" expr ")" block ;
-
-forStmt     = "for" "(" [ defineStmt | assignStmt | ";" ]
-                        [ expr ] ";"
-                        [ assignNoSemi ]
-                  ")" block ;
-assignNoSemi = VARREF "=" expr ;       (* same shape as assignStmt without trailing ";" *)
-
-forEachStmt = "for" "(" "def" IDENT "in" expr ")" block ;
-                                       (* iterates list elements (in order)
-                                          or map keys (insertion order);
-                                          the iteration variable is a fresh
-                                          binding in the body's scope *)
-
-exprStmt    = expr ";" ;
-
-type        = primType | listType | mapType | taskType | structType ;
-primType    = "int" | "float" | "string" | "bool" | "null" | "bytes" ;
-listType    = "list" "of" type ;
-mapType     = "map" "of" type "to" type ;
-taskType    = "task" "of" type ;       (* `task of T` - handle to
-                                          a `spawn`ed computation. Same
-                                          shape as `list of T`; recurses
-                                          the same way (`task of list of
-                                          int` is legal). *)
-                                       (* recursive; nesting like
-                                          `list of list of int` and
-                                          `map of string to list of int`
-                                          falls out naturally *)
-structType  = IDENT [ "." IDENT ] ;    (* User-defined struct type (bare
-                                          IDENT) or library-provided
-                                          namespaced struct type
-                                          (`IDENT.IDENT`). Resolved
-                                          at runtime against the
-                                          user-struct table or the
-                                          NSStructs table respectively;
-                                          unknown names are positioned
-                                          errors. *)
-
-expr        = orExpr ;
-orExpr      = andExpr { "or" andExpr } ;
-andExpr     = notExpr { "and" notExpr } ;
-notExpr     = "not" notExpr | compExpr ;
-compExpr    = addExpr { ("<" | ">" | "<=" | ">=" | "==" | "!=") addExpr } ;
-addExpr     = mulExpr { ("+" | "-") mulExpr } ;
-mulExpr     = unaryExpr { ("*" | "/" | "//" | "%") unaryExpr } ;
-unaryExpr   = "-" unaryExpr | primary ;
-primary     = ( INT | FLOAT | STRING | "true" | "false" | "null"
-              | VARREF | qualifiedCall | qualifiedConstRef
-              | call | typeCall | structLit | constRef | "(" expr ")"
-              | listLit | mapLit | lenExpr | spawnExpr )
-              { "[" expr "]" | "." IDENT } ;
-                                       (* any primary can be index- or
-                                          field-chained, including the
-                                          `.field` form *)
-spawnExpr   = "spawn" block ;          (* launches the block as a
-                                          goroutine and evaluates
-                                          immediately to a `task of T`
-                                          where T is the body's return
-                                          type at the use site. Bare
-                                          `return;` produces `task of
-                                          null`. Value-semantics
-                                          capture: every binding visible
-                                          at the spawn site is
-                                          deep-copied into a fresh frame
-                                          at launch. *)
-lenExpr     = "len" "(" expr ")" ;     (* polymorphic
-                                          structural-length built-in
-                                          (string / list / map /
-                                          bytes). Reserved keyword,
-                                          not a library function; the
-                                          `core` library that once
-                                          hosted it no longer exists. *)
-structLit   = IDENT [ "." IDENT ] "{" structLitField { "," structLitField } [ "," ] "}" ;
-                                       (* struct literal.
-                                          Bare IDENT names a user-defined
-                                          struct; `IDENT.IDENT` names a
-                                          library-provided namespaced
-                                          struct. The recogniser must
-                                          decide before the constant-name
-                                          check because struct names are
-                                          PascalCase / camelCase, not
-                                          uppercase.
-                                          The `{` after IDENT in
-                                          expression position is the
-                                          tie-breaker against `constRef`;
-                                          empty struct literals are
-                                          rejected (every field required). *)
-structLitField = IDENT ":" expr ;
-call        = IDENT "(" [ expr { "," expr } ] ")" ;
-qualifiedCall      = IDENT "." IDENT "(" [ expr { "," expr } ] ")" ;
-qualifiedConstRef  = IDENT "." IDENT ;
-                                       (* qualifiedCall / qualifiedConstRef:
-                                          IDENT "." IDENT, then `(` decides which.
-                                          Resolved against the namespaced-builtin
-                                          / constant registry, gated by `use lib;`
-                                          (or alias-aware equivalent). *)
-typeCall    = ("int" | "float" | "string" | "bool") "(" [ expr { "," expr } ] ")" ;
-                                       (* type keywords usable as calls only when
-                                          immediately followed by `(`; resolved as
-                                          convert-library builtins at runtime *)
-constRef    = IDENT ;                  (* bare-IDENT: constant reference; the
-                                          parser disambiguates `call` vs
-                                          `qualifiedCall` vs `constRef` by
-                                          peeking for "." / "(". *)
-listLit     = "[" [ expr { "," expr } [ "," ] ] "]" ;
-mapLit      = "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
-                                       (* `{` is also a block opener; only
-                                          legal as a map literal in
-                                          expression position, where the
-                                          parser is unambiguous *)
-```
+The semantic rules no grammar can express follow here.
 
 **Semantic notes that aren't expressed in the grammar:**
 
@@ -253,9 +32,11 @@ mapLit      = "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
   produces a parse error with a hint to drop the `$` (it's reserved for
   use-site references).
 - Operator precedence (lowest to highest): `or`, `and`, unary `not`,
-  comparison `< > <= >= == !=`, additive `+ -`, multiplicative `* / %`, unary
-  `-`. Binary operators are left-associative; `not` and unary `-` are
-  right-associative (`not not x` and `--x` are both valid).
+  comparison `< > <= >= == !=`, bitwise or `|`, bitwise xor `^`, bitwise and
+  `&`, shifts `<< >>`, additive `+ -`, multiplicative `* / // %`, unary `-`
+  and `~`. Binary operators are left-associative; `not` and the prefix
+  operators are right-associative (`not not x`, `--x`, and `-~x` are all
+  valid). The bitwise family (`| ^ & << >> ~`) operates on `int` only.
 - `and` and `or` **short-circuit**: the right operand is not evaluated when
   the left already decides the result. Both operands must be `bool`.
 - Unary `not` requires `bool`; unary `-` requires `int` or `float`.
@@ -326,7 +107,10 @@ mapLit      = "{" [ expr ":" expr { "," expr ":" expr } [ "," ] ] "}" ;
 ## Parser (`internal/parser`)
 
 Recursive descent with precedence climbing for binary operators. The
-grammar the parser implements is the EBNF above.
+grammar the parser implements is documented twice: as
+[EBNF](grammar_ebnf.md) (the shapes) and as [PEG](grammar_peg.md) (the
+decision order); the PEG is the closer mirror of the code, down to which
+`case` order and peeks are load-bearing.
 
 The exported entry points (`Parse`, `ParseTokens`) return a raw
 `*Program` without running the scope-analysis pass. Callers

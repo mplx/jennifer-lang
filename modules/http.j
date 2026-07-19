@@ -414,22 +414,15 @@ export func requestWith(method as string, url as string,
     # header / path throws without dialing and nothing malformed hits the wire.
     def wire as string init buildRequest($method, $u, $headers, $body);
     def conn as net.Conn init dial($u);
-    if ($timeoutMs > 0) {
-        net.setDeadline($conn, $timeoutMs);   # covers the write and the first read
-    }
     # Close the socket exactly once whether the exchange succeeds or throws: a
     # read timeout or a parse error must not leak the connection (a poller
     # hitting timeouts would otherwise exhaust file descriptors).
-    def resp as Response;
-    try {
-        net.writeBytes($conn, convert.bytesFromString($wire, "utf-8"));
-        $resp = parseResponse(readToEOF($conn, $timeoutMs));
-    } catch (err) {
-        net.close($conn);
-        throw $err;
+    defer net.close($conn);
+    if ($timeoutMs > 0) {
+        net.setDeadline($conn, $timeoutMs);   # covers the write and the first read
     }
-    net.close($conn);
-    return $resp;
+    net.writeBytes($conn, convert.bytesFromString($wire, "utf-8"));
+    return parseResponse(readToEOF($conn, $timeoutMs));
 }
 
 /**

@@ -116,6 +116,8 @@
 - [Overview](technical/index.md)
 - [Lexer](technical/lexer.md)
 - [Grammar](technical/grammar.md)
+  - [EBNF](technical/grammar_ebnf.md)
+  - [PEG](technical/grammar_peg.md)
 - [Preprocessor](technical/preprocessor.md)
 - [Interpreter](technical/interpreter.md)
 - [CLI](technical/cli.md)

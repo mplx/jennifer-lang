@@ -347,6 +347,10 @@ export func send(opts as Options, from as string, recipients as list of string,
         $rcpts[] = asciiEnvelope($r);
     }
     def conn as net.Conn init dial($opts);
+    # Closed however send exits, so a rejected command mid-dialogue does not
+    # leak the socket. The handle id survives net.startTLS (the upgrade swaps
+    # the registry entry in place), so this also closes the TLS connection.
+    defer net.close($conn);
     expect(readReply($conn), 220, 220, "greeting");
     def caps as Reply init greet($conn, $opts);
     if ($opts.security == "starttls") {
@@ -364,5 +368,4 @@ export func send(opts as Options, from as string, recipients as list of string,
     net.writeBytes($conn, convert.bytesFromString($payload, "utf-8"));
     expect(readReply($conn), 250, 259, "end of DATA");
     command($conn, "QUIT");
-    net.close($conn);
 }

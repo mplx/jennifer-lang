@@ -365,6 +365,9 @@ export func connect(opts as Options) {
         $socket = net.connect($addr);
     }
     def session as Session init Session{ socket: $socket };
+    # A refused login must not leak the socket; on success the caller owns the
+    # open session.
+    errdefer net.close($socket);
     login($session, $opts.user, $opts.password);
     return $session;
 }

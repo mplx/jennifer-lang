@@ -722,12 +722,14 @@ zero). `math.PI` and `math.E` are registered via
 like every other namespaced constant; the namespace prefix is
 reserved for the rest of the program once `use math;` runs.
 
-**`internal/lib/convert`**: parser side - the `typeCall` production lets
-`int(...)`, `float(...)`, `string(...)`, `bool(...)` parse despite their
-names being type keywords. `typeOf` is a normal IDENT call. `bool(v)`
-implements canonical-only conversion at all source kinds (`0`/`1` for int,
-`0.0`/`1.0` for float, `"true"`/`"false"` for string) - non-canonical
-values produce a positioned error, not silent coercion.
+**`internal/lib/convert`**: conversions live behind the namespace -
+`convert.toInt(v)`, `convert.toFloat(v)`, `convert.toString(v)`,
+`convert.toBool(v)`. A bare type keyword in expression position (`int(...)`,
+`bool(...)`) is a positioned parse error whose hint names the matching
+`convert` builtin. `typeOf` is a normal IDENT call.
+`convert.toBool(v)` implements canonical-only conversion at all source kinds
+(`0`/`1` for int, `0.0`/`1.0` for float, `"true"`/`"false"` for string) -
+non-canonical values produce a positioned error, not silent coercion.
 
 **`internal/lib/strings`**: all indices and lengths are **rune-based**
 (Unicode code points), implemented via `unicode/utf8`. `len` returns the

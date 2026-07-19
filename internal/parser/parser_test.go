@@ -503,3 +503,28 @@ func TestSeededExprStmtBinaryMinus(t *testing.T) {
 		}
 	}
 }
+
+// `errdefer` parses to a DeferStmt with OnError set; Sprint shows the variant.
+func TestParseErrdeferStmt(t *testing.T) {
+	prog, err := Parse(`func app() { errdefer net.close($c); }`)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	st, ok := prog.Methods[0].Body.Stmts[0].(*DeferStmt)
+	if !ok || !st.OnError {
+		t.Fatalf("expected a DeferStmt with OnError, got %T", prog.Methods[0].Body.Stmts[0])
+	}
+	got := Sprint(st)
+	want := "Errdefer(QCall(net.close, Var($c)))"
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// `errdefer` on a non-call is a parse error naming the errdefer form.
+func TestParseErrdeferRejectsNonCall(t *testing.T) {
+	_, err := Parse(`func app() { errdefer $x; }`)
+	if err == nil || !contains(err.Error(), "`errdefer` requires a function call") {
+		t.Errorf("expected errdefer-needs-a-call error, got %v", err)
+	}
+}

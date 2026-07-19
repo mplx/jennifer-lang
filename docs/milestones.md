@@ -1760,6 +1760,23 @@ before returning or propagating any control-flow / error signal. No `reflect`,
 TinyGo-clean. The CLI already models the idea at the Go level
 (`defer termlib.RestoreAll()`); this brings it into the language.
 
+**Follow-up, done: `errdefer` (undo on error only).** Adopting `defer` across
+the modules surfaced one cleanup shape it cannot express: the connect-then-
+handshake, where a *failed* handshake must close the socket but a *successful*
+one must hand the open connection to the caller. Conditional cleanup is
+unrepresentable with `defer` - arguments snapshot at the defer line, so a
+"did-we-succeed" flag can never be observed later, and value semantics rule out
+a mutable sentinel. `errdefer CALL(args);` (after Zig) is the same single-call,
+args-snapshotted, block-scoped form on the same LIFO teardown stack, but runs
+**only when the block exits with a propagating error** (a `throw` or a runtime
+error - not `return` / `break` / `continue` / `exit`, which are not errors). A
+plain deferred call that throws during teardown arms the errdefers still
+pending in that pass. Shares `DeferStmt` (an `OnError` flag), so the resolver,
+linter, and AST dump needed no new cases; keyword wired through lexer, parser,
+formatter, editors, and docs. The seven leaky module `connect()` handshakes
+(`redis`, `imap`, `pop`, `mqtt`, `amqp`, `websocket`, `mikrotik`) adopted it,
+verified end-to-end against a refusing fake server plus a negative control.
+
 ### M20.8 - device I/O (`serial` / `spi` / `iic` / `gpio`)
 
 Device-I/O libraries for embedded / single-board-computer hosts, all reaching
@@ -1864,6 +1881,79 @@ language stress-test - not the primary path.
 library (its hard prerequisite) and inherits the `sql.Row` caveat above - its
 typed-row ergonomics wait on the same deferred map-to-struct conversion, so it
 graduates in stages.
+
+### M20.10 - `crypto` authenticated encryption + signatures
+
+**Motivation.** The default `jennifer` already links the whole TLS crypto stack
+(AES-GCM, ChaCha20-Poly1305, Ed25519, ECDSA, RSA, x509 - dead-code-eliminated to
+what `crypto/tls` + `x509` reference, which is most of it), so surfacing a
+curated, safe subset costs near-zero binary size there. And it fills two gaps
+people otherwise hand-roll dangerously: "encrypt this blob with a key" and
+"sign / verify a token". Binary-size-is-already-paid removes the *objection*; the
+*reason* is genuine need plus a safe-by-construction API. Extends the existing
+`crypto` system library ([M20.1](#m201---crypto)), which today ships crypto-grade
+random, constant-time compare, and HKDF / PBKDF2.
+
+Surface, three parts:
+
+- **Authenticated symmetric encryption (AES-256-GCM).**
+  - `crypto.encrypt(key as bytes, plaintext as bytes) -> bytes` - AEAD seal. The
+    12-byte nonce is drawn from the crypto-grade source and **prepended** to the
+    output (`box = nonce || ciphertext || tag`), so the caller never handles a
+    nonce: nonce-reuse is the classic GCM footgun, and making it un-passable
+    removes it by construction. `key` must be exactly 32 bytes (AES-256); other
+    lengths are a positioned error.
+  - `crypto.decrypt(key as bytes, box as bytes) -> bytes` - AEAD open. Splits the
+    nonce, verifies the tag, returns plaintext; a tampered or wrong-key box is a
+    **catchable authentication error**, never silent garbage.
+  - Keys come from the existing `crypto.randBytes(32)`; no new key helper.
+
+- **Ed25519 signatures.**
+  - `crypto.signKeypair() -> crypto.Keypair`, where
+    `crypto.Keypair { public as bytes, private as bytes }` (a namespaced struct,
+    like `net.TLSOptions`). Parameterless - no curve / scheme menu.
+  - `crypto.sign(private as bytes, message as bytes) -> bytes` (64-byte signature).
+  - `crypto.verify(public as bytes, message as bytes, signature as bytes) -> bool`
+    - `false` on any mismatch; a positioned error only on a malformed key /
+    signature length.
+
+- **Hash fill-out.** Add `"sha512"` / `"sha384"` to `hash.compute` / `hash.hmac`
+  and the streaming surface (already linked, trivial). MD5 / SHA-1 stay
+  checksum-only.
+
+Safe-by-construction rules (the actual discipline this milestone enforces):
+
+- **AEAD only.** No raw ECB / CBC / CTR (padding-oracle / IV-reuse footguns); the
+  only symmetric verbs are seal / open.
+- **One algorithm per job.** `encrypt` *is* AES-256-GCM, `sign` *is* Ed25519 -
+  fixed, with no algorithm-string argument (unlike `hash.compute`, where a
+  checksum genuinely has interchangeable algorithms). That is why they are
+  distinct verbs, not a `crypto.aead(algo, ...)` menu.
+- **Length-validated `bytes` keys**, positioned errors, nonce managed internally.
+- All Go stdlib (`crypto/aes` + `crypto/cipher`, `crypto/ed25519`,
+  `crypto/rand`), so **TinyGo-clean** and it runs on both binaries. On
+  `jennifer-tiny` (no TLS linked) AES / Ed25519 are not pre-linked, so this adds a
+  modest, real size there (tens of KB) - acceptable, and gated only by the future
+  build-time library-selection seam, not by this milestone.
+
+Deliberately out of scope:
+
+- **Password hashing** (Argon2 / bcrypt / scrypt) - needs the external
+  `golang.org/x/crypto` module (the stdlib only vendors `chacha20poly1305` for
+  TLS), a genuine new dependency. Stays out, as M20.1 already ruled.
+- **x509 / PEM certificate parsing** - linked and useful (read a cert's SAN /
+  expiry, verify a chain), but a wide API worth ~120 KB of surface; deferred until
+  a concrete consumer (an `httpd` TLS-server module loading certs, cert pinning).
+- **RSA / ECDSA raw sign** - Ed25519 covers modern signing; add only if JWT-style
+  interop (RS256 / ES256) demands it.
+- **Additional-authenticated-data (AAD)** on `encrypt` / `decrypt` - a useful GCM
+  feature (bind a ciphertext to context), but an extra parameter; a later optional
+  addition if a use case appears.
+
+Ships with the usual discipline: `crypto` doc update + cheatsheet rows +
+`JENNIFER.md` bullet, a `*_test.go` suite (round-trip, tamper detection,
+wrong-key, wrong-length, Ed25519 sign / verify / cross-key reject), and a runnable
+example.
 
 ## M21 - general backlog (catch-all)
 

@@ -96,6 +96,10 @@ func (w walker) doStmt(s parser.Stmt) {
 		w.doExpr(n.Code)
 	case *parser.ThrowStmt:
 		w.doExpr(n.Value)
+	case *parser.DeferStmt:
+		// The deferred call (and its arguments) is ordinary expression
+		// territory - checks must see it like any other call.
+		w.doExpr(n.Call)
 	case *parser.TryStmt:
 		w.block(n.Body)
 		w.block(n.CatchBody)

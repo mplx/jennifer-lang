@@ -42,6 +42,7 @@ const (
 	TOKEN_CATCH    // companion to `try`; binds the thrown value
 	TOKEN_THROW    // `throw EXPR;` raises a catchable error
 	TOKEN_DEFER    // `defer CALL(args);` schedules a call for block exit
+	TOKEN_ERRDEFER // `errdefer CALL(args);` schedules a call for error exit only
 	TOKEN_TRUE
 	TOKEN_FALSE
 	TOKEN_NULL
@@ -147,6 +148,7 @@ var tokenNames = map[TokenType]string{
 	TOKEN_CATCH:       "CATCH",
 	TOKEN_THROW:       "THROW",
 	TOKEN_DEFER:       "DEFER",
+	TOKEN_ERRDEFER:    "ERRDEFER",
 	TOKEN_TRUE:        "TRUE",
 	TOKEN_FALSE:       "FALSE",
 	TOKEN_NULL:        "NULL",
@@ -255,6 +257,7 @@ var keywords = map[string]TokenType{
 	"catch":    TOKEN_CATCH,
 	"throw":    TOKEN_THROW,
 	"defer":    TOKEN_DEFER,
+	"errdefer": TOKEN_ERRDEFER,
 	"true":     TOKEN_TRUE,
 	"false":    TOKEN_FALSE,
 	"null":     TOKEN_NULL,

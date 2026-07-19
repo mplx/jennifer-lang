@@ -389,7 +389,7 @@ include "label_cab.j";
  */
 export func send(host as string, port as int, rendered as string) {
     def conn as net.Conn init net.connect($host + ":" + convert.toString($port));
+    defer net.close($conn);              # closed even when the write throws
     net.writeBytes($conn, convert.bytesFromString($rendered, "utf-8"));
-    net.close($conn);
     return null;
 }

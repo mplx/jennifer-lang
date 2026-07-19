@@ -434,6 +434,9 @@ func handshake(socket as net.Conn, opts as Options) {
 export func connect(opts as Options) {
     def addr as string init $opts.host + ":" + convert.toString($opts.port);
     def socket as net.Conn init net.connect($addr);
+    # A failed AMQP handshake must not leak the socket; on success the caller
+    # owns the open connection.
+    errdefer net.close($socket);
     def frameMax as int init handshake($socket, $opts);
     return Conn{ socket: $socket, channel: CHANNEL, frameMax: $frameMax };
 }
@@ -627,6 +630,9 @@ export func ack(c as Conn, deliveryTag as int) {
  * @param c {Conn} the connection
  */
 export func close(c as Conn) {
+    # The socket is shut even when the polite Connection.Close dialogue throws
+    # (a dead broker must not leak the fd).
+    defer net.close($c.socket);
     def args as bytes;
     $args = putShort($args, 200);          # reply code: OK
     $args = putShortStr($args, "");      # reply text
@@ -634,5 +640,4 @@ export func close(c as Conn) {
     $args = putShort($args, 0);            # method-id
     writeMethod($c.socket, 0, CLS_CONNECTION, CONN_CLOSE, $args);
     expectMethod($c.socket, CLS_CONNECTION, CONN_CLOSEOK, "Connection.Close-Ok");
-    net.close($c.socket);
 }

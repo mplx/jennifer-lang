@@ -232,6 +232,10 @@ func (c *checkCtx) nestStmt(st parser.Stmt, depth int) {
 		c.nestExpr(n.Value, depth)
 	case *parser.ExitStmt:
 		c.nestExpr(n.Code, depth)
+	case *parser.DeferStmt:
+		// A spawn can hide in a deferred call's arguments
+		// (`defer f(spawn { ... });`) - count its body like any other.
+		c.nestExpr(n.Call, depth)
 	case *parser.ExprStmt:
 		c.nestExpr(n.Expr, depth)
 	}

@@ -45,6 +45,7 @@ if (not os.isTerminal("stdin")) {
     io.printf("needs an interactive terminal\n");
 } else {
     def state as term.State init term.makeRaw("stdin");
+    defer term.restore($state);                  # runs however this block exits
     def running as bool init true;
     while ($running) {
         def b as int init term.readByte();       # blocks until a key is pressed
@@ -54,16 +55,17 @@ if (not os.isTerminal("stdin")) {
             io.printf("byte %d\r\n", $b);         # raw mode: newline is not cooked
         }
     }
-    term.restore($state);
 }
 ```
 
 **Always restore.** Raw mode is a property of the terminal device, not the
 process, so a program that exits still in raw mode would leave the shell there.
-Jennifer has no `finally`, so put the `restore` on every path out - and note that
-in raw mode the newline is no longer cooked, so prints need an explicit `\r\n`.
-The `term.State` handle is **single-use**: a second `term.restore` of the same
-handle is an error, so a live terminal is never clobbered by a stale handle.
+Put `defer term.restore($state);` right after the `makeRaw` (as above) so the
+restore runs on **every** exit path - including a `throw` unwinding through the
+block ([control-flow > `defer`](../user-guide/control-flow.md#defer-deterministic-cleanup)).
+Note that in raw mode the newline is no longer cooked, so prints need an explicit
+`\r\n`. The `term.State` handle is **single-use**: a second `term.restore` of the
+same handle is an error, so a live terminal is never clobbered by a stale handle.
 
 As a **backstop**, the `jennifer` CLI cooks the terminal back on the way out even
 when your program doesn't - a normal exit, an `exit`, an uncaught error, a panic,

@@ -272,6 +272,9 @@ export func connect(opts as Options) {
     } else {
         $conn = net.connect($addr);
     }
+    # A refused / malformed CONNACK must not leak the socket; on success the
+    # caller owns the open client.
+    errdefer net.close($conn);
     net.writeBytes($conn, buildConnect($opts));
     net.setDeadline($conn, HANDSHAKE_TIMEOUT_MS);
     def h as bytes init readN($conn, 1);
@@ -412,11 +415,13 @@ export func ping(client as Client) {
  * @param client {Client} the open client
  */
 export func disconnect(client as Client) {
+    # The socket is shut even when the DISCONNECT write throws (a dead broker
+    # must not leak the fd).
+    defer net.close($client.conn);
     def f as bytes;
     $f[] = 0xe0;
     $f[] = 0x00;
     net.writeBytes($client.conn, $f);
-    net.close($client.conn);
     return null;
 }
 

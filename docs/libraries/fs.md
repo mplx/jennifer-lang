@@ -130,22 +130,25 @@ use fs;
 
 # A scratch file in the system temp dir, cleaned up when done.
 def report as string init fs.makeTempFile("", "report-", ".json");
+defer fs.remove($report);              # cleanup runs however the block exits
 fs.writeString($report, $payload);
 # ... use it ...
-fs.remove($report);
 
 # A scratch directory under an existing build tree (create the parent first).
 fs.mkdirAll("build");
 def work as string init fs.makeTempDir("build", "job-");
+defer fs.removeAll($work);
 # ... write files under $work ...
-fs.removeAll($work);
 ```
 
 Both are **strict**: any OS failure - a read-only filesystem, no permission, a
 missing parent directory, or a name the filesystem cannot hold - is a catchable
-error, never a fabricated directory tree or a name mangled to fit. Jennifer has
-no `finally`, so cleanup is explicit: pair every `makeTemp*` with an
-`fs.remove` / `fs.removeAll` (see the concurrency and error notes below).
+error, never a fabricated directory tree or a name mangled to fit. Nothing is
+cleaned up automatically: pair every `makeTemp*` with an `fs.remove` /
+`fs.removeAll`, ideally as a `defer` right after the create (as above) so the
+cleanup also runs when an error unwinds through the block
+([control-flow > `defer`](../user-guide/control-flow.md#defer-deterministic-cleanup);
+see the concurrency and error notes below).
 
 ## File handles
 

@@ -331,6 +331,8 @@ export func decr(session as Session, key as string, delta as int) {
  * @param session {Session} the open session
  */
 export func quit(session as Session) {
+    # The socket is shut even when the quit write throws (a dead server must
+    # not leak the fd).
+    defer net.close($session.conn);
     writeCmd($session, "quit\r\n");
-    net.close($session.conn);
 }

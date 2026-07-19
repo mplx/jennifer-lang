@@ -283,6 +283,9 @@ export func command(session as Session, args as list of string) {
  */
 export func connect(opts as Options) {
     def session as Session init Session{conn: dial($opts), timeout: DEFAULT_TIMEOUT_MS};
+    # A refused AUTH / SELECT must not leak the socket; on success the caller
+    # owns the open session.
+    errdefer net.close($session.conn);
     if (len($opts.password) > 0) {
         def auth as list of string init ["AUTH"];
         if (len($opts.user) > 0) {
@@ -385,6 +388,8 @@ export func ping(session as Session) {
  * @param session {Session} the open session
  */
 export func quit(session as Session) {
+    # The socket is shut even when the QUIT dialogue throws (a dead server
+    # must not leak the fd).
+    defer net.close($session.conn);
     command($session, ["QUIT"]);
-    net.close($session.conn);
 }

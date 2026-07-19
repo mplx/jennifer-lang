@@ -151,6 +151,7 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 	case *parser.DeferStmt:
 		startObj(b, indent)
 		emitTypeAndPos(b, "DeferStmt", v, indent+1)
+		emitBoolField(b, "onError", v.OnError, indent+1)
 		emitNodeField(b, "call", v.Call, indent+1)
 		endObj(b, indent)
 

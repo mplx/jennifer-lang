@@ -236,8 +236,8 @@ func syslogLine(logger as Logger, level as string, message as string, fields as 
 # paths, prefer the file or console sink (or batch upstream).
 func sendSyslog(logger as Logger, line as string) {
     def sock as net.UDPSocket init net.listenUDP(":0");
+    defer net.close($sock);              # closed even when the send throws
     net.sendTo($sock, $logger.target, convert.bytesFromString($line, "utf-8"));
-    net.close($sock);
     return null;
 }
 

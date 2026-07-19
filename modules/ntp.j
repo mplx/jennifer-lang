@@ -107,6 +107,7 @@ export func query(host as string) {
  */
 export func queryWith(address as string, timeoutMs as int) {
     def sock as net.UDPSocket init net.listenUDP(":0");
+    defer net.close($sock);              # closed however the query exits
     net.setDeadline($sock, $timeoutMs);
     def orig as time.Time init time.now();
     net.sendTo($sock, $address, buildRequest($orig));
@@ -117,10 +118,8 @@ export func queryWith(address as string, timeoutMs as int) {
         $resp = $dg.data;
         $dst = time.now();
     } catch (e) {
-        net.close($sock);
         fail("no response from " + $address + " within " + convert.toString($timeoutMs) + "ms");
     }
-    net.close($sock);
     if (len($resp) < 48) {
         fail("short NTP response from " + $address);
     }

@@ -168,6 +168,21 @@ Block-scoped (a `defer` in a loop body runs each iteration); does not cross a
 method or `spawn` boundary. A deferred throw propagates and supersedes a pending
 error (never an `exit`). There is no `finally`.
 
+`errdefer CALL(args);` is the error-path variant: same form, same LIFO stack,
+but the call runs **only when the block exits with a propagating error** (a
+`throw` or a runtime error) - skipped on fall-through, `return`, `break`,
+`continue`, and `exit`. It is the undo half of an acquire whose resource must
+survive on success:
+
+```jennifer
+func connect(addr as string) {
+    def c as net.Conn init net.connect($addr);
+    errdefer net.close($c);     # a failed handshake closes; success keeps it open
+    handshake($c);
+    return Session{conn: $c};
+}
+```
+
 ## Methods
 
 ```jennifer

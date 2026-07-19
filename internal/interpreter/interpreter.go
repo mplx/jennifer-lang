@@ -1148,7 +1148,7 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 		if es, ok := st.(*parser.ExprStmt); ok {
 			v, err := i.evalExpr(es.Expr, i.global)
 			if err != nil {
-				i.runDeferredCalls(i.global)
+				i.runDeferredCalls(i.global, errdeferFires(err))
 				return Null(), err
 			}
 			last = v
@@ -1157,15 +1157,19 @@ func (i *Interpreter) EvalInteractive(prog *parser.Program) (Value, error) {
 		last = Null()
 		res, err := i.execStmt(st, i.global)
 		if err != nil {
-			i.runDeferredCalls(i.global)
+			i.runDeferredCalls(i.global, errdeferFires(err))
 			return Null(), err
 		}
 		if res.hasBreak || res.hasContinue {
-			i.runDeferredCalls(i.global)
+			// Plain defers run on any exit; an unhandled break / continue is
+			// control flow, not a propagating error, so errdefers do NOT fire -
+			// matching finishFrame and the documented semantics (errdefer is
+			// skipped on break / continue).
+			i.runDeferredCalls(i.global, false)
 			return Null(), unhandledLoopFlowError(res)
 		}
 	}
-	if derr := i.runDeferredCalls(i.global); derr != nil {
+	if derr := i.runDeferredCalls(i.global, false); derr != nil {
 		return Null(), derr
 	}
 	return last, nil
@@ -2433,13 +2437,17 @@ func (i *Interpreter) execThrow(st *parser.ThrowStmt, env *Environment) error {
 // arguments already evaluated (and snapshotted) at the defer site. Only the args
 // are captured early - the callee dispatch happens when the call runs, by feeding
 // the captured values back through the normal call path as PreEval literals.
+// onError marks an `errdefer`: run only when the frame is exiting with a
+// propagating error (see runDeferredCalls).
 type deferredCall struct {
-	call parser.Expr // *parser.CallExpr or *parser.QualifiedCallExpr
-	args []Value
+	call    parser.Expr // *parser.CallExpr or *parser.QualifiedCallExpr
+	args    []Value
+	onError bool
 }
 
 // execDefer evaluates the deferred call's arguments now and records the call on
 // the current frame; the call itself runs when the frame exits (finishFrame).
+// Handles both `defer` and `errdefer` (DeferStmt.OnError).
 func (i *Interpreter) execDefer(st *parser.DeferStmt, env *Environment) error {
 	argExprs := deferCallArgs(st.Call)
 	args := make([]Value, len(argExprs))
@@ -2453,7 +2461,7 @@ func (i *Interpreter) execDefer(st *parser.DeferStmt, env *Environment) error {
 		// deferred call receives. Copy is cheap for scalars and handle structs.
 		args[idx] = v.Copy()
 	}
-	env.deferred = append(env.deferred, deferredCall{call: st.Call, args: args})
+	env.deferred = append(env.deferred, deferredCall{call: st.Call, args: args, onError: st.OnError})
 	return nil
 }
 
@@ -2480,7 +2488,7 @@ func (i *Interpreter) finishFrame(env *Environment, res blockResult, err error) 
 	if len(env.deferred) == 0 {
 		return res, err
 	}
-	derr := i.runDeferredCalls(env)
+	derr := i.runDeferredCalls(env, errdeferFires(err))
 	if derr == nil {
 		return res, err
 	}
@@ -2490,17 +2498,39 @@ func (i *Interpreter) finishFrame(env *Environment, res blockResult, err error) 
 	return blockResult{}, derr
 }
 
+// errdeferFires reports whether an `errdefer` should run for a frame exiting with
+// err: only a genuinely propagating error (a `throw` or a runtime error) arms
+// errdefers, never a nil (success / return / break / continue, none of which
+// reach here as an error) or an *ExitSignal (a deliberate termination, not a
+// failure). Shared by finishFrame and the REPL teardown so both agree.
+func errdeferFires(err error) bool {
+	if err == nil {
+		return false
+	}
+	_, isExit := err.(*ExitSignal)
+	return !isExit
+}
+
 // runDeferredCalls invokes env.deferred in LIFO order, always running every one
-// (a failure does not stop the rest - cleanup should complete). Returns the last
-// error a deferred call produced, or nil, and clears the frame's list first so a
-// deferred call cannot re-enter its own frame's list.
-func (i *Interpreter) runDeferredCalls(env *Environment) error {
+// (a failure does not stop the rest - cleanup should complete). failed reports
+// whether the frame is exiting with a propagating error: an `errdefer` entry
+// runs only then. A deferred call that itself errors flips failed to true for
+// the entries still to run - the frame IS now exiting with an error, so an
+// earlier-registered errdefer (e.g. the release of a resource acquired before
+// the failing defer) still fires. Returns the last error a deferred call
+// produced, or nil, and clears the frame's list first so a deferred call cannot
+// re-enter its own frame's list.
+func (i *Interpreter) runDeferredCalls(env *Environment, failed bool) error {
 	d := env.deferred
 	env.deferred = nil
 	var derr error
 	for j := len(d) - 1; j >= 0; j-- {
+		if d[j].onError && !failed {
+			continue
+		}
 		if e := i.invokeDeferred(d[j], env); e != nil {
 			derr = e
+			failed = true
 		}
 	}
 	return derr

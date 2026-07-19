@@ -496,7 +496,7 @@ func (p *parser) parseStatement() (Stmt, error) {
 		return p.parseTry()
 	case lexer.TOKEN_THROW:
 		return p.parseThrow()
-	case lexer.TOKEN_DEFER:
+	case lexer.TOKEN_DEFER, lexer.TOKEN_ERRDEFER:
 		return p.parseDefer()
 	case lexer.TOKEN_VARREF:
 		// `$x = expr ;` is a simple assignment.
@@ -768,13 +768,21 @@ func (p *parser) parseThrow() (Stmt, error) {
 	}, nil
 }
 
-// parseDefer parses `defer CALL(args);`. The deferred thing must be a call - a
-// user method (`defer cleanup();`) or a namespaced / module call
-// (`defer fs.close($f);`). Anything else (a bare value, an operator expression,
-// an index/field access) is a parse error: `defer` schedules a call, and the
-// single-call form is what keeps a `return` / `throw` from hiding inside it.
+// parseDefer parses `defer CALL(args);` and its error-path variant
+// `errdefer CALL(args);`. The deferred thing must be a call - a user method
+// (`defer cleanup();`) or a namespaced / module call (`defer fs.close($f);`).
+// Anything else (a bare value, an operator expression, an index/field access)
+// is a parse error: `defer` schedules a call, and the single-call form is what
+// keeps a `return` / `throw` from hiding inside it. `errdefer` differs only at
+// runtime (the call runs solely when the block exits with an error), so both
+// keywords share this parse and the DeferStmt node.
 func (p *parser) parseDefer() (Stmt, error) {
-	tk, _ := p.match(lexer.TOKEN_DEFER)
+	onError := p.peek().Type == lexer.TOKEN_ERRDEFER
+	keyword := "defer"
+	if onError {
+		keyword = "errdefer"
+	}
+	tk := p.advance()
 	expr, err := p.parseExpr()
 	if err != nil {
 		return nil, err
@@ -785,16 +793,17 @@ func (p *parser) parseDefer() (Stmt, error) {
 	default:
 		l, c := expr.Pos()
 		return nil, &ParseError{
-			Msg:  "`defer` requires a function call, e.g. `defer fs.close($f);`",
+			Msg:  fmt.Sprintf("`%s` requires a function call, e.g. `%s fs.close($f);`", keyword, keyword),
 			File: expr.Filename(), Line: l, Col: c,
 		}
 	}
-	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate defer"); err != nil {
+	if _, err := p.expect(lexer.TOKEN_SEMI, "to terminate "+keyword); err != nil {
 		return nil, err
 	}
 	return &DeferStmt{
-		pos:  pos{File: tk.File, Line: tk.Line, Col: tk.Col},
-		Call: expr,
+		pos:     pos{File: tk.File, Line: tk.Line, Col: tk.Col},
+		Call:    expr,
+		OnError: onError,
 	}, nil
 }
 

@@ -1,0 +1,8 @@
+acquire socket
+connected
+acquire socket
+release socket
+caught: handshake failed
+release only-on-error
+release always
+caught: boom

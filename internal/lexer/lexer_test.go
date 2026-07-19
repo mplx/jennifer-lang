@@ -477,3 +477,17 @@ func TestTokenizeTracksLineAndColumn(t *testing.T) {
 		t.Errorf("stdlib at %d:%d, want 2:3", toks[1].Line, toks[1].Col)
 	}
 }
+
+func TestTokenizeErrdeferKeyword(t *testing.T) {
+	toks, err := Tokenize("errdefer cleanup();")
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if toks[0].Type != TOKEN_ERRDEFER {
+		t.Errorf("first token = %s, want ERRDEFER", toks[0].Type)
+	}
+	// `errdefer` is a keyword, not an identifier.
+	if toks[1].Type != TOKEN_IDENT || toks[1].Lexeme != "cleanup" {
+		t.Errorf("second token = %s(%q), want IDENT(cleanup)", toks[1].Type, toks[1].Lexeme)
+	}
+}

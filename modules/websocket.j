@@ -354,6 +354,9 @@ export func connectWith(url as string, timeoutMs as int) {
     } else {
         $socket = net.connect($addr);
     }
+    # A failed HTTP upgrade must not leak the socket; on success the caller
+    # owns the open connection.
+    errdefer net.close($socket);
     net.setDeadline($socket, HANDSHAKE_TIMEOUT_MS);
     handshake($socket, $t, makeKey());
     net.setDeadline($socket, 0);
@@ -462,7 +465,9 @@ export func receive(c as Conn) {
  * @param c {Conn} the connection
  */
 export func close(c as Conn) {
+    # The socket is shut even when the close-frame write throws (a dead peer
+    # must not leak the fd).
+    defer net.close($c.socket);
     def empty as bytes;
     sendFrame($c, OP_CLOSE, $empty);
-    net.close($c.socket);
 }

@@ -198,6 +198,11 @@ func (s *scoped) doStmt(st parser.Stmt) {
 			s.onThrow(n, s.resolve)
 		}
 		s.doExpr(n.Value)
+	case *parser.DeferStmt:
+		// The deferred call's arguments are evaluated at the defer site, so a
+		// `$var` in them is a real read in this scope - without this case the
+		// canonical `defer fs.close($f);` would leave `f` looking unused (L101).
+		s.doExpr(n.Call)
 	case *parser.TryStmt:
 		// Try body runs in the enclosing frame (resolver carve-out); catch
 		// gets a fresh frame with the caught Error bound non-reportable.
