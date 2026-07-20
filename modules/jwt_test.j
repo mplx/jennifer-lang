@@ -158,3 +158,29 @@ func testAlgHashAndFamily() {
     testing.assertEqual(family("ES256"), "ecdsa");
     testing.assertEqual(family("EdDSA"), "eddsa");
 }
+
+# ---- canonical base64url (token-malleability rejection) ----
+
+# RFC 7515 A.1's signature ends in "JXk"; flipping the last character's lowest
+# bit ("JXl") changes only base64 trailing-padding bits, so a lenient decoder
+# yields the SAME 32 signature bytes - a second spelling of the same token.
+# decodeSegment must reject the non-canonical spelling.
+func testNonCanonicalTrailingBitsRejected() {
+    testing.assertThrows("decodeTrailingBitFlip", "value");
+}
+func decodeTrailingBitFlip() {
+    decodeSegment("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXl");
+}
+func testCanonicalRfcSignatureAccepted() {
+    # The canonical spelling of the same segment decodes fine (32 bytes).
+    testing.assertEqual(len(decodeSegment("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")), 32);
+}
+
+# A segment carrying the "=" padding JWT forbids is also a second spelling.
+func testPaddedSegmentRejected() {
+    testing.assertThrows("verifyPaddedSignature", "value");
+}
+func verifyPaddedSignature() {
+    def tok as string init sign(sampleClaims(), secret(), "HS256");
+    verify($tok + "=", secret(), "HS256");
+}

@@ -152,10 +152,11 @@ def back as bytes init crypto.decrypt($key, $box);   # throws if $box was tamper
 ```
 
 The key is caller-managed - store it, or derive it from a password with
-`crypto.pbkdf(..., 32, "sha256")`. The random 96-bit nonce is safe for a
-vast number of messages under one key (the birthday bound is ~2^48); rotate the
-key if you ever approach that, which no ordinary workload will. Encrypting the same plaintext twice yields
-different boxes (fresh nonce each time).
+`crypto.pbkdf(..., 32, "sha256")`. Random 96-bit nonces can collide by the
+birthday bound, so NIST's guidance (SP 800-38D) caps one key at **2^32
+messages** (~4 billion) to keep that chance below 2^-32 - rotate the key before
+then, which no ordinary workload approaches. Encrypting the same plaintext
+twice yields different boxes (fresh nonce each time).
 
 ## Signatures
 

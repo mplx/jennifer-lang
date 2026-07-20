@@ -202,6 +202,16 @@ func TestHkdfKnownAnswer(t *testing.T) {
 	if _, err := hkdfFn(noCtx, []interpreter.Value{bytesArg(ikm), bytesArg(salt), bytesArg(info), interpreter.IntVal(42), interpreter.StringVal("md5")}); err == nil {
 		t.Error("md5 is not a KDF algorithm and should error")
 	}
+	// RFC 5869 Appendix A.4 (HKDF-SHA1, Test Case 4) - pins the sha1 PRF path.
+	ikm1 := bytesRepeat(0x0b, 11)
+	want1 := "085a01ea1b10f36933068b56efa5ad81a4f14b822f5b091568a9cdd4f155fda2c22e422478d305f3f896"
+	v1, err := hkdfFn(noCtx, []interpreter.Value{bytesArg(ikm1), bytesArg(salt), bytesArg(info), interpreter.IntVal(42), interpreter.StringVal("sha1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(v1.Bytes); got != want1 {
+		t.Errorf("hkdf(sha1) =\n %s\nwant\n %s", got, want1)
+	}
 }
 
 // Standard PBKDF2 vectors: SHA-256 (P="password", S="salt", c=1, dkLen=32) and
@@ -214,6 +224,7 @@ func TestPbkdf2KnownAnswer(t *testing.T) {
 	}{
 		{"sha256", 1, 32, "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b"},
 		{"sha1", 1, 20, "0c60c80f961f0e71f3a9b524af6012062fe037a6"},
+		{"sha512", 1, 64, "867f70cf1ade02cff3752599a3a53dc4af34c7a669815ae5d513554e1c8cf252c02d470a285a0501bad999bfe943c08f050235d7d68b1da55e63f73b60a57fce"},
 	}
 	for _, c := range cases {
 		v, err := pbkdf2Fn(noCtx, []interpreter.Value{bytesArg([]byte("password")), bytesArg([]byte("salt")), interpreter.IntVal(c.iter), interpreter.IntVal(c.keyLen), interpreter.StringVal(c.algo)})
@@ -259,6 +270,34 @@ func bytesRepeat(b byte, n int) []byte {
 }
 
 // ----- AES-256-GCM -----
+
+// NIST AES-256-GCM known-answer vectors (GCM spec test cases 13/14: zero key,
+// zero 96-bit IV). Driven through decryptFn with a hand-assembled
+// nonce||ciphertext||tag box, so the box *layout* is pinned against external
+// truth, not just against our own encrypt.
+func TestGCMKnownAnswer(t *testing.T) {
+	key := make([]byte, 32)
+	iv := make([]byte, 12)
+	// Case 13: empty plaintext -> tag only.
+	tag13, _ := hex.DecodeString("530f8afbc74536b9a963b4f1c4cb738b")
+	box := append(append([]byte{}, iv...), tag13...)
+	v, err := decryptFn(noCtx, []interpreter.Value{bytesArg(key), bytesArg(box)})
+	if err != nil || len(v.Bytes) != 0 {
+		t.Errorf("NIST case 13: got %x err=%v, want empty plaintext", v.Bytes, err)
+	}
+	// Case 14: 16 zero bytes of plaintext.
+	ct14, _ := hex.DecodeString("cea7403d4d606b6e074ec5d3baf39d18")
+	tag14, _ := hex.DecodeString("d0d1c8a799996bf0265b98b5d48ab919")
+	box = append(append(append([]byte{}, iv...), ct14...), tag14...)
+	v, err = decryptFn(noCtx, []interpreter.Value{bytesArg(key), bytesArg(box)})
+	if err != nil || string(v.Bytes) != string(make([]byte, 16)) {
+		t.Errorf("NIST case 14: got %x err=%v, want 16 zero bytes", v.Bytes, err)
+	}
+	// A box of exactly nonce size (no tag at all) must fail cleanly.
+	if _, err := decryptFn(noCtx, []interpreter.Value{bytesArg(key), bytesArg(iv)}); err == nil {
+		t.Error("nonce-only box should fail authentication")
+	}
+}
 
 func mustEncrypt(t *testing.T, key, pt []byte) []byte {
 	t.Helper()
@@ -329,6 +368,26 @@ func TestEncryptKeyLength(t *testing.T) {
 }
 
 // ----- Ed25519 -----
+
+// RFC 8032 section 7.1, TEST 2: a fixed keypair and one-byte message with a
+// published signature, so sign / verify are pinned against external truth.
+func TestEd25519KnownAnswer(t *testing.T) {
+	seed, _ := hex.DecodeString("4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb")
+	pub, _ := hex.DecodeString("3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c")
+	wantSig, _ := hex.DecodeString("92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00")
+	msg := []byte{0x72}
+	priv := append(append([]byte{}, seed...), pub...) // Go's private key is seed||public
+	sv, err := signFn(noCtx, []interpreter.Value{bytesArg(priv), bytesArg(msg)})
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+	if hex.EncodeToString(sv.Bytes) != hex.EncodeToString(wantSig) {
+		t.Errorf("sign =\n %x\nwant\n %x", sv.Bytes, wantSig)
+	}
+	if v, _ := verifyFn(noCtx, []interpreter.Value{bytesArg(pub), bytesArg(msg), bytesArg(wantSig)}); !v.Bool {
+		t.Error("RFC 8032 signature should verify true")
+	}
+}
 
 func TestSignVerifyRoundTrip(t *testing.T) {
 	kpV, err := signKeypairFn(noCtx, nil)

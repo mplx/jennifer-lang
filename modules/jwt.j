@@ -52,6 +52,11 @@ func encodeSegment(b as bytes) {
     return strings.replace(encoding.toText($b, "base64-url"), "=", "");
 }
 # decodeSegment restores the padding a JWT segment omits, then decodes it.
+# The segment must be *canonical* unpadded base64url: after decoding, the bytes
+# must re-encode to exactly the input. A lenient decoder would also accept a
+# segment with stray "=" padding or non-zero trailing bits - a second spelling
+# of the same token, which breaks anything keyed on the token string (replay
+# caches, denylists) and is rejected by strict JWS implementations.
 func decodeSegment(s as string) {
     def padded as string init $s;
     def r as int init len($s) % 4;
@@ -60,7 +65,11 @@ func decodeSegment(s as string) {
     } elseif ($r == 3) {
         $padded = $s + "=";
     }
-    return encoding.fromText($padded, "base64-url");
+    def out as bytes init encoding.fromText($padded, "base64-url");
+    if (encodeSegment($out) != $s) {
+        throw Error{kind: "value", message: "jwt: non-canonical base64url segment", file: "", line: 0, col: 0};
+    }
+    return $out;
 }
 
 # ---- algorithm dispatch ----

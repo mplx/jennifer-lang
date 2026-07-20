@@ -120,9 +120,11 @@ func encryptFn(_ interpreter.BuiltinCtx, args []interpreter.Value) (interpreter.
 	if err != nil {
 		return interpreter.Null(), fmt.Errorf("crypto.encrypt: %v", err)
 	}
-	nonce := make([]byte, gcm.NonceSize())
+	// Allocate the nonce with capacity for the whole box up front, so Seal
+	// appends ciphertext+tag in place (nonce||ct||tag) with no second
+	// allocation-and-copy of the message.
+	nonce := make([]byte, gcm.NonceSize(), gcm.NonceSize()+len(args[1].Bytes)+gcm.Overhead())
 	RandFill(nonce)
-	// Seal appends ciphertext+tag onto the nonce slice, giving nonce||ct||tag.
 	box := gcm.Seal(nonce, nonce, args[1].Bytes, nil)
 	return interpreter.BytesVal(box), nil
 }
@@ -248,15 +250,23 @@ func RandByte() byte {
 // of a UUID's random bytes in one call, so it pays one lock acquisition instead
 // of one per byte. Refills the buffer mid-copy as needed.
 func RandFill(b []byte) {
+	// A draw bigger than half the buffer would cycle it under the shared lock;
+	// crypto/rand.Read is itself thread-safe, so serve large draws directly and
+	// keep the lock for the small-draw fast path (nonces, UUIDs).
+	if len(b) > len(randBuf)/2 {
+		fill(b)
+		return
+	}
 	randMu.Lock()
 	defer randMu.Unlock()
-	for i := range b {
+	for filled := 0; filled < len(b); {
 		if randPos >= len(randBuf) {
 			fill(randBuf[:])
 			randPos = 0
 		}
-		b[i] = randBuf[randPos]
-		randPos++
+		n := copy(b[filled:], randBuf[randPos:])
+		randPos += n
+		filled += n
 	}
 }
 

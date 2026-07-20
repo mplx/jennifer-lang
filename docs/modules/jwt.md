@@ -56,6 +56,11 @@ one:
   the current time. `NumericDate` claims are Unix seconds.
 - **HMAC comparison is constant-time** (`crypto.hmacEqual`), so a wrong MAC
   leaks nothing through timing.
+- **Segments must be canonical base64url.** A segment with stray `=` padding or
+  non-zero trailing bits decodes to the same bytes as the canonical spelling -
+  a *second token string* that verifies as the same token, which breaks
+  anything keyed on the token string (replay caches, denylists). Such spellings
+  are rejected as malformed, matching strict JWS implementations.
 
 `jwt.decode` and `jwt.header` do **not** verify anything - use them only to read
 a token you have not trusted yet (for example, to read `kid` before fetching the
