@@ -125,6 +125,13 @@ in [interpreter.md](interpreter.md); this page is the file-level index.
 | `internal/profile/render.go` | Table + Chrome-trace renderers. |
 | `internal/profile/pprof.go` | Gzipped-pprof output (hand-encoded, zero-dependency). |
 
+## Shared limits
+
+| File | Description |
+| ---- | ----------- |
+| `internal/limits/nesting_std.go` | `MaxNestingDepth = 1000` (`!tinygo`): the recursive-descent nesting cap enforced by the language parser and the json / toml / xml decoders on the default binary. |
+| `internal/limits/nesting_tiny.go` | `MaxNestingDepth = 64` (`tinygo`): the same cap lowered to stay below `jennifer-tiny`'s fixed 2 MB stack. See `docs/technical/tinygo.md`. |
+
 ## Version & build
 
 | File | Description |

@@ -1,7 +1,7 @@
 # `hash` - cryptographic-style digests
 
 Enable with `use hash;`. Computes fixed-size digests over `bytes`
-using common cryptographic-style algorithms (MD5, SHA-1, SHA-256).
+using common cryptographic-style algorithms (MD5, SHA-1, SHA-256, SHA-384, SHA-512).
 Output is raw `bytes`; users hex- or base64-encode through the
 `encoding` library when they need a string representation.
 
@@ -31,11 +31,12 @@ with the algorithm passed as a string. The shape mirrors
 | `"md5"`     | 16 bytes     | Broken for collision resistance; useful for integrity / caching. |
 | `"sha1"`    | 20 bytes     | Broken for collision resistance; still common in legacy formats. |
 | `"sha256"`  | 32 bytes     | The default choice for new code.                                 |
+| `"sha384"`  | 48 bytes     | Truncated SHA-512; used by some TLS / JOSE suites.               |
 | `"sha512"`  | 64 bytes     | Wider SHA-2 digest; used by some HMAC / TOTP variants.           |
 
 Passing an unknown algorithm is a positioned runtime error that
 lists the supported set:
-`hash.compute: unknown digest algorithm "md4"; known: "md5", "sha1", "sha256", "sha512"`.
+`hash.compute: unknown digest algorithm "md4"; known: "md5", "sha1", "sha256", "sha384", "sha512"`.
 
 ## One-shot
 

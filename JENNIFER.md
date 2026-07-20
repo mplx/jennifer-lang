@@ -359,7 +359,8 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   **`meta`**, **`testing`** - clock, files, sockets, RE2 regex, digests,
   checksums, security primitives (crypto-grade random `crypto.randBytes`/
   `randInt`, constant-time `crypto.hmacEqual`, key derivation `crypto.hkdf`/
-  `crypto.pbkdf`), byte-stream + container compression, text/character codecs,
+  `crypto.pbkdf`, AES-256-GCM `crypto.encrypt`/`decrypt`, Ed25519
+  `crypto.signKeypair`/`sign`/`verify`), byte-stream + container compression, text/character codecs,
   UUIDs, interpreter identity, and test primitives.
 
 For the exact signature of any function, see the hosted library reference -

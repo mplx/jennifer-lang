@@ -157,6 +157,21 @@ can run recursive `spawn` bodies (and the parallel section of
 `examples/benchmark.j`). The default `jennifer` binary doesn't
 need this - Go's goroutine stacks grow automatically.
 
+That fixed 2 MB stack also sets a hard ceiling on how deeply the
+tree-walker can recurse over *nested data*: a deeply-nested source
+literal, or a deeply-nested `json` / `toml` / `xml` document, drives
+one recursive descent per level, and the interpreter has no
+`recover()`, so an overflow is a fatal crash rather than a catchable
+error. Every recursive-descent parser (the language parser and the
+three hand-rolled decoders) therefore enforces a shared nesting cap,
+`internal/limits.MaxNestingDepth`. It is build-tag split: 1000 on the
+default binary (growable stack), and 64 on `jennifer-tiny`, which sits
+below the depth where the heaviest shape (a nested map literal)
+overflows the 2 MB stack (empirically it survives 96 and segfaults near
+128). Exceeding the cap is a positioned parse error / catchable decode
+error on both binaries. `yaml` keeps its own pre-parse guard (it is
+backed by a Go dependency, not a hand-rolled descent).
+
 **TinyGo scheduler**. `jennifer-tiny` pins the cooperative
 single-thread scheduler (`-scheduler=tasks` in the Makefile).
 `spawn` works fully (semantics, loud-fail, registry), but every

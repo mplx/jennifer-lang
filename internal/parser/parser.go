@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"jennifer-lang.dev/jennifer/internal/lexer"
+	"jennifer-lang.dev/jennifer/internal/limits"
 )
 
 // ParseError carries source position so the caller can produce useful messages.
@@ -89,6 +90,10 @@ type parser struct {
 	// already-parsed lvalue chain back into the expression ladder (a non-`=`
 	// statement) without re-parsing the chain from scratch.
 	seed Expr
+	// exprDepth tracks structural expression nesting so parseExpr can reject
+	// input that would overflow the Go stack (the interpreter has no recover();
+	// a stack overflow is a fatal, uncatchable crash). See parseExpr.
+	exprDepth int
 }
 
 func (p *parser) peek() lexer.Token       { return p.tokens[p.pos] }
@@ -1287,7 +1292,24 @@ func (p *parser) expectFieldName(ctx string) (lexer.Token, error) {
 }
 
 func (p *parser) parseExpr() (Expr, error) {
-	return p.parseOr()
+	// parseExpr is the single re-entry point for every nested expression - list
+	// and map elements, struct-literal field values, call arguments, and grouped
+	// parens all recurse back through here - so one counter bounds structural
+	// nesting for all of them. The cap is the depth the constrained TinyGo
+	// binary's fixed 2 MB stack survives (the decoders share the same limit); an
+	// uncapped deeply-nested literal from stdin or a downloaded script would
+	// otherwise crash the process outright rather than raise a catchable error.
+	if p.exprDepth >= limits.MaxNestingDepth {
+		t := p.peek()
+		return nil, &ParseError{
+			Msg:  fmt.Sprintf("expression nesting exceeds %d levels", limits.MaxNestingDepth),
+			File: t.File, Line: t.Line, Col: t.Col,
+		}
+	}
+	p.exprDepth++
+	e, err := p.parseOr()
+	p.exprDepth--
+	return e, err
 }
 
 // Precedence (lowest to highest):

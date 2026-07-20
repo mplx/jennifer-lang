@@ -12,9 +12,12 @@ both binaries.
 | `json.encodePretty(v)`   | `string`     | Same, 2-space indented; empty lists / maps stay `[]`/`{}`.     |
 | `json.decode(s)`         | `json.Value` | Parse JSON text into an opaque handle (see below).             |
 
-`json.decode` rejects container nesting deeper than 1000 levels with a
-normal (catchable) decode error, so hostile deeply-nested input can't
-exhaust the interpreter's stack.
+`json.decode` rejects container nesting past a fixed depth with a normal
+(catchable) decode error, so hostile deeply-nested input can't exhaust the
+interpreter's stack. The limit is shared by every parser in the toolchain and
+is set per binary: 1000 levels on the default `jennifer` (Go's growable stack),
+64 on `jennifer-tiny` (its fixed 2 MB stack). Both are far past any real
+document.
 
 Accessors over a decoded `json.Value`. Every one takes an optional
 trailing **JSON Pointer** (RFC 6901) string, relative to the passed node

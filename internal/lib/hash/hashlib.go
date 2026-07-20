@@ -47,12 +47,13 @@ var algoCtor = map[string]func() gohash.Hash{
 	"md5":    md5.New,
 	"sha1":   sha1.New,
 	"sha256": sha256.New,
+	"sha384": sha512.New384,
 	"sha512": sha512.New,
 }
 
 // algoList is the rendered "known algorithms" string used in error
 // messages. Kept in a known order so the message stays stable.
-const algoList = `"md5", "sha1", "sha256", "sha512"`
+const algoList = `"md5", "sha1", "sha256", "sha384", "sha512"`
 
 // streamState wraps a live digest with its own mutex. The registry map is
 // guarded by streamsMu, but the digest itself is mutable state that spawned

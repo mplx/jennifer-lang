@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/limits"
 	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
@@ -38,8 +39,10 @@ func decodeFn(args []interpreter.Value) (interpreter.Value, error) {
 // maxNestingDepth caps container recursion in parseValue. Each nesting level
 // costs Go stack frames, and a Go stack overflow is fatal (not a catchable
 // Jennifer error), so deeply-nested untrusted input could otherwise kill the
-// whole process. 1000 is far beyond any legitimate document.
-const maxNestingDepth = 1000
+// whole process. The limit is shared with the language parser and the other
+// decoders, and is build-tag split so it stays below the constrained TinyGo
+// binary's fixed-stack crash point (see internal/limits).
+const maxNestingDepth = limits.MaxNestingDepth
 
 // decoder is a recursive-descent JSON reader over a byte-indexed string.
 type decoder struct {

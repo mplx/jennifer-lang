@@ -11,9 +11,9 @@ Digests (MD5 / SHA-*) and the keyed-hash MAC (`hash.hmac`) live in
 or a timing side channel is a vulnerability.
 
 Everything here is Go standard library only (`crypto/rand`,
-`crypto/subtle`, `crypto/hkdf`, `crypto/pbkdf2`), so the library adds no
-dependency and works on **both binaries** (`jennifer` and
-`jennifer-tiny`).
+`crypto/subtle`, `crypto/hkdf`, `crypto/pbkdf2`, `crypto/aes`,
+`crypto/cipher`, `crypto/ed25519`), so the library adds no dependency and
+works on **both binaries** (`jennifer` and `jennifer-tiny`).
 
 ```jennifer
 use io;
@@ -128,10 +128,70 @@ standard library. That is deliberately out of scope for `crypto`; use
 PBKDF2 only where an interoperable KDF is required (e.g. SCRAM), not as
 a general password store.
 
+## Authenticated encryption
+
+`crypto.encrypt` / `crypto.decrypt` are **AES-256-GCM**, an authenticated
+(AEAD) cipher: the ciphertext carries a tag, so tampering is *detected*, not
+silently decrypted into garbage. There is one algorithm and no mode / nonce
+knobs - the footguns (ECB, IV reuse) are not expressible.
+
+| Call | Returns | Notes |
+| ---- | ------- | ----- |
+| `crypto.encrypt(key, plaintext)` | `bytes` | Seal. `key` must be exactly 32 bytes (AES-256). A fresh 12-byte nonce is generated and **prepended**: the result is `nonce \|\| ciphertext \|\| tag`, so you never handle (or reuse) a nonce. |
+| `crypto.decrypt(key, box)` | `bytes` | Open. Splits the nonce, verifies the tag, returns the plaintext. A wrong key or a tampered box is a **catchable authentication error**. |
+
+```jennifer
+use crypto;
+use convert;
+
+def key as bytes init crypto.randBytes(32);          # keep this secret
+def box as bytes init crypto.encrypt($key, convert.bytesFromString("secret", "utf-8"));
+def back as bytes init crypto.decrypt($key, $box);   # throws if $box was tampered
+```
+
+The key is caller-managed - store it, or derive it from a password with
+`crypto.pbkdf(..., 32, "sha256")`. The random 96-bit nonce is safe for a
+vast number of messages under one key (the birthday bound is ~2^48); rotate the
+key if you ever approach that, which no ordinary workload will. Encrypting the same plaintext twice yields
+different boxes (fresh nonce each time).
+
+## Signatures
+
+`crypto.sign` / `crypto.verify` are **Ed25519** - a modern signature scheme with
+no parameters to choose. A keypair is a namespaced struct
+`crypto.Keypair { public as bytes, private as bytes }`.
+
+| Call | Returns | Notes |
+| ---- | ------- | ----- |
+| `crypto.signKeypair()` | `crypto.Keypair` | A fresh keypair (32-byte `public`, 64-byte `private`). |
+| `crypto.sign(private, message)` | `bytes` | A 64-byte signature over `message`. |
+| `crypto.verify(public, message, signature)` | `bool` | `true` iff `signature` is `public`'s signature over `message`; `false` on any mismatch. A malformed key / signature length is a positioned error. |
+
+```jennifer
+use crypto;
+use convert;
+
+def kp as crypto.Keypair init crypto.signKeypair();
+def msg as bytes init convert.bytesFromString("ship it", "utf-8");
+def sig as bytes init crypto.sign($kp.private, $msg);
+def ok as bool init crypto.verify($kp.public, $msg, $sig);   # true
+```
+
+Publish the `public` key; keep the `private` key secret. `verify` returning
+`false` means the message, key, or signature does not match - it never throws for
+a genuine mismatch, only for a wrong-length key or signature.
+
+The random source draws from the same crypto-grade generator as `randBytes`.
+All Go stdlib (`crypto/aes`, `crypto/cipher`, `crypto/ed25519`), so both binaries
+carry it. Out of scope by design: password *hashing* (see above), raw block
+modes, RSA / ECDSA signing, and x509 parsing.
+
 ## Errors
 
 Every function validates argument kinds and counts and raises a
 positioned runtime error on misuse (wrong type, negative `randBytes`
-length, `lo > hi`, non-positive `iterations` / `keyLen` / `length`). The
-secure random source is assumed always available on the supported
-platform; an impossible failure aborts rather than returning weak bytes.
+length, `lo > hi`, non-positive `iterations` / `keyLen` / `length`, a key
+that is not 32 bytes for `encrypt` / `decrypt`, a wrong-length Ed25519 key or
+signature). The secure random source is assumed always available on the
+supported platform; an impossible failure aborts rather than returning weak
+bytes.

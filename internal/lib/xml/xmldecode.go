@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/limits"
 )
 
 type decoder struct {
@@ -29,9 +30,10 @@ type decoder struct {
 // maxDepth caps element nesting. parseElement/parseContent recurse one Go frame
 // per level, and a Go stack overflow is a fatal, uncatchable crash (the
 // interpreter has no recover()), so an unbounded depth would make any untrusted
-// document a remote kill switch. 1000 matches json/toml and is far beyond any
-// real document.
-const maxDepth = 1000
+// document a remote kill switch. The limit is shared with json/toml and the
+// language parser, and is build-tag split so it stays below the constrained
+// TinyGo binary's fixed-stack crash point (see internal/limits).
+const maxDepth = limits.MaxNestingDepth
 
 // errf tags an error with the line/column of the current position.
 func (d *decoder) errf(format string, a ...any) error {

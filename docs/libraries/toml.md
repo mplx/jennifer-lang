@@ -18,9 +18,11 @@ so the accessors below are the only way inside. `convert.typeOf` reports
 | ---- | ------- | ----- |
 | `toml.decode(text)` | `toml.Value` | Parse a TOML document into an opaque handle. |
 
-`toml.decode` rejects container nesting (and dotted-key segment counts)
-deeper than 1000 levels with a normal (catchable) decode error, so
-hostile deeply-nested input can't exhaust the interpreter's stack.
+`toml.decode` rejects container nesting (and dotted-key segment counts) past a
+fixed depth with a normal (catchable) decode error, so hostile deeply-nested
+input can't exhaust the interpreter's stack. The limit is shared by every parser
+in the toolchain and is set per binary: 1000 levels on the default `jennifer`
+(Go's growable stack), 64 on `jennifer-tiny` (its fixed 2 MB stack).
 | `toml.encode(v)` | `string` | Render a `toml.Value` (or a native `map` / `list` / scalar) to TOML text. |
 | `toml.encodePretty(v)` | `string` | Same, with a blank line separating `[table]` / `[[array]]` sections. |
 | `toml.typeOf(v[, ptr])` | `string` | Node type: `null` / `bool` / `int` / `float` / `string` / `list` / `map` / `datetime`. |

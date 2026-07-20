@@ -109,9 +109,11 @@ def page as xml.Value init xml.append(xml.element("page"), $note);
 - **Namespaces are lexical**: prefixes are kept as written, not resolved to
   their `xmlns` URIs. Full namespace resolution and richer XPath (predicates,
   `@attr` / `text()` path steps) are future extensions.
-- **Element nesting is capped at 1000 levels** on both decode and encode: a
-  deeper document (or a tree built that deep with `xml.append`) raises a
-  catchable error rather than overflowing the stack. No entity is expanded
+- **Element nesting is capped** on both decode and encode: a deeper document
+  (or a tree built that deep with `xml.append`) raises a catchable error rather
+  than overflowing the stack. The limit is shared by every parser in the
+  toolchain and is set per binary: 1000 levels on the default `jennifer` (Go's
+  growable stack), 64 on `jennifer-tiny` (its fixed 2 MB stack). No entity is expanded
   beyond the five predefined names and numeric references, so there is no
   entity-expansion ("billion laughs") blow-up, and nothing is fetched
   externally - an unknown or external entity is simply an error.

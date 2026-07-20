@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"jennifer-lang.dev/jennifer/internal/limits"
 )
 
 func TestParseHelloProgram(t *testing.T) {
@@ -118,6 +120,34 @@ func TestDefRejectsDollarAtDefinitionSite(t *testing.T) {
 	_, err := Parse(`func app() { def $x as int init 5; }`)
 	if err == nil || !strings.Contains(err.Error(), "drop the `$`") {
 		t.Errorf("expected $-at-def-site hint, got %v", err)
+	}
+}
+
+// A deeply-nested expression must be rejected with a positioned parse error
+// rather than being parsed to a depth that later overflows the (recover-less)
+// Go stack at resolve/eval time. This is the untrusted-input guard for the
+// `jennifer run -` stdin path and downloaded scripts. The cap is build-tag
+// split (see internal/limits); this exercises the standard-Go value.
+func TestDeeplyNestedExpressionRejected(t *testing.T) {
+	// One level past the cap, in each nested-container form.
+	n := limits.MaxNestingDepth + 1
+	cases := map[string]string{
+		"list":  "use io; def x as int init " + strings.Repeat("[", n) + "1" + strings.Repeat("]", n) + ";",
+		"paren": "use io; def x as int init " + strings.Repeat("(", n) + "1" + strings.Repeat(")", n) + ";",
+	}
+	for name, src := range cases {
+		_, err := Parse(src)
+		if err == nil || !strings.Contains(err.Error(), "nesting exceeds") {
+			t.Errorf("%s: expected nesting-limit parse error, got %v", name, err)
+		}
+	}
+	// Nesting comfortably under the cap still parses (the guard must not
+	// over-reject ordinary, if unusual, expressions).
+	under := limits.MaxNestingDepth - 4
+	ok := "use io; def x as int init " + strings.Repeat("(", under) + "1" +
+		strings.Repeat(")", under) + ";"
+	if _, err := Parse(ok); err != nil {
+		t.Errorf("depth-%d expression should parse, got %v", under, err)
 	}
 }
 

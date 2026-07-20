@@ -1907,6 +1907,14 @@ graduates in stages.
 
 ### M20.10 - `crypto` authenticated encryption + signatures
 
+**Done.** Extended `crypto` with AES-256-GCM `encrypt(key, plaintext)` /
+`decrypt(key, box)` (32-byte key, 12-byte nonce generated and prepended, AEAD
+tamper detection) and Ed25519 `signKeypair() -> Keypair{public, private}` /
+`sign(private, message)` / `verify(public, message, sig)`; added `"sha384"` to
+`hash` (`"sha512"` was already present). All Go stdlib (`crypto/aes` /
+`crypto/cipher` / `crypto/ed25519`), verified TinyGo-clean - both binaries run it
+(`jennifer-tiny` grew ~0.3 MB). Original spec below.
+
 **Motivation.** The default `jennifer` already links the whole TLS crypto stack
 (AES-GCM, ChaCha20-Poly1305, Ed25519, ECDSA, RSA, x509 - dead-code-eliminated to
 what `crypto/tls` + `x509` reference, which is most of it), so surfacing a

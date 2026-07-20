@@ -5,6 +5,7 @@ package cryptolib
 
 import (
 	"encoding/hex"
+	"sync"
 	"testing"
 
 	"jennifer-lang.dev/jennifer/internal/interpreter"
@@ -255,4 +256,171 @@ func bytesRepeat(b byte, n int) []byte {
 		out[i] = b
 	}
 	return out
+}
+
+// ----- AES-256-GCM -----
+
+func mustEncrypt(t *testing.T, key, pt []byte) []byte {
+	t.Helper()
+	v, err := encryptFn(noCtx, []interpreter.Value{bytesArg(key), bytesArg(pt)})
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	return v.Bytes
+}
+
+func TestEncryptRoundTrip(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i)
+	}
+	for _, pt := range [][]byte{{}, []byte("x"), []byte("a longer secret message here")} {
+		box := mustEncrypt(t, key, pt)
+		// box = 12 nonce + len(pt) + 16 tag
+		if len(box) != 12+len(pt)+16 {
+			t.Errorf("box len = %d, want %d", len(box), 12+len(pt)+16)
+		}
+		v, err := decryptFn(noCtx, []interpreter.Value{bytesArg(key), bytesArg(box)})
+		if err != nil || string(v.Bytes) != string(pt) {
+			t.Errorf("decrypt: %q err=%v, want %q", v.Bytes, err, pt)
+		}
+	}
+	// A fresh nonce each time: two encryptions of the same plaintext differ.
+	if string(mustEncrypt(t, key, []byte("same"))) == string(mustEncrypt(t, key, []byte("same"))) {
+		t.Error("two encryptions produced the same box (nonce reuse)")
+	}
+}
+
+func TestDecryptRejectsTamperAndWrongKey(t *testing.T) {
+	key := make([]byte, 32)
+	box := mustEncrypt(t, key, []byte("authentic"))
+	// tamper a ciphertext byte
+	bad := append([]byte(nil), box...)
+	bad[len(bad)-1] ^= 0x01
+	if _, err := decryptFn(noCtx, []interpreter.Value{bytesArg(key), bytesArg(bad)}); err == nil {
+		t.Error("tampered box should fail authentication")
+	}
+	// wrong key
+	other := make([]byte, 32)
+	other[0] = 0xff
+	if _, err := decryptFn(noCtx, []interpreter.Value{bytesArg(other), bytesArg(box)}); err == nil {
+		t.Error("wrong key should fail authentication")
+	}
+	// box too short to hold a nonce
+	if _, err := decryptFn(noCtx, []interpreter.Value{bytesArg(key), bytesArg([]byte{1, 2, 3})}); err == nil {
+		t.Error("short box should error")
+	}
+}
+
+func TestEncryptKeyLength(t *testing.T) {
+	pt := []byte("x")
+	for _, n := range []int{0, 16, 31, 33, 64} {
+		if _, err := encryptFn(noCtx, []interpreter.Value{bytesArg(make([]byte, n)), bytesArg(pt)}); err == nil {
+			t.Errorf("encrypt with a %d-byte key should error (need 32)", n)
+		}
+		if _, err := decryptFn(noCtx, []interpreter.Value{bytesArg(make([]byte, n)), bytesArg(make([]byte, 40))}); err == nil {
+			t.Errorf("decrypt with a %d-byte key should error (need 32)", n)
+		}
+	}
+	// non-bytes args
+	if _, err := encryptFn(noCtx, []interpreter.Value{interpreter.StringVal("k"), bytesArg(pt)}); err == nil {
+		t.Error("string key should error")
+	}
+}
+
+// ----- Ed25519 -----
+
+func TestSignVerifyRoundTrip(t *testing.T) {
+	kpV, err := signKeypairFn(noCtx, nil)
+	if err != nil {
+		t.Fatalf("signKeypair: %v", err)
+	}
+	var pub, priv []byte
+	for _, f := range kpV.Fields {
+		switch f.Name {
+		case "public":
+			pub = f.Value.Bytes
+		case "private":
+			priv = f.Value.Bytes
+		}
+	}
+	if len(pub) != 32 || len(priv) != 64 {
+		t.Fatalf("key sizes: pub=%d priv=%d", len(pub), len(priv))
+	}
+	msg := []byte("sign this message")
+	sigV, err := signFn(noCtx, []interpreter.Value{bytesArg(priv), bytesArg(msg)})
+	if err != nil || len(sigV.Bytes) != 64 {
+		t.Fatalf("sign: %v (len %d)", err, len(sigV.Bytes))
+	}
+	// valid
+	if v, _ := verifyFn(noCtx, []interpreter.Value{bytesArg(pub), bytesArg(msg), bytesArg(sigV.Bytes)}); !v.Bool {
+		t.Error("valid signature should verify true")
+	}
+	// tampered message
+	if v, _ := verifyFn(noCtx, []interpreter.Value{bytesArg(pub), bytesArg([]byte("sign that message")), bytesArg(sigV.Bytes)}); v.Bool {
+		t.Error("tampered message should verify false")
+	}
+	// cross-key: another keypair's public must reject this signature
+	kp2, _ := signKeypairFn(noCtx, nil)
+	var pub2 []byte
+	for _, f := range kp2.Fields {
+		if f.Name == "public" {
+			pub2 = f.Value.Bytes
+		}
+	}
+	if v, _ := verifyFn(noCtx, []interpreter.Value{bytesArg(pub2), bytesArg(msg), bytesArg(sigV.Bytes)}); v.Bool {
+		t.Error("wrong public key should verify false")
+	}
+}
+
+func TestEd25519LengthErrors(t *testing.T) {
+	msg := []byte("m")
+	if _, err := signFn(noCtx, []interpreter.Value{bytesArg(make([]byte, 32)), bytesArg(msg)}); err == nil {
+		t.Error("sign with a 32-byte private key should error (need 64)")
+	}
+	// verify: a malformed public key or signature length is an error, not a panic
+	if _, err := verifyFn(noCtx, []interpreter.Value{bytesArg(make([]byte, 10)), bytesArg(msg), bytesArg(make([]byte, 64))}); err == nil {
+		t.Error("verify with a short public key should error")
+	}
+	if _, err := verifyFn(noCtx, []interpreter.Value{bytesArg(make([]byte, 32)), bytesArg(msg), bytesArg(make([]byte, 10))}); err == nil {
+		t.Error("verify with a short signature should error")
+	}
+}
+
+// Concurrent encryptions must draw distinct nonces from the shared random pool.
+// A pool race handing two callers the same bytes would be GCM nonce reuse (a
+// catastrophic key-recovery break), so this both stresses the pool under -race
+// and asserts uniqueness.
+func TestConcurrentEncryptDistinctNonces(t *testing.T) {
+	key := make([]byte, 32)
+	pt := []byte("same plaintext under one key")
+	const n = 300
+	nonces := make([][]byte, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			v, err := encryptFn(noCtx, []interpreter.Value{bytesArg(key), bytesArg(pt)})
+			if err != nil {
+				t.Errorf("encrypt: %v", err)
+				return
+			}
+			nonces[i] = append([]byte(nil), v.Bytes[:12]...) // the prepended nonce
+		}(i)
+	}
+	wg.Wait()
+	seen := map[string]bool{}
+	for _, nc := range nonces {
+		if nc == nil {
+			continue
+		}
+		if seen[string(nc)] {
+			t.Fatal("duplicate nonce across concurrent encryptions - GCM nonce reuse")
+		}
+		seen[string(nc)] = true
+	}
+	if len(seen) != n {
+		t.Errorf("got %d distinct nonces, want %d", len(seen), n)
+	}
 }
