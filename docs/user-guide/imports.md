@@ -53,6 +53,7 @@ over string / list / map / bytes; no import needed.
 | `spi`     | `use spi;`     | SPI devices. `open(path)` -> `spi.Device`, `configure(dev, mode, speedHz)`, full-duplex `transfer(dev, bytes)`, `close`. Linux-only; stub elsewhere | [libraries/spi.md](../libraries/spi.md) |
 | `iic`     | `use iic;`     | the I2C bus (named `iic`, letters-only). `open(path, addr)` -> `iic.Bus`, `read`/`write`/`readReg`/`writeReg`/`close`. Linux-only; stub elsewhere | [libraries/iic.md](../libraries/iic.md) |
 | `gpio`    | `use gpio;`    | GPIO over `/dev/gpiochipN` (v2 ioctls). Pin-keyed `setup`/`read`/`write`/`release` + `IN`/`OUT`, chip via `gpio.chip`; mirrors the sysfs `gpio` module. Linux-only; stub elsewhere | [libraries/gpio.md](../libraries/gpio.md) |
+| `sql`     | `use sql;`     | relational client over `database/sql`: MySQL / MariaDB + PostgreSQL. `open`/`query`/`exec`/`next` + typed accessors, transactions, prepared statements; placeholder-only binding (injection safety). Default binary only; `jennifer-tiny` stubs it | [libraries/sql.md](../libraries/sql.md) |
 
 See [libraries/index.md](../libraries/index.md) for a fuller catalog
 and the library-organization principles, or

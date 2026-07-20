@@ -1453,7 +1453,7 @@ targets - keep them separate:
   deck registry) are created empty under the org as their own milestones land,
   not here.
 - **Metadata / CI / packaging sweep.** `README.md` badges and links, `docs/**`
-  (installing, tooling, user-guide, technical), `CLAUDE.md`, `JENNIFER.md`,
+  (installing, tooling, user-guide, technical), `JENNIFER.md`,
   `modules/README.md`, `book.toml`, the one example that hardcodes the URL
   (`examples/modules/barcode_demo.j`), the workflows
   (`.github/workflows/{test,docs,release}.yml`), and the packaging manifests
@@ -1828,6 +1828,19 @@ Linux `/dev` + `ioctl` interface). Together they complete the SBC I/O story.
 
 ### M20.9 - `sql` (MySQL / MariaDB + PostgreSQL)
 
+**Done.** Over `database/sql` with the two pure-Go drivers (`go-sql-driver/mysql`
++ `jackc/pgx` via its stdlib shim); build-tag split `sqllib_std.go` (`!tinygo`)
+imports them / `sqllib_tiny.go` stubs so `jennifer-tiny` never compiles the trees.
+Surface: `open(driver, dsn)` -> `Connection`, `query` / `exec` (target = a
+Connection or Tx), a pull cursor (`next` + typed `asInt`/`asFloat`/`asString`/
+`asBool`/`asBytes`/`isNull` accessors by column name or index), `Result{affected,
+lastId}`, `begin`/`commit`/`rollback`, prepared statements. Values bind **only
+through placeholders**. The two driver trees are the first heavyweight
+library-layer dependencies - the exception is recorded in
+[design-decisions.md](technical/design-decisions.md). Validated with an in-memory
+mock `database/sql` driver (cursor, accessors, NULL, tx, prepared, binding,
+error paths). Original spec below.
+
 A relational-database client library over Go's `database/sql`, shipping the
 two **client-server** engines: MySQL / MariaDB (`go-sql-driver/mysql`) and
 PostgreSQL (`jackc/pgx`), both **pure-Go** drivers (no cgo, so cross-compile
@@ -1856,7 +1869,7 @@ crypto the driver's problem, not the language's, so this needs nothing from
 
 **The deliberate dependency break.** These are the **first heavyweight
 dependencies in the library layer** - a conscious exception to the
-dependency-free discipline `CLAUDE.md` states for the library layer. The
+dependency-free discipline for the library layer. The
 precedent is [M20.3 `yaml`](#m203---yaml), which took a single pure-Go
 dependency (`gopkg.in/yaml.v3`) for a parser too big to hand-roll; alongside
 CLI-scoped `golang.org/x/term`, those are the only third-party dependencies

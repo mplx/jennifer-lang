@@ -347,6 +347,13 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   (`iic.open(path, addr)` -> `iic.Bus`, `read`/`write`/`readReg`/`writeReg`).
   **`gpio`** - `/dev/gpiochipN` lines, pin-keyed `setup`/`read`/`write`/`release`
   + `gpio.IN`/`gpio.OUT` (mirrors the sysfs `gpio` module).
+- **`sql`** - relational-database client over `database/sql`: MySQL / MariaDB +
+  PostgreSQL (pure-Go drivers; SQLite excluded). `sql.open(driver, dsn)` ->
+  `Connection`, `query`/`exec` (target is a Connection or Tx), pull cursor
+  `next` + typed `asInt`/`asFloat`/`asString`/`asBool`/`asBytes`/`isNull`,
+  `begin`/`commit`/`rollback`, prepared statements. Values bind **only through
+  placeholders** (no string interpolation -> injection-safe). Default `jennifer`
+  binary only; `jennifer-tiny` stubs it.
 - **`time`**, **`fs`**, **`net`**, **`regex`**, **`hash`**, **`crc`**,
   **`crypto`**, **`compress`**, **`archive`**, **`encoding`**, **`uuid`**,
   **`meta`**, **`testing`** - clock, files, sockets, RE2 regex, digests,

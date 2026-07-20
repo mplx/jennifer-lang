@@ -165,6 +165,12 @@ flat lookup view, not authoritative.
 | [`serial`](serial.md)`.flush($port)` / `.close($port)` | Discard buffered I/O / close the port. |
 | [`spi`](spi.md)`.open(path)` / `.configure($dev, mode, speedHz)` | Open an SPI device -> `spi.Device` / set clock mode (0..3) and speed. Linux only. |
 | [`spi`](spi.md)`.transfer($dev, data)` / `.close($dev)` | Full-duplex exchange (out and in together) / close the device. |
+| [`sql`](sql.md)`.open(driver, dsn)` / `.close($c)`   | Open a MySQL / Postgres connection -> sql.Connection / close it. Default binary only. |
+| [`sql`](sql.md)`.query(target, sql, params...)` / `.exec(target, sql, params...)` | Query -> sql.Rows / statement -> sql.Result{affected, lastId}. target = Connection or Tx; params bind through placeholders. |
+| [`sql`](sql.md)`.next($rows)` / `.columns($rows)` / `.closeRows($rows)` | Advance the cursor (false at end) / column names / close early. |
+| [`sql`](sql.md)`.asInt` / `.asFloat` / `.asString` / `.asBool` / `.asBytes($rows, col)` / `.isNull($rows, col)` | Read the current row's column (name or index), typed; a NULL column is an error (check isNull). |
+| [`sql`](sql.md)`.begin($c)` / `.commit($tx)` / `.rollback($tx)` | Transaction: begin -> sql.Tx (a query/exec target), then commit / rollback. |
+| [`sql`](sql.md)`.prepare($c, sql)` / `.queryStmt($s, ...)` / `.execStmt($s, ...)` / `.closeStmt($s)` | Prepared-statement lifecycle. |
 | [`math`](math.md)`.ceil(x)`                           | Smallest int ≥ `x`. Accepts int (identity) or float.                                                                                |
 | [`math`](math.md)`.floor(x)`                          | Largest int ≤ `x`. Accepts int (identity) or float.                                                                                 |
 | [`math`](math.md)`.max(a, b)`                         | Larger of two numbers; mixed int/float promotes to float.                                                                           |

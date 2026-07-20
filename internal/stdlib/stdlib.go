@@ -36,6 +36,7 @@ import (
 	"jennifer-lang.dev/jennifer/internal/lib/regex"
 	seriallib "jennifer-lang.dev/jennifer/internal/lib/serial"
 	spilib "jennifer-lang.dev/jennifer/internal/lib/spi"
+	sqllib "jennifer-lang.dev/jennifer/internal/lib/sql"
 	"jennifer-lang.dev/jennifer/internal/lib/strings"
 	"jennifer-lang.dev/jennifer/internal/lib/task"
 	termlib "jennifer-lang.dev/jennifer/internal/lib/term"
@@ -83,4 +84,5 @@ func InstallAll(in *interpreter.Interpreter) {
 	spilib.Install(in)
 	iiclib.Install(in)
 	gpiolib.Install(in)
+	sqllib.Install(in)
 }

@@ -52,6 +52,7 @@
 - [`spi`](libraries/spi.md)
 - [`iic`](libraries/iic.md)
 - [`gpio`](libraries/gpio.md)
+- [`sql`](libraries/sql.md)
 - [`time`](libraries/time.md)
 - [`toml`](libraries/toml.md)
 - [`uuid`](libraries/uuid.md)

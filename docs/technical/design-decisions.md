@@ -202,3 +202,42 @@ is recoverable as `lists.range(start, end + 1)` when the user wants
 "count 1 to N inclusive." `lists.range(end)` with a single-arg
 default-start form is also not shipped (stance #2: explicit over
 implicit).
+
+## The `sql` library's heavyweight driver dependencies
+
+Jennifer states a dependency-free discipline for the library layer: every
+standard library is pure-stdlib, the two carve-outs being `gopkg.in/yaml.v3`
+(a parser too big to hand-roll) and the CLI-scoped `golang.org/x/term`. The
+`sql` library breaks further: it takes two **real dependency trees** -
+`go-sql-driver/mysql` and `jackc/pgx` - which looks like a clear violation.
+
+It ships anyway, and the reasoning is deliberate, not slid in:
+
+- **Both drivers are pure-Go.** No cgo, so static builds, cross-compilation, and
+  the best-effort macOS / Windows artifacts stay clean. The one *embedded* engine
+  that would need a multi-MB, TinyGo-hostile dependency - SQLite - is excluded and
+  parked in [horizon](../horizon.md) behind a build tag, precisely to keep this
+  line from being crossed casually.
+- **The deciding factor is correctness maturity, not convenience.** MySQL and
+  Postgres are open TCP wire protocols, so a client *is* writable in pure Jennifer
+  (the same shape as `redis` / `imap`). But the mature drivers have absorbed a
+  decade of protocol long-tail - every auth plugin (`caching_sha2_password` /
+  the RSA path, SCRAM-SHA-256), charset handling, NULL semantics, multi-result
+  sets, server-version quirks - that a hand-rolled `.j` client would re-derive one
+  edge case at a time. For databases users depend on daily, that maturity is worth
+  the dependency; the auth crypto becomes the driver's problem, not the language's.
+- **It is not a performance concession.** A database client is latency-bound
+  (network round-trip + server execution dominate); client-side decode is the cost
+  center only when streaming 10^5+ rows, a bulk workload Jennifer is the wrong tool
+  for regardless of driver. So this is not "reach for a fast Go library" - it is
+  "reach for a *correct* one".
+- **It is TinyGo-clean by construction.** The build-tag split (`sqllib_std.go`
+  imports the drivers, `sqllib_tiny.go` stubs them) means `jennifer-tiny` never
+  compiles the trees; the language stays TinyGo-clean and the interpreter core is
+  untouched.
+
+The precedent (`yaml`) took one pure-Go dependency for a parser too big to
+hand-roll; `sql` extends the same judgment to a client too intricate to hand-roll
+*correctly* for engines people trust with production data. The bar stays high: a
+new heavyweight dependency needs this same "correctness maturity that a hand-roll
+would re-derive slowly and get subtly wrong" justification, not mere convenience.
