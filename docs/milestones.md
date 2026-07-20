@@ -1590,7 +1590,27 @@ anything worth recording that has no natural home lands here as a numbered
 sub-entry, and graduates out into its own bucket once a cluster grows enough to
 deserve one.
 
-### M21.1 - `screen` / `tui` module
+### M21.1 - `screen` module
+
+**Done.** Shipped as `modules/screen.j`, named `screen` (over `tui`), both
+stages in one pass. Output-only layer (pure strings, both binaries): a
+value-semantic `screen.Buffer` cell grid drawn with `text` / `textColor` /
+`box` / `fill` / `hline` / `vline` / `set`, ANSI control-sequence builders
+(`clear` / `moveTo` / `hideCursor` / `enterAlt` / ...), and a flicker-free
+`render` / `diff` paint loop that repaints only the changed cells (grouped into
+row runs). Interactive layer (over the [`term`](#m20---system-libraries-compacted)
+library, default binary; `term`'s friendly stub on `jennifer-tiny`): a pure,
+fully-tested `decodeKey(seq)` -> `Key{name, char}` covering printable, arrow,
+navigation, `F1`-`F12`, `ctrl-*`, and `alt-*` keys, plus `nextKey` / `begin` /
+`end` / `size` over raw mode. Coordinates are 0-based (origin top-left); drawing
+past an edge is clipped. It did not need the `ansi` module (the escape strings
+are built directly), so the output-only subset stays self-contained. Ships with
+the standard discipline: a 100%-passing `screen_test.j` overlay (35 tests over
+the pure surface + private helpers), a `cmd/jennifer/screen_test.go` integration
+test, this milestone's docs, and `examples/modules/screen_demo.j` (an animated
+diff-rendered dashboard). A lone Escape key and full multi-byte UTF-8 input
+decoding are documented follow-ons (both want a raw-read timeout `term` does not
+yet expose). Original spec below.
 
 Jennifer's terminal-UI answer - a `.j` module for terminal user interfaces,
 since there is no GUI medium-term, so the terminal is the interactive surface.

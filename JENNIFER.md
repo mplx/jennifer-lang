@@ -542,6 +542,17 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   (SCRAM-SHA-1 / SCRAM-SHA-256, over `hash` + `crypto`). `sasl.negotiate(advertised)`
   picks the strongest of a server's advertised mechanisms (what the mail clients
   use for `auth: "auto"`; `auth: ""` keeps the plain default). No net; both binaries.
+- **`screen`** - terminal user interfaces (an explicit `screen`, not a GUI).
+  Output-only layer (both binaries): a value-semantic cell `screen.Buffer`
+  (`screen.newScreen(rows, cols)`) drawn with `screen.text` / `textColor` /
+  `box` / `fill` / `hline` / `vline` / `set`, ANSI control-sequence builders
+  (`screen.clear` / `moveTo(x, y)` / `hideCursor` / `enterAlt` / ...), and a
+  flicker-free `screen.render(buf)` / `diff(old, new)` paint loop that repaints
+  only changed cells. Interactive layer (needs the `term` library, default
+  binary): a pure `screen.decodeKey(seq)` -> `screen.Key{name, char}` (arrows,
+  nav, F1-F12, ctrl / alt keys) plus `screen.nextKey` / `begin` / `end` / `size`
+  over raw mode. Coordinates are 0-based (origin top-left); drawing past an edge
+  is clipped, not an error.
 - **`semver`** - strict SemVer 2.0.0 over a `Version` struct, package-registry-grade:
   `semver.parse(s)` / `isValid` / `toString`, `compare` / `lt` / `lte` / `eq` /
   `neq` / `gt` / `gte` / `diff`, `isStable` / `isPrerelease`, `incMajor` /

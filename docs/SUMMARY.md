@@ -103,6 +103,7 @@
 - [`rest`](modules/rest.md)
 - [`ringbuffer`](modules/ringbuffer.md)
 - [`sasl`](modules/sasl.md)
+- [`screen`](modules/screen.md)
 - [`semver`](modules/semver.md)
 - [`session`](modules/session.md)
 - [`slack`](modules/slack.md)
