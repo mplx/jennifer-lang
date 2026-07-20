@@ -164,7 +164,7 @@ curl -s https://api.example.com/thing | json-pretty
 ```
 
 The same shape extends to any decode / re-encode pair: swap `json` for
-`xml` once that library lands ([M20.2](../milestones.md#m202---xml)) and the
+`xml` once that library lands ([M20.2](../milestones.md#m20---system-libraries-compacted)) and the
 file becomes a `pretty-xml`.
 
 

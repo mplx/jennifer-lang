@@ -199,19 +199,22 @@ ratio is the stable part.
 
 | Binary          | Size                        |
 | --------------- | --------------------------- |
-| `jennifer`      | ~15 MB (15,137,153 bytes)   |
-| `jennifer-tiny` | ~7.9 MB (7,874,816 bytes)   |
+| `jennifer`      | ~21.6 MB (21,594,881 bytes) |
+| `jennifer-tiny` | ~8.3 MB (8,282,216 bytes)   |
 
-`jennifer-tiny` comes in at ~52% of the default binary (roughly half
+`jennifer-tiny` comes in at ~38% of the default binary (well under half
 the size). Most of that gap is TinyGo's smaller runtime versus the
-standard Go runtime, plus the network- and `os/exec`-backed libraries
-the tiny build stubs out; the run-only trim (excluding the
+standard Go runtime, plus the network-, `os/exec`-, and
+database-driver-backed libraries the tiny build stubs out; the run-only
+trim (excluding the
 `tokens` / `ast` / `fmt` / `lint` / `profile` / `test` development subcommands) shaves an
-incremental slice on top.
+incremental slice on top. The gap has widened as the default binary
+grew (the database drivers and crypto surface land only on the standard
+build), so the ratio drifts with each library the tiny build stubs.
 
 These are unstripped `make build` (dev) sizes. Release builds strip:
-the Go binary adds `-trimpath -ldflags "-s -w"` (down to ~10.4 MB, a
-~31% cut) and the TinyGo binary adds `-no-debug` (down to ~3.3 MB, a
+the Go binary adds `-trimpath -ldflags "-s -w"` (down to ~14.8 MB, a
+~31% cut) and the TinyGo binary adds `-no-debug` (down to ~3.4 MB, a
 ~59% cut). Shipped artifacts are therefore well under the dev numbers
 above; dev builds keep symbols for debugging.
 

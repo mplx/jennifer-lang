@@ -1536,455 +1536,48 @@ tests and the operator / scoping docs updated):
   is reserved for mutable variables (`$CONST[...]` still reports the clearer
   "cannot mutate constant" error).
 
-## M20 - system libraries
+## M20 - system libraries (compacted)
 
-Go **system libraries**: cryptographic primitives, plus formats too heavy
-or too reflect-bound for a Jennifer-coded `.j` module (the `json` pattern,
-[M16.9](#m169---json)). Members below; more land as M20.x as needs arise.
+Go **system libraries** (cryptographic primitives, plus formats too heavy or
+too reflect-bound for a Jennifer-coded `.j` module - the `json` pattern,
+[M16.9](#m169---json)), plus two cleanup keywords (`defer` / `errdefer`) and
+Unix-signal support that the libraries needed. **All done.** Ten sub-milestones,
+each shipped with the standard discipline: a `cmd/jennifer` / `*_test.go` suite,
+a `docs/libraries/*.md` reference, cheatsheet + `JENNIFER.md` entries, and a
+runnable example. Per-function detail lives in
+[docs/libraries/](libraries/index.md); this table is the milestone-number index.
 
-### M20.1 - `crypto`
+| M#     | Library / feature | Surface |
+| ------ | ----------------- | ------- |
+| M20.1  | `crypto`          | Security primitives above `hash`, Go stdlib only: crypto-grade `randBytes` / `randInt` (rejection-sampled, unseedable), constant-time `hmacEqual`, key derivation `hkdf` / `pbkdf` (`algo` sha1/256/512). Repointed `uuid`'s random source here, so v4 / v7 are unguessable. |
+| M20.2  | `xml`             | Hand-rolled XML encode / decode over an opaque `xml.Value` (`KindObject`) element tree; read (`tag` / `text` / `attr` / `children`) + XPath-style `get` / `findAll` / `has` (`name` / `name[k]` / `*`) + build (`element` / `setAttr` / `setText` / `append`). No `encoding/xml`. |
+| M20.3  | `yaml`            | YAML 1.2 over `yaml.Value`, the same read / walk / write surface as `json` / `toml` + `asDatetime`; `decode` / `decodeAll`, anchors / aliases by value, `<<` merge keys. Backed by `gopkg.in/yaml.v3` (the one config parser that earns a dep); pre-parse depth + node-budget guards. |
+| M20.4  | `intl`            | Message catalogs + locale-aware `tr(key[, params])` (`{name}` interpolation, locale -> base -> default -> key fallback); `load` / `setLocale` / `locale`. A system library (global mutable state + O(1) Go-map lookup); single-pass, output-capped interpolation. |
+| M20.5  | `term`            | Terminal host control for TUIs: raw mode (`makeRaw` / `restore`, single-use `State`), `size` -> `Size{rows, cols}`, `readByte`. Over `golang.org/x/term`, build-tag split (stub on `jennifer-tiny`); refused in the REPL. |
+| M20.6  | signals           | Cooperative Unix signals: `SIGUSR1` -> live interpreter diagnostics (dump-and-continue); `os.catchSignal` / `os.gotSignal` (opt-in `int` / `term` / `hup` / `usr2`) for graceful shutdown; CLI terminal-restore-on-abort. Establishes the checkpoint hook the loop-cancellation follow-on will build on. |
+| M20.7  | `defer` / `errdefer` | `defer CALL(args);` - single call, args snapshotted, block-scoped LIFO, runs on every exit path, never crosses the method / `spawn` boundary (no `finally` - rejected). `errdefer` (Zig-style) fires only on a propagating error; adopted by the seven connect-then-handshake modules. Paired with the new `fs.sync`. |
+| M20.8  | `serial` / `spi` / `iic` / `gpio` | Device I/O over Linux `/dev` + `ioctl` (`x/sys/unix`), build-tag split `linux && !tinygo`: three buses + character-device GPIO (reusing the sysfs [M18.11](#m1811---gpio-module) module's pin-keyed shape). I2C is `iic` (letters-only). Shared plumbing in `internal/lib/devio`; ioctl struct layouts pinned to the kernel ABI by size assertions. |
+| M20.9  | `sql`             | Relational client over `database/sql`: MySQL / MariaDB (`go-sql-driver/mysql`) + PostgreSQL (`jackc/pgx`), both pure-Go. `open` -> `Connection`, `query` / `exec`, pull cursor + typed `as*` accessors, `begin` / `commit` / `rollback`, prepared statements. Values bind **only** through placeholders. The first heavyweight library-layer dependency ([design-decisions.md](technical/design-decisions.md)); build-tag split, default binary only. |
+| M20.10 | `crypto` AE + signatures | AES-256-GCM `encrypt` / `decrypt` (32-byte key, nonce prepended, AEAD-only) + Ed25519 `signKeypair` / `sign` / `verify` (`crypto.Keypair`); added `sha384` to `hash`. All Go stdlib, TinyGo-clean. Safe-by-construction: AEAD-only, one algorithm per verb, length-validated keys, internal nonce. Out: password hashing, raw block modes, RSA / ECDSA, x509, AAD. |
 
-**Done.** The security-primitives system library above the digests in `hash`,
-Go stdlib only (`crypto/rand` / `subtle` / `hkdf` / `pbkdf2`, so no dependency;
-both binaries, TinyGo 0.41 carrying the Go 1.24 KDF packages). Crypto-grade
-random `crypto.randBytes(n)` / `randInt(lo, hi)` (inclusive, rejection-sampled
-so exactly uniform, unseedable - the counterpart to `math`'s fast, predictable
-`rand*`, for values that guard something); constant-time `crypto.hmacEqual(a,
-b)` (Go `crypto/subtle`; HMAC itself stays `hash.hmac`); key derivation
-`crypto.hkdf(secret, salt, info, length, algo)` (HKDF, RFC 5869) and
-`crypto.pbkdf(password, salt, iterations, keyLen, algo)` (PBKDF2, RFC 8018),
-`algo` one of `"sha1"` / `"sha256"` / `"sha512"` (SCRAM-SHA-1 needs `"sha1"`;
-registered `pbkdf` not `pbkdf2` for the letters-only name rule). `uuid`'s random
-source was repointed here (one function, no surface change), so
-`uuid.generate("v4")` is unguessable - securing the `session` module,
-`web.sessionId` / `csrfToken`, and the `password` module's generation for free.
-Password *hashing* (Argon2id / bcrypt / scrypt) stays out (needs `x/crypto`);
-PBKDF2 here is for interoperable KDF needs (SASL SCRAM, key wrapping), not a
-general password store.
+Cross-cutting additions these pulled into the language / system side (each
+documented under its library):
 
-### M20.2 - `xml`
-
-**Done.** Hand-rolled XML encode / decode (no `encoding/xml`, reflect-heavy and
-TinyGo-hostile - the reason `json` / `toml` are hand-rolled too), over an opaque
-`xml.Value` (`KindObject`) mirroring the `json.Value` read / write vocabulary
-([M16.16](#m1616---jsonvalue)) but over an element tree (a tag name + ordered
-attributes + ordered, possibly-duplicated element/text children, each node an
-ordered `map` so mixed content and whitespace round-trip) with an XPath-style
-path dialect (`/`-separated `name` / `name[k]` 1-based / `*`) in place of JSON
-Pointer. `xml.decode(s)` parses elements, attributes, text, CDATA (as text), the
-five predefined entities + numeric references (unknown = error), and skips
-comments / PIs / the XML declaration / a DOCTYPE; namespace prefixes kept
-verbatim (`ns:tag`, `xmlns` an ordinary attribute), errors carry line / column.
-Read: `typeOf` / `tag` / `text` / `attr` / `hasAttr` / `attrs` / `children` plus
-path-addressed `get` / `findAll` / `has`. Encode: `xml.encode` / `encodePretty`
-(pretty indents element-only content, inlines any element with a text child so
-character data stays byte-exact); non-mutating build surface `element` /
-`setAttr` / `setText` / `append`, each a fresh handle. Deferred: full namespace
-resolution (prefixes stay lexical) and richer XPath (predicates, `@attr` /
-`text()` steps).
-
-### M20.3 - `yaml`
-
-**Done.** Full YAML 1.2 encode / decode over an opaque `yaml.Value`
-(`KindObject`), mirroring [`toml`](#m188---toml-system-library) /
-[`json`](#m1616---jsonvalue) exactly: the same read accessors (`typeOf` / `get`
-/ `has` / `keys` / `length` / `as*` / `isNull`, JSON-Pointer-addressed) and
-non-mutating write surface (`map` / `list` / `set` / `insert` / `append` /
-`remove` / `move`), plus `asDatetime` / `isDatetime` for the timestamp scalar.
-`yaml.decode(s)` handles one document (a multi-doc stream errors, pointing at
-`yaml.decodeAll(s) -> list of yaml.Value`; empty is `null`); scalars type by
-YAML implicit resolution, `!!binary` becomes `bytes`, a non-scalar mapping key
-is rejected, anchors / aliases resolve **by value** (independent copies), and
-`<<` **merge keys** apply (own key wins, earlier source wins). `yaml.encode` is
-flow style (compact, `{a: 1, b: [x, y]}`) and `encodePretty` block style -
-YAML's analogue of json's compact / pretty pair; `bytes` encodes as `!!binary`,
-a `time.Time` as a timestamp (block preserves the type on round-trip, flow
-quotes it). Unlike the hand-rolled `json` / `toml` / `xml`, the parse is
-delegated to `gopkg.in/yaml.v3` - the one place a config parser earns a Go
-dependency (full YAML, with anchors / flow+block / implicit typing / streams, is
-a project of its own), verified TinyGo-clean (builds *and* runs on both binaries
-under TinyGo 0.41 / Go 1.26; the project's first non-CLI-scoped dependency).
-Because yaml.v3 is recursive-descent (deeply-nested input recurses per level and
-overflows jennifer-tiny's fixed 2 MiB stack fatally at ~350 levels, under
-yaml.v3's own 10000 cap), a raw-text depth pre-scan rejects nesting past 128
-levels *before* the parse, and a five-million-node budget caps an alias bomb -
-both catchable errors, not a stack or memory kill. Deferred: multi-document
-encode (`encodeAll`) and per-node style control.
-
-### M20.4 - `intl`
-
-**Done.** Message catalogs and locale-aware translation, named **`intl`**
-(letters only, matching JS `Intl`) not `i18n` per the letters-only rule that
-forced `iic` / `pbkdf`. A **system library** not a `.j` module for two reasons:
-it holds global mutable state (current locale + loaded catalogs) a declarations-
-only module cannot, and it keeps each catalog in a Go `map[string]string` for
-O(1) lookup where Jennifer's linear-scan `map` would be O(n) per call; the state
-is per-interpreter (closed over in `Install`) and RWMutex-guarded for `spawn`
-safety. Surface: `intl.load(lang, catalog)` (a `map of string to string`, a
-literal or decoded from `json` / `toml` / `yaml`; re-loading a language merges,
-and the first language loaded is the default), `intl.setLocale` / `intl.locale`,
-and `intl.tr(key[, params])` translating through a fallback chain (current locale
--> its base language `de-AT` -> `de` -> the default language -> the key itself,
-so a gap stays visible) with `{name}` interpolation (`{{`/`}}` escape, non-string
-params stringified, unknown placeholders left literal). Interpolation is
-single-pass (a substituted value is never re-scanned - no recursive blow-up) and
-its output is capped at 1 MiB, checked incrementally, so an amplification bomb
-from an untrusted catalog errors before the oversized string is built rather than
-toward OOM. No gettext `_()` (not a valid method name, and an ambient global is
-exactly what stances 2 / 7 rule out); `printf`-for-translation is rejected (see
-[rejected.md](technical/rejected.md)) - translation is content substitution, not
-presentation. Follow-ons: pluralization, `loadFile`, catalog reset / replace
-(`load` is merge-only), and locale-aware *value* formatting.
-
-### M20.5 - `term`
-
-**Done.** A `term` system library exposing the terminal host capabilities a TUI
-needs and pure `.j` cannot reach: **raw mode** (`term.makeRaw("stdin")` ->
-`term.State` / `term.restore(state)` - unbuffered, no-echo input; raw mode is
-stdin-only, and the handle is single-use so a stale restore can't clobber a live
-terminal, its backing registry capped so an unbalanced `makeRaw` without a
-matching `restore` errors rather than leaking unbounded), **terminal size**
-(`term.size(stream)` -> `term.Size{rows, cols}`), and **raw single-byte reads**
-(`term.readByte()` -> int, `0`-`255` or `-1` at EOF - bytes, not decoded keys;
-escape-sequence decoding is the TUI layer's job). Over `golang.org/x/term` (the
-REPL line editor's dependency, now also a build-tag-gated *library* dependency);
-raw mode / size operate on the real terminal device by fd (like `os.isTerminal`),
-`readByte` reads the interpreter's input reader (so it composes with raw stdin and
-stays testable), and raw-mode verbs / `readByte` are refused in the REPL (it owns
-the terminal). Build-tag split like `net`: real over `x/term` on the default
-`jennifer`, a friendly-error stub on `jennifer-tiny` (a minimal target may have no
-TTY, and the tiny build excludes `x/term`). The enabler for interactive TUIs (the
-pure-ANSI screen control / key decoding / rendering sit in the
-[M21.1](#m211---screen--tui-module) `screen` / `tui` module on top); output-only
-TUIs need only `ansi` + `os.isTerminal`. `examples/term.j` is a guarded
-interactive demo needing a real TTY, so it is not a golden test.
-
-### M20.6 - signals (diagnostics + `os` polling API)
-
-**Done.** Unix-signal support in cooperative pieces (a delivered signal only sets
-an atomic flag; nothing runs `.j` in a signal context, so the single-threaded /
-value-semantics model holds):
-
-- **`SIGUSR1` -> live interpreter diagnostics.** `kill -USR1 <pid>` makes the
-  interpreter print a one-shot snapshot to stderr - a fixed labeled block:
-  timestamp, current `.j` `file:line:col`, spawned / live task counts, goroutine
-  count, and heap / sys memory + GC count - and keep running (dump-and-continue,
-  unlike Go's dump-and-die `SIGQUIT`). A method-name call stack and loop depth
-  are a planned addition (they need call-frame tracking). The handler only sets
-  `Interpreter.diagReq` (atomic); the snapshot prints on the interpreter
-  goroutine at its next loop-iteration / method-call checkpoint
-  (`if i.diagReq.Load()` - a plain memory load, free on the hot path), so it is
-  race-free. This answers "stuck in a loop, *where*?". Wired by the CLI
-  (`cmd/jennifer/diag_unix.go`, built on `unix` so both binaries get it), so
-  `os.catchSignal("usr1")` is reserved (a positioned error pointing at `usr2`).
-  The block is labeled (time, position, spawned / live tasks, goroutines,
-  heap / sys memory + GCs). A richer snapshot (method-name call stack, loop
-  depth) is a later refinement.
-- **Script-facing signals -> `os.catchSignal(name)` / `os.gotSignal(name)`.** Opt
-  into trapping (`"int"` / `"term"` / `"hup"` / `"usr2"`), then poll-and-clear
-  whether it arrived. The flagship is graceful shutdown - a server / TUI catching
-  `SIGTERM` to close connections, `term.restore`, and clean up before exiting.
-  Trapping is **opt-in per signal**, so `SIGINT` / `SIGTERM` keep their default
-  terminate disposition until the program catches them (a normal script is still
-  stopped by Ctrl-C). Process-global state (signals are a process property),
-  build-tag split (`signal_unix.go` real on `unix` / `signal_other.go` stub on
-  `!unix`) so Windows errors cleanly rather than fail to compile the Unix-only
-  `SIGUSR1` / `SIGUSR2` / `SIGHUP`. TinyGo has full `os/signal`, so both binaries
-  handle signals on a Unix host - `jennifer-tiny`'s cooperative scheduler only
-  defers *observation* to a yield point (a pure CPU-bound loop may not see a
-  signal until it blocks / sleeps; the OS-level trap still suppresses the default
-  terminate). The default `jennifer` (preemptive) has no such latency.
-- **Terminal restore on abort.** `term.RestoreAll()` (over the M20.5 registry)
-  plus `defer termlib.RestoreAll()` in the CLI run path put the terminal back if a
-  `.j` script raw-modes stdin and then aborts (an uncaught error, `exit`, a panic
-  unwind) - Jennifer has no `finally`, but the CLI has Go's defer. Fixes a real
-  M20.5 gap where a raw-moded script that errored left the shell wedged.
-
-Deferred to the **cooperative loop-cancellation** follow-on, for which this
-milestone establishes the checkpoint hook: an interruptible runaway loop, a REPL
-Ctrl-C that unwinds to the prompt, the double-Ctrl-C force-abort, the
-REPL-reserved-`SIGINT` rule, and a terminating-signal handler that restores the
-terminal on a bare `SIGTERM` / untrapped `SIGINT` (whose default action skips the
-`defer`). `os.kill` gaining a signal-name argument is also open; `SIGKILL` stays
-unrecoverable (uncatchable, as for any program).
-
-### M20.7 - `defer` (deterministic cleanup)
-
-**Done.** A `defer CALL(args);` statement that schedules a single call to run when
-its enclosing block exits, on **every** exit path. The motivating problem is resource
-cleanup for the handle libraries - `fs.close` / `fs.sync`, `term.restore`,
-`net.close`, `os.Process` release, the M20.9 `sql` client's connections - which
-today needs a verbose `try { ... } catch (e) { close(); throw $e; }` plus a
-second close on the success path, and silently breaks the moment someone adds an
-early `return`. `defer` collapses that to one line placed right next to the
-acquisition.
-
-Semantics:
-
-- **Single call, not a block.** `defer fs.close($f);` takes a call expression,
-  never a `{ ... }` body. This is what sidesteps Java `finally`'s notorious
-  footgun (a `return` / `throw` inside `finally` swallowing the try's exception
-  or overriding its return): the hazard is simply unrepresentable.
-- **Arguments evaluated now, call runs later.** `defer fs.close($f);` captures
-  `$f`'s current value at the `defer` line and runs the call at scope exit. With
-  value semantics and handle-into-registry resources, capturing the handle value
-  is exactly right, and it needs **no closures** (which Jennifer deliberately
-  lacks) - the defer model falls out of value semantics rather than fighting them.
-- **Block-scoped, LIFO.** Deferred calls run at the end of the enclosing `{}`
-  block, last-registered first. Block scope (not Go's function scope) means a
-  `defer` inside a loop body runs at the end of each iteration - fixing Go's
-  best-known `defer`-in-a-loop pile-up. A top-level `defer` runs at program end.
-- **Runs on every exit:** fall-through, `return`, `break`, `continue`, a `throw`
-  unwind, and `exit`. That universality is the whole point.
-- **Does not cross the method or `spawn` boundary** (same rule as `break` /
-  `return` / `continue`): a method's defers run at that method's scope exit, not
-  the caller's.
-- A `throw` from within a deferred call propagates; if the block was already
-  unwinding an error, the deferred call's error supersedes (documented, like
-  Go's panic-in-defer).
-
-The pairing with `fs.sync` matters for durability: `defer` the `close` (cleanup
-you do not inspect), but call `fs.sync` explicitly and check it - a durability
-failure must surface *before* the program tells the user "safe to remove", not as
-a deferred call running too late on the way out.
-
-Not `finally`: rejected as redundant with `defer` + `try` / `catch`, carrying
-Java's return/throw-in-finally footguns, and violating one-obvious-way. Student
-familiarity is its only advantage and does not outweigh a cleaner, safer
-construct that also fits the value-semantics / no-closures model. A
-`rejected.md` entry records the decision.
-
-Implementation: a new `defer` keyword; `execBlock` tracks a per-block list of
-pending calls (only blocks that register a defer allocate one) and runs them LIFO
-before returning or propagating any control-flow / error signal. No `reflect`,
-TinyGo-clean. The CLI already models the idea at the Go level
-(`defer termlib.RestoreAll()`); this brings it into the language.
-
-**Follow-up, done: `errdefer` (undo on error only).** Adopting `defer` across
-the modules surfaced one cleanup shape it cannot express: the connect-then-
-handshake, where a *failed* handshake must close the socket but a *successful*
-one must hand the open connection to the caller. Conditional cleanup is
-unrepresentable with `defer` - arguments snapshot at the defer line, so a
-"did-we-succeed" flag can never be observed later, and value semantics rule out
-a mutable sentinel. `errdefer CALL(args);` (after Zig) is the same single-call,
-args-snapshotted, block-scoped form on the same LIFO teardown stack, but runs
-**only when the block exits with a propagating error** (a `throw` or a runtime
-error - not `return` / `break` / `continue` / `exit`, which are not errors). A
-plain deferred call that throws during teardown arms the errdefers still
-pending in that pass. Shares `DeferStmt` (an `OnError` flag), so the resolver,
-linter, and AST dump needed no new cases; keyword wired through lexer, parser,
-formatter, editors, and docs. The seven leaky module `connect()` handshakes
-(`redis`, `imap`, `pop`, `mqtt`, `amqp`, `websocket`, `mikrotik`) adopted it,
-verified end-to-end against a refusing fake server plus a negative control.
-
-### M20.8 - device I/O (`serial` / `spi` / `iic` / `gpio`)
-
-**Done.** The I2C library shipped as `iic` (letters-only rule). All four are Go
-system libraries over `golang.org/x/sys/unix`, build-tag split `linux && !tinygo`
-(real) / else (friendly-error stub) - the default `jennifer` on Linux drives the
-hardware; every other build and `jennifer-tiny` point the user back at it. Shared
-handle / argument plumbing lives in `internal/lib/devio`. `serial` termios config
-is PTY-tested; the `spi` / `gpio` ioctl struct layouts are pinned to the kernel
-ABI by size assertions (`spi_ioc_transfer` 32 bytes; `gpio_v2_line_request` 592).
-`gpio` reuses the sysfs module's pin-keyed `setup`/`read`/`write`/`release` +
-`IN`/`OUT`, chip via `gpio.chip`. Original spec below.
-
-Device-I/O libraries for embedded / single-board-computer hosts, all reaching
-the Linux `/dev` + `ioctl` interface that `.j` and plain `fs` cannot: `serial` /
-`spi` / `iic` are the three buses, and `gpio` here is the character-device
-(`/dev/gpiochipN`) form of the sysfs-backed `gpio` **module**
-([M18.11](#m1811---gpio-module)). Each needs `ioctl` / `termios`, so they are Go
-**system libraries**, not modules:
-
-- **`serial`** - open a serial port (`/dev/ttyUSB0`, `/dev/ttyAMA0`), configure
-  it (baud rate, data bits, parity, stop bits via `termios`), then `read` /
-  `write` / `close`. Setting the baud rate is a `termios` `ioctl`, unreachable
-  from `fs` - which is what forces a library.
-- **`spi`** - open a SPI device (`/dev/spidev0.0`), set mode / speed, and
-  `transfer(bytes) -> bytes` (full-duplex), via the `SPI_IOC_MESSAGE` `ioctl`.
-- **`iic`** - the I2C bus (`/dev/i2c-1`): select a slave address and `read` /
-  `write` register bytes via the `I2C_SLAVE` `ioctl`. Named **`iic`** (Inter-IC)
-  rather than `i2c` because a library namespace is letters-only (no digit, like
-  `bucket` not `s3`); candidates `iic` / `twi` / `wire`, settled at build time.
-- **`gpio`** - the `/dev/gpiochipN` character-device interface (the
-  `GPIO_V2_LINE_*` ioctls: request lines with a direction, then read / write /
-  watch), the mainline-supported GPIO API since `/sys/class/gpio` was deprecated
-  and compiled out of some kernels. This is precisely the "swapped for a
-  `/dev/gpiochip` ioctl system library, no change to `.j` scripts" successor the
-  [M18.11](#m1811---gpio-module) module's own docs already name - so it lands
-  here **only when forced** (a target that ships without sysfs GPIO), *not* as a
-  replacement: the sysfs `.j` module stays the default (it costs the language
-  nothing and runs on the hobbyist Pi kernels it targets), and the library
-  reuses the module's pin-keyed shape (`setup` / `read` / `write` / `release`)
-  so scripts move over unchanged. The one open call is whether the two then
-  unify behind a single selectable-backend surface (stance 1) or stay a
-  module / library pair chosen by deployment.
-
-Build-tag split like `net` / `os`: the real implementation on Linux (the
-supported platform), a friendly-error stub elsewhere. Default binary; a
-`jennifer-tiny` rebuilt for a specific board could include them (TinyGo's
-`machine` package is a different, microcontroller-level API - these target the
-Linux `/dev` + `ioctl` interface). Together they complete the SBC I/O story.
-
-### M20.9 - `sql` (MySQL / MariaDB + PostgreSQL)
-
-**Done.** Over `database/sql` with the two pure-Go drivers (`go-sql-driver/mysql`
-+ `jackc/pgx` via its stdlib shim); build-tag split `sqllib_std.go` (`!tinygo`)
-imports them / `sqllib_tiny.go` stubs so `jennifer-tiny` never compiles the trees.
-Surface: `open(driver, dsn)` -> `Connection`, `query` / `exec` (target = a
-Connection or Tx), a pull cursor (`next` + typed `asInt`/`asFloat`/`asString`/
-`asBool`/`asBytes`/`isNull` accessors by column name or index), `Result{affected,
-lastId}`, `begin`/`commit`/`rollback`, prepared statements. Values bind **only
-through placeholders**. The two driver trees are the first heavyweight
-library-layer dependencies - the exception is recorded in
-[design-decisions.md](technical/design-decisions.md). Validated with an in-memory
-mock `database/sql` driver (cursor, accessors, NULL, tx, prepared, binding,
-error paths). Original spec below.
-
-A relational-database client library over Go's `database/sql`, shipping the
-two **client-server** engines: MySQL / MariaDB (`go-sql-driver/mysql`) and
-PostgreSQL (`jackc/pgx`), both **pure-Go** drivers (no cgo, so cross-compile
-and the best-effort macOS / Windows artifacts stay clean). SQLite - the one
-*embedded* engine - is deliberately **not** here; it needs a multi-MB
-dependency and cannot build under TinyGo, so it stays a build-tag opt-in
-parked in [horizon](horizon.md) (the `jennifer-full` variant).
-
-**Why a Go library and not a `.j` module over `net`.** MySQL and Postgres are
-open TCP wire protocols, so a client *is* writable in pure Jennifer - the same
-shape as `redis` / `memcache` / `imap`, and the auth crypto it needs (SHA-1,
-SHA-256, `hash.hmac`, PBKDF2 as iterated HMAC) already ships. The deciding
-factor is not performance: a database client is **latency-bound** (network
-round-trip + server execution dominate; client-side decode only becomes the
-cost center when streaming 10^5+ rows, a bulk workload Jennifer is not the
-right tool for regardless of driver), and the COW shared-marker protocol
-already makes materializing a large result set amortized O(N). The deciding
-factor is **correctness maturity**: the mature drivers have absorbed a decade
-of protocol long-tail - every auth plugin (MySQL `caching_sha2_password`
-full-auth / the RSA path, Postgres SCRAM-SHA-256), charset handling, NULL
-semantics, multi-result-sets, server-version quirks - that a hand-rolled `.j`
-client would re-derive one edge case at a time. For databases users depend on
-daily, that maturity is worth the dependency. Going Go also makes the auth
-crypto the driver's problem, not the language's, so this needs nothing from
-[M20.1 `crypto`](#m201---crypto).
-
-**The deliberate dependency break.** These are the **first heavyweight
-dependencies in the library layer** - a conscious exception to the
-dependency-free discipline for the library layer. The
-precedent is [M20.3 `yaml`](#m203---yaml), which took a single pure-Go
-dependency (`gopkg.in/yaml.v3`) for a parser too big to hand-roll; alongside
-CLI-scoped `golang.org/x/term`, those are the only third-party dependencies
-today. The sql drivers go further - both are pure-Go, but they are real
-dependency trees. The exception gets a
-reasoning record in [technical/design-decisions.md](technical/design-decisions.md)
-when it lands - the sanctioned home for a feature that ships despite appearing
-to cut against project doctrine - justified as above, not slid into.
-
-**Build / TinyGo.** Build-tag split exactly like `net` / `httpd`:
-`sqllib_std.go` (`//go:build !tinygo`) imports `database/sql` + drivers;
-`sqllib_tiny.go` (`//go:build tinygo`) registers `use sql;` and returns a
-friendly positioned "not available on this build" error. TinyGo never
-compiles the driver imports, so the language stays TinyGo-clean and the
-interpreter core is untouched. On stock `jennifer-tiny` the engines are
-unavailable anyway (no net driver), consistent with every net-backed module.
-
-**Surface.** Integer-handle-into-a-registry like `fs` / `net`:
-`sql.open(driver, dsn) -> Connection`, `sql.query(conn, sql, params...) ->
-Rows`, `sql.exec(conn, sql, params...) -> Result` (affected-rows /
-last-insert-id), prepared statements, `sql.begin` / `commit` / `rollback`
-transactions, `sql.close`. **Values bind only through placeholders**
-(injection safety) - `database/sql` abstracts the per-driver spelling (`?`
-for MySQL, `$1` for Postgres). The result-row shape is an opaque `sql.Row`
-`KindObject` mirroring `json.Value` (foreshadowed in interpreter note 18),
-walked by accessors; a typed-struct path waits on the deferred map-to-struct
-conversion. A `.j` `postgres.j` module (Postgres has the clean protocol, no
-RSA gap) remains a possible later *optional* dependency-free alternative and
-language stress-test - not the primary path.
-
-**Builds on.** The [M21.5 `orm` module](#m215---orm-module) is layered on this
-library (its hard prerequisite) and inherits the `sql.Row` caveat above - its
-typed-row ergonomics wait on the same deferred map-to-struct conversion, so it
-graduates in stages.
-
-### M20.10 - `crypto` authenticated encryption + signatures
-
-**Done.** Extended `crypto` with AES-256-GCM `encrypt(key, plaintext)` /
-`decrypt(key, box)` (32-byte key, 12-byte nonce generated and prepended, AEAD
-tamper detection) and Ed25519 `signKeypair() -> Keypair{public, private}` /
-`sign(private, message)` / `verify(public, message, sig)`; added `"sha384"` to
-`hash` (`"sha512"` was already present). All Go stdlib (`crypto/aes` /
-`crypto/cipher` / `crypto/ed25519`), verified TinyGo-clean - both binaries run it
-(`jennifer-tiny` grew ~0.3 MB). Original spec below.
-
-**Motivation.** The default `jennifer` already links the whole TLS crypto stack
-(AES-GCM, ChaCha20-Poly1305, Ed25519, ECDSA, RSA, x509 - dead-code-eliminated to
-what `crypto/tls` + `x509` reference, which is most of it), so surfacing a
-curated, safe subset costs near-zero binary size there. And it fills two gaps
-people otherwise hand-roll dangerously: "encrypt this blob with a key" and
-"sign / verify a token". Binary-size-is-already-paid removes the *objection*; the
-*reason* is genuine need plus a safe-by-construction API. Extends the existing
-`crypto` system library ([M20.1](#m201---crypto)), which today ships crypto-grade
-random, constant-time compare, and HKDF / PBKDF2.
-
-Surface, three parts:
-
-- **Authenticated symmetric encryption (AES-256-GCM).**
-  - `crypto.encrypt(key as bytes, plaintext as bytes) -> bytes` - AEAD seal. The
-    12-byte nonce is drawn from the crypto-grade source and **prepended** to the
-    output (`box = nonce || ciphertext || tag`), so the caller never handles a
-    nonce: nonce-reuse is the classic GCM footgun, and making it un-passable
-    removes it by construction. `key` must be exactly 32 bytes (AES-256); other
-    lengths are a positioned error.
-  - `crypto.decrypt(key as bytes, box as bytes) -> bytes` - AEAD open. Splits the
-    nonce, verifies the tag, returns plaintext; a tampered or wrong-key box is a
-    **catchable authentication error**, never silent garbage.
-  - Keys come from the existing `crypto.randBytes(32)`; no new key helper.
-
-- **Ed25519 signatures.**
-  - `crypto.signKeypair() -> crypto.Keypair`, where
-    `crypto.Keypair { public as bytes, private as bytes }` (a namespaced struct,
-    like `net.TLSOptions`). Parameterless - no curve / scheme menu.
-  - `crypto.sign(private as bytes, message as bytes) -> bytes` (64-byte signature).
-  - `crypto.verify(public as bytes, message as bytes, signature as bytes) -> bool`
-    - `false` on any mismatch; a positioned error only on a malformed key /
-    signature length.
-
-- **Hash fill-out.** Add `"sha512"` / `"sha384"` to `hash.compute` / `hash.hmac`
-  and the streaming surface (already linked, trivial). MD5 / SHA-1 stay
-  checksum-only.
-
-Safe-by-construction rules (the actual discipline this milestone enforces):
-
-- **AEAD only.** No raw ECB / CBC / CTR (padding-oracle / IV-reuse footguns); the
-  only symmetric verbs are seal / open.
-- **One algorithm per job.** `encrypt` *is* AES-256-GCM, `sign` *is* Ed25519 -
-  fixed, with no algorithm-string argument (unlike `hash.compute`, where a
-  checksum genuinely has interchangeable algorithms). That is why they are
-  distinct verbs, not a `crypto.aead(algo, ...)` menu.
-- **Length-validated `bytes` keys**, positioned errors, nonce managed internally.
-- All Go stdlib (`crypto/aes` + `crypto/cipher`, `crypto/ed25519`,
-  `crypto/rand`), so **TinyGo-clean** and it runs on both binaries. On
-  `jennifer-tiny` (no TLS linked) AES / Ed25519 are not pre-linked, so this adds a
-  modest, real size there (tens of KB) - acceptable, and gated only by the future
-  build-time library-selection seam, not by this milestone.
-
-Deliberately out of scope:
-
-- **Password hashing** (Argon2 / bcrypt / scrypt) - needs the external
-  `golang.org/x/crypto` module (the stdlib only vendors `chacha20poly1305` for
-  TLS), a genuine new dependency. Stays out, as M20.1 already ruled.
-- **x509 / PEM certificate parsing** - linked and useful (read a cert's SAN /
-  expiry, verify a chain), but a wide API worth ~120 KB of surface; deferred until
-  a concrete consumer (an `httpd` TLS-server module loading certs, cert pinning).
-- **RSA / ECDSA raw sign** - Ed25519 covers modern signing; add only if JWT-style
-  interop (RS256 / ES256) demands it.
-- **Additional-authenticated-data (AAD)** on `encrypt` / `decrypt` - a useful GCM
-  feature (bind a ciphertext to context), but an extra parameter; a later optional
-  addition if a use case appears.
-
-Ships with the usual discipline: `crypto` doc update + cheatsheet rows +
-`JENNIFER.md` bullet, a `*_test.go` suite (round-trip, tamper detection,
-wrong-key, wrong-length, Ed25519 sign / verify / cross-key reject), and a runnable
-example.
+- **`defer` / `errdefer`** (M20.7) - the deterministic-cleanup keywords; the
+  `finally` rejection and the `printf`-for-translation rejection (M20.4) are
+  recorded in [rejected.md](technical/rejected.md).
+- **`fs.sync`** (M20.7) - fsync a write / append handle to the device, distinct
+  from `close`'s reach-the-OS: durability you check, versus cleanup you defer.
+- **`sha384` / `sha512`** (M20.10) - the SHA-2 digests filled out across
+  `hash.compute` / `hmac` / streaming; MD5 / SHA-1 stay checksum-only.
+- **The nesting cap** (`internal/limits.MaxNestingDepth`) shared by the language
+  parser and the `json` / `toml` / `xml` decoders - build-tag split so it stays
+  below `jennifer-tiny`'s fixed-stack crash point (see
+  [technical/tinygo.md](technical/tinygo.md)).
+- **The `SIGUSR1` diagnostics checkpoint hook** (M20.6) - the loop-iteration /
+  call checkpoint the deferred cooperative loop-cancellation follow-on
+  (interruptible loops, REPL Ctrl-C, terminating-signal terminal restore) builds
+  on.
 
 ## M21 - general backlog (catch-all)
 
@@ -2008,7 +1601,7 @@ Layered so the output-only subset ships with no host dependency:
   and a screen buffer + render / diff loop. Enables **output-only TUIs** - live
   dashboards, progress bars, spinners, self-updating tables (the `rich`-style
   subset). Pure strings; TinyGo-clean.
-- **Stage 2 (needs [M20.5](#m205---term)).** A key-event decoder (parse the raw
+- **Stage 2 (needs [M20.5](#m20---system-libraries-compacted)).** A key-event decoder (parse the raw
   byte stream - `ESC [ A` -> Up, and so on) plus an event loop over `term`'s
   raw mode / size / key reads. Enables **interactive TUIs** - menus, forms, key
   navigation (the `curses` / `bubbletea` subset).
@@ -2028,7 +1621,7 @@ fetches a feed, `feed` parses it, `time` handles the RFC 3339 / RFC 822 dates -
 a feed reader, podcast client, news aggregator, or changelog-to-feed generator
 in a few lines.
 
-Parked here because it is **gated on [M20.2 `xml`](#m202---xml)**: RSS / Atom
+Parked here because it is **gated on [M20.2 `xml`](#m20---system-libraries-compacted)**: RSS / Atom
 parsing needs a real XML parser (entities, CDATA, and Atom's XML namespaces),
 which is exactly why `xml` is a system library rather than a hand-rolled `.j`
 scanner - so feed *parsing* rides it. Feed *building* (emitting escaped XML)
@@ -2046,7 +1639,7 @@ entry, a `modules/README.md` entry, a `JENNIFER.md` bullet, and a runnable
 A JWT (RFC 7519) module. The HMAC algorithms (HS256 / HS384 / HS512) need only
 the shipped `hash.hmac` and could stand alone, but the module targets the full
 common surface - including the asymmetric **RS256 / ES256** that OAuth / OIDC
-rely on - so it is parked here **gated on [M20.1 `crypto`](#m201---crypto)** for
+rely on - so it is parked here **gated on [M20.1 `crypto`](#m20---system-libraries-compacted)** for
 the public-key signing / verification, and graduates into the M18 module track
 when `crypto` lands. Surface: `jwt.sign(claims, key, alg)`, `jwt.verify(token,
 key) -> claims` (checks the signature and the `exp` / `nbf` time claims), and
@@ -2064,7 +1657,7 @@ rejection), docs, catalog, and demo.
 An ACME (RFC 8555) client - obtain and renew TLS certificates from Let's Encrypt
 and compatible CAs: account registration, an order plus HTTP-01 / DNS-01
 challenge, CSR submission, and certificate download, over `http` + `json`. Parked
-here **gated on [M20.1 `crypto`](#m201---crypto)**: ACME requests are JWS-signed
+here **gated on [M20.1 `crypto`](#m20---system-libraries-compacted)**: ACME requests are JWS-signed
 with an account key (RS256 / ES256) and the flow needs CSR generation - both
 asymmetric-crypto operations. Composes with `web` / `httpd` to serve the HTTP-01
 challenge. Graduates into the M18 module track when `crypto` lands. Needs the
@@ -2072,7 +1665,7 @@ default binary. Discipline as usual.
 
 ### M21.5 - `orm` module
 
-A relational mapper layered over the [M20.9 `sql`](#m209---sql-mysql--mariadb--postgresql)
+A relational mapper layered over the [M20.9 `sql`](#m20---system-libraries-compacted)
 library (its **hard prerequisite** - no `sql`, no `orm`), and a good stress-test
 of how far the module system stretches. Jennifer's semantics dictate the shape,
 and it is **Data Mapper, not Active Record**: structs are value-semantic and
