@@ -107,7 +107,8 @@ in [interpreter.md](interpreter.md); this page is the file-level index.
 | `regex/regexlib.go` | `regex`: `matches` / `find` / `findAll` / `replace` / `split` / `escape` + `regex.Match` + 128-entry LRU pattern cache. |
 | `testing/testinglib.go`, `testing/assertions.go` | `testing`: `run` / `runWith` / `results` / `reset` / `report` (text / TAP / JUnit) + exit interception; the six `assert*` builtins. |
 | `uuid/uuidlib.go` | `uuid`: `generate("v4"/"v7")` + `parse` / `isValid` / `version` + `NIL` (RFC 9562). |
-| `crypto/cryptolib.go` | `crypto`: crypto-grade random (`randBytes` / `randInt`), constant-time `hmacEqual`, key derivation (`hkdf` / `pbkdf`), AEAD `encrypt` / `decrypt` (AES-256-GCM), Ed25519 `signKeypair` / `sign` / `verify`. |
+| `crypto/cryptolib.go` | `crypto`: crypto-grade random (`randBytes` / `randInt`), constant-time `hmacEqual`, key derivation (`hkdf` / `pbkdf`), AEAD `encrypt` / `decrypt` (AES-256-GCM), Ed25519 `signKeypair` / `sign` / `verify`; registers the asymmetric `rsa*` / `ecdsa*` surface. |
+| `crypto/cryptolib_asym_std.go`, `crypto/cryptolib_asym_tiny.go` | `crypto` RSA / ECDSA over PEM keys (`rsaSign` / `rsaVerify` / `ecdsaSign` / `ecdsaVerify`, for JWT RS\* / ES\*): `!tinygo` real over `crypto/rsa` + `crypto/ecdsa` + `crypto/x509`; `tinygo` friendly-error stub (build-tag split like `net`). |
 | `intl/intllib.go` | `intl`: locale catalogs - `load(lang, catalog)`, `setLocale` / `locale`, `tr(key[, params])` with `{name}` interpolation. |
 | `term/termlib.go`, `term/termlib_std.go`, `term/termlib_tinygo.go` | `term`: raw mode (`makeRaw` / `restore` -> `term.State`), `size`, raw byte reads; `!tinygo` real termios (+ `RestoreAll` for the CLI signal path), `tinygo` stubs. |
 | `httpd/httpdlib.go`, `httpd/httpdlib_std.go`, `httpd/httpdlib_tinygo.go` | `httpd`: HTTP/1.1 server engine over `net/http` (TLS, graceful shutdown) - pull loop `listen` / `accept` / `respond` + request accessors; `tinygo` stubs. |

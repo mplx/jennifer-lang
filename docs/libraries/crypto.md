@@ -13,7 +13,9 @@ or a timing side channel is a vulnerability.
 Everything here is Go standard library only (`crypto/rand`,
 `crypto/subtle`, `crypto/hkdf`, `crypto/pbkdf2`, `crypto/aes`,
 `crypto/cipher`, `crypto/ed25519`), so the library adds no dependency and
-works on **both binaries** (`jennifer` and `jennifer-tiny`).
+works on **both binaries** (`jennifer` and `jennifer-tiny`). The one exception
+is the RSA / ECDSA signature surface below (`crypto/rsa`, `crypto/ecdsa`,
+`crypto/x509`), which is default-`jennifer` only - everything else runs on both.
 
 ```jennifer
 use io;
@@ -183,8 +185,46 @@ a genuine mismatch, only for a wrong-length key or signature.
 
 The random source draws from the same crypto-grade generator as `randBytes`.
 All Go stdlib (`crypto/aes`, `crypto/cipher`, `crypto/ed25519`), so both binaries
-carry it. Out of scope by design: password *hashing* (see above), raw block
-modes, RSA / ECDSA signing, and x509 parsing.
+carry it. Out of scope by design: password *hashing* (see above) and raw block
+modes.
+
+## Asymmetric signatures (RSA / ECDSA)
+
+For interop with formats that mandate RSA or ECDSA - **JWT** `RS256` / `ES256`
+foremost - `crypto` signs and verifies with **PEM-encoded** keys. These are the
+one part of `crypto` that is **default-binary only**: they pull in `crypto/rsa`,
+`crypto/ecdsa`, and `crypto/x509` (for PEM parsing), which are off the TinyGo
+build, so on `jennifer-tiny` they raise a friendly "not available" error (the
+same build-tag split as [`net`](net.md)). For a modern signature with no key
+files, prefer Ed25519 (`crypto.sign`, above), which runs on both binaries.
+
+| Call | Returns | Notes |
+| ---- | ------- | ----- |
+| `crypto.rsaSign(privatePem, message, algo)` | `bytes` | RSASSA-PKCS#1 v1.5 signature. `privatePem` is a PKCS#1 or PKCS#8 PEM key (as `bytes`). |
+| `crypto.rsaVerify(publicPem, message, signature, algo)` | `bool` | Verify against a PKIX / PKCS#1 public-key PEM. `false` on mismatch. |
+| `crypto.ecdsaSign(privatePem, message, algo)` | `bytes` | ECDSA signature in the **JOSE R\|\|S** form (fixed-width, what JWT / WebCrypto use), not ASN.1 DER. `privatePem` is a SEC1 or PKCS#8 EC key. |
+| `crypto.ecdsaVerify(publicPem, message, signature, algo)` | `bool` | Verify against a PKIX EC public-key PEM. A wrong-length signature is `false`, not an error. |
+
+`algo` is the digest: `"sha256"` / `"sha384"` / `"sha512"` (JWT's 256 / 384 / 512
+variants). The curve of an ECDSA key is taken from the key itself (P-256 for
+`ES256`, and so on). A key that is not valid PEM, or not the key type the call
+expects, is a positioned error; a genuine signature mismatch is `false`.
+
+```jennifer
+use crypto;
+use fs;
+use convert;
+
+def priv as bytes init fs.readBytes("rsa_private.pem");
+def pub as bytes init fs.readBytes("rsa_public.pem");
+def msg as bytes init convert.bytesFromString("payload", "utf-8");
+def sig as bytes init crypto.rsaSign($priv, $msg, "sha256");        # RS256
+def ok as bool init crypto.rsaVerify($pub, $msg, $sig, "sha256");   # true
+```
+
+These are the primitives the [`jwt`](../modules/jwt.md) module's `RS*` / `ES*`
+algorithms build on. Still out of scope: x509 *certificate* handling (chains,
+SANs, expiry) - key parsing is all that is exposed.
 
 ## Errors
 

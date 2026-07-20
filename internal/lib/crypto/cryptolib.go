@@ -77,6 +77,14 @@ func Install(in *interpreter.Interpreter) {
 	in.RegisterNamespaced(LibraryName, "signKeypair", signKeypairFn)
 	in.RegisterNamespaced(LibraryName, "sign", signFn)
 	in.RegisterNamespaced(LibraryName, "verify", verifyFn)
+
+	// Asymmetric RSA / ECDSA sign / verify over PEM keys (for JWT RS* / ES*).
+	// Build-tag split like `net`: real on the default binary, a friendly stub on
+	// jennifer-tiny (crypto/x509 is heavy and off the TinyGo build).
+	in.RegisterNamespaced(LibraryName, "rsaSign", rsaSignFn)
+	in.RegisterNamespaced(LibraryName, "rsaVerify", rsaVerifyFn)
+	in.RegisterNamespaced(LibraryName, "ecdsaSign", ecdsaSignFn)
+	in.RegisterNamespaced(LibraryName, "ecdsaVerify", ecdsaVerifyFn)
 }
 
 // ----- authenticated symmetric encryption (AES-256-GCM) --------------------

@@ -1678,6 +1678,36 @@ entry, a `modules/README.md` entry, a `JENNIFER.md` bullet, and a runnable
 
 ### M21.3 - `jwt` module (JSON Web Tokens)
 
+**Done.** Shipped as `modules/jwt.j`, the **full** surface. `sign(claims, key,
+alg)` / `verify(token, key, alg)` / `decode(token)` / `header(token)`, claims a
+`json.Value`. Ten algorithms across four families: HMAC (`HS256`/`384`/`512`,
+over `hash.hmac`), RSA (`RS256`/`384`/`512`), ECDSA (`ES256`/`384`/`512`), and
+`EdDSA` (Ed25519, over the existing `crypto.sign`). The key is always `bytes` -
+an HMAC secret, a PEM RSA / EC key, or a raw Ed25519 key. `verify` pins the
+**expected** algorithm (rejecting the classic algorithm-confusion attack),
+enforces the `exp` / `nbf` time claims, and compares HMACs constant-time
+(`crypto.hmacEqual`); `decode` / `header` read without verifying. `jwt_auth` is
+this module used as a `web.before` middleware (a snippet in the demo / docs), not
+a separate module.
+
+**This is the milestone where M20.10's deferred RSA / ECDSA came due** ("add only
+if JWT-style interop demands it"). It extends the `crypto` library with
+`rsaSign` / `rsaVerify` (RSASSA-PKCS#1 v1.5) and `ecdsaSign` / `ecdsaVerify` (JOSE
+R||S form) over **PEM** keys, `algo` `"sha256"`/`"sha384"`/`"sha512"`. Because
+these pull in `crypto/rsa`, `crypto/ecdsa`, and `crypto/x509` (heavy, off the
+TinyGo build), they are build-tag split like `net` (`cryptolib_asym_std.go` real
+/ `cryptolib_asym_tiny.go` stub) - the one part of `crypto` that is
+default-binary-only; the symmetric primitives and Ed25519 stay on both binaries.
+So HS\* / EdDSA JWTs work on `jennifer-tiny`, RS\* / ES\* need the default
+`jennifer`. x509 *certificate* handling (chains / SANs) stays out - only key
+parsing is exposed. Discipline: a 100%-passing `jwt_test.j` overlay (16 tests:
+HS\* / EdDSA round-trips, tamper / wrong-key / algorithm-confusion / expiry /
+not-before / malformed / unsupported-alg rejection, segment codec), a
+`cmd/jennifer/jwt_test.go` covering RS256 / ES256 with Go-minted PEM keys, Go
+tests for the four new `crypto` functions (`cryptolib_asym_test.go`), docs
+(`jwt.md` + the `crypto` RSA / ECDSA section), catalog / cheatsheet / `JENNIFER.md`
+entries, and `examples/modules/jwt_demo.j`. Original spec below.
+
 A JWT (RFC 7519) module. The HMAC algorithms (HS256 / HS384 / HS512) need only
 the shipped `hash.hmac` and could stand alone, but the module targets the full
 common surface - including the asymmetric **RS256 / ES256** that OAuth / OIDC

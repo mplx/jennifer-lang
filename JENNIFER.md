@@ -360,7 +360,9 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   checksums, security primitives (crypto-grade random `crypto.randBytes`/
   `randInt`, constant-time `crypto.hmacEqual`, key derivation `crypto.hkdf`/
   `crypto.pbkdf`, AES-256-GCM `crypto.encrypt`/`decrypt`, Ed25519
-  `crypto.signKeypair`/`sign`/`verify`), byte-stream + container compression, text/character codecs,
+  `crypto.signKeypair`/`sign`/`verify`, and PEM-key RSA / ECDSA
+  `crypto.rsaSign`/`rsaVerify`/`ecdsaSign`/`ecdsaVerify` for JWT RS\* / ES\* -
+  default binary only), byte-stream + container compression, text/character codecs,
   UUIDs, interpreter identity, and test primitives.
 
 For the exact signature of any function, see the hosted library reference -
@@ -718,6 +720,17 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   round-trips. A contact subset (no `BDAY` / `PHOTO` / grouping / parameter
   round-trip). Shares the content-line codec with `ical`. Pure text over
   `strings` / `lists`; **both binaries**.
+- **`jwt`** - JSON Web Tokens (RFC 7519). `jwt.sign(claims, key, alg)` /
+  `verify(token, key, alg)` / `decode(token)` / `header(token)`, claims a
+  `json.Value`. Ten algorithms - HMAC `HS256`/`384`/`512`, RSA
+  `RS256`/`384`/`512`, ECDSA `ES256`/`384`/`512`, and `EdDSA` (Ed25519); the
+  `key` is always `bytes` (HMAC secret / PEM / Ed25519). `verify` pins the
+  **expected** algorithm (rejecting algorithm-confusion), enforces `exp` / `nbf`,
+  and compares HMACs in constant time; `decode` / `header` read without
+  verifying (never authorize on them). Over `crypto` + `hash` + `encoding` +
+  `json` + `time`. HS\* / EdDSA on both binaries; RS\* / ES\* need the default
+  binary. JWT auth is this module used as a `web.before` middleware, not a
+  separate module.
 - **`jsonl`** - JSON Lines (JSONL / NDJSON): newline-delimited JSON, one
   independent `json.Value` per line. `jsonl.encode(records)` writes one compact
   JSON value per line (each newline-terminated); `jsonl.decode(text) -> list of

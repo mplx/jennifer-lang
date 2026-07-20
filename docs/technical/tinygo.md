@@ -71,6 +71,7 @@ full surface.
 | `iic`   | Every entry point (`open`, `read`, `write`, `readReg`, ...) | Runtime error pointing at the default `jennifer` binary on Linux. `I2C_SLAVE` ioctl; same build-tag split as `serial`. |
 | `gpio`  | Every entry point (`setup`, `read`, `write`, `release`, `chip`) | Runtime error pointing at the default `jennifer` binary on Linux. The `/dev/gpiochipN` GPIO v2 line ioctls; same build-tag split as `serial`. (The sysfs-backed `gpio` **module** is the portable default and runs on both binaries.) |
 | `sql`   | Every entry point (`open`, `query`, `exec`, ...) | Runtime error pointing at the default `jennifer` binary. The MySQL / Postgres drivers are heavyweight dependency trees that TinyGo does not compile, so `sqllib_tiny.go` stubs the whole surface (they are unreachable on stock `jennifer-tiny` anyway - no network stack). Build-tag split like `net`: `sqllib_std.go` (`!tinygo`) imports the drivers, `sqllib_tiny.go` (`tinygo`) returns friendly errors. |
+| `crypto` | **Only** `crypto.rsaSign` / `rsaVerify` / `ecdsaSign` / `ecdsaVerify` | Runtime error pointing at the default `jennifer` binary. These pull in `crypto/rsa`, `crypto/ecdsa`, and `crypto/x509` (PEM parsing), which are off the TinyGo build; `cryptolib_asym_tiny.go` stubs just these four. The rest of `crypto` - random, `hmacEqual`, HKDF / PBKDF2, AES-GCM, and Ed25519 `sign` / `verify` - runs on **both** binaries. (This is why JWT's HS\* / EdDSA work on `jennifer-tiny` but RS\* / ES\* do not.) |
 
 ### `net` on TinyGo is a build choice, not a hard limit
 
