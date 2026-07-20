@@ -21,6 +21,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"jennifer-lang.dev/jennifer/internal/interpreter"
+	"jennifer-lang.dev/jennifer/internal/lib/devio"
 	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
@@ -32,6 +33,7 @@ type rowState struct {
 	// cursor is inherently sequential, so sharing one across spawns is misuse;
 	// this makes that misuse a serialized no-op rather than a Go data race.
 	rmu     sync.Mutex
+	id      int64
 	rows    *sql.Rows
 	cols    []string
 	cur     []interface{} // the current row's scanned values; nil before next() / after exhaustion
@@ -76,29 +78,16 @@ func ResetForTest() {
 	nid = 0
 }
 
+// Handle plumbing (build a `sql.Name{id}` value, pull the id back out, extract
+// typed positional args) is the shared integer-registry boilerplate from
+// `devio` - the same helpers the device libraries use.
+
 func handle(name string, id int64) Value {
-	return interpreter.NamespacedStructVal(LibraryName, name, []interpreter.StructField{
-		{Name: "id", Value: interpreter.IntVal(id)},
-	})
+	return devio.Handle(LibraryName, name, id)
 }
 
 func handleID(fn string, v Value, name string) (int64, error) {
-	if v.Kind != interpreter.KindStruct || v.StructNS != LibraryName || v.StructName != name {
-		return 0, fmt.Errorf("%s: argument must be a sql.%s, got %s", fn, name, v.Kind)
-	}
-	for _, f := range v.Fields {
-		if f.Name == "id" && f.Value.Kind == interpreter.KindInt {
-			return f.Value.Int, nil
-		}
-	}
-	return 0, fmt.Errorf("%s: malformed sql.%s handle", fn, name)
-}
-
-func stringArg(fn string, args []Value, i int, name string) (string, error) {
-	if i >= len(args) || args[i].Kind != interpreter.KindString {
-		return "", fmt.Errorf("%s: %s must be a string", fn, name)
-	}
-	return args[i].Str, nil
+	return devio.HandleID(fn, v, LibraryName, name)
 }
 
 // -------- param binding (placeholders only, never string interpolation) --------
@@ -170,11 +159,11 @@ func openFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if len(args) != 2 {
 		return interpreter.Null(), fmt.Errorf("sql.open expects 2 arguments (driver, dsn), got %d", len(args))
 	}
-	driver, err := stringArg("sql.open", args, 0, "driver")
+	driver, err := devio.StringArg("sql.open", args, 0, "driver")
 	if err != nil {
 		return interpreter.Null(), err
 	}
-	dsn, err := stringArg("sql.open", args, 1, "dsn")
+	dsn, err := devio.StringArg("sql.open", args, 1, "dsn")
 	if err != nil {
 		return interpreter.Null(), err
 	}
@@ -182,7 +171,7 @@ func openFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	switch driver {
 	case "mysql", "mariadb":
 		goDriver = "mysql"
-	case "postgres", "postgresql", "pgx":
+	case "postgres", "postgresql":
 		goDriver = "pgx"
 	default:
 		return interpreter.Null(), fmt.Errorf(`sql.open: unknown driver %q; use "mysql" / "mariadb" or "postgres" / "postgresql"`, driver)
@@ -229,7 +218,7 @@ func closeFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 // -------- query / exec --------
 
 func runQuery(fn string, q querier, args []Value) (Value, error) {
-	sqlText, err := stringArg(fn, args, 1, "sql")
+	sqlText, err := devio.StringArg(fn, args, 1, "sql")
 	if err != nil {
 		return interpreter.Null(), err
 	}
@@ -249,13 +238,13 @@ func runQuery(fn string, q querier, args []Value) (Value, error) {
 	mu.Lock()
 	nid++
 	id := nid
-	rows[id] = &rowState{rows: rs, cols: cols}
+	rows[id] = &rowState{id: id, rows: rs, cols: cols}
 	mu.Unlock()
 	return handle("Rows", id), nil
 }
 
 func runExec(fn string, q querier, args []Value) (Value, error) {
-	sqlText, err := stringArg(fn, args, 1, "sql")
+	sqlText, err := devio.StringArg(fn, args, 1, "sql")
 	if err != nil {
 		return interpreter.Null(), err
 	}
@@ -328,8 +317,17 @@ func resolveRows(fn string, v Value) (*rowState, error) {
 	return r, nil
 }
 
+// releaseRow drops a spent cursor from the registry. Deleting a missing key is
+// a no-op, so a concurrent closeRows racing an exhaustion is harmless.
+func releaseRow(id int64) {
+	mu.Lock()
+	delete(rows, id)
+	mu.Unlock()
+}
+
 // sql.next(rows) -> bool. Advances to the next row and scans it; returns false at
-// the end (and closes the cursor).
+// the end (closing the cursor and releasing the handle - a spent cursor does not
+// linger in the registry).
 func nextFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if len(args) != 1 {
 		return interpreter.Null(), fmt.Errorf("sql.next expects 1 argument (sql.Rows), got %d", len(args))
@@ -346,11 +344,13 @@ func nextFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if !r.rows.Next() {
 		rerr := r.rows.Err()
 		// Exhausted: close the cursor, clear the current row so a stray accessor
-		// errors instead of returning the last row's stale data.
+		// errors instead of returning the last row's stale data, and release the
+		// registry entry so query loops do not accumulate spent cursors.
 		r.done = true
 		r.cur = nil
 		r.scanned = false
 		_ = r.rows.Close()
+		releaseRow(r.id)
 		if rerr != nil {
 			return interpreter.Null(), fmt.Errorf("sql.next: %v", rerr)
 		}
@@ -362,6 +362,9 @@ func nextFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 		holders[i] = &dest[i]
 	}
 	if serr := r.rows.Scan(holders...); serr != nil {
+		// A failed scan must not leave the previous row readable.
+		r.cur = nil
+		r.scanned = false
 		return interpreter.Null(), fmt.Errorf("sql.next: %v", serr)
 	}
 	r.cur = dest
@@ -468,6 +471,11 @@ func asFloatFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 		return interpreter.FloatVal(x), nil
 	case int64:
 		return interpreter.FloatVal(float64(x)), nil
+	case bool:
+		if x {
+			return interpreter.FloatVal(1), nil
+		}
+		return interpreter.FloatVal(0), nil
 	case []byte:
 		return parseFloat(string(x))
 	case string:
@@ -555,6 +563,8 @@ func isNullFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 }
 
 // sql.closeRows(rows) -> null. Closes a cursor early (before exhaustion).
+// Always a no-op on a cursor that is already gone - exhaustion auto-releases
+// the handle, so `defer sql.closeRows($rows)` must stay safe either way.
 func closeRowsFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if len(args) != 1 {
 		return interpreter.Null(), fmt.Errorf("sql.closeRows expects 1 argument (sql.Rows), got %d", len(args))
@@ -567,7 +577,7 @@ func closeRowsFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	r, ok := rows[id]
 	if !ok {
 		mu.Unlock()
-		return interpreter.Null(), fmt.Errorf("sql.closeRows: sql.Rows id %d is not open (already closed?)", id)
+		return interpreter.Null(), nil // exhausted or already closed
 	}
 	delete(rows, id)
 	mu.Unlock()
@@ -659,7 +669,7 @@ func prepareFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	if err != nil {
 		return interpreter.Null(), err
 	}
-	sqlText, err := stringArg("sql.prepare", args, 1, "sql")
+	sqlText, err := devio.StringArg("sql.prepare", args, 1, "sql")
 	if err != nil {
 		return interpreter.Null(), err
 	}
@@ -720,7 +730,7 @@ func queryStmtFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	mu.Lock()
 	nid++
 	rid := nid
-	rows[rid] = &rowState{rows: rs, cols: cols}
+	rows[rid] = &rowState{id: rid, rows: rs, cols: cols}
 	mu.Unlock()
 	return handle("Rows", rid), nil
 }

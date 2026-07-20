@@ -6,9 +6,11 @@ drivers). SQLite (the one embedded engine) is deliberately not here. **Default
 `jennifer` binary only** - `jennifer-tiny` returns a friendly error (the drivers
 are not compiled there, and it has no network stack anyway).
 
-Values bind **only through placeholders** - `?` for MySQL, `$1` for Postgres;
-`database/sql` abstracts the spelling. String interpolation (the SQL-injection
-vector) is never how a value reaches a query.
+Values bind **only through placeholders**. String interpolation (the
+SQL-injection vector) is never how a value reaches a query. The placeholder
+spelling is the engine's own - `?` for MySQL / MariaDB, `$1`..`$n` for
+Postgres; the SQL text goes to the driver verbatim, so write the dialect you
+are connecting to.
 
 ```jennifer
 use sql;
@@ -33,6 +35,12 @@ while (sql.next($rows)) {
 | `sql.open(driver, dsn)` | `sql.Connection` | `driver`: `"mysql"` / `"mariadb"` or `"postgres"` / `"postgresql"`. Pings, so a bad DSN / unreachable server errors here. |
 | `sql.close(conn)` | `null` | Closes the connection pool. |
 
+The DSN format is the driver's:
+
+- MySQL / MariaDB: `"user:pw@tcp(host:3306)/dbname"`
+- Postgres: `"postgres://user:pw@host:5432/dbname"` (`?sslmode=disable` for a
+  plaintext local server)
+
 ## Query and exec
 
 `query` / `exec` take a **Connection or a Tx** as the first argument, the SQL
@@ -41,7 +49,7 @@ next, then the placeholder values.
 | Call | Returns | Notes |
 | ---- | ------- | ----- |
 | `sql.query(target, sql, params...)` | `sql.Rows` | A row cursor. |
-| `sql.exec(target, sql, params...)` | `sql.Result` | `sql.Result{affected, lastId}` - read the fields (`lastId` is `-1` where the driver has no last-insert-id, e.g. Postgres). |
+| `sql.exec(target, sql, params...)` | `sql.Result` | `sql.Result{affected, lastId}` - read the fields. A field the driver cannot report is `-1` (`lastId` on Postgres, e.g.; `affected` on the rare driver without row counts). |
 
 Parameters bind by type: `int` / `float` / `string` / `bool` / `bytes` / `null`.
 Any other kind (a list, a struct) is a positioned error - build the value first.
@@ -53,11 +61,11 @@ a column of the current row by **name (string) or 0-based index (int)**.
 
 | Call | Returns | Notes |
 | ---- | ------- | ----- |
-| `sql.next(rows)` | `bool` | Advance to the next row; `false` at the end (and closes the cursor). |
+| `sql.next(rows)` | `bool` | Advance to the next row; `false` at the end, which closes the cursor and releases the handle (a later `sql.next` on it is an error). |
 | `sql.columns(rows)` | `list of string` | Column names. |
 | `sql.asInt(rows, col)` / `.asFloat` / `.asString` / `.asBool` / `.asBytes` | typed | The current row's column, coerced. A `NULL` column is an error (check `sql.isNull` first); `asString` also stringifies a datetime (RFC 3339). |
 | `sql.isNull(rows, col)` | `bool` | Whether the column is SQL `NULL`. |
-| `sql.closeRows(rows)` | `null` | Close a cursor early (before exhaustion). `defer` it, or let `next` close it at the end. |
+| `sql.closeRows(rows)` | `null` | Close a cursor early (before exhaustion). A no-op on an already-released cursor, so `defer sql.closeRows($rows);` is always safe - whether or not the loop ran to the end. |
 
 ## Transactions
 

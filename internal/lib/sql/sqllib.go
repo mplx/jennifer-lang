@@ -18,10 +18,11 @@
 // and returns a friendly "not available on this build" error from every verb, so
 // TinyGo never compiles the driver trees.
 //
-// Values bind ONLY through placeholders (`?` for MySQL, `$1` for Postgres -
-// `database/sql` abstracts the spelling), so string interpolation - the SQL
-// injection vector - is never how a value reaches a query. Handles use the
-// integer-registry pattern from `fs` / `net`.
+// Values bind ONLY through placeholders, so string interpolation - the SQL
+// injection vector - is never how a value reaches a query. The placeholder
+// spelling is the engine's own (`?` for MySQL, `$1`..`$n` for Postgres); the
+// SQL text is passed to the driver verbatim, nothing translates between
+// dialects. Handles use the integer-registry pattern from `fs` / `net`.
 package sqllib
 
 import (

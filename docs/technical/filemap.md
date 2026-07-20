@@ -95,7 +95,7 @@ in [interpreter.md](interpreter.md); this page is the file-level index.
 | `os/oslib.go`, `os/exec.go` | `os`: `PLATFORM` / `ARCH` / `EOL` / `DIRSEP` / `PATHSEP` / `ARGS` + `getEnv` / `hasFlag` / `flag` / `isTerminal`; external-program execution (`run` / `spawn` / `wait` / `poll` / `kill`). |
 | `meta/metalib.go` | `meta`: `VERSION` / `BUILD` / `SYSMODDIR` (interpreter self-identity). |
 | `time/timelib.go`, `time/zone.go`, `time/format.go` | `time`: `Time` / `Duration`, Unix + calendar + arithmetic; fixed-offset `Zone`, `UTC` / `local` / `inZone`; strftime `format` / `parse` + ISO round-trip. |
-| `hash/hashlib.go` | `hash`: MD5 / SHA-1 / SHA-256 one-shot + streaming via a codec table. |
+| `hash/hashlib.go` | `hash`: MD5 / SHA-1 / SHA-256 / SHA-384 / SHA-512 one-shot + streaming via a codec table. |
 | `crc/crclib.go` | `crc`: CRC-32 / CRC-64 (big-endian) one-shot + streaming. |
 | `compress/compresslib.go` | `compress`: `pack` / `unpack` (gzip / zlib / deflate) + streaming (`compress.Stream`); optional level. |
 | `archive/archivelib.go` | `archive`: tar / zip / tar.gz `pack` / `unpack` over `bytes` (`archive.Entry`); no `fs` dependency. |
@@ -107,6 +107,19 @@ in [interpreter.md](interpreter.md); this page is the file-level index.
 | `regex/regexlib.go` | `regex`: `matches` / `find` / `findAll` / `replace` / `split` / `escape` + `regex.Match` + 128-entry LRU pattern cache. |
 | `testing/testinglib.go`, `testing/assertions.go` | `testing`: `run` / `runWith` / `results` / `reset` / `report` (text / TAP / JUnit) + exit interception; the six `assert*` builtins. |
 | `uuid/uuidlib.go` | `uuid`: `generate("v4"/"v7")` + `parse` / `isValid` / `version` + `NIL` (RFC 9562). |
+| `crypto/cryptolib.go` | `crypto`: crypto-grade random (`randBytes` / `randInt`), constant-time `hmacEqual`, key derivation (`hkdf` / `pbkdf`), AEAD `encrypt` / `decrypt` (AES-256-GCM), Ed25519 `signKeypair` / `sign` / `verify`. |
+| `intl/intllib.go` | `intl`: locale catalogs - `load(lang, catalog)`, `setLocale` / `locale`, `tr(key[, params])` with `{name}` interpolation. |
+| `term/termlib.go`, `term/termlib_std.go`, `term/termlib_tinygo.go` | `term`: raw mode (`makeRaw` / `restore` -> `term.State`), `size`, raw byte reads; `!tinygo` real termios (+ `RestoreAll` for the CLI signal path), `tinygo` stubs. |
+| `httpd/httpdlib.go`, `httpd/httpdlib_std.go`, `httpd/httpdlib_tinygo.go` | `httpd`: HTTP/1.1 server engine over `net/http` (TLS, graceful shutdown) - pull loop `listen` / `accept` / `respond` + request accessors; `tinygo` stubs. |
+| `xml/xmllib.go`, `xml/xmldecode.go`, `xml/xmlaccess.go` | `xml`: `decode` / `encode` / `encodePretty` over an opaque `xml.Value` element tree (ordered attributes, children, mixed text). |
+| `yaml/yamllib.go`, `yaml/yamldecode.go`, `yaml/yamlencode.go`, `yaml/yamlaccess.go`, `yaml/yamlwrite.go` | `yaml`: YAML 1.2 `decode` / `decodeAll` / `encode` / `encodePretty` over an opaque `yaml.Value` (on `gopkg.in/yaml.v3`); same read / walk / write surface as `json`. |
+| `toml/tomllib.go`, `toml/tomldecode.go`, `toml/tomlaccess.go`, `toml/tomlwrite.go` | `toml`: TOML 1.0 `encode` / `encodePretty` / `decode`, same `Value` walk / write surface as `json`, plus `asDatetime`. |
+| `devio/devio.go` | Shared plumbing for the handle-based libraries (`serial` / `spi` / `iic` / `gpio`, also `sql`): integer-handle structs + typed positional-argument extraction. Not a Jennifer library itself (no namespace, no Install). |
+| `serial/seriallib.go`, `serial/seriallib_linux.go`, `serial/seriallib_other.go` | `serial`: termios serial-port I/O - `open` / `openWith` -> `serial.Port`, `read` / `write` / `flush` / `close`. Linux-only; stubs elsewhere. |
+| `spi/spilib.go`, `spi/spilib_linux.go`, `spi/spilib_other.go` | `spi`: SPI devices - `open` -> `spi.Device`, `configure(mode, speedHz)`, full-duplex `transfer`, `close`. Linux-only; stubs elsewhere. |
+| `iic/iiclib.go`, `iic/iiclib_linux.go`, `iic/iiclib_other.go` | `iic`: the I2C bus - `open(path, addr)` -> `iic.Bus`, `read` / `write` / `readReg` / `writeReg`, `close`. Linux-only; stubs elsewhere. |
+| `gpio/gpiolib.go`, `gpio/gpiolib_linux.go`, `gpio/gpiolib_other.go` | `gpio`: `/dev/gpiochipN` GPIO v2 lines - pin-keyed `setup` / `read` / `write` / `release` + `IN` / `OUT`. Linux-only; stubs elsewhere. |
+| `sql/sqllib.go`, `sql/sqllib_std.go`, `sql/sqllib_tiny.go` | `sql`: MySQL / MariaDB + PostgreSQL client over `database/sql` (placeholder-only binding, pull cursor + typed accessors, transactions, prepared statements); `!tinygo` imports the drivers, `tinygo` stubs so the driver trees never compile there. |
 | `*/…_test.go` | Each library has a co-located `_test.go` with its unit tests (canonical vectors, round-trips, boundary errors). |
 
 ## Tooling internals

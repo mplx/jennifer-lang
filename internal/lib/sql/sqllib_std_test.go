@@ -107,6 +107,7 @@ func TestQueryCursorAndAccessors(t *testing.T) {
 	assertStr(t, rowsV, sv("name"), "alice")
 	assertFloat(t, rowsV, sv("score"), 9.5)
 	assertBool(t, rowsV, sv("active"), true)
+	assertFloat(t, rowsV, sv("active"), 1.0) // bool coerces like asInt does
 	// NULL column
 	nv, err := isNullFn(ctx(), []Value{rowsV, sv("note")})
 	if err != nil || !nv.Bool {
@@ -133,6 +134,17 @@ func TestQueryCursorAndAccessors(t *testing.T) {
 	ok, _ = nextFn(ctx(), []Value{rowsV})
 	if ok.Bool {
 		t.Error("next 3 should be false (end)")
+	}
+	// exhaustion released the handle: the registry must not accumulate spent
+	// cursors, and a further next on the released handle is a positioned error.
+	mu.Lock()
+	nRows := len(rows)
+	mu.Unlock()
+	if nRows != 0 {
+		t.Errorf("rows registry should be empty after exhaustion, has %d entries", nRows)
+	}
+	if _, err := nextFn(ctx(), []Value{rowsV}); err == nil || !strings.Contains(err.Error(), "not open") {
+		t.Errorf("next after release should error 'not open', got %v", err)
 	}
 }
 
@@ -195,9 +207,12 @@ func TestTransactionAndPrepared(t *testing.T) {
 
 func TestErrorsAndBinding(t *testing.T) {
 	conn := mockConnValue(t)
-	// unknown driver
-	if _, err := openFn(ctx(), []Value{sv("oracle"), sv("dsn")}); err == nil || !strings.Contains(err.Error(), "unknown driver") {
-		t.Errorf("expected unknown-driver error, got %v", err)
+	// unknown driver ("pgx" is deliberately not an alias: the documented names
+	// are the only accepted ones)
+	for _, d := range []string{"oracle", "pgx"} {
+		if _, err := openFn(ctx(), []Value{sv(d), sv("dsn")}); err == nil || !strings.Contains(err.Error(), "unknown driver") {
+			t.Errorf("expected unknown-driver error for %q, got %v", d, err)
+		}
 	}
 	// wrong handle kind
 	if _, err := queryFn(ctx(), []Value{interpreter.IntVal(5), sv("SELECT 1")}); err == nil {
@@ -265,9 +280,13 @@ func TestCursorExhaustedAccessorErrors(t *testing.T) {
 		t.Errorf("accessor after exhaustion should error 'exhausted', got %v", err)
 	}
 	// closeRows after exhaustion is a no-op, not a double-close error (so the
-	// `defer sql.closeRows($rows)` idiom is safe after a fully-consumed loop).
+	// `defer sql.closeRows($rows)` idiom is safe after a fully-consumed loop) -
+	// and so is a second closeRows.
 	if _, err := closeRowsFn(ctx(), []Value{rowsV}); err != nil {
 		t.Errorf("closeRows after exhaustion should be a no-op, got %v", err)
+	}
+	if _, err := closeRowsFn(ctx(), []Value{rowsV}); err != nil {
+		t.Errorf("double closeRows should be a no-op, got %v", err)
 	}
 }
 

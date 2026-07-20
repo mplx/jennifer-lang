@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 // Copyright (C) 2026 <developer@mplx.eu>
 
-// Package devio holds the argument- and handle-plumbing shared by the four
-// device-I/O libraries (serial / spi / iic / gpio). It is not a Jennifer library
+// Package devio holds the argument- and handle-plumbing shared by the
+// handle-based libraries - born with the four device-I/O libraries
+// (serial / spi / iic / gpio), also used by `sql`. It is not a Jennifer library
 // itself - no namespace, no Install - just the boilerplate those libraries would
 // otherwise each repeat: integer-handle structs (`serial.Port{id}`, ...) and
 // typed positional-argument extraction with uniform, positioned error messages.
