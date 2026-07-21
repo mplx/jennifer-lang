@@ -26,6 +26,7 @@
 - [Catalog](libraries/index.md)
 - [Cheatsheet](libraries/cheatsheet.md)
 - [`archive`](libraries/archive.md)
+- [`binary`](libraries/binary.md)
 - [`compress`](libraries/compress.md)
 - [`convert`](libraries/convert.md)
 - [`crc`](libraries/crc.md)

@@ -13,8 +13,15 @@ flat lookup view, not authoritative.
 
 | Call                                                  | What it does                                                                                                                        |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| [`archive`](archive.md)`.pack(entries, fmt)`         | Bundle a `list of archive.Entry` into `bytes`; `fmt` `"tar"`/`"zip"`/`"tar.gz"`.                                                 |
-| [`archive`](archive.md)`.unpack(b, fmt)`             | Read a bundle back into a `list of archive.Entry`.                                                                                 |
+| [`archive`](archive.md)`.pack(entries, format)`      | Bundle a `list of archive.Entry` into `bytes`; `format` `"tar"`/`"zip"`/`"tar.gz"`.                                              |
+| [`archive`](archive.md)`.unpack(b, format)`          | Read a bundle back into a `list of archive.Entry`.                                                                                 |
+| [`binary`](binary.md)`.concat(a, b)`                 | Join two `bytes` into a fresh `bytes` (O(len a + len b); avoid in an accumulation loop - use `net.readAll`/`readN`).                |
+| [`binary`](binary.md)`.contains(haystack, needle)`   | Whether `needle` occurs in `bytes` `haystack` (boolean sibling of `indexOf`).                                                       |
+| [`binary`](binary.md)`.endsWith(b, suffix)`          | True iff `bytes` `b` ends with `suffix`.                                                                                            |
+| [`binary`](binary.md)`.indexOf(haystack, needle)`       | Byte index of the first `needle` in `haystack`; `-1` if absent, `0` for an empty needle. Native-speed scan.                        |
+| [`binary`](binary.md)`.slice(b, start [, end])`      | Half-open byte range `[start, end)`; `end` defaults to `len(b)`. Out-of-range / `start>end` errors.                                |
+| [`binary`](binary.md)`.split(b, sep)`                | Split `bytes` on a non-empty `sep` -> `list of bytes` (e.g. a MIME body on its boundary, one Go pass).                             |
+| [`binary`](binary.md)`.startsWith(b, prefix)`        | True iff `bytes` `b` begins with `prefix`.                                                                                         |
 | [`compress`](compress.md)`.discard(stream)`          | Drop a streaming compressor without returning output; releases its state.                                                          |
 | [`compress`](compress.md)`.finalize(stream)`         | Close a streaming compressor; returns all compressed `bytes`.                                                                      |
 | [`compress`](compress.md)`.pack(b, algo [, level])`  | Compress `bytes`; `algo` `"gzip"`/`"zlib"`/`"deflate"`, optional level `"fast"`/`"default"`/`"best"`.                                |
@@ -156,7 +163,9 @@ flat lookup view, not authoritative.
 | [`net`](net.md)`.listen(address)`                     | Bind TCP `"host:port"` (use `":0"` for ephemeral). Returns a `net.Listener`.                                                        |
 | [`net`](net.md)`.listenUDP(address)`                  | Bind a UDP socket. Returns a `net.UDPSocket`; usable as both client and server.                                                     |
 | [`net`](net.md)`.lookup(host)`                        | DNS: resolve `host` to a `list of string` IPs.                                                                                      |
+| [`net`](net.md)`.readAll($conn [, maxBytes [, idleTimeoutMs]])` | Read to EOF, returning the whole stream as one `bytes` in a single Go loop (whole-body / object download). `maxBytes>0` caps (catchable), `idleTimeoutMs>0` re-arms a per-chunk read deadline. |
 | [`net`](net.md)`.readBytes($conn, n)`                 | Read up to `n` bytes; blocks for at least one byte. Sticky-EOF on close.                                                            |
+| [`net`](net.md)`.readN($conn, n [, idleTimeoutMs])`   | Read **exactly** `n` bytes for a length-prefixed frame; a close before `n` bytes is a catchable error, not a truncated return.      |
 | [`net`](net.md)`.recvFrom($sock, n)`                  | Block for one UDP datagram, up to `n` bytes. Returns `net.Datagram{data, peer}`.                                                    |
 | [`net`](net.md)`.reverseLookup(ip)`                   | Reverse DNS: IP address to a `list of string` of hostnames.                                                                         |
 | [`net`](net.md)`.sendTo($sock, peer, bytes)`          | Send one UDP datagram to `peer` (`"host:port"`).                                                                                    |

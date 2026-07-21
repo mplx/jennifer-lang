@@ -290,6 +290,13 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   replace repeat substring split chars join`. Rune-indexed.
 - **`lists`** - `push pop first last head tail reverse sort contains concat
   slice shuffle range`. Non-mutating (they return new lists).
+- **`binary`** - bulk operations on `bytes` (the byte-data counterpart to
+  `strings`/`lists`): `concat slice find split startsWith endsWith`.
+  Non-mutating, value-semantic; each pushes a per-byte loop into Go for
+  throughput. `indexOf`/`split` scan at native speed (a MIME boundary, a
+  delimiter). Named `binary` because `bytes` is a reserved type keyword.
+  For building a buffer from a stream use `net.readAll`/`readN`, not
+  `binary.concat` in a loop (O(n^2)).
 - **`maps`** - `keys values has delete merge`. `has` before a missing-key read.
 - **`os`** - `getEnv`, `hasFlag`/`flag`, `isTerminal`, `run`/`spawn`;
   `catchSignal(name)`/`gotSignal(name)` to trap and poll a Unix signal

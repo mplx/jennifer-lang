@@ -29,6 +29,7 @@ use net;
 use strings;
 use convert;
 use regex;
+use binary;
 import "./sasl.j" as sasl;
 import "./idna.j" as idna;
 
@@ -238,17 +239,23 @@ func readResponse(conn as net.Conn, tag as string) {
         }
         def litlen as int init literalLength($line);
         if ($litlen >= 0) {
-            # A literal is exactly `litlen` bytes; read by byte count.
-            while (len($buf) - $pos < $litlen) {
-                net.setDeadline($conn, TIMEOUT_MS);
-                def chunk as bytes init net.readBytes($conn, 512);
-                if (len($chunk) == 0) {
-                    return convert.stringFromBytes(byteSlice($buf, 0, $pos), "utf-8");
-                }
-                def k as int init 0;
-                while ($k < len($chunk)) {
-                    $buf[] = $chunk[$k];
-                    $k = $k + 1;
+            # Reject an oversized declared literal before allocating for it: a
+            # malicious server's `{2000000000}` must fail catchably, not force a
+            # huge net.readN allocation.
+            capResponse($litlen);
+            # A literal is exactly `litlen` bytes. Read the remaining count in
+            # one Go call (net.readN) instead of a per-byte accumulation; bytes
+            # already read ahead into $buf count toward it. A peer that closes
+            # mid-literal returns the partial response (as the old loop did).
+            def need as int init $litlen - (len($buf) - $pos);
+            if ($need > 0) {
+                try {
+                    $buf = binary.concat($buf, net.readN($conn, $need, TIMEOUT_MS));
+                } catch (e) {
+                    if (strings.contains($e.message, "closed after")) {
+                        return convert.stringFromBytes(byteSlice($buf, 0, $pos), "utf-8");
+                    }
+                    throw $e;
                 }
                 capResponse(len($buf));
             }

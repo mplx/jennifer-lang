@@ -220,21 +220,17 @@ func capPacket(n as int) {
 # until the count is met. A closed connection mid-packet is a catchable error.
 func readN(conn as net.Conn, n as int) {
     capPacket($n);
-    def out as bytes;
-    while (len($out) < $n) {
-        def chunk as bytes init net.readBytes($conn, $n - len($out));
-        if (len($chunk) == 0) {
+    # net.readN reads the whole frame in one Go loop, not a per-byte interpreted
+    # accumulation. A peer that closes before n bytes is re-tagged as the mqtt
+    # mid-packet error; a timeout / other I/O error propagates unchanged.
+    try {
+        return net.readN($conn, $n);
+    } catch (e) {
+        if (strings.contains($e.message, "closed after")) {
             throw Error{ kind: "mqtt", message: "mqtt: connection closed mid-packet", file: "", line: 0, col: 0 };
         }
-        # Append in place: `out = appendBytes(out, chunk)` copies the whole
-        # growing buffer per read (O(N^2) over a large packet).
-        def k as int init 0;
-        while ($k < len($chunk)) {
-            $out[] = $chunk[$k];
-            $k = $k + 1;
-        }
+        throw $e;
     }
-    return $out;
 }
 
 # readRemLen reads a remaining-length varint one byte at a time off the socket,

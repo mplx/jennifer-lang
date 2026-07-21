@@ -28,6 +28,7 @@ use task;
 use os;
 use fs;
 use json;
+use binary;
 
 # --- Tunables ------------------------------------------------------
 # Bump these if the suite runs too fast to see meaningful numbers, or
@@ -43,6 +44,8 @@ def const STRUCT_LIST_SIZE as int init 10000;
 def const STRING_JOIN_SIZE as int init 10000;
 def const MAP_CHURN_SIZE as int init 10000;
 def const PARALLEL_WORKERS as int init 4;
+def const BYTE_BUF_SIZE as int init 500000;
+def const BYTE_SCAN_REPS as int init 10;
 
 # --- Helpers -------------------------------------------------------
 
@@ -394,6 +397,68 @@ func cpuModel() {
     return "unknown";
 }
 
+# readFileOr returns a file's contents, or "" if it is missing or unreadable -
+# a benchmark must not crash probing optional system files.
+func readFileOr(path as string) {
+    if (not fs.exists($path)) {
+        return "";
+    }
+    def out as string init "";
+    try {
+        $out = fs.readString($path);
+    } catch (e) {
+        $out = "";
+    }
+    return $out;
+}
+
+# dmiHint returns the DMI product / vendor name when it looks virtual (QEMU,
+# VMware, VirtualBox, Microsoft = Hyper-V, Xen, Amazon / Google cloud, ...),
+# else "". Best-effort: some DMI fields need privilege.
+func dmiHint() {
+    def s as string init strings.trim(readFileOr("/sys/class/dmi/id/product_name"));
+    if ($s == "") {
+        $s = strings.trim(readFileOr("/sys/class/dmi/id/sys_vendor"));
+    }
+    def low as string init strings.lower($s);
+    for (def mark in ["virtual", "vmware", "qemu", "kvm", "virtualbox", "microsoft", "xen", "amazon", "google", "bochs"]) {
+        if (strings.contains($low, $mark)) {
+            return $s;
+        }
+    }
+    return "";
+}
+
+# detectVirt reports whether the run is virtualized or containerized - which the
+# CPU brand and os.NCPU do NOT reveal. A VM exposes the host CPU model and core
+# count but schedules on virtual CPUs over a hypervisor; a container often runs
+# on real cores but under a cgroup CPU cap. Either way the PARALLEL speedups
+# below can be far from what the same silicon does bare-metal, so the numbers
+# must be read with that in mind. Best-effort, Linux: the CPUID `hypervisor`
+# flag (any hypervisor), the DMI platform name, and container hints.
+func detectVirt() {
+    def notes as list of string init [];
+    def ci as string init readFileOr("/proc/cpuinfo");
+    if (strings.contains($ci, " hypervisor ") or strings.contains($ci, " hypervisor\n")) {
+        $notes[] = "hypervisor flag";
+    }
+    def dmi as string init dmiHint();
+    if (not ($dmi == "")) {
+        $notes[] = $dmi;
+    }
+    if (fs.exists("/.dockerenv")) {
+        $notes[] = "docker";
+    }
+    def cg as string init readFileOr("/proc/1/cgroup");
+    if (strings.contains($cg, "/docker") or strings.contains($cg, "lxc")) {
+        $notes[] = "container cgroup";
+    }
+    if (len($notes) == 0) {
+        return "bare metal (no VM / container hints)";
+    }
+    return "VIRTUALIZED - " + strings.join($notes, ", ");
+}
+
 # --- Report model + output formats --------------------------------
 # The run is captured in structs so it can be emitted either as the
 # human table (--format text, the default) or as one JSON object
@@ -410,6 +475,7 @@ def struct Report {
     ncpu as int,
     platform as string,
     arch as string,
+    virt as string,
     workers as int,
     totalMs as int,
     workloads as list of Bench,
@@ -431,6 +497,7 @@ func emitText(r as Report) {
     io.printf("version:  %s\n", $r.version);
     io.printf("cpu:      %s (%d cores)\n", $r.cpu, $r.ncpu);
     io.printf("platform: %s/%s\n", $r.platform, $r.arch);
+    io.printf("host:     %s\n", $r.virt);
     io.printf("\n");
 
     printDivider();
@@ -447,6 +514,9 @@ func emitText(r as Report) {
     io.printf("\n");
     printDivider();
     io.printf("Parallel comparison (workers = %d, scheduler = %s)\n", $r.workers, $r.build);
+    if (strings.startsWith($r.virt, "VIRTUALIZED")) {
+        io.printf("NOTE: virtualized / containerized host - these parallel numbers may not reflect bare-metal scaling.\n");
+    }
     printDivider();
     io.printf("%s|pad=30|align=left %s|pad=12|align=right %s|pad=12|align=right %s|pad=12|align=right\n",   # lint-disable: L203
         "Workload", "serial_ms", "par_ms", "speedup");
@@ -467,6 +537,50 @@ func emitJson(r as Report) {
 # --- Driver --------------------------------------------------------
 
 # Serial section: run every workload, collecting its time.
+# byteScanNaive scans a large buffer for a 6-byte needle one byte at a time in
+# Jennifer - the per-byte tree-walker cost that byte-oriented modules (MIME
+# boundary finding, protocol framing) used to pay. byteScanFast does the same
+# search with binary.indexOf (M21.10), which runs the scan once in Go. The two rows
+# side by side are the throughput delta the bulk-byte primitives buy; run on the
+# reference machine to record it (numbers are machine-specific, not committed).
+# Needle "NEEDLE" placed at the end so every scan traverses the whole buffer.
+func byteScanNaive() {
+    def buf as bytes init convert.bytesFromString(strings.repeat("x", BYTE_BUF_SIZE) + "NEEDLE", "utf-8");
+    def n as int init len($buf);
+    def start as time.Time init time.now();
+    def r as int init 0;
+    while ($r < BYTE_SCAN_REPS) {
+        def i as int init 0;
+        def found as int init -1;
+        while ($i + 6 <= $n and $found < 0) {
+            if ($buf[$i] == 78 and $buf[$i + 1] == 69 and $buf[$i + 2] == 69 and
+                $buf[$i + 3] == 68 and $buf[$i + 4] == 76 and $buf[$i + 5] == 69) {
+                $found = $i;
+            }
+            $i = $i + 1;
+        }
+        $r = $r + 1;
+    }
+    def gap as time.Duration init time.sub(time.now(), $start);
+    return time.milliseconds($gap);
+}
+
+func byteScanFast() {
+    def buf as bytes init convert.bytesFromString(strings.repeat("x", BYTE_BUF_SIZE) + "NEEDLE", "utf-8");
+    def needle as bytes init convert.bytesFromString("NEEDLE", "utf-8");
+    def start as time.Time init time.now();
+    def r as int init 0;
+    def found as int init 0;
+    while ($r < BYTE_SCAN_REPS) {
+        $found = binary.indexOf($buf, $needle);
+        $r = $r + 1;
+    }
+    def gap as time.Duration init time.sub(time.now(), $start);
+    return time.milliseconds($gap);
+}
+
+def msByteScanNaive as int init byteScanNaive();
+def msByteScanFast as int init byteScanFast();
 def msFib as int init benchFib();
 def msPrimes as int init benchPrimes();
 def msNewton as int init benchNewton();
@@ -485,6 +599,8 @@ $workloads[] = Bench{name: "list sort/reverse/slice", base: LIST_SIZE, iters: LI
 $workloads[] = Bench{name: "struct list build+read", base: STRUCT_LIST_SIZE, iters: STRUCT_LIST_SIZE, timeMs: $msStructList};
 $workloads[] = Bench{name: "string join", base: STRING_JOIN_SIZE, iters: STRING_JOIN_SIZE, timeMs: $msStringJoin};
 $workloads[] = Bench{name: "map insert+read", base: MAP_CHURN_SIZE, iters: MAP_CHURN_SIZE, timeMs: $msMapChurn};
+$workloads[] = Bench{name: "byte scan naive (per-byte)", base: BYTE_BUF_SIZE, iters: BYTE_SCAN_REPS, timeMs: $msByteScanNaive};
+$workloads[] = Bench{name: "byte scan binary.indexOf (Go)", base: BYTE_BUF_SIZE, iters: BYTE_SCAN_REPS, timeMs: $msByteScanFast};
 
 def total as int init 0;
 for (def w in $workloads) {
@@ -520,6 +636,7 @@ def report as Report init Report{
     ncpu: os.NCPU,
     platform: os.PLATFORM,
     arch: os.ARCH,
+    virt: detectVirt(),
     workers: PARALLEL_WORKERS,
     totalMs: $total,
     workloads: $workloads,

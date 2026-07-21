@@ -52,6 +52,12 @@ func acceptFn(_ interpreter.BuiltinCtx, _ []Value) (Value, error) {
 func readBytesFn(_ interpreter.BuiltinCtx, _ []Value) (Value, error) {
 	return unavailable("net.readBytes")
 }
+func readAllFn(_ interpreter.BuiltinCtx, _ []Value) (Value, error) {
+	return unavailable("net.readAll")
+}
+func readNFn(_ interpreter.BuiltinCtx, _ []Value) (Value, error) {
+	return unavailable("net.readN")
+}
 func writeBytesFn(_ interpreter.BuiltinCtx, _ []Value) (Value, error) {
 	return unavailable("net.writeBytes")
 }

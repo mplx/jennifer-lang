@@ -14,6 +14,7 @@ package stdlib
 import (
 	"jennifer-lang.dev/jennifer/internal/interpreter"
 	"jennifer-lang.dev/jennifer/internal/lib/archive"
+	binarylib "jennifer-lang.dev/jennifer/internal/lib/binary"
 	"jennifer-lang.dev/jennifer/internal/lib/compress"
 	"jennifer-lang.dev/jennifer/internal/lib/convert"
 	"jennifer-lang.dev/jennifer/internal/lib/crc"
@@ -57,6 +58,7 @@ func InstallAll(in *interpreter.Interpreter) {
 	mathlib.Install(in)
 	stringslib.Install(in)
 	listslib.Install(in)
+	binarylib.Install(in)
 	mapslib.Install(in)
 	oslib.Install(in)
 	metalib.Install(in)

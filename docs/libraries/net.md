@@ -30,6 +30,8 @@ arrived.
 | `net.listen(address)`            | `net.Listener`  | Bind and listen. `":0"` selects an ephemeral port.                                        |
 | `net.accept($listener)`          | `net.Conn`      | Blocking accept. Non-blocking use pairs with `spawn`.                                     |
 | `net.readBytes($conn, n)`        | `bytes`         | Blocks for at least one byte; returns whatever's available, capped at `n`. Sticky-EOF on close. |
+| `net.readAll($conn[, maxBytes[, idleTimeoutMs]])` | `bytes` | Read until EOF and return the whole remaining stream as one `bytes`. `maxBytes > 0` caps the result with a catchable error; `<= 0` or omitted is unlimited. `idleTimeoutMs > 0` re-arms a read deadline before each chunk (a timeout is a distinct catchable error). See [Whole-stream reads](#whole-stream-reads). |
+| `net.readN($conn, n[, idleTimeoutMs])` | `bytes`   | Read **exactly** `n` bytes (a length-prefixed frame). A peer that closes before `n` bytes is a catchable "closed mid-frame" error, never a truncated return. `idleTimeoutMs` as in `readAll`. |
 | `net.writeBytes($conn, b)`       | `null`          | Blocking write of every byte.                                                             |
 | `net.setDeadline($conn, ms)`     | `null`          | Arm a read/write deadline `ms` milliseconds out; `0` clears it. A read past the deadline fails with a distinguishable `read timed out` error. Accepts a `net.Conn` or a `net.UDPSocket` (so a `recvFrom` can time out). |
 | `net.eof($conn)`                 | `bool`          | Looks ahead: true iff the next read would return partial or fail.                        |
@@ -63,6 +65,28 @@ net.close($c);
 
 `net.eof` peeks one byte through the buffered reader so the
 loop terminates on the exact byte after the last real read.
+
+### Whole-stream reads
+
+The canonical loop above reads and accumulates *one byte at a time* in
+Jennifer, which is fine for a small message but pays the interpreter's
+per-byte cost on a large body. When you want the whole thing in one `bytes`,
+`net.readAll` and `net.readN` do the accumulation in a single Go loop instead:
+
+```jennifer
+# The whole response body to EOF, in one call (an HTTP / object download):
+def body as bytes init net.readAll($c, 0, 30000);   # unlimited, 30s idle timeout
+
+# Exactly n bytes of a length-prefixed frame (n came off the wire first):
+def frame as bytes init net.readN($c, $n);
+```
+
+`net.readAll` reads until the peer closes (or `maxBytes` is hit); `net.readN`
+reads a known count and treats an early close as an error rather than a short
+read. Both grow one Go slice, so a megabyte-scale transfer runs at native speed
+rather than a per-byte `net.readBytes` accumulation. To search or split the
+result once it is in hand, use [`binary`](binary.md) (`find` / `split` /
+`slice`).
 
 ### Deadlines: single-threaded poll with timeout
 

@@ -340,6 +340,159 @@ func connectTLSFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
 	return makeConn(id), nil
 }
 
+// readAllFn implements `net.readAll(conn [, maxBytes [, idleTimeoutMs]]) ->
+// bytes`: read from the connection until EOF and return the whole remaining
+// stream as one bytes, grown once in a Go loop (32 KiB chunks) instead of the
+// per-byte interpreted accumulation a `.j` read-to-EOF loop pays. This is the
+// throughput fix for whole-body reads (an HTTP / S3 object download). maxBytes
+// > 0 caps the result with a catchable error past it (like the module read
+// caps); <= 0 or omitted is unlimited. idleTimeoutMs > 0 re-arms a read
+// deadline before each chunk (the same idle-timeout a `.j` loop gets from
+// net.setDeadline); a timeout is a distinct catchable error.
+func readAllFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
+	if len(args) < 1 || len(args) > 3 {
+		return interpreter.Null(), fmt.Errorf("net.readAll expects 1 to 3 arguments (net.Conn[, maxBytes[, idleTimeoutMs]]), got %d", len(args))
+	}
+	id, err := extractID("net.readAll", "Conn", args[0])
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	maxBytes := int64(0)
+	if len(args) >= 2 {
+		if maxBytes, err = takeIntArg("net.readAll", args, 1, "maxBytes"); err != nil {
+			return interpreter.Null(), err
+		}
+	}
+	idleMs := int64(0)
+	if len(args) == 3 {
+		if idleMs, err = takeIntArg("net.readAll", args, 2, "idleTimeoutMs"); err != nil {
+			return interpreter.Null(), err
+		}
+		if idleMs < 0 {
+			return interpreter.Null(), fmt.Errorf("net.readAll: idleTimeoutMs must be >= 0, got %d", idleMs)
+		}
+	}
+	s, err := resolveConn("net.readAll", id)
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	s.mu.Lock()
+	r := s.r
+	c := s.c
+	sticky := s.sticky
+	s.mu.Unlock()
+	if sticky {
+		return interpreter.BytesVal([]byte{}), nil
+	}
+	idle := time.Duration(idleMs) * time.Millisecond
+	var out []byte
+	tmp := make([]byte, 32*1024)
+	s.readMu.Lock()
+	defer s.readMu.Unlock()
+	for {
+		if idle > 0 {
+			_ = c.SetReadDeadline(time.Now().Add(idle))
+		}
+		nread, rerr := r.Read(tmp)
+		if nread > 0 {
+			if maxBytes > 0 && int64(len(out))+int64(nread) > maxBytes {
+				return interpreter.Null(), fmt.Errorf("net.readAll: stream exceeds the %d-byte limit", maxBytes)
+			}
+			out = append(out, tmp[:nread]...)
+		}
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) {
+				s.mu.Lock()
+				s.sticky = true
+				s.mu.Unlock()
+				return interpreter.BytesVal(out), nil
+			}
+			var ne stdnet.Error
+			if errors.As(rerr, &ne) && ne.Timeout() {
+				return interpreter.Null(), fmt.Errorf("net.readAll: read timed out")
+			}
+			return interpreter.Null(), fmt.Errorf("net.readAll: %v", rerr)
+		}
+	}
+}
+
+// readNFn implements `net.readN(conn, n [, idleTimeoutMs]) -> bytes`: read
+// exactly n bytes for a length-prefixed frame (an MQTT remaining-length body,
+// an IMAP `{N}` literal, a RESP bulk string) in one Go loop, not a per-byte
+// interpreted accumulation. A peer that closes after fewer than n bytes is a
+// catchable "closed mid-frame" error, never a truncated return. idleTimeoutMs
+// works as in readAll.
+func readNFn(_ interpreter.BuiltinCtx, args []Value) (Value, error) {
+	if len(args) < 2 || len(args) > 3 {
+		return interpreter.Null(), fmt.Errorf("net.readN expects 2 or 3 arguments (net.Conn, n[, idleTimeoutMs]), got %d", len(args))
+	}
+	id, err := extractID("net.readN", "Conn", args[0])
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	n, err := takeIntArg("net.readN", args, 1, "n")
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	if n < 0 {
+		return interpreter.Null(), fmt.Errorf("net.readN: n must be >= 0, got %d", n)
+	}
+	// Same per-call ceiling readBytes / recvFrom use: a caller-supplied (often
+	// wire-derived) length can't force an unbounded up-front allocation.
+	if n > maxReadBytes {
+		return interpreter.Null(), fmt.Errorf("net.readN: %d exceeds the %d-byte per-call limit", n, maxReadBytes)
+	}
+	idleMs := int64(0)
+	if len(args) == 3 {
+		if idleMs, err = takeIntArg("net.readN", args, 2, "idleTimeoutMs"); err != nil {
+			return interpreter.Null(), err
+		}
+		if idleMs < 0 {
+			return interpreter.Null(), fmt.Errorf("net.readN: idleTimeoutMs must be >= 0, got %d", idleMs)
+		}
+	}
+	s, err := resolveConn("net.readN", id)
+	if err != nil {
+		return interpreter.Null(), err
+	}
+	s.mu.Lock()
+	r := s.r
+	c := s.c
+	s.mu.Unlock()
+	idle := time.Duration(idleMs) * time.Millisecond
+	buf := make([]byte, n)
+	got := int64(0)
+	s.readMu.Lock()
+	defer s.readMu.Unlock()
+	for got < n {
+		if idle > 0 {
+			_ = c.SetReadDeadline(time.Now().Add(idle))
+		}
+		nread, rerr := r.Read(buf[got:])
+		got += int64(nread)
+		if got >= n {
+			// Frame complete. A Reader may return the final bytes together with
+			// io.EOF (io.ReadFull's contract); those bytes complete the read, so
+			// this is a success, not a short read - check before rerr.
+			break
+		}
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) || errors.Is(rerr, io.ErrUnexpectedEOF) {
+				s.mu.Lock()
+				s.sticky = true
+				s.mu.Unlock()
+				return interpreter.Null(), fmt.Errorf("net.readN: connection closed after %d of %d bytes", got, n)
+			}
+			var ne stdnet.Error
+			if errors.As(rerr, &ne) && ne.Timeout() {
+				return interpreter.Null(), fmt.Errorf("net.readN: read timed out")
+			}
+			return interpreter.Null(), fmt.Errorf("net.readN: %v", rerr)
+		}
+	}
+	return interpreter.BytesVal(buf), nil
+}
+
 // startTLSFn implements `net.startTLS(conn [, net.TLSOptions]) ->
 // net.Conn`: upgrade an open plaintext connection to TLS in place (for
 // STARTTLS). The server certificate is verified against the hostname the

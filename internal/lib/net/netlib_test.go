@@ -665,3 +665,125 @@ func TestConnectTLSTreatsIntAsTimeout(t *testing.T) {
 		t.Fatalf("expected a net.connectTLS error, got %v", err)
 	}
 }
+
+// TestReadAllWholeBody proves net.readAll returns the entire stream to EOF in
+// one call (the throughput path for a body / object download).
+func TestReadAllWholeBody(t *testing.T) {
+	addr := pickListenerAddr(t)
+	l, err := stdnet.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("stdnet.Listen: %v", err)
+	}
+	defer l.Close()
+	payload := strings.Repeat("abcdefghij", 5000) // 50 KB, several read chunks
+	go func() {
+		c, aErr := l.Accept()
+		if aErr != nil {
+			return
+		}
+		_, _ = c.Write([]byte(payload))
+		c.Close() // EOF terminates readAll
+	}()
+	out, runErr := runProg(t, fmt.Sprintf(`
+		use io; use net; use convert;
+		def c as net.Conn init net.connect(%q);
+		def body as bytes init net.readAll($c, 0, 5000);
+		net.close($c);
+		io.printf("%%d", len($body));
+	`, addr))
+	if runErr != nil {
+		t.Fatalf("run: %v", runErr)
+	}
+	if out != fmt.Sprintf("%d", len(payload)) {
+		t.Fatalf("readAll length = %s, want %d", out, len(payload))
+	}
+}
+
+// TestReadAllCapRejects proves the maxBytes cap fails with a catchable error
+// rather than an unbounded allocation.
+func TestReadAllCapRejects(t *testing.T) {
+	addr := pickListenerAddr(t)
+	l, err := stdnet.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("stdnet.Listen: %v", err)
+	}
+	defer l.Close()
+	go func() {
+		c, aErr := l.Accept()
+		if aErr != nil {
+			return
+		}
+		_, _ = c.Write([]byte(strings.Repeat("x", 10000)))
+		c.Close()
+	}()
+	_, runErr := runProg(t, fmt.Sprintf(`
+		use net;
+		def c as net.Conn init net.connect(%q);
+		def body as bytes init net.readAll($c, 100, 5000);
+	`, addr))
+	if runErr == nil || !strings.Contains(runErr.Error(), "exceeds the 100-byte limit") {
+		t.Fatalf("expected cap error, got %v", runErr)
+	}
+}
+
+// TestReadNExact proves net.readN returns exactly n bytes and a short read
+// (peer closed early) is a catchable error, not a truncated return.
+func TestReadNExact(t *testing.T) {
+	addr := pickListenerAddr(t)
+	l, err := stdnet.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("stdnet.Listen: %v", err)
+	}
+	defer l.Close()
+	go func() {
+		c, aErr := l.Accept()
+		if aErr != nil {
+			return
+		}
+		_, _ = c.Write([]byte("ABCDEFGH"))
+		c.Close()
+	}()
+	out, runErr := runProg(t, fmt.Sprintf(`
+		use io; use net; use convert;
+		def c as net.Conn init net.connect(%q);
+		def five as bytes init net.readN($c, 5, 5000);
+		def rejected as bool init false;
+		try { net.readN($c, 100, 5000); } catch (e) { $rejected = true; }
+		net.close($c);
+		io.printf("%%s/%%t", convert.stringFromBytes($five, "utf-8"), $rejected);
+	`, addr))
+	if runErr != nil {
+		t.Fatalf("run: %v", runErr)
+	}
+	if out != "ABCDE/true" {
+		t.Fatalf("got %q, want ABCDE/true", out)
+	}
+}
+
+// TestReadNCapRejectsHugeN proves net.readN refuses an oversized (wire-derived)
+// length before allocating, matching readBytes' per-call cap - so an attacker
+// controlling a length prefix cannot force an unbounded up-front allocation.
+func TestReadNCapRejectsHugeN(t *testing.T) {
+	addr := pickListenerAddr(t)
+	l, err := stdnet.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("stdnet.Listen: %v", err)
+	}
+	defer l.Close()
+	go func() {
+		c, aErr := l.Accept()
+		if aErr == nil {
+			defer c.Close()
+			var b [1]byte
+			_, _ = c.Read(b[:]) // hold the connection open
+		}
+	}()
+	_, runErr := runProg(t, fmt.Sprintf(`
+		use net;
+		def c as net.Conn init net.connect(%q);
+		def b as bytes init net.readN($c, 999999999999);
+	`, addr))
+	if runErr == nil || !strings.Contains(runErr.Error(), "per-call limit") {
+		t.Fatalf("expected per-call-limit error, got %v", runErr)
+	}
+}

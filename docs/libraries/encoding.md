@@ -39,12 +39,12 @@ these grow or reshape the bytes, they don't reduce information (that's
 
 | Call                        | Returns  | Notes                                    |
 | --------------------------- | -------- | ---------------------------------------- |
-| `encoding.toText(b, fmt)`   | `string` | Encode `bytes` as printable text.        |
-| `encoding.fromText(s, fmt)` | `bytes`  | Decode back to `bytes`.                  |
+| `encoding.toText(b, format)`   | `string` | Encode `bytes` as printable text.     |
+| `encoding.fromText(s, format)` | `bytes`  | Decode back to `bytes`.               |
 
 ### Formats
 
-| `fmt`                | Standard      | Notes                                                                         |
+| `format`             | Standard      | Notes                                                                         |
 | -------------------- | ------------- | ----------------------------------------------------------------------------- |
 | `"hex"`              | base-16       | Lowercase on encode; decode accepts upper and lower case. Two chars per byte. |
 | `"base32"`           | RFC 4648 §6   | Standard alphabet (`A`-`Z` `2`-`7`), `=` padding.                             |

@@ -1976,50 +1976,28 @@ vulnerabilities.
 
 ### M21.10 - byte-oriented throughput (bulk-byte primitives)
 
-**Planned.** The tree-walker's per-byte cost caps byte-oriented `.j`:
-`http.readToEOF` accumulates a body one byte at a time (~1 min / 64 MiB on a
-small virtual machine) and `mime` scans for boundaries byte by byte (~8 s / MiB).
-Everything else on the per-byte path is already in Go - the `encoding` codecs
-(hex / base64 / base32 / quoted-printable) and the `json` / `toml` / `xml` /
-`yaml` parsers - and the peephole passes (slot resolution, frame pooling, call /
-comparison fast paths, constant folding, the map hash index) already took the
-micro-optimization wins. So the remaining interpreted per-byte work is two
-shapes, both closed by a small set of Go-backed bulk operations: byte
-**accumulation** (the `http` body and the `redis` / `pop` / `imap` / `mqtt` read
-loops) and byte **scanning** (`mime` boundaries). This milestone is that
-concrete, shippable throughput win; the general execution-speed lever for
-CPU-bound `.j` that is *not* byte-crunching is the separate `DRAFT#17` bytecode
-model.
-
-- **M21.10.1 - throughput benchmark harness (prerequisite).** Formalize the
-  existing `examples/benchmark.j` suite (fib / primes / newton / monte-carlo /
-  list-copy / struct-list / string-join / map-churn) into a repeatable harness
-  and add the missing byte fixtures: a `mime`-part boundary scan and a
-  **large-object `bucket.get` download** - the concrete S3 case, whose body flows
-  straight through `http.readToEOF`'s per-byte accumulation loop, so it isolates
-  the read-all win from everything else (and confirms `M21.11` / `M21.12` flatline
-  on it, i.e. they are not S3-throughput work). Baselines recorded on the
-  reference machine (no cross-machine numbers, per the benchmarking policy). Lands
-  first; nothing below merges without a before/after delta against it.
-- **M21.10.2 - bulk-byte primitives + module rework.** A read-all-to-`bytes` (so
-  `http.readToEOF` and a lifted body cap become one Go call, not a per-byte loop)
-  plus byte `concat` / `slice` / `find` (so `mime` scans boundaries and the read
-  loops accumulate in Go) - the concrete "push byte-crunching into Go" for this
-  class, the same reasoning applied to `json` / `toml`. Home is an implementation
-  decision (a small letters-only library such as `binary`, or targeted builtins;
-  `bytes` itself is a reserved type keyword, so it cannot be a namespace). Rework
-  `http`, `mime`, and the M21.9 read loops onto them, each reworked path showing
-  its M21.10.1 delta. TinyGo-clean, both binaries.
-
-Size ceiling (follow-on, out of scope here): read-all buys Go *speed* but still
-materializes the whole object in memory (`http.Response.body` is one string), so
-a genuinely large (multi-GiB) `bucket.get` additionally needs a **streaming body
-API** - successive `.j` chunks, or a read-straight-to-`fs`-file path - a
-separate, larger design that gives unbounded *size* where read-all gives speed.
-
-Discipline: every step measured against M21.10.1's baseline on the reference
-machine; both toolchains stay green; the per-byte inner loops land in Go, keeping
-the language TinyGo-clean.
+**Done.** Go-backed bulk primitives close the per-byte tree-walker cost on
+byte-oriented `.j`; the headline is whole-body reads (an HTTP / S3-object
+download). Two pieces: a **`binary` library** (`concat` / `slice` / `indexOf` /
+`contains` / `split` / `startsWith` / `endsWith` over `bytes` - the byte-data
+counterpart to `strings`, named `binary` since `bytes` is a reserved keyword;
+value-semantic, TinyGo-clean) and **`net.readAll(conn[, maxBytes[,
+idleTimeoutMs]])`** / **`net.readN(conn, n[, idleTimeoutMs])`** (grow one Go
+buffer to EOF with a catchable cap / exact-n length-prefixed read with a
+catchable close-mid-frame error and a `maxReadBytes` allocation cap; build-tag
+split like the rest of `net`). Reworks: `http.readToEOF` -> `net.readAll` (so
+`bucket.get` reads at Go speed, not the per-byte ~1 min / 64 MiB loop - the S3
+win), `mqtt.readN` and the `imap` `{N}` literal -> `net.readN`; a
+`binary.indexOf` benchmark fixture (naive per-byte vs Go) lands in
+`examples/benchmark.j` for the reference machine. Scoped out
+(measurement-driven): `mime` is already Go-backed (`strings.split` + `encoding`,
+O(lines) not per-byte, the ~8 s / MiB figure predates that); the `redis` / `pop`
+line-accumulation loops keep native append (small-response common case, bulk
+`net.readN` a parser-restructure follow-on); a network download fixture and a
+**streaming body API** (for multi-GiB objects, where read-all buys speed but
+still materializes the whole body in memory) are follow-ons. Pinned by
+`internal/lib/binary` + `internal/lib/net` tests; the reworked overlays stay
+green (behaviour-preserving).
 
 ### M21.11 - per-frame arena allocation
 

@@ -377,34 +377,34 @@ def const MAX_BODY_BYTES as int init 67108864;
 
 # readToEOF reads the whole connection (the server closes after the response
 # because we send Connection: close). `timeoutMs` re-arms a read deadline before
-# each read, so a stalled connection breaks the loop with an error; 0 clears it.
+# each read, so a stalled connection breaks with an error; 0 clears it.
 # `maxBytes` caps the body: 0 uses the default (MAX_BODY_BYTES), a negative value
 # is unlimited, a positive value is that exact ceiling.
+#
+# The whole body is read in one Go call (net.readAll), not a per-byte interpreted
+# accumulation loop - so a large body (an object-storage download) runs at
+# native speed instead of paying the tree-walker's per-byte cost.
 func readToEOF(conn as net.Conn, timeoutMs as int, maxBytes as int) {
     def limit as int init $maxBytes;
     if ($limit == 0) {
         $limit = MAX_BODY_BYTES;
     }
-    def buf as bytes;
-    while (true) {
-        if ($timeoutMs > 0) {
-            net.setDeadline($conn, $timeoutMs);
-        }
-        def chunk as bytes init net.readBytes($conn, 4096);
-        if (len($chunk) == 0) {
-            return $buf;
-        }
-        def i as int init 0;
-        def m as int init len($chunk);
-        while ($i < $m) {
-            $buf[] = $chunk[$i];
-            $i = $i + 1;
-        }
-        if ($limit > 0 and len($buf) > $limit) {
+    # net.readAll: maxBytes > 0 caps, <= 0 is unlimited; a negative $limit
+    # (unlimited) maps to 0. idleTimeoutMs re-arms the per-read deadline.
+    def capBytes as int init $limit;
+    if ($capBytes < 0) {
+        $capBytes = 0;
+    }
+    try {
+        return net.readAll($conn, $capBytes, $timeoutMs);
+    } catch (e) {
+        # Re-tag the cap-exceeded error as kind "http" so callers catch it the
+        # same way as before; re-raise anything else (timeout, I/O) unchanged.
+        if (strings.contains($e.message, "exceeds the")) {
             throw Error{kind: "http", message: "http: response body exceeds " + convert.toString($limit) + " bytes", file: "", line: 0, col: 0};
         }
+        throw $e;
     }
-    return $buf;
 }
 
 func dial(u as Url) {
