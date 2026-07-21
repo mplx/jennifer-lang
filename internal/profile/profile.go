@@ -85,6 +85,9 @@ type Collector struct {
 	spawn   map[posKey]*eventSample
 	calls   []callEvent
 	maxCall int // cap on recorded call events (trace); 0 = unlimited
+
+	depths   map[posKey]int // max nested method-call depth observed per call site
+	maxDepth int            // deepest nested method-call chain reached in the run
 }
 
 // NewCollector returns a Collector for the given mode. maxCallEvents bounds the
@@ -96,6 +99,7 @@ func NewCollector(mode Mode, maxCallEvents int) *Collector {
 		stmts:   map[posKey]*stmtSample{},
 		eager:   map[posKey]*eventSample{},
 		spawn:   map[posKey]*eventSample{},
+		depths:  map[posKey]int{},
 		maxCall: maxCallEvents,
 	}
 }
@@ -185,6 +189,22 @@ func goroutineID() int {
 	return id
 }
 
+// RecordCallDepth keeps the maximum nested method-call depth seen at a call
+// site (and overall). Called on every method entry while statement profiling
+// is active, so it only ever grows a running max - never allocates per call
+// after the first sighting of a position.
+func (c *Collector) RecordCallDepth(file string, line, col int, depth int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	k := posKey{file, line, col}
+	if depth > c.depths[k] {
+		c.depths[k] = depth
+	}
+	if depth > c.maxDepth {
+		c.maxDepth = depth
+	}
+}
+
 // RecordEagerCopy counts one eager deep copy at a value-storage site (def,
 // assignment, or parameter binding).
 func (c *Collector) RecordEagerCopy(file string, line, col int) {
@@ -249,6 +269,31 @@ func (c *Collector) eventsSorted(m map[posKey]*eventSample) []*eventSample {
 		return out[i].count > out[j].count
 	})
 	return out
+}
+
+// depthSample pairs a call site with the deepest nested call depth seen there.
+type depthSample struct {
+	posKey
+	depth int
+}
+
+// depthsSorted returns the per-call-site max depths (desc) plus the overall
+// max, snapshotted under the lock so a render can't race a recording spawn.
+func (c *Collector) depthsSorted() ([]depthSample, int) {
+	c.mu.Lock()
+	out := make([]depthSample, 0, len(c.depths))
+	for k, d := range c.depths {
+		out = append(out, depthSample{posKey: k, depth: d})
+	}
+	overall := c.maxDepth
+	c.mu.Unlock()
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].depth != out[j].depth {
+			return out[i].depth > out[j].depth
+		}
+		return out[i].pos() < out[j].pos()
+	})
+	return out, overall
 }
 
 // callsSnapshot returns a copy of the call timeline taken under the lock.

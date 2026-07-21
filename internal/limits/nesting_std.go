@@ -19,3 +19,14 @@ package limits
 // (up to ~1 GB), so 1000 is far below any crash point and leaves ample room for
 // even a pathologically deep serialized document.
 const MaxNestingDepth = 1000
+
+// MaxCallDepth caps the number of nested Jennifer method calls the interpreter
+// will execute before raising a positioned, catchable runtime error - the
+// analogue of Python's RecursionError. Unbounded recursion otherwise grows the
+// Go goroutine stack until the runtime's ~1 GB ceiling triggers a fatal,
+// uncatchable "stack overflow". The default binary crashes a heavy method body
+// (many locals, nested blocks) near 50k nested calls and a minimal one near
+// 100k; 10000 sits well below the tighter floor with room for even heavier
+// frames, while still allowing an order of magnitude more recursion than a
+// typical tree-walking language (CPython defaults to 1000).
+const MaxCallDepth = 10000

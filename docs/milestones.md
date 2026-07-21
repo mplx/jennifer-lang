@@ -881,7 +881,7 @@ unobserved task errors at exit and bumps the exit code (a non-terminating
 undiscarded spawn hangs at exit - the documented trade-off). `task.wait`
 re-raises a body error at the wait site for `try`/`catch`; `waitAny` is
 the runtime's only `reflect.Select`. The Makefile passes
-`-stack-size=2mb -scheduler=tasks` to TinyGo. See
+`-stack-size=4mb -scheduler=tasks` to TinyGo. See
 [concurrency.md](user-guide/concurrency.md), [task.md](libraries/task.md).
 
 ### M16.1 - `fs`
@@ -1934,29 +1934,36 @@ against an in-process server and asserts a catchable refusal, not an OOM.
 
 ### M21.8 - interpreter call-depth limit + profiler depth metric
 
-Turn today's fatal, uncatchable Go stack overflow on deep Jennifer recursion into
-a catchable runtime error, and surface call depth as a profiling metric. The two
-share the `evalCall` call-depth counter, so they land together (the profiler
-metric graduates here from the horizon loose-ideas).
+**Done.** Deep Jennifer recursion that used to overflow the Go stack fatally now
+raises a positioned, catchable runtime error, and call depth is a profiling
+metric. Both share the one `evalCall` call-depth counter.
 
-- **Catchable call-depth limit.** The interpreter has no recursion limit, so
-  mutually-recursive `.j` (or deep self-recursion) overflows the Go goroutine
-  stack - a fatal crash on the default binary, a segfault on `jennifer-tiny`'s
-  fixed 2 MiB stack, neither catchable by `try` / `catch`. Add a per-frame
-  call-depth counter in `evalCall` (bump on entry, drop on return) that raises a
-  positioned, **catchable** runtime error before the Go limit is reached - the
-  analogue of Python's `RecursionError`. The limit is **build-tag split** through
-  `internal/limits` (low on `jennifer-tiny`, generous on the default binary),
-  exactly as the parser / decoder nesting cap is, since the tree-walker's
-  per-frame Go-stack cost is the binding constraint. Applies to `spawn` bodies too.
-- **Profiler max-call-depth metric.** Have `jennifer profile` track the same call
-  depth and report the maximum reached, per source position and overall - naming
-  stack-limit / deep-recursion problems directly (the `-stack-size` headroom the
-  recursive `fib` in `examples/benchmark.j` exercises on `jennifer-tiny`). Small
-  and additive to the existing hit-count / wall-clock / `--allocs` collector.
+- **Catchable call-depth limit.** `evalCall` keeps a call-depth counter on the
+  per-goroutine root env (like the profiler's `profChild`, so parallel `spawn`
+  bodies each track their own depth without racing a shared field), bumping it on
+  method entry and dropping it on return. Above `limits.MaxCallDepth` it raises a
+  catchable runtime error ("call stack too deep: exceeded N nested method calls")
+  positioned at the offending call site - the analogue of Python's
+  `RecursionError`, and it counts across methods, so mutual recursion trips it
+  too. The cap is **build-tag split** in `internal/limits` beside the nesting cap:
+  10000 on the default binary (Go's growable stack crashes a minimal recursive
+  body near 100k, a heavy one near 50k), 48 on `jennifer-tiny` (its stack was
+  raised from 2 MiB to 4 MiB for this, on which a fib-shaped or heavy body
+  segfaults near depth 75, while the deepest a shipped example recurses -
+  `examples/benchmark.j`'s serial `fib(23)` - is depth 24) - deliberately lower
+  than `MaxNestingDepth` because a call frame costs far more Go stack than one
+  expression-nesting step. Applies to `spawn` bodies (guarded on their own
+  goroutine, re-raised at `task.wait`).
+- **Profiler max-call-depth metric.** `jennifer profile` (statement mode) tracks
+  the same depth and the statement table reports the deepest nested-call chain the
+  run reached - overall and per deepest call site (top 10). Additive to the
+  existing hit-count / wall-clock / `--allocs` collector: one `RecordCallDepth`
+  hook that only grows a running max.
 
-Discipline: interpreter tests (deep recursion raises a catchable `Error`, not a
-crash; the limit holds on both binaries) and a profiler test for the depth metric.
+Tests: `internal/interpreter/call_depth_test.go` (over-limit raises a catchable
+error, catch recovers, the counter spans methods, recursion at the cap runs, a
+spawn body is guarded and re-raised at `wait`) and a `internal/profile` case for
+the metric; verified catchable on both binaries.
 
 ### M21.9 - defensive network + credential hardening
 

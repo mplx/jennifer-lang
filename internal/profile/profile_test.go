@@ -67,6 +67,43 @@ func TestStatementAggregation(t *testing.T) {
 	}
 }
 
+// TestCallDepthMetric pins the max-call-depth metric: RecordCallDepth keeps the
+// maximum per call site and overall, the statement table reports the overall
+// max, and the deepest call site is listed first.
+func TestCallDepthMetric(t *testing.T) {
+	c := profile.NewCollector(profile.ModeStatement, 0)
+	// A recursive call site climbing to depth 12, plus a shallow site at 1.
+	for d := 1; d <= 12; d++ {
+		c.RecordCallDepth("rec.j", 2, 40, d)
+	}
+	c.RecordCallDepth("main.j", 5, 1, 1)
+	// A shallower later sighting at the deep site must not lower its recorded max.
+	c.RecordCallDepth("rec.j", 2, 40, 3)
+
+	var buf bytes.Buffer
+	c.Table(&buf)
+	out := buf.String()
+	if !strings.Contains(out, "Max call depth (deepest chain of nested method calls): 12") {
+		t.Fatalf("overall max-depth line missing/wrong:\n%s", out)
+	}
+	// The deep site keeps its max of 12 and sorts before the shallow site.
+	iDeep := strings.Index(out, "rec.j:2:40")
+	iShallow := strings.Index(out, "main.j:5:1")
+	if iDeep < 0 || iShallow < 0 {
+		t.Fatalf("call-site rows missing:\n%s", out)
+	}
+	if iDeep > iShallow {
+		t.Fatalf("expected the deepest call site listed first:\n%s", out)
+	}
+	// The metric is silent when nothing recorded a call.
+	empty := profile.NewCollector(profile.ModeStatement, 0)
+	var eb bytes.Buffer
+	empty.Table(&eb)
+	if strings.Contains(eb.String(), "Max call depth") {
+		t.Fatalf("depth section should be absent with no calls:\n%s", eb.String())
+	}
+}
+
 func TestAllocsTable(t *testing.T) {
 	c := profile.NewCollector(profile.ModeAllocs, 0)
 	c.RecordEagerCopy("a.j", 7, 9)

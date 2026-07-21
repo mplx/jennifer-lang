@@ -30,7 +30,7 @@ immediately. A few constraints shape the implementation:
   JSON emitter is hand-rolled (see
   [CLI > Inspection](cli_inspect.md#inspection-tokens-and-ast)).
 - **Goroutines are allowed** (used for `spawn`),
-  but need `-stack-size=2mb` under TinyGo - see
+  but need `-stack-size=4mb` under TinyGo - see
   [the goroutine-stack note below](#tinygo-goroutine-stack).
 - **No `-ldflags "-X package.var=value"`.** TinyGo 0.41 silently
   ignores the `-X` directive. Use the codegen path
@@ -153,12 +153,12 @@ evaluator wraps each Jennifer-level call in many Go-stack frames
 (`execBlock` + `evalCall` + `evalExpr` + ...), so even a
 modest-depth recursion (fib 23) easily exceeds TinyGo's default
 goroutine stack of ~8KB and segfaults. The Makefile passes
-`-stack-size=2mb` to `tinygo build` for `jennifer-tiny` so it
+`-stack-size=4mb` to `tinygo build` for `jennifer-tiny` so it
 can run recursive `spawn` bodies (and the parallel section of
 `examples/benchmark.j`). The default `jennifer` binary doesn't
 need this - Go's goroutine stacks grow automatically.
 
-That fixed 2 MB stack also sets a hard ceiling on how deeply the
+That fixed 4 MB stack also sets a hard ceiling on how deeply the
 tree-walker can recurse over *nested data*: a deeply-nested source
 literal, or a deeply-nested `json` / `toml` / `xml` document, drives
 one recursive descent per level, and the interpreter has no
@@ -168,17 +168,32 @@ three hand-rolled decoders) therefore enforces a shared nesting cap,
 `internal/limits.MaxNestingDepth`. It is build-tag split: 1000 on the
 default binary (growable stack), and 64 on `jennifer-tiny`, which sits
 below the depth where the heaviest shape (a nested map literal)
-overflows the 2 MB stack (empirically it survives 96 and segfaults near
-128). Exceeding the cap is a positioned parse error / catchable decode
+overflows the stack (at the earlier 2 MB it survived 96 and segfaulted
+near 128; the 4 MB stack roughly doubles that floor, so 64 has even more
+margin). Exceeding the cap is a positioned parse error / catchable decode
 error on both binaries. `yaml` keeps its own pre-parse guard (it is
 backed by a Go dependency, not a hand-rolled descent).
+
+The same 4 MB ceiling limits how deep *Jennifer method calls* can nest at
+runtime - each call stacks many Go frames in the tree-walker - so the
+interpreter enforces a second, sibling cap in the same package,
+`internal/limits.MaxCallDepth`, in `evalCall`. It too is build-tag split, but
+lower than the nesting cap because a call frame is heavier than one nesting
+step: 10000 on the default binary (a heavy recursive body crashes Go's growable
+stack near 50k), and 48 on `jennifer-tiny` (whose stack was raised from 2 MB to
+4 MB for this, on which a fib-shaped or heavy body segfaults near depth 75, while
+the deepest recursion a shipped example reaches - `examples/benchmark.j`'s serial
+`fib(23)` - is depth 24). Exceeding it
+is a catchable "call stack too deep" runtime
+error - the analogue of Python's `RecursionError` - instead of a segfault; it
+guards `spawn` bodies on their own goroutines too.
 
 **TinyGo scheduler**. `jennifer-tiny` pins the cooperative
 single-thread scheduler (`-scheduler=tasks` in the Makefile).
 `spawn` works fully (semantics, loud-fail, registry), but every
 goroutine shares one OS thread, so it gives concurrency without
 multi-core parallelism: **parallel speedups stay close to 1.0**,
-and `-stack-size=2mb` reliably covers recursive `spawn` bodies.
+and `-stack-size=4mb` reliably covers recursive `spawn` bodies.
 The pin is deliberate - the threads-capable default briefly showed
 real multi-core speedups (161% CPU) but segfaulted on recursive
 `spawn` bodies, because `-stack-size` doesn't govern OS-thread
@@ -314,7 +329,10 @@ sys     0.02s
 real   33.62s     (99% CPU)
 ```
 
-This is the pinned build (`-scheduler=tasks -stack-size=2mb`): the whole
+This run was captured on the then-current `-scheduler=tasks -stack-size=2mb`
+build; the stack has since been raised to 4 MB (to sit above the catchable
+call-depth cap), which lifts the reserved-stack RSS by ~8 MB - four `spawn`
+workers x +2 MB - but leaves the timing figures below unchanged. The whole
 suite completes, serial and parallel. `os.NCPU` reports `1` here - honest
 about the cooperative single-thread scheduler's usable parallelism, not
 the 12 threads the machine has. The parallel column hovers at ~1.0 by

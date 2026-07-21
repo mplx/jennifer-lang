@@ -1296,7 +1296,7 @@ func (p *parser) parseExpr() (Expr, error) {
 	// and map elements, struct-literal field values, call arguments, and grouped
 	// parens all recurse back through here - so one counter bounds structural
 	// nesting for all of them. The cap is the depth the constrained TinyGo
-	// binary's fixed 2 MB stack survives (the decoders share the same limit); an
+	// binary's fixed 4 MB stack survives (the decoders share the same limit); an
 	// uncapped deeply-nested literal from stdin or a downloaded script would
 	// otherwise crash the process outright rather than raise a catchable error.
 	if p.exprDepth >= limits.MaxNestingDepth {

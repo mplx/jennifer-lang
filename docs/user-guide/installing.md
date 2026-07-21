@@ -81,17 +81,19 @@ The tarball lays out as:
 
 ```
 jennifer-X.Y.Z-linux-ARCH/
-├── jennifer              # standard-Go binary (default)
-├── jennifer-tiny         # TinyGo binary (constrained)
+├── jennifer               # standard-Go binary (default)
+├── jennifer-tiny          # TinyGo binary (constrained)
 ├── README.md
 ├── JENNIFER.md
 └── share/
-    ├── man/man1/         # jennifer.1, jennifer-tiny.1
-    ├── mime/packages/    # jennifer.xml (XDG MIME)
-    ├── bash-completion/  # completions/jennifer (+ jennifer-tiny symlink)
-    ├── vim/vimfiles/     # syntax/ + ftdetect/ (Vim highlighting)
-    ├── nvim/site/        # syntax/ + ftdetect/ (Neovim highlighting)
-    └── jennifer/syntaxes/ # jennifer.sublime-syntax (Sublime Text / bat)
+    ├── man/man1/          # jennifer.1, jennifer-tiny.1
+    ├── mime/packages/     # jennifer.xml (XDG MIME)
+    ├── bash-completion/   # completions/jennifer (+ jennifer-tiny symlink)
+    ├── vim/vimfiles/      # syntax/ + ftdetect/ (Vim highlighting)
+    ├── nvim/site/         # syntax/ + ftdetect/ (Neovim highlighting)
+    └── jennifer/
+        ├── modules/       # importable .j modules (import "name.j";)
+        └── syntaxes/      # jennifer.sublime-syntax (Sublime Text / bat)
 ```
 
 To install system-wide:
@@ -101,6 +103,12 @@ sudo install -m 0755 jennifer      /usr/local/bin/
 sudo install -m 0755 jennifer-tiny /usr/local/bin/
 sudo install -m 0644 share/mime/packages/jennifer.xml /usr/local/share/mime/packages/
 sudo update-mime-database /usr/local/share/mime || true
+# System modules, so a bare `import "name.j";` resolves. /usr/share/jennifer/modules
+# is the built-in default; install elsewhere and point JENNIFER_SYSMODDIR (or
+# --sysmoddir) at it instead. To print the path in effect:
+#   echo 'use io; use meta; io.printf("%s\n", meta.SYSMODDIR);' | jennifer run -
+sudo mkdir -p /usr/share/jennifer/modules
+sudo install -m 0644 share/jennifer/modules/*.j /usr/share/jennifer/modules/
 ```
 
 ### macOS / Windows (unsupported)

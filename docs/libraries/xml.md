@@ -113,7 +113,7 @@ def page as xml.Value init xml.append(xml.element("page"), $note);
   (or a tree built that deep with `xml.append`) raises a catchable error rather
   than overflowing the stack. The limit is shared by every parser in the
   toolchain and is set per binary: 1000 levels on the default `jennifer` (Go's
-  growable stack), 64 on `jennifer-tiny` (its fixed 2 MB stack). No entity is expanded
+  growable stack), 64 on `jennifer-tiny` (its fixed 4 MB stack). No entity is expanded
   beyond the five predefined names and numeric references, so there is no
   entity-expansion ("billion laughs") blow-up, and nothing is fetched
   externally - an unknown or external entity is simply an error.

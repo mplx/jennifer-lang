@@ -48,6 +48,35 @@ func (c *Collector) tableStatements(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintf(w, "%d positions, %d statement executions, %s total self time (top-of-tree cum %s)\n",
 		len(rows), totalHits, dur(totalSelf), dur(totalCum))
+	c.tableCallDepth(w)
+}
+
+// depthSitesShown caps the per-call-site depth rows so a program with many call
+// sites doesn't drown the summary; the deepest are what matter for spotting
+// runaway recursion.
+const depthSitesShown = 10
+
+// tableCallDepth renders the max nested method-call depth reached in the run -
+// overall and per deepest call site. Silent when no method call was recorded.
+func (c *Collector) tableCallDepth(w io.Writer) {
+	rows, overall := c.depthsSorted()
+	if overall == 0 {
+		return
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "Max call depth (deepest chain of nested method calls): %d\n", overall)
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', tabwriter.AlignRight)
+	fmt.Fprintln(tw, "DEPTH\t  CALL SITE")
+	for idx, d := range rows {
+		if idx >= depthSitesShown {
+			break
+		}
+		fmt.Fprintf(tw, "%d\t  %s\n", d.depth, d.pos())
+	}
+	tw.Flush()
+	if len(rows) > depthSitesShown {
+		fmt.Fprintf(w, "... and %d more call sites\n", len(rows)-depthSitesShown)
+	}
 }
 
 func (c *Collector) tableAllocs(w io.Writer) {

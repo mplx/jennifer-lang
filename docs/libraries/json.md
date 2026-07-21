@@ -16,7 +16,7 @@ both binaries.
 (catchable) decode error, so hostile deeply-nested input can't exhaust the
 interpreter's stack. The limit is shared by every parser in the toolchain and
 is set per binary: 1000 levels on the default `jennifer` (Go's growable stack),
-64 on `jennifer-tiny` (its fixed 2 MB stack). Both are far past any real
+64 on `jennifer-tiny` (its fixed 4 MB stack). Both are far past any real
 document.
 
 Accessors over a decoded `json.Value`. Every one takes an optional

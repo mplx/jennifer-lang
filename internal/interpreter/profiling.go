@@ -22,6 +22,10 @@ type Profiler interface {
 	RecordStmt(file string, line, col int, self, cum time.Duration)
 	// RecordCall reports one method-call span for the trace timeline.
 	RecordCall(name, file string, line, col int, start, end time.Time)
+	// RecordCallDepth reports the current nested method-call depth at a call
+	// site, so the statement profile can surface the deepest recursion reached
+	// (per call site and overall).
+	RecordCallDepth(file string, line, col int, depth int)
 	// RecordEagerCopy counts one eager deep copy at a value-storage site
 	// (def / assignment / parameter binding), where value semantics turn a
 	// store into a real copy up front rather than deferring to Ensure.

@@ -122,6 +122,14 @@ type Environment struct {
 	// interpreter would be raced by parallel spawn bodies. Only ever
 	// touched through env.root while statement profiling is active.
 	profChild time.Duration
+	// callDepth counts the Jennifer method calls currently nested on the Go
+	// stack. Like profChild it lives on the per-goroutine root env (i.global
+	// or a spawn snapshot root), so parallel `spawn` bodies each track their
+	// own depth without racing a shared Interpreter field. evalCall bumps it
+	// on entry and drops it on exit, raising a catchable error at
+	// limits.MaxCallDepth before the Go goroutine stack overflows fatally.
+	// Only ever touched through effectiveGlobal(env).
+	callDepth int
 	// deferred holds this frame's `defer`red calls, appended as each
 	// DeferStmt runs and executed LIFO by finishFrame when the frame exits
 	// (see execDefer / finishFrame). nil for the overwhelming majority of

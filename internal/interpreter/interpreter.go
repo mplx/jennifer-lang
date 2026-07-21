@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"jennifer-lang.dev/jennifer/internal/limits"
 	"jennifer-lang.dev/jennifer/internal/parser"
 )
 
@@ -3727,6 +3728,26 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 				return Value{}, &runtimeError{Msg: err.Error(), Line: p.Line, Col: p.Col}
 			}
 		}
+		// Call-depth guard. The counter lives on the per-goroutine root env
+		// (like the profiler's profChild), so parallel `spawn` bodies each
+		// track their own depth without racing a shared field. Raise a
+		// positioned, catchable error before the Go goroutine stack overflows
+		// into a fatal, unrecoverable crash - the analogue of a RecursionError.
+		root := effectiveGlobal(env)
+		root.callDepth++
+		if root.callDepth > limits.MaxCallDepth {
+			root.callDepth--
+			releaseBlockEnv(callFrame)
+			file, line, col := posFor(c)
+			return Value{}, &runtimeError{
+				Msg:  fmt.Sprintf("call stack too deep: exceeded %d nested method calls (possible infinite recursion)", limits.MaxCallDepth),
+				File: file, Line: line, Col: col,
+			}
+		}
+		if i.prof != nil && i.profStmts {
+			pf, pl, pc := posFor(c)
+			i.prof.RecordCallDepth(pf, pl, pc, root.callDepth)
+		}
 		var res blockResult
 		var err error
 		if i.prof != nil && i.profCalls {
@@ -3737,6 +3758,7 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 		} else {
 			res, err = i.execBlock(m.Body, callFrame)
 		}
+		root.callDepth--
 		releaseBlockEnv(callFrame)
 		if err != nil {
 			return Value{}, err

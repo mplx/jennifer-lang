@@ -41,6 +41,23 @@ Jennifer statement profile (wall-clock, self = excluding nested statements)
 A high `SELF` is a hot line; a high `CUM` with low `SELF` is a line that mostly
 waits on the work it dispatches.
 
+Below the table the statement profile also reports the **maximum call depth** -
+the deepest chain of nested method calls the run reached, overall and per deepest
+call site (top 10):
+
+```text
+Max call depth (deepest chain of nested method calls): 12
+  DEPTH  CALL SITE
+     12  examples/profile.j:2:62
+      1  examples/profile.j:3:19
+```
+
+It shares the interpreter's call-depth counter with the catchable recursion guard
+(`limits.MaxCallDepth`, build-tag split - 10000 on the default binary, 24 on
+`jennifer-tiny`), so a program that trips a stack-limit / deep-recursion error can
+be re-run under `profile` to see exactly which call site drove the depth. The
+section is silent for a program that made no method call.
+
 ## Modes and formats
 
 | Flag              | Effect                                                                                     |
