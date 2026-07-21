@@ -489,13 +489,9 @@ A grab-bag, recorded when it comes up.
   design, versioning, and TinyGo-safe serialization are enough work to merit
   dedicated treatment. The text JSON form via `jennifer ast` is the
   placeholder until then.
-- **Profiler: max-call-depth metric.** Have `jennifer profile` track
-  Jennifer call depth (bump in `evalCall`, drop on return) and report the
-  max reached, per source position and overall. Names stack-limit problems
-  directly - the recursion-depth-vs-`-stack-size` headroom that the
-  recursive `fib` in `examples/benchmark.j` exercises on `jennifer-tiny`.
-  Small and additive to the existing hit-count / wall-clock / `--allocs`
-  collector; deferred because stack limits are diagnosable by hand today.
+- **Profiler: max-call-depth metric.** Graduated to `milestones.md` M21.8
+  (paired with the interpreter's catchable call-depth limit, since both ride the
+  same `evalCall` depth counter).
   Heap-per-position stays out of scope (`--allocs` already proxies copy
   churn; true RSS needs `runtime.ReadMemStats` sampling, coarse under
   TinyGo).

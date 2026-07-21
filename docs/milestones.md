@@ -1908,6 +1908,105 @@ lookups), `docs/modules/font.md`, a catalog row, a `SUMMARY.md` entry, a
 `modules/README.md` entry, a `JENNIFER.md` bullet, and a runnable
 `examples/modules/font_demo.j` (a word rendered to an SVG path).
 
+### M21.7 - module injection + DoS hardening
+
+A security-review pass over the network / protocol `.j` modules, fixing the
+genuine injection and denial-of-service bugs - the cases where **user-controlled
+data reaches a protocol wire without sanitization**. These are real defects even
+under Jennifer's trusted-script model, because a program that uses a module
+*correctly* (an email form calling `smtp.send`, a route parameter reaching a
+cookie) is exploitable through the data. Distinct from the language's by-design
+host access (a sandboxing concern - see [horizon](horizon.md) DRAFT#11 - not a
+bug). Each fix ships with a regression test.
+
+- **CRLF injection (control-character rejection at the wire boundary).** Several
+  modules concatenate untrusted values into protocol commands, so a `\r\n` in the
+  value injects an arbitrary command / header. The shared fix rejects control
+  characters (`< 0x20`) where the value is placed on the wire:
+  - `smtp`: envelope addresses (`MAIL FROM` / `RCPT TO`) and the EHLO
+    `clientName`. `asciiOnly` today rejects only non-ASCII, and CR / LF are ASCII,
+    so they pass. The flagship case (addresses are commonly user data).
+  - `http`: the request `method` in `buildRequest`. `rejectInjection` covers the
+    URL and headers but not the method.
+  - `websocket`: the URL path / host in `parseUrl`, before the handshake request.
+  - `web`: cookie `Path` / `Domain` in `setCookie`. `rejectCookieInjection` runs
+    on the cookie name and value but not these attributes.
+- **JWT `crit` header (RFC 7515 §4.1.11).** `jwt.verify` checks `alg` but ignores
+  a `crit` (critical-extensions) member; a conformant verifier must reject a
+  token carrying a `crit` it does not understand. Reject any token whose header
+  has a `crit`.
+- **JSON escaping in hand-built JWS.** `acme.jsonEsc` escapes only `\` and `"`;
+  control characters produce invalid JSON (RFC 8259). Complete it (`\uXXXX` for
+  `< 0x20`), and validate the CA-supplied `Replay-Nonce` is base64url before
+  embedding it in the JWS protected header.
+- **WebSocket message-size DoS.** The fragment reassembler appends continuation
+  payloads with no cap, and `readFrame` honours a 64-bit declared length -
+  unbounded memory. Add a configurable maximum message size (~16-64 MiB) and
+  reject an oversized frame with a `1009` close.
+
+Plus the cross-cutting documentation the review surfaced: an explicit
+**security-model** statement (`SECURITY.md` + `docs/technical/security-model.md`)
+that a Jennifer script has full host access **by design** - the stdlib's file /
+network / process surface is a language capability, not a vulnerability - and
+that running *untrusted* scripts wants the planned capability sandbox (DRAFT#11)
+or an OS container. This closes the framing gap that makes "the language can read
+a file" look like a finding. Discipline: overlay + Go regression tests per module
+fix.
+
+### M21.8 - interpreter call-depth limit + profiler depth metric
+
+Turn today's fatal, uncatchable Go stack overflow on deep Jennifer recursion into
+a catchable runtime error, and surface call depth as a profiling metric. The two
+share the `evalCall` call-depth counter, so they land together (the profiler
+metric graduates here from the horizon loose-ideas).
+
+- **Catchable call-depth limit.** The interpreter has no recursion limit, so
+  mutually-recursive `.j` (or deep self-recursion) overflows the Go goroutine
+  stack - a fatal crash on the default binary, a segfault on `jennifer-tiny`'s
+  fixed 2 MiB stack, neither catchable by `try` / `catch`. Add a per-frame
+  call-depth counter in `evalCall` (bump on entry, drop on return) that raises a
+  positioned, **catchable** runtime error before the Go limit is reached - the
+  analogue of Python's `RecursionError`. The limit is **build-tag split** through
+  `internal/limits` (low on `jennifer-tiny`, generous on the default binary),
+  exactly as the parser / decoder nesting cap is, since the tree-walker's
+  per-frame Go-stack cost is the binding constraint. Applies to `spawn` bodies too.
+- **Profiler max-call-depth metric.** Have `jennifer profile` track the same call
+  depth and report the maximum reached, per source position and overall - naming
+  stack-limit / deep-recursion problems directly (the `-stack-size` headroom the
+  recursive `fib` in `examples/benchmark.j` exercises on `jennifer-tiny`). Small
+  and additive to the existing hit-count / wall-clock / `--allocs` collector.
+
+Discipline: interpreter tests (deep recursion raises a catchable `Error`, not a
+crash; the limit holds on both binaries) and a profiler test for the depth metric.
+
+### M21.9 - defensive network + credential hardening
+
+The lower-severity, judgment-call hardening from the security review - each a
+sensible default or optional check, some behaviour-changing, so grouped and
+sequenced after M21.7 / M21.8. Per module:
+
+- **`web`:** default the session cookie's `Secure` flag on, with an opt-out for
+  plaintext-HTTP / behind-a-TLS-terminating-proxy dev.
+- **`smtp`:** verify the server's EHLO advertises `STARTTLS` before issuing it
+  (anti-downgrade); refuse SASL auth over a cleartext (`security: "none"`)
+  connection unless explicitly forced; add RFC 5321 envelope-address validation
+  (empty local part / domain, missing `@`, length) beyond the M21.7 CRLF fix.
+- **`oauth`:** write the on-disk token store with owner-only (`0600`) permissions
+  - file perms, not encryption, matching how `gh` / `aws` store tokens. Needs an
+  `fs` write that sets the mode (or a post-write `chmod`).
+- **`jwt`:** optional `iss` / `aud` claim-validation parameters on `verify` (the
+  library validates `exp` / `nbf` today; `iss` / `aud` are application policy).
+- **Network clients (`redis` / `websocket` / `http` / `smtp` / `pop` / `imap` /
+  `mqtt`):** a connection-establishment timeout (a slow / unreachable peer blocks
+  indefinitely today) and received-data size caps where a client reads unbounded
+  from the peer (the `http` body cap already exists; extend the pattern).
+- **`amqp`:** optional TLS transport (`net.connectTLS`) so credentials need not go
+  over cleartext.
+
+Reviewed and **rejected** (recorded in [rejected.md](technical/rejected.md)):
+removing the TLS `skipVerify` opt-out, a `SecureString` zeroable-secret type, and
+treating the stdlib's `fs` / `net` / `os` / `meta` host access as vulnerabilities.
+
 ---
 
 ## Requirements for 1.0.0 stable

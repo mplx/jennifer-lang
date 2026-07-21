@@ -705,3 +705,40 @@ map / struct literal RHS is already private, so the binding site skips the
 redundant whole-value copy (`rhsFreshLiteral`). If profiling ever shows real
 aliasing-heavy workloads paying for redundant copies, refcounted COW can be
 revisited then.
+
+## Sandboxing the stdlib, removing TLS `skipVerify`, and `SecureString` (security review)
+
+A bot-generated security audit flagged the standard library's host access -
+`fs` reading / writing any path, `net.connect` dialing any address, `sql.open`
+to any DSN, `os.run` executing programs, `meta.call` invoking a function by name
+- as CRITICAL / HIGH "path traversal / SSRF / RCE / arbitrary-dispatch"
+vulnerabilities, and proposed removing or gating them (a `SetRoot` fs jail, a
+dial policy, an exec allow-list, removing the TLS `skipVerify` option, a
+zeroable `SecureString`).
+
+These are **not vulnerabilities**; they are the intended surface of a
+general-purpose language, exactly as Python's `open` / `socket` / `subprocess` /
+`getattr` are. There is no trust boundary being crossed: the script *is* the
+trusted party. A script's ability to read a file is a capability, not a defect.
+Correspondingly:
+
+- **No fs jail / dial policy / exec allow-list by default.** Restricting the
+  stdlib to sandbox *untrusted* scripts is a real, separate goal - it is the
+  planned capability sandbox, parked as `horizon.md` DRAFT#11 - not a fix for a
+  bug in the trusted-script model. The genuine module-level injection / DoS bugs
+  the same review found (where untrusted *data*, not untrusted *code*, reaches a
+  wire) are fixed in M21.7; the recursion-crash robustness gap in M21.8.
+- **The TLS `skipVerify` option stays.** Certificate verification is **on by
+  default**; `net.TLSOptions.skipVerify` is an explicit, documented opt-out for
+  self-signed / development endpoints (with `caCert` PEM-pinning as the
+  narrower alternative) - the same role as Go's `InsecureSkipVerify`, `curl -k`,
+  or Python's `verify=False`. Removing it would break legitimate use and is not
+  how any mainstream TLS client behaves.
+- **No `SecureString` zeroable-secret type.** Jennifer strings are immutable and
+  garbage-collected, so an in-place wipe is not expressible, and no mainstream
+  language zeroes secret strings in the interpreter. The pragmatic protection
+  (owner-only file permissions for on-disk secrets) is M21.9, not a new type.
+
+The review's one sound architectural point - that the security model should be
+*stated* - is adopted: M21.7 adds a `SECURITY.md` / security-model doc making the
+"scripts have full host access; sandbox untrusted ones" contract explicit.
