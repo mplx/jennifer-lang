@@ -3,7 +3,11 @@
 
 /**
  * Exercise the namespaced os library in both its bare-prefix and aliased-prefix forms.
- * In real programs you pick one form per program; this example deliberately uses both so the two spellings sit side-by-side, because each use activates one prefix without removing the other. Golden output is pinned to "linux"/"amd64" because Jennifer is Linux-only today; when Windows / macOS support lands, this example's golden file will need a per-OS strategy.
+ * In real programs you pick one form per program; this example deliberately
+ * uses both so the two spellings sit side-by-side, because each use activates
+ * one prefix without removing the other. Golden output is pinned to
+ * "linux"/"amd64" because Jennifer is Linux-only today; when Windows / macOS
+ * support lands, this example's golden file will need a per-OS strategy.
  * @module osinfo
  */
 use io;

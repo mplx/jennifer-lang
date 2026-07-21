@@ -1999,23 +1999,7 @@ still materializes the whole body in memory) are follow-ons. Pinned by
 `internal/lib/binary` + `internal/lib/net` tests; the reworked overlays stay
 green (behaviour-preserving).
 
-### M21.11 - per-frame arena allocation
-
-**Planned.** A strictly-internal interpreter memory optimization extending
-today's `Environment` frame pool (`borrowBlockEnv` / `releaseBlockEnv`): recycle
-a frame's slot / binding storage through a per-frame arena instead of letting
-each call churn fresh heap allocations, cutting GC pressure on allocation-heavy
-programs (the `--allocs` profiler plus M21.10.1's harness measure it). No
-user-visible change - value semantics and the tagged-union `Value` are untouched;
-this is about how the evaluator allocates, not what a program can observe. Best
-landed once the language surface has settled so the interpreter does not churn
-under it. It is **not** copy-on-write for compound Values: that was tried
-(shared-marker COW, reverted as inert) and its write-through variant is rejected
-for reintroducing shared mutable state (see
-[technical/rejected.md](technical/rejected.md)). Composes with the `DRAFT#17`
-bytecode model (which restructures allocation anyway) but does not depend on it.
-
-### M21.12 - read-only slice views
+### M21.11 - read-only slice views
 
 **Planned.** A slice expression - `$xs[a..b]` (final syntax settled at
 implementation) - that yields a **non-owning, read-only window** over a list,
@@ -2028,7 +2012,25 @@ stance; the mutable-reference variants stay rejected in
 [technical/rejected.md](technical/rejected.md#references-interior-mutability-shared-mutable-state)).
 A language-surface addition, so it needs a grammar slot and the no-aliasing story
 spelled out (the EBNF in `docs/technical/` updates in the same change).
-Independent of M21.10 / M21.11.
+Independent of M21.10 / M21.12. Sequenced before M21.12 so the interpreter's
+memory work lands against a settled language surface.
+
+### M21.12 - per-frame arena allocation
+
+**Planned.** A strictly-internal interpreter memory optimization extending
+today's `Environment` frame pool (`borrowBlockEnv` / `releaseBlockEnv`): recycle
+a frame's slot / binding storage through a per-frame arena instead of letting
+each call churn fresh heap allocations, cutting GC pressure on allocation-heavy
+programs (the `--allocs` profiler plus M21.10.1's harness measure it). No
+user-visible change - value semantics and the tagged-union `Value` are untouched;
+this is about how the evaluator allocates, not what a program can observe. Best
+landed once the language surface has settled (after M21.11's slice views) so the
+interpreter does not churn under it, and measured on the reference machine. It is
+**not** copy-on-write for compound Values: that was tried (shared-marker COW,
+reverted as inert) and its write-through variant is rejected for reintroducing
+shared mutable state (see [technical/rejected.md](technical/rejected.md)).
+Composes with the `DRAFT#17` bytecode model (which restructures allocation
+anyway) but does not depend on it.
 
 ---
 

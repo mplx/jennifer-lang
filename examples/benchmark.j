@@ -570,9 +570,8 @@ func byteScanFast() {
     def needle as bytes init convert.bytesFromString("NEEDLE", "utf-8");
     def start as time.Time init time.now();
     def r as int init 0;
-    def found as int init 0;
     while ($r < BYTE_SCAN_REPS) {
-        $found = binary.indexOf($buf, $needle);
+        binary.indexOf($buf, $needle);
         $r = $r + 1;
     }
     def gap as time.Duration init time.sub(time.now(), $start);

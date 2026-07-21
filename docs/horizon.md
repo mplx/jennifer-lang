@@ -405,7 +405,7 @@ re-walking the tree. This is the big structural lever, and the big effort.
   is the residual CPU-bound `.j` (recursion, business-logic loops) no Go
   primitive covers. Pursued only when `M21.10`'s benchmark shows that residual is
   a real workload's bottleneck - not on spec.
-- **Composes with M21.11's arena.** The per-frame arena allocator (`M21.11`) is
+- **Composes with M21.12's arena.** The per-frame arena allocator (`M21.12`) is
   an independent memory-side optimization that pairs naturally here, since a
   bytecode VM restructures allocation anyway - but neither depends on the other.
 
