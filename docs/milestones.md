@@ -1841,6 +1841,36 @@ than the unit overlay.
 
 ### M21.6 - `font` module (TrueType / SFNT parsing)
 
+**Done.** Shipped as `modules/font.j`: a pure-Jennifer TrueType / SFNT parser (no
+Go - only `bytes`, the bitwise operators for the big-endian tables, and `fs`, so
+it runs on **both binaries**). `parse(b)` / `open(path)` -> `Font`, then
+`unitsPerEm` / `name` / `advance(f, cp)`, `glyphPath(f, cp)` (an SVG path `d`
+string), and `glyph(f, cp)` -> `Glyph` (contours of on / off-curve `Point`s +
+advance + bbox). Parses the core tables: `head` (units-per-em, loca format),
+`cmap` (format 4 segment-mapping and format 12 segmented-coverage), `maxp` /
+`hhea` / `hmtx` (advances), `loca` / `glyf` (simple **and** composite glyphs,
+quadratic curves, component translate + scale), and `name` (family, UTF-16BE /
+ASCII). The TrueType `glyf` backend; a CFF backend can be added later, detected on
+parse (one module, stance 1). CFF / hinting / shaping (GPOS / GSUB) / colour /
+variable axes stay out of v1.
+
+Discipline: a 100%-passing `font_test.j` overlay (11 tests: header / name /
+advances, a straight-line glyph path, a quadratic-curve glyph path, a composite
+glyph path, raw contours, the byte readers, a synthetic format-12 lookup, and the
+too-short / CFF rejections) against a **tiny committed fixture**
+(`modules/testdata/font_fixture.ttf`, regenerable with the reproducible
+`scripts/gen-font-fixture.py`, embedded base64 in the overlay so it is
+self-contained); a `cmd/jennifer/font_test.go` driving `font.open` on the fixture
+file; docs (`font.md`), catalog / `JENNIFER.md` entries, and
+`examples/modules/font_demo.j` (a word rendered to an SVG). The parser was also
+verified against real system fonts (DejaVu Sans: 2048 upem, composite accents,
+many cmap segments - advances match fontTools exactly). The dogfood gap is closed:
+`scripts/genwordmark.py` was rewritten as **`scripts/genwordmark.j`** (outlining
+the wordmark entirely in Jennifer via `font`, no fontTools), and it reproduces the
+committed wordmark output **byte-for-byte** - the two SVGs are identical and
+`theme/logo.js` differs only in the generator's own name in its banner. Original
+spec below.
+
 A pure-`.j` font parser: read a TrueType / SFNT file from `bytes` and expose its
 glyph outlines, metrics, and name tables. **No prerequisite** - it needs only the
 shipped `bytes` type, the bitwise operators (`& | << >>`, for the big-endian table

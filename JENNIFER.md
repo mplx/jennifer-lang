@@ -415,6 +415,14 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   Over `xml` + `time` (build / parse on both binaries; `fetch` needs the default
   binary). Hardened for untrusted feeds (xml nesting cap, no billion-laughs,
   lenient dates, a 64 MiB body cap).
+- **`font`** - a pure-Jennifer TrueType / SFNT font parser (no Go; `bytes` +
+  bitwise ops + `fs`, so **both binaries**). `font.parse(b)` / `open(path)` ->
+  `font.Font`; `font.unitsPerEm(f)` / `name(f)` / `advance(f, cp)` (advance
+  width) / `glyphPath(f, cp)` -> an SVG path `d` string / `glyph(f, cp)` ->
+  `font.Glyph` (contours of on / off-curve `font.Point`s + advance + bbox).
+  Parses `head` / `cmap` (formats 4 and 12) / `maxp` / `hhea` / `hmtx` / `loca`
+  / `glyf` (simple **and** composite glyphs, quadratic curves) / `name`.
+  TrueType `glyf` backend (CFF is a later second backend, one module).
 - **`flatdb`** - a file-backed JSON store over `json` + `fs`. `flatdb.open(path)`
   -> value-semantic `DB` (empty if the file is absent); query / edit by JSON
   Pointer (`get` / `has` / `keys` / `length`; the fresh-`DB`-returning `set` /

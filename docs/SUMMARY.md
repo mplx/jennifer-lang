@@ -75,6 +75,7 @@
 - [`dotenv`](modules/dotenv.md)
 - [`feed`](modules/feed.md)
 - [`flatdb`](modules/flatdb.md)
+- [`font`](modules/font.md)
 - [`gotify`](modules/gotify.md)
 - [`gpio`](modules/gpio.md)
 - [`htmlwriter`](modules/htmlwriter.md)
