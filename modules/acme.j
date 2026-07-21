@@ -125,11 +125,23 @@ func fetchNonce(client as Client) {
     return $nonce;
 }
 
-func signInput(client as Client, input as bytes) {
-    if ($client.alg == "RS256") {
-        return crypto.rsaSign($client.accountKey, $input, "sha256");
+# algHash maps a JOSE alg to the digest its signature uses. The suffix is the
+# hash width, so ES384 -> sha384, RS512 -> sha512, and so on.
+func algHash(alg as string) {
+    if (strings.endsWith($alg, "384")) {
+        return "sha384";
     }
-    return crypto.ecdsaSign($client.accountKey, $input, "sha256");
+    if (strings.endsWith($alg, "512")) {
+        return "sha512";
+    }
+    return "sha256";
+}
+
+func signInput(client as Client, input as bytes) {
+    if (strings.startsWith($client.alg, "RS")) {
+        return crypto.rsaSign($client.accountKey, $input, algHash($client.alg));
+    }
+    return crypto.ecdsaSign($client.accountKey, $input, algHash($client.alg));
 }
 
 # jws POSTs a signed request to url. `payload` is the JSON body ("" for the
@@ -167,6 +179,28 @@ func jwsOk(client as Client, url as string, payload as string, useJwk as bool) {
 
 # ---- account + directory ----
 
+# algForKey picks the JWS algorithm for an account key from its public JWK:
+# RSA -> RS256; EC by curve -> ES256 (P-256) / ES384 (P-384) / ES512 (P-521).
+# The curve *must* drive the ES alg - JOSE binds ES256 to P-256, ES384 to P-384,
+# ES512 to P-521, so a P-384 key signed as "ES256" is a malformed JWS the CA
+# rejects. An unrecognised key type is an error rather than a silent wrong guess.
+func algForKey(accountKey as bytes) {
+    def jwk as string init crypto.jwkPublic($accountKey);
+    if (strings.contains($jwk, "\"kty\":\"RSA\"")) {
+        return "RS256";
+    }
+    if (strings.contains($jwk, "\"crv\":\"P-256\"")) {
+        return "ES256";
+    }
+    if (strings.contains($jwk, "\"crv\":\"P-384\"")) {
+        return "ES384";
+    }
+    if (strings.contains($jwk, "\"crv\":\"P-521\"")) {
+        return "ES512";
+    }
+    throw Error{kind: "acme", message: "acme: unsupported account key type (want RSA or EC P-256/P-384/P-521)", file: "", line: 0, col: 0};
+}
+
 /**
  * Build a client from a CA directory URL and an account private key (PEM
  * `bytes`, RSA or EC - from `crypto.rsaGenerateKey` / `crypto.ecGenerateKey`).
@@ -182,18 +216,13 @@ export func connect(directoryUrl as string, accountKey as bytes) {
         throw Error{kind: "acme", message: "acme.connect: directory fetch failed (" + convert.toString($resp.status) + ")", file: "", line: 0, col: 0};
     }
     def dir as json.Value init json.decode($resp.body);
-    def jwk as string init crypto.jwkPublic($accountKey);
-    def alg as string init "ES256";
-    if (strings.contains($jwk, "\"kty\":\"RSA\"")) {
-        $alg = "RS256";
-    }
     return Client{
         directory: $directoryUrl,
         newNonce: json.asString($dir, "/newNonce"),
         newAccount: json.asString($dir, "/newAccount"),
         newOrder: json.asString($dir, "/newOrder"),
         accountKey: $accountKey,
-        alg: $alg,
+        alg: algForKey($accountKey),
         kid: ""
     };
 }

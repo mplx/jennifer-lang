@@ -5,7 +5,8 @@ Import with `import "acme.j" as acme;`. An [ACME](https://www.rfc-editor.org/rfc
 compatible CAs. It drives the whole flow - account registration, a new order,
 an **HTTP-01** or **DNS-01** challenge, CSR finalize, and certificate download -
 over [`http`](http.md) + [`json`](../libraries/json.md), with every request a JWS
-signed by the account key (`RS256` for an RSA key, `ES256` for an EC key). Keys,
+signed by the account key (`RS256` for an RSA key; `ES256` / `ES384` / `ES512`
+for an EC key, by curve). Keys,
 the CSR, and the JWK thumbprint come from [`crypto`](../libraries/crypto.md), so
 `acme` needs the default `jennifer` binary.
 
@@ -85,7 +86,11 @@ nonce from the CA before it is sent.
 
 - **Account key**: `crypto.ecGenerateKey("p256")` (→ `ES256`) or
   `crypto.rsaGenerateKey(2048)` (→ `RS256`). `connect` derives the JWS algorithm
-  from the key. Reuse the *same* account key across renewals.
+  from the key, binding each EC curve to its JOSE algorithm - P-256 → `ES256`,
+  P-384 → `ES384`, P-521 → `ES512` (a curve must not be signed under another
+  curve's algorithm). `ES256` (the P-256 default) is the most widely accepted;
+  check your CA supports a curve before using P-384 / P-521. Reuse the *same*
+  account key across renewals.
 - **Certificate key**: a **separate** key, only used for the CSR
   (`crypto.csr(certKey, domains)`). Generate a fresh one, or reuse per domain.
 
