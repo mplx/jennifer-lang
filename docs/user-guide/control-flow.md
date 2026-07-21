@@ -123,12 +123,25 @@ for (def x in $xs) {
 for (def k in $m) {
     io.printf("%s=%d ", $k, $m[$k]);
 }
+
+# for-each over a half-open range: 0..n yields 0, 1, ..., n-1.
+# No list is built - the range is iterated lazily.
+for (def i in 0..10) {
+    io.printf("%d ", $i);
+}
 ```
 
 Conditions in `if`, `elseif`, `while`, and `for` **must be `bool`** - there
 is no implicit truthiness. Use a comparison (`$x == 0`) to get a bool.
 For-each (`for (def x in $coll)`) doesn't take a condition - it walks
-the whole collection.
+the whole collection (or the whole range).
+
+A range `lo..hi` is **half-open** (`[lo, hi)`): it includes `lo` and
+excludes `hi`, so `0..n` runs exactly `n` times. Bounds are int; `lo >
+hi` is an error and `lo == hi` is empty. The same `..` builds a list
+(`def r as list of int init 1..5;` is `[1, 2, 3, 4]`) and slices a
+collection (`$xs[a..b]`, covered in
+[types-and-values](types-and-values.md)).
 
 ### Loop variable scope
 

@@ -301,7 +301,7 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 		f.pendingTriviaSpace = false
 		switch t.Type {
 		case lexer.TOKEN_RPAREN, lexer.TOKEN_COMMA, lexer.TOKEN_SEMI,
-			lexer.TOKEN_DOT, lexer.TOKEN_RBRACKET, lexer.TOKEN_COLON:
+			lexer.TOKEN_DOT, lexer.TOKEN_DOTDOT, lexer.TOKEN_RBRACKET, lexer.TOKEN_COLON:
 			return
 		}
 		f.writeByte(' ')
@@ -402,11 +402,11 @@ func (f *fmtState) writeSeparator(t lexer.Token) {
 	// close, comma, semi, dot, or `:` (map-literal key/value separator).
 	switch t.Type {
 	case lexer.TOKEN_RPAREN, lexer.TOKEN_COMMA, lexer.TOKEN_SEMI,
-		lexer.TOKEN_DOT, lexer.TOKEN_RBRACKET, lexer.TOKEN_COLON:
+		lexer.TOKEN_DOT, lexer.TOKEN_DOTDOT, lexer.TOKEN_RBRACKET, lexer.TOKEN_COLON:
 		return
 	}
 	if f.prev.Type == lexer.TOKEN_LPAREN || f.prev.Type == lexer.TOKEN_DOT ||
-		f.prev.Type == lexer.TOKEN_LBRACKET {
+		f.prev.Type == lexer.TOKEN_DOTDOT || f.prev.Type == lexer.TOKEN_LBRACKET {
 		return
 	}
 	// Unary minus hugs its operand: `-5`, `-$x`, `-foo()`. The state

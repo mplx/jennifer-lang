@@ -259,6 +259,21 @@ func emitNode(b *strings.Builder, n parser.Node, indent int) {
 		emitNodeField(b, "index", v.Index, indent+1)
 		endObj(b, indent)
 
+	case *parser.RangeExpr:
+		startObj(b, indent)
+		emitTypeAndPos(b, "RangeExpr", v, indent+1)
+		emitNodeField(b, "lo", v.Lo, indent+1)
+		emitNodeField(b, "hi", v.Hi, indent+1)
+		endObj(b, indent)
+
+	case *parser.SliceExpr:
+		startObj(b, indent)
+		emitTypeAndPos(b, "SliceExpr", v, indent+1)
+		emitNodeField(b, "target", v.Target, indent+1)
+		emitOptionalNodeField(b, "lo", v.Lo, indent+1)
+		emitOptionalNodeField(b, "hi", v.Hi, indent+1)
+		endObj(b, indent)
+
 	case *parser.AppendStmt:
 		startObj(b, indent)
 		emitTypeAndPos(b, "AppendStmt", v, indent+1)

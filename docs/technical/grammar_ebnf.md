@@ -198,7 +198,17 @@ structType  = IDENT [ "." IDENT ] ;    (* User-defined struct type (bare
                                           unknown names are positioned
                                           errors. *)
 
-expr        = orExpr ;
+expr        = rangeExpr ;
+rangeExpr   = orExpr [ ".." orExpr ] ;
+                                       (* half-open range `lo..hi` -> `[lo, hi)`.
+                                          Non-associative (`a..b..c` is an
+                                          error) and looser than every binary
+                                          operator, so `1+1..2*3` parses as
+                                          `(1+1)..(2*3)`. Both bounds int; a
+                                          range materialises a `list of int`,
+                                          or - as a for-each source - iterates
+                                          lazily. `lo > hi` is a runtime error;
+                                          `lo == hi` is empty. *)
 orExpr      = andExpr { "or" andExpr } ;
 andExpr     = notExpr { "and" notExpr } ;
 notExpr     = "not" notExpr | compExpr ;
@@ -219,10 +229,22 @@ primary     = ( INT | FLOAT | STRING | "true" | "false" | "null"
               | VARREF | qualifiedCall | qualifiedConstRef | taskCall
               | call | structLit | constRef | "(" expr ")"
               | listLit | mapLit | lenExpr | spawnExpr )
-              { "[" expr "]" | "." wordName } ;
-                                       (* any primary can be index- or
-                                          field-chained, including the
-                                          `.field` form *)
+              { "[" ( expr | sliceTail ) "]" | "." wordName } ;
+                                       (* any primary can be index-,
+                                          slice-, or field-chained. A `[...]`
+                                          holds either an index `expr` or a
+                                          `sliceTail` (contains a `..`). *)
+sliceTail   = orExpr ".." [ orExpr ]   (* `[a..]`, `[a..b]` *)
+            | ".." [ orExpr ] ;        (* `[..]`, `[..b]` - endpoints parse at
+                                          orExpr so a bool-keyed comparison
+                                          index `$m[$a == $b]` stays an index,
+                                          not a slice. Slice yields a fresh,
+                                          value-semantic copy (never a view);
+                                          open ends default to 0 / len; strict
+                                          `0 <= lo <= hi <= len` bounds check;
+                                          works on list / bytes / string
+                                          (rune-indexed). Read-only:
+                                          `$xs[a..b] = ...` is a parse error. *)
 spawnExpr   = "spawn" block ;          (* launches the block as a
                                           goroutine and evaluates
                                           immediately to a `task of T`

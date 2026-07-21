@@ -608,6 +608,24 @@ func (r *resolver) resolveExpr(e Expr) error {
 			return err
 		}
 		return r.resolveExpr(ex.Index)
+	case *RangeExpr:
+		if err := r.resolveExpr(ex.Lo); err != nil {
+			return err
+		}
+		return r.resolveExpr(ex.Hi)
+	case *SliceExpr:
+		if err := r.resolveExpr(ex.Target); err != nil {
+			return err
+		}
+		if ex.Lo != nil {
+			if err := r.resolveExpr(ex.Lo); err != nil {
+				return err
+			}
+		}
+		if ex.Hi != nil {
+			return r.resolveExpr(ex.Hi)
+		}
+		return nil
 	case *FieldAccessExpr:
 		return r.resolveExpr(ex.Target)
 	case *ListLit:

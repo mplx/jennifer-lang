@@ -80,6 +80,7 @@ const (
 	TOKEN_COLON    // : (map literal key-value separator)
 	TOKEN_ASSIGN   // =
 	TOKEN_DOT      // . (reserved; future namespacing / field access)
+	TOKEN_DOTDOT   // .. (half-open range: `a..b`, `$xs[a..b]`, `for i in a..b`)
 
 	// Arithmetic operators
 	TOKEN_PLUS    // +
@@ -182,6 +183,7 @@ var tokenNames = map[TokenType]string{
 	TOKEN_COLON:       "COLON",
 	TOKEN_ASSIGN:      "ASSIGN",
 	TOKEN_DOT:         "DOT",
+	TOKEN_DOTDOT:      "DOTDOT",
 	TOKEN_PLUS:        "PLUS",
 	TOKEN_MINUS:       "MINUS",
 	TOKEN_STAR:        "STAR",

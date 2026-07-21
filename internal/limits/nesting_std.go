@@ -30,3 +30,17 @@ const MaxNestingDepth = 1000
 // frames, while still allowing an order of magnitude more recursion than a
 // typical tree-walking language (CPython defaults to 1000).
 const MaxCallDepth = 10000
+
+// MaxRangeElements caps how many elements a range expression will materialise
+// into a `list of int` in one evaluation - the value forms `0..n` and
+// `$xs = 0..n`, not the lazy `for (def i in 0..n)` iteration, which allocates
+// nothing and is unbounded. Like MaxCallDepth, its job is to convert a fatal,
+// uncatchable failure into a positioned, catchable error: a bad or
+// attacker-controlled bound would otherwise reach `make([]Value, 0, n)` with a
+// huge (or, on int64 span overflow, negative) capacity and trigger Go's
+// "makeslice: cap out of range" panic - which the interpreter, having no
+// recover(), cannot catch - or a multi-gigabyte single allocation just below
+// it. The default binary allows ~16.7M ints, far past any reasonable
+// materialised range yet well below the allocation cliff; a larger span should
+// iterate lazily.
+const MaxRangeElements = 1 << 24

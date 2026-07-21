@@ -211,6 +211,10 @@ func (l *Lexer) Next() (Token, error) {
 		return Token{Type: TOKEN_PERCENT, Lexeme: "%", Line: startLine, Col: startCol}, nil
 	case ch == '.':
 		l.advance()
+		if next, ok := l.peek(0); ok && next == '.' {
+			l.advance()
+			return Token{Type: TOKEN_DOTDOT, Lexeme: "..", Line: startLine, Col: startCol}, nil
+		}
 		return Token{Type: TOKEN_DOT, Lexeme: ".", Line: startLine, Col: startCol}, nil
 	case ch == '"' || ch == '\'':
 		return l.readString(ch, startLine, startCol)

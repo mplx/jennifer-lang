@@ -859,20 +859,11 @@ func (p *parser) tryParseIndexAssign() (Stmt, bool, error) {
 	for {
 		switch p.peek().Type {
 		case lexer.TOKEN_LBRACKET:
-			bra := p.peek()
-			p.advance()
-			idx, err := p.parseExpr()
+			sfx, err := p.parseBracketSuffix(target)
 			if err != nil {
 				return nil, false, err
 			}
-			if _, err := p.expect(lexer.TOKEN_RBRACKET, "to close index expression"); err != nil {
-				return nil, false, err
-			}
-			target = &IndexExpr{
-				pos:    pos{File: bra.File, Line: bra.Line, Col: bra.Col},
-				Target: target,
-				Index:  idx,
-			}
+			target = sfx
 			continue
 		case lexer.TOKEN_DOT:
 			dot := p.peek()
@@ -925,6 +916,12 @@ func (p *parser) tryParseIndexAssign() (Stmt, bool, error) {
 			Target: leaf,
 			Value:  val,
 		}, true, nil
+	case *SliceExpr:
+		l, c := leaf.Pos()
+		return nil, false, &ParseError{
+			Msg:  "slice assignment (`$xs[a..b] = ...`) is not supported; a slice is a read-only copy",
+			File: leaf.Filename(), Line: l, Col: c,
+		}
 	}
 	return nil, false, &ParseError{Msg: "expected index or field expression on left of `=`", File: vref.File, Line: vref.Line, Col: vref.Col}
 }
@@ -1307,9 +1304,71 @@ func (p *parser) parseExpr() (Expr, error) {
 		}
 	}
 	p.exprDepth++
-	e, err := p.parseOr()
+	e, err := p.parseRange()
 	p.exprDepth--
 	return e, err
+}
+
+// parseRange parses a half-open range `lo..hi` (M21.11). It sits at the top of
+// the precedence ladder (looser than every operator), so the endpoints are full
+// parseOr expressions and `a+1..b*2` parses as `(a+1)..(b*2)`. `..` is
+// non-associative (`a..b..c` is rejected). Absent `..` it is transparent. The
+// open slice forms (`[a..]` etc.) are parsed by the bracket suffix, not here - a
+// bare range value needs both ends.
+func (p *parser) parseRange() (Expr, error) {
+	lo, err := p.parseOr()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().Type != lexer.TOKEN_DOTDOT {
+		return lo, nil
+	}
+	p.advance() // consume `..`
+	hi, err := p.parseOr()
+	if err != nil {
+		return nil, err
+	}
+	if p.peek().Type == lexer.TOKEN_DOTDOT {
+		t := p.peek()
+		return nil, &ParseError{Msg: "range `..` is non-associative; write `a..b`, not `a..b..c`", File: t.File, Line: t.Line, Col: t.Col}
+	}
+	l, c := lo.Pos()
+	return &RangeExpr{pos: pos{File: lo.Filename(), Line: l, Col: c}, Lo: lo, Hi: hi}, nil
+}
+
+// parseBracketSuffix parses one `[...]` suffix after `target`: a plain index
+// `[expr]`, or a half-open slice `[lo..hi]` / `[lo..]` / `[..hi]` / `[..]`
+// (M21.11). The caller has confirmed `[` is current and (where relevant)
+// rejected the append `[]` form. Endpoints parse at parseOr precedence (below
+// `..`), so any int index expression is still accepted (incl. a bool-key
+// comparison) and the `..` is detected here; a slice yields a read-only
+// SliceExpr, a plain index an IndexExpr.
+func (p *parser) parseBracketSuffix(target Expr) (Expr, error) {
+	bra := p.peek()
+	p.advance() // consume [
+	var lo, hi Expr
+	var err error
+	if p.peek().Type != lexer.TOKEN_DOTDOT {
+		if lo, err = p.parseOr(); err != nil {
+			return nil, err
+		}
+	}
+	if p.peek().Type == lexer.TOKEN_DOTDOT {
+		p.advance() // consume ..
+		if p.peek().Type != lexer.TOKEN_RBRACKET {
+			if hi, err = p.parseOr(); err != nil {
+				return nil, err
+			}
+		}
+		if _, err := p.expect(lexer.TOKEN_RBRACKET, "to close slice expression"); err != nil {
+			return nil, err
+		}
+		return &SliceExpr{pos: pos{File: bra.File, Line: bra.Line, Col: bra.Col}, Target: target, Lo: lo, Hi: hi}, nil
+	}
+	if _, err := p.expect(lexer.TOKEN_RBRACKET, "to close index expression"); err != nil {
+		return nil, err
+	}
+	return &IndexExpr{pos: pos{File: bra.File, Line: bra.Line, Col: bra.Col}, Target: target, Index: lo}, nil
 }
 
 // Precedence (lowest to highest):
@@ -1812,19 +1871,11 @@ func (p *parser) parsePrimary() (Expr, error) {
 					File: bra.File, Line: bra.Line, Col: bra.Col,
 				}
 			}
-			p.advance() // consume [
-			idx, err := p.parseExpr()
+			sfx, err := p.parseBracketSuffix(e)
 			if err != nil {
 				return nil, err
 			}
-			if _, err := p.expect(lexer.TOKEN_RBRACKET, "to close index expression"); err != nil {
-				return nil, err
-			}
-			e = &IndexExpr{
-				pos:    pos{File: bra.File, Line: bra.Line, Col: bra.Col},
-				Target: e,
-				Index:  idx,
-			}
+			e = sfx
 		case lexer.TOKEN_DOT:
 			// Struct field access `e.field`. The qualified-call
 			// path that takes IDENT.IDENT is handled in parsePrimaryAtom

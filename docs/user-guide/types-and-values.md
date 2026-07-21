@@ -200,6 +200,51 @@ Rules:
   reach for `$xs[]`. Reserve `lists.push` for the "give me a new list,
   leave the original alone" case.
 
+### Slicing with `a..b`
+
+`$xs[a..b]` takes a **half-open** slice `[a, b)` of a list, and returns a
+**fresh copy** - it includes index `a` and excludes index `b`:
+
+```jennifer
+def xs as list of int init [10, 20, 30, 40, 50];
+def mid as list of int init $xs[1..4];   # [20, 30, 40]
+$mid[0] = 99;                            # mutating the slice...
+io.printf("%d\n", $xs[1]);               # ...leaves the source at 20
+```
+
+Either endpoint may be omitted to run to the edge:
+
+```jennifer
+$xs[2..];    # from index 2 to the end   -> [30, 40, 50]
+$xs[..3];    # from the start to index 3 -> [10, 20, 30]
+$xs[..];     # a full copy               -> [10, 20, 30, 40, 50]
+```
+
+The same `..` slices **bytes** and **strings** too (strings are
+rune-indexed, so `$s[0..5]` is the first five *characters*, not bytes):
+
+```jennifer
+def s as string init "hello world";
+io.printf("%s\n", $s[0..5]);             # hello
+io.printf("%s\n", $s[6..]);              # world
+```
+
+Rules:
+
+- **Half-open and int-bounded.** `a..b` is `[a, b)`; both bounds are int.
+- **A copy, never a view.** A slice is value-semantic like any other
+  assignment, so mutating the slice never touches the source (and vice
+  versa).
+- **Read-only.** `$xs[a..b] = ...;` is a parse error - because a slice is
+  a copy, a write through it could not reach the original, so the syntax
+  is rejected rather than silently doing nothing.
+- **Strict bounds.** `0 <= a <= b <= len` or it's a positioned runtime
+  error (an out-of-range or inverted slice never clamps silently).
+- The same `..` builds a list on its own (`1..5` is `[1, 2, 3, 4]`) and
+  drives a `for`-each loop - see
+  [control-flow](control-flow.md#conditionals-and-loops). For a stepped or reversed range,
+  use [`lists.range`](../libraries/lists.md).
+
 ### Nested lists and maps
 
 Compound types nest by repeating the keyword. `list of list of int` is a

@@ -623,6 +623,31 @@ type IndexExpr struct {
 
 func (*IndexExpr) exprNode() {}
 
+// RangeExpr is a half-open range `Lo..Hi` used as a value (a `list of int`) or
+// as a `for`-each source (iterated without materialising). Both endpoints are
+// required and must be int; `Lo <= Hi`. It is NOT the slice form - a range
+// inside index brackets parses to SliceExpr.
+type RangeExpr struct {
+	pos
+	Lo Expr
+	Hi Expr
+}
+
+func (*RangeExpr) exprNode() {}
+
+// SliceExpr is `Target[Lo..Hi]` - a fresh half-open sub-collection of a list /
+// bytes / string. Either endpoint may be nil for the open forms (`[Lo..]`,
+// `[..Hi]`, `[..]`), defaulting to 0 / len. Read-only (never an l-value); the
+// operation site is attached for positioned out-of-bounds errors.
+type SliceExpr struct {
+	pos
+	Target Expr
+	Lo     Expr
+	Hi     Expr
+}
+
+func (*SliceExpr) exprNode() {}
+
 // StructLit is `Name{ field: expr, ... }` or
 // `lib.Name{ field: expr, ... }`. The struct's name must
 // reference a top-level `def struct` declaration (bare form) or a

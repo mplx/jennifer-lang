@@ -160,6 +160,8 @@ below.
 | `ListLit`               | expr | `Elements []Expr` - `[1, 2, 3]`                                                                            |
 | `MapLit`                | expr | `Keys []Expr`, `Values []Expr` (parallel) - `{"a": 1}`                                                     |
 | `IndexExpr`             | expr | `Target Expr`, `Index Expr` - `$xs[i]`, chained                                                            |
+| `RangeExpr`             | expr | `Lo Expr`, `Hi Expr` - half-open `lo..hi`; materialises `list of int` (or iterates lazily as a for-each source) |
+| `SliceExpr`             | expr | `Target Expr`, `Lo Expr`, `Hi Expr` (either endpoint nil for an open end) - `$xs[a..b]`, `$xs[a..]`, `$xs[..b]`, `$xs[..]` |
 | `StructLit`             | expr | `NS`, `Name`, `Fields []StructLitField` - `Point{...}` bare or `lib.Point{...}` namespaced |
 | `StructLitField`        | -    | `Name`, `Expr` (one named field in a struct literal)                                                       |
 | `FieldAccessExpr`       | expr | `Target Expr`, `Field` - `$p.field`, chainable with `IndexExpr`                                    |

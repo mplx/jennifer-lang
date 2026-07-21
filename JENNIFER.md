@@ -107,9 +107,14 @@ $x = 7;                       # assignment uses the $ sigil
 - Logical (words, short-circuit): `and`, `or`, `not`. Operands must be `bool`.
 - Bitwise (int only): `&  |  ^  ~  <<  >>`.
 - Mixed int/float arithmetic promotes to `float`.
-- Precedence, low to high: `or` < `and` < `not` < comparison < `|` < `^` < `&`
-  < shifts < `+ -` < `* / // %` < unary `- ~`. So `$x & 0xff == 0` parses as
-  `($x & 0xff) == 0`.
+- Range `..`: `lo..hi` is a half-open range `[lo, hi)`, int bounds only,
+  non-associative, looser than every other operator. Builds a `list of int`
+  (`def r as list of int init 0..n;`), or iterates lazily as a for-each source
+  (`for (def i in 0..n)`), or slices (`$xs[a..b]`). `lo > hi` errors; `lo == hi`
+  is empty. Always a fresh copy, never a view.
+- Precedence, low to high: `..` < `or` < `and` < `not` < comparison < `|` < `^`
+  < `&` < shifts < `+ -` < `* / // %` < unary `- ~`. So `$x & 0xff == 0` parses
+  as `($x & 0xff) == 0`, and `1+1..2*3` as `(1+1)..(2*3)`.
 
 ## Control flow
 
@@ -122,6 +127,7 @@ for (def i as int init 0; $i < 10; $i = $i + 1) { ... }   # C-style
 
 for (def x in $xs) { ... }     # for-each over a list (elements)
 for (def k in $m) { ... }      # for-each over a map (keys, insertion order)
+for (def i in 0..10) { ... }   # for-each over a half-open range (lazy)
 
 repeat { ... } until ($done);  # post-test loop; body runs at least once
 
@@ -220,7 +226,16 @@ $p.x;              # field read
 $p.x = 5;          # field write
 
 $grid[i][j] = v;   # chains nest and mix [index] and .field
+
+def mid as list of int init $xs[1..3];   # slice: half-open [1, 3) copy
+$xs[2..];  $xs[..3];  $xs[..];           # open ends default to 0 / len
 ```
+
+**Slicing (`$xs[a..b]`)** returns a fresh, value-semantic copy of a half-open
+`[a, b)` sub-range of a `list`, `bytes`, or `string` (rune-indexed). Open ends
+default to the extremes (`$xs[a..]`, `$xs[..b]`, `$xs[..]`). Bounds are strict
+(`0 <= a <= b <= len`). A slice is **read-only**: `$xs[a..b] = ...` is a parse
+error (it is a copy, so a write through it would do nothing).
 
 **Prefer `$xs[]` over `lists.push` in loops.** The `$xs[] = item;` append sugar
 (lists and bytes) mutates in place via copy-on-write - amortized O(N) to append

@@ -122,5 +122,5 @@ contexts:
         1: entity.name.function.jennifer
 
   operators:
-    - match: '(//|<<|>>|<=|>=|==|!=|[-+*/%&|\^~<>=])'
+    - match: '(//|<<|>>|<=|>=|==|!=|\.\.|[-+*/%&|\^~<>=])'
       scope: keyword.operator.jennifer

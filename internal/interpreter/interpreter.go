@@ -2183,6 +2183,11 @@ func writeIndexedSlot(parent *Value, idx Value, newVal Value, st positioned) err
 // (maps), binding the iteration variable in a fresh per-iteration scope
 // so the binding doesn't leak out and `def` re-bindings don't accumulate.
 func (i *Interpreter) execForEach(st *parser.ForEachStmt, env *Environment) (blockResult, error) {
+	// A range source iterates lazily: `for (def i in 0..n)` never materialises
+	// the list, so a huge range costs no allocation.
+	if rng, ok := st.Coll.(*parser.RangeExpr); ok {
+		return i.execForEachRange(st, rng, env)
+	}
 	coll, err := i.evalExpr(st.Coll, env)
 	if err != nil {
 		return blockResult{}, err
@@ -2733,6 +2738,10 @@ func (i *Interpreter) evalExpr(e parser.Expr, env *Environment) (Value, error) {
 		return i.evalMapLit(ex, env)
 	case *parser.IndexExpr:
 		return i.evalIndex(ex, env)
+	case *parser.RangeExpr:
+		return i.evalRange(ex, env)
+	case *parser.SliceExpr:
+		return i.evalSlice(ex, env)
 	case *parser.StructLit:
 		return i.evalStructLit(ex, env)
 	case *parser.FieldAccessExpr:
@@ -2966,6 +2975,170 @@ func readByteAt(parent Value, idx Value, node parser.Node) (Value, error) {
 		return Value{}, &runtimeError{Msg: fmt.Sprintf("bytes index %d out of bounds (len %d)", n, len(parent.Bytes)), File: file, Line: line, Col: col}
 	}
 	return IntVal(int64(parent.Bytes[n])), nil
+}
+
+// evalRange materialises a half-open range Lo..Hi into a fresh `list of int`.
+// A range used as a `for`-each source iterates lazily (execForEachRange) and
+// never reaches here.
+func (i *Interpreter) evalRange(ex *parser.RangeExpr, env *Environment) (Value, error) {
+	lo, hi, err := i.rangeBounds(ex.Lo, ex.Hi, env, ex)
+	if err != nil {
+		return Value{}, err
+	}
+	// A range materialises every element at once. Guard the count so a bad or
+	// huge bound raises a positioned, catchable error instead of Go's
+	// uncatchable "makeslice: cap out of range" panic (or a multi-GB
+	// allocation) - the same reason the call-depth cap exists. rangeBounds
+	// guarantees lo <= hi, so a negative `count` means the int64 subtraction
+	// itself overflowed (e.g. -9e18..9e18), which is likewise far over the cap.
+	// The lazy for-each form (execForEachRange) has no such limit.
+	count := hi - lo
+	if count < 0 || count > int64(limits.MaxRangeElements) {
+		file, line, col := posFor(ex)
+		size := "the range"
+		if count >= 0 {
+			size = fmt.Sprintf("%d elements", count)
+		}
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("range too large to materialise into a list (%s exceeds the limit of %d); iterate lazily with `for (def i in lo..hi)` instead", size, limits.MaxRangeElements), File: file, Line: line, Col: col}
+	}
+	out := make([]Value, 0, int(count))
+	for n := lo; n < hi; n++ {
+		out = append(out, IntVal(n))
+	}
+	return ListVal(parser.PrimitiveType(parser.TypeInt), out), nil
+}
+
+// rangeBounds evaluates a range's endpoints (both required) and checks they are
+// int with lo <= hi.
+func (i *Interpreter) rangeBounds(loE, hiE parser.Expr, env *Environment, node parser.Node) (int64, int64, error) {
+	lv, err := i.evalExpr(loE, env)
+	if err != nil {
+		return 0, 0, err
+	}
+	hv, err := i.evalExpr(hiE, env)
+	if err != nil {
+		return 0, 0, err
+	}
+	if lv.Kind != KindInt || hv.Kind != KindInt {
+		file, line, col := posFor(node)
+		return 0, 0, &runtimeError{Msg: fmt.Sprintf("range bounds must be int, got %s..%s", lv.Kind, hv.Kind), File: file, Line: line, Col: col}
+	}
+	if lv.Int > hv.Int {
+		file, line, col := posFor(node)
+		return 0, 0, &runtimeError{Msg: fmt.Sprintf("range lower bound %d exceeds upper bound %d", lv.Int, hv.Int), File: file, Line: line, Col: col}
+	}
+	return lv.Int, hv.Int, nil
+}
+
+// execForEachRange iterates `for (def i in lo..hi)` over [lo, hi) without
+// materialising a list.
+func (i *Interpreter) execForEachRange(st *parser.ForEachStmt, rng *parser.RangeExpr, env *Environment) (blockResult, error) {
+	lo, hi, err := i.rangeBounds(rng.Lo, rng.Hi, env, rng)
+	if err != nil {
+		return blockResult{}, err
+	}
+	iterType := parser.PrimitiveType(parser.TypeInt)
+	for n := lo; n < hi; n++ {
+		if i.diagReq.Load() {
+			i.dumpDiagnostics(st)
+		}
+		iterEnv := borrowBlockEnv(env, st.Body.NumSlots)
+		if err := iterEnv.DefineAt(st.IterSlot, st.VarName, IntVal(n), iterType, false); err != nil {
+			releaseBlockEnv(iterEnv)
+			file, line, col := posFor(st)
+			return blockResult{}, &runtimeError{Msg: err.Error(), File: file, Line: line, Col: col}
+		}
+		res, rerr := i.execStmts(st.Body.Stmts, iterEnv)
+		if len(iterEnv.deferred) > 0 {
+			res, rerr = i.finishFrame(iterEnv, res, rerr)
+		}
+		releaseBlockEnv(iterEnv)
+		if rerr != nil {
+			return blockResult{}, rerr
+		}
+		if res.hasReturn {
+			return res, nil
+		}
+		if res.hasBreak {
+			return blockResult{}, nil
+		}
+	}
+	return blockResult{}, nil
+}
+
+// evalSlice returns a fresh half-open sub-collection Target[Lo..Hi] for a list,
+// bytes, or string (rune-indexed). Open ends default to 0 / len. The result is
+// a value-semantic copy, never a view.
+func (i *Interpreter) evalSlice(ex *parser.SliceExpr, env *Environment) (Value, error) {
+	coll, err := i.evalExpr(ex.Target, env)
+	if err != nil {
+		return Value{}, err
+	}
+	var n int
+	switch coll.Kind {
+	case KindList:
+		n = len(coll.List)
+	case KindBytes:
+		n = len(coll.Bytes)
+	case KindString:
+		n = utf8.RuneCountInString(coll.Str)
+	default:
+		file, line, col := posFor(ex)
+		return Value{}, &runtimeError{Msg: fmt.Sprintf("cannot slice a %s; `[a..b]` works on a list, bytes, or string", coll.Kind), File: file, Line: line, Col: col}
+	}
+	lo, hi, err := i.sliceBounds(ex.Lo, ex.Hi, n, env, ex)
+	if err != nil {
+		return Value{}, err
+	}
+	switch coll.Kind {
+	case KindList:
+		out := coll // copy the header (preserves ElemTyp); rebuild the element slice
+		out.List = make([]Value, hi-lo)
+		for j := lo; j < hi; j++ {
+			out.List[j-lo] = coll.List[j].Copy()
+		}
+		return out, nil
+	case KindBytes:
+		b := make([]byte, hi-lo)
+		copy(b, coll.Bytes[lo:hi])
+		return BytesVal(b), nil
+	default: // KindString
+		return StringVal(string([]rune(coll.Str)[lo:hi])), nil
+	}
+}
+
+// sliceBounds resolves slice endpoints against a collection of length n: open
+// ends default to 0 / n, both endpoints must be int, and 0 <= lo <= hi <= n
+// (strict, like an index read).
+func (i *Interpreter) sliceBounds(loE, hiE parser.Expr, n int, env *Environment, node parser.Node) (int, int, error) {
+	lo, hi := 0, n
+	if loE != nil {
+		lv, err := i.evalExpr(loE, env)
+		if err != nil {
+			return 0, 0, err
+		}
+		if lv.Kind != KindInt {
+			file, line, col := posFor(node)
+			return 0, 0, &runtimeError{Msg: fmt.Sprintf("slice lower bound must be int, got %s", lv.Kind), File: file, Line: line, Col: col}
+		}
+		lo = int(lv.Int)
+	}
+	if hiE != nil {
+		hv, err := i.evalExpr(hiE, env)
+		if err != nil {
+			return 0, 0, err
+		}
+		if hv.Kind != KindInt {
+			file, line, col := posFor(node)
+			return 0, 0, &runtimeError{Msg: fmt.Sprintf("slice upper bound must be int, got %s", hv.Kind), File: file, Line: line, Col: col}
+		}
+		hi = int(hv.Int)
+	}
+	if lo < 0 || hi > n || lo > hi {
+		file, line, col := posFor(node)
+		return 0, 0, &runtimeError{Msg: fmt.Sprintf("slice range [%d, %d) out of bounds for length %d", lo, hi, n), File: file, Line: line, Col: col}
+	}
+	return lo, hi, nil
 }
 
 func (i *Interpreter) evalBinary(b *parser.BinaryExpr, env *Environment) (Value, error) {

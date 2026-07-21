@@ -19,7 +19,7 @@ A hand-written, single-pass scanner.
 | Arithmetic operators     | `PLUS` (`+`), `MINUS` (`-`), `STAR` (`*`), `SLASH` (`/`), `DIV` (`//`), `PERCENT` (`%`)                                                                     |
 | Comparison operators     | `LT` (`<`), `GT` (`>`), `LE` (`<=`), `GE` (`>=`), `EQ` (`==`), `NEQ` (`!=`)                                                                                 |
 | Assignment               | `ASSIGN` (`=`)                                                                                                                                              |
-| Grouping and punctuation | `LBRACE` (`{`), `RBRACE` (`}`), `LPAREN` (`(`), `RPAREN` (`)`), `LBRACKET` (`[`), `RBRACKET` (`]`), `SEMI` (`;`), `COMMA` (`,`), `COLON` (`:`), `DOT` (`.`) |
+| Grouping and punctuation | `LBRACE` (`{`), `RBRACE` (`}`), `LPAREN` (`(`), `RPAREN` (`)`), `LBRACKET` (`[`), `RBRACKET` (`]`), `SEMI` (`;`), `COMMA` (`,`), `COLON` (`:`), `DOT` (`.`), `DOTDOT` (`..`) |
 
 `def` introduces a variable or constant binding (TOKEN_DEFINE); `func`
 introduces a method (TOKEN_FUNC). `import` (TOKEN_IMPORT) is for **file
@@ -98,6 +98,11 @@ matching the style rule "never more than one consecutive blank line".
 `#` was chosen (over the C/Java `//` style) so the floor-division
 operator `//` is unambiguous and a Jennifer file can begin with a
 Unix shebang (`#!/usr/bin/env -S jennifer run`).
+
+A `.` peeks for a second `.`: two together lex as one `DOTDOT` (the
+half-open range operator `a..b`), a single `.` stays `DOT`. Number
+scanning already requires a digit after `.` for a fraction, so `1..5`
+lexes as `INT DOTDOT INT` (not `1.` `.5`) with no special-casing.
 
 ## Identifier rule
 

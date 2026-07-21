@@ -119,7 +119,12 @@ StructType   <- IDENT ("." IDENT)?
 # multiplicative, unary. `A (op A)*` yields left association; NotExpr and
 # Unary recurse right.
 
-Expr         <- OrExpr
+Expr         <- RangeExpr
+RangeExpr    <- OrExpr (".." OrExpr)?   # half-open `lo..hi` -> `[lo, hi)`;
+                                        # non-associative (a second `..` is an
+                                        # error), looser than every binary op.
+                                        # Materialises `list of int`, or - as a
+                                        # for-each source - iterates lazily.
 OrExpr       <- AndExpr ("or" AndExpr)*
 AndExpr      <- NotExpr ("and" NotExpr)*
 NotExpr      <- "not" NotExpr / CompExpr
@@ -136,7 +141,15 @@ Unary        <- ("-" / "~") Unary / Primary
 # chain belongs to Primary, not Atom, so `f()[0].x` parses as expected.
 
 Primary      <- Atom Postfix*
-Postfix      <- "[" Expr "]" / "." WordName
+Postfix      <- "[" (SliceTail / Expr) "]" / "." WordName
+SliceTail    <- OrExpr ".." OrExpr? / ".." OrExpr?
+                                        # `$xs[a..b]`, `$xs[a..]`, `$xs[..b]`,
+                                        # `$xs[..]`. Endpoints parse at OrExpr so
+                                        # a bool-keyed comparison index
+                                        # `$m[$a == $b]` stays an index. A slice
+                                        # is a fresh value-semantic copy (never a
+                                        # view); read-only (`$xs[a..b] = ...` is a
+                                        # parse error).
 
 # Atom is where the parser's peek-based disambiguation lives; here it is
 # ordered choice over alternatives that share prefixes. IdentExpr and

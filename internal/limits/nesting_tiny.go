@@ -26,3 +26,12 @@ const MaxNestingDepth = 64
 // deliberately lower than MaxNestingDepth: call frames cost more stack than the
 // single deep expression chain the nesting cap governs.
 const MaxCallDepth = 48
+
+// MaxRangeElements caps range-literal materialisation for jennifer-tiny, whose
+// heap is far smaller than the default binary's. It turns the same otherwise
+// uncatchable "makeslice: cap out of range" panic (or an oversized allocation)
+// on `0..n` into a positioned, catchable error. 1<<20 (~1M ints) stays modest
+// on a constrained target while covering any realistic materialised range;
+// larger spans should use the lazy `for (def i in 0..n)` form, which allocates
+// nothing. See the std-build note for the full rationale.
+const MaxRangeElements = 1 << 20

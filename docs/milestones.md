@@ -1999,21 +1999,88 @@ still materializes the whole body in memory) are follow-ons. Pinned by
 `internal/lib/binary` + `internal/lib/net` tests; the reworked overlays stay
 green (behaviour-preserving).
 
-### M21.11 - read-only slice views
+### M21.11 - range syntax (`..`)
 
-**Planned.** A slice expression - `$xs[a..b]` (final syntax settled at
-implementation) - that yields a **non-owning, read-only window** over a list,
-`bytes`, or string instead of copying the range: reads pass through to the
-backing value, and an assignment through a view is a positioned error. It saves
-the copy `lists.slice($xs, a, b)` makes today on the read path and reads as a
-slice literal rather than a call - without exposing shared mutable state, since
-the view is read-only by construction (consistent with the value-semantics
-stance; the mutable-reference variants stay rejected in
-[technical/rejected.md](technical/rejected.md#references-interior-mutability-shared-mutable-state)).
-A language-surface addition, so it needs a grammar slot and the no-aliasing story
-spelled out (the EBNF in `docs/technical/` updates in the same change).
-Independent of M21.10 / M21.12. Sequenced before M21.12 so the interpreter's
-memory work lands against a settled language surface.
+**Done.** A half-open range operator `..`, used consistently everywhere a
+range shows up so it means one thing:
+
+- **List construction:** `def r as list of int init 0..n;` - a `list of int`
+  over `[0, n)`, the literal form of `lists.range` (which stays for the
+  programmatic case).
+- **Iteration:** `for (def i in 0..n) { ... }` - iterates `i` over `[0, n)`.
+- **Slicing:** `$xs[a..b]` - a fresh sub-collection over `[a, b)` for a list,
+  `bytes`, or string (rune-indexed), plus the open forms `$xs[a..]` (to the
+  end), `$xs[..b]` (from the start), `$xs[..]` (whole).
+
+**Materializing, value-semantic, no views.** A range yields a value-semantic
+result: `a..b` as a value is a fresh `list of int`, and `$xs[a..b]` a fresh copy
+of the sub-range (Python's `xs[1:5]` shape, not a Go slice). Because the result
+is a copy, a later `$xs[i] = v` cannot be observed through it - **no aliasing, no
+copy-on-write, no view-lifetime tracking**. This is the deliberate reframing away
+from an earlier "read-only slice view": a non-owning window sharing the backing
+would observe in-place mutations of that backing (read aliasing), which breaks
+the local-reasoning guarantee value semantics exists for. The zero-copy
+optimization decouples out - it can only ever be an *invisible* internal
+optimization, adjacent to the COW that stays rejected in
+[technical/rejected.md](technical/rejected.md), and is out of scope here.
+Slicing is read-only: `$xs[a..b] = ...` (slice assignment) is not supported.
+
+**Semantics.** Half-open `[lo, hi)` (consistent with `lists.range` and slice
+bounds); `int` endpoints only; `lo <= hi` required (`lo == hi` empty, `lo > hi`
+a positioned error); slice indices must lie in `[0, len]` (strict, like
+`binary.slice`); open ends default to `0` / `len` and are legal only in a slice
+(a bare `a..` / `..b` has no length to bound it). `..` is non-associative (no
+`a..b..c`) and binds looser than the arithmetic operators, so `a+1..b*2` parses
+as `(a+1)..(b*2)`.
+
+**Implementation.**
+- **Lexer:** a `TOKEN_DOTDOT` (`..`). After a number, `.` followed by `.` ends
+  the number and emits `..` (so `1..5` lexes `INT(1) .. INT(5)`, distinct from
+  the float `1.5`); `.` followed by a digit stays a float. See
+  [lexer.md](docs/technical/lexer.md).
+- **Grammar / AST:** a `RangeExpr{ Lo Expr, Hi Expr }` (either side nil for the
+  open slice forms). The postfix index-suffix accepts a range (`'[' range ']'`)
+  to form a slice alongside the existing single-index `'[' expr ']'`; a
+  standalone range enters the expression grammar at a new low-precedence level
+  above additive. The EBNF in `docs/technical/grammar_ebnf.md` (and the PEG)
+  update in the same change (grammar stays in sync).
+- **Interpreter:** three consumers. `execForEach` recognises a range source and
+  iterates `[lo, hi)` **without materialising** the list; the index-slice path
+  builds a fresh sub-list / `bytes` / substring; every other evaluation of a
+  `RangeExpr` materialises the `list of int`. So `for (def i in 0..1_000_000)`
+  never allocates the million-element list and `$xs[a..b]` copies only the
+  sub-range - only an explicitly *stored* range allocates.
+- **Types:** `$xs[a..b]` returns the collection's own type (`list of T` /
+  `bytes` / `string`); a bare `a..b` is `list of int`.
+
+Discipline: parser tests (the three contexts, open ends, precedence, the `1..5`
+vs `1.5` lex case, `lo > hi` / out-of-range / slice-assignment errors),
+interpreter tests (materialised list, lazy iteration, each sliceable type), an
+`examples/*.j` showing the syntax, and the grammar EBNF/PEG updated in the same
+change. Independent of M21.10 / M21.12; sequenced before M21.12 so the
+interpreter's memory work lands against a settled language surface.
+
+**Shipped as specified.** `TOKEN_DOTDOT` in the lexer (number scan already
+requires a digit after `.`, so `1..5` needs no special case); `RangeExpr{Lo,
+Hi}` and `SliceExpr{Target, Lo, Hi}` (open ends are nil endpoints) in the AST;
+`parseRange` at the top of the expression grammar (calls `parseOr`,
+non-associative) and a shared `parseBracketSuffix` that produces an `IndexExpr`
+or `SliceExpr` at both postfix and l-value sites, with slice-assignment rejected
+as a parse error. Bracket endpoints parse at `parseOr` (not `parseRange`) so a
+bool-keyed comparison index `$m[$a == $b]` stays an index. The interpreter's
+`execForEachRange` iterates without materialising; `evalRange` /
+`evalSlice` build fresh value-semantic copies (list preserves element type,
+strings slice by rune). `jennifer fmt` emits `..` tight (`1..5`); `jennifer ast`
+renders both nodes. Example: `examples/ranges.j`.
+
+Materialisation is bounded by `limits.MaxRangeElements` (build-tag split, like
+`MaxCallDepth`): `0..n` as a value guards its element count - catching an int64
+span overflow (`hi - lo` wrapping negative) as well as a merely-huge bound - and
+raises a positioned, **catchable** error pointing at the lazy `for` form,
+instead of the uncatchable `makeslice: cap out of range` Go panic (or a multi-GB
+allocation) an unbounded `make` would hit. The lazy for-each form allocates
+nothing and stays unbounded. `evalSlice` needs no such guard: a slice is always
+bounded by the already-allocated source length.
 
 ### M21.12 - per-frame arena allocation
 
@@ -2024,7 +2091,7 @@ each call churn fresh heap allocations, cutting GC pressure on allocation-heavy
 programs (the `--allocs` profiler plus M21.10.1's harness measure it). No
 user-visible change - value semantics and the tagged-union `Value` are untouched;
 this is about how the evaluator allocates, not what a program can observe. Best
-landed once the language surface has settled (after M21.11's slice views) so the
+landed once the language surface has settled (after M21.11's range syntax) so the
 interpreter does not churn under it, and measured on the reference machine. It is
 **not** copy-on-write for compound Values: that was tried (shared-marker COW,
 reverted as inert) and its write-through variant is rejected for reintroducing

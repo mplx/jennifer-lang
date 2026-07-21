@@ -1,0 +1,7 @@
+range 1..6: 1 2 3 4 5
+sum 0..10: 45
+xs[1..4]: 20 30 40
+open ends: 3 3 5
+after mid[0]=99: xs[1]=20 mid[0]=99
+s[0..5]=hello s[6..]=world
+bytes b[2..5] len=3 first=99
