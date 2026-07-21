@@ -742,3 +742,47 @@ Correspondingly:
 The review's one sound architectural point - that the security model should be
 *stated* - is adopted: M21.7 adds a `SECURITY.md` / security-model doc making the
 "scripts have full host access; sandbox untrusted ones" contract explicit.
+
+## A `modsupport` / `modulecompanion` catch-all library (M21.10)
+
+Considered while planning M21.10 (byte-oriented throughput): a single Go system
+library - working names `modsupport` / `modulecompanion` - that would house the
+performance-critical inner routines pulled out of various `.j` modules (mime
+boundary scanning, http body accumulation, redis / imap framing, ...), even the
+module-specific ones, so a slow `.j` hot loop could be replaced by one Go call in
+a shared home.
+
+Rejected because:
+
+- **It is organized by the wrong axis.** The stdlib is topic-based (I/O to
+  `io` / `fs` / `net`, byte / number / string transforms to
+  `binary` / `math` / `strings`, ...). A "perf helpers for modules" library is
+  organized by *who calls it* and *why*, not by topic - the classic `util` /
+  `common` grab-bag that every mature codebase regrets, accreting unrelated
+  functions with no coherent mental model.
+- **The premise is mostly false.** The slow routines are rarely module-specific:
+  mime scanning, http accumulation, and redis / imap framing all reduce to a
+  small set of *general* byte primitives (`readAll` / `concat` / `slice` /
+  `find`) that belong in a topic library (`binary`) and serve every module plus
+  user code. That is M21.10.2, and it is the correct granularity.
+- **It leaks module internals into the global public surface.** A
+  `modsupport.mimeScanBoundary` builtin would appear in the cheatsheet and be
+  callable by any program, yet mean anything only inside mime - an implementation
+  detail published as API.
+- **It unions dependencies and TinyGo build cost.** One library housing many
+  modules' helpers pulls in the union of their Go dependencies; a program using
+  only mime would compile redis's helpers too, unless the grab-bag is itself
+  build-tag-split (complexity stacked on complexity). Topic libraries keep
+  dependencies localized.
+- **It invites speculative accretion.** "This might be slow, put it in
+  `modsupport`" is exactly the unmeasured optimization the M21.10.1 benchmark
+  exists to prevent.
+
+The chosen rule: a hot `.j` routine that needs Go goes to a **topic library** as
+a general primitive (`binary` for `concat` / `slice` / `find` / `readAll`,
+`encoding` for codecs); a module whose *core* is inherently Go work is **promoted
+to a Go library** (the `json` / `toml` / `xml` / `yaml` precedent - "a char
+parser belongs in Go"); a genuinely module-specific, irreducible, *measured* hot
+path folds into the nearest topic library or ships as a build-tag-split helper
+co-located with that concern - never a global grab-bag. Only routines that
+measure hot in M21.10.1 move.

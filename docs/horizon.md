@@ -365,30 +365,8 @@ paired with the M19.8 org move and triggered by the first external contribution,
 but no code prerequisite. Not legal advice - the chosen model should get a real
 legal review before it is published.
 
-### Interpreter throughput ceiling - graduated to M21.10
+### DRAFT#16 - Multiplatform
 
-The tree-walker's per-operation overhead (the throughput ceiling that caps
-byte-oriented `.j`: `mime` scanning ~8 s/MiB, `http.readToEOF` ~1 min/64 MiB)
-graduated to `milestones.md` **M21.10**, scoped into measured sub-milestones - a
-throughput benchmark harness, a bulk `bytes` primitive, pushing one hot
-byte-crunching path into Go, and (the large lever, allowed to defer past 1.0.0) a
-bytecode execution model. The push-to-Go direction composes with `DRAFT#9`
-`asn1`; the compiled core relates to `DRAFT#1` embedding.
-
-## Loose ideas
-
-A grab-bag, recorded when it comes up.
-
-- **`label`: embed a bitmap image in the job.** Today `label.image` references
-  an image already stored on the printer (by name). The heavier alternative is
-  to embed the bitmap in the rendered job so a logo travels with the label and
-  needs no pre-loading: convert a source image (PNG / mono bitmap) to each
-  dialect's raster - cab embedded-ASCII image data, ZPL `^GF` graphic field -
-  which needs image decoding plus 1-bit dithering / thresholding. That is a real
-  raster-conversion capability (a Go-side helper or an `image` library), not the
-  pure-text `.j` the rest of the module is, so it is a separate piece of work
-  rather than another encoder branch. Until then, `label.image` (by reference)
-  covers the stored-logo case.
 - **Extra distribution packaging.** Beyond the Linux `.deb` (shipped in
   M15.8) and the two distribution *requirements* for 1.0.0 stable
   (cross-build for macOS / Windows, a real apt repository), the additional
@@ -406,6 +384,54 @@ A grab-bag, recorded when it comes up.
   portable stdlib helpers (`path/filepath`, not hardcoded `/`); avoid
   Linux-only assumptions so those binaries stay genuinely portable, not just
   compile-clean.
+
+### DRAFT#17 - Bytecode execution model
+
+The tree-walker re-walks the AST and re-resolves shapes on every pass through a
+hot loop; that per-operation dispatch + Value-copy overhead is the throughput
+ceiling for CPU-bound `.j`. Compile the resolved AST to a linear **bytecode** (or
+a register form) executed by a tight dispatch loop - a new pipeline stage between
+resolve and run - so a loop body is decoded once and then dispatched without
+re-walking the tree. This is the big structural lever, and the big effort.
+
+- **Same semantics, same discipline.** Value semantics and the tagged-union
+  `Value` stay exactly as they are; only how operations are sequenced and
+  dispatched changes. Held to the same TinyGo-clean, reflect-free rule as the
+  current evaluator, and to strict behaviour parity: the `spawn` snapshot,
+  `defer` order, positioned errors, and the call-depth guard must all survive the
+  rewrite, with the existing test suite as the conformance oracle.
+- **Sequenced after the cheap win.** `M21.10`'s bulk-byte primitives take byte
+  accumulation / scanning off the interpreted path first; what remains for a VM
+  is the residual CPU-bound `.j` (recursion, business-logic loops) no Go
+  primitive covers. Pursued only when `M21.10`'s benchmark shows that residual is
+  a real workload's bottleneck - not on spec.
+- **Composes with M21.11's arena.** The per-frame arena allocator (`M21.11`) is
+  an independent memory-side optimization that pairs naturally here, since a
+  bytecode VM restructures allocation anyway - but neither depends on the other.
+
+Copy-on-write for compound Values is **not** part of this: it was tried
+(shared-marker COW, reverted as inert) and the write-through variant is rejected
+for reintroducing shared mutable state - see
+[technical/rejected.md](technical/rejected.md).
+
+**Requires:** `M21.10` (its throughput benchmark, to justify the effort and
+measure parity + speedup). Relates to `DRAFT#1` - a compiled core is an easier
+stable embedding surface than a tree-walker.
+
+## Loose ideas
+
+A grab-bag, recorded when it comes up.
+
+- **`label`: embed a bitmap image in the job.** Today `label.image` references
+  an image already stored on the printer (by name). The heavier alternative is
+  to embed the bitmap in the rendered job so a logo travels with the label and
+  needs no pre-loading: convert a source image (PNG / mono bitmap) to each
+  dialect's raster - cab embedded-ASCII image data, ZPL `^GF` graphic field -
+  which needs image decoding plus 1-bit dithering / thresholding. That is a real
+  raster-conversion capability (a Go-side helper or an `image` library), not the
+  pure-text `.j` the rest of the module is, so it is a separate piece of work
+  rather than another encoder branch. Until then, `label.image` (by reference)
+  covers the stored-logo case.
 - **`time`: IANA / DST zones.** Real zone names (`Europe/Berlin`) with
   historically-correct daylight-saving resolution, added to the `time`
   **system library** - not a hand-maintained `.j` data map. A `.j` map is
@@ -551,14 +577,4 @@ A grab-bag, recorded when it comes up.
   surface for the spawn scheduler, not new language features. Ships when a
   real use case forces it (the default - "let Go's scheduler decide" -
   handles every workload we've imagined so far).
-- **Performance & memory.** Interpreter-internal optimizations that preserve
-  stance #5 (value semantics) at the user level: copy-on-write for lists /
-  maps / bytes / structs (share underlying storage until a write splits it),
-  per-frame arena allocation, and read-only slice views (`xs[1..5]` as a
-  non-owning window that errors on assignment). Strictly optimizations - no
-  user-visible aliasing or mutation rules change. Stance-breaking variants
-  (mutable references, interior mutability, shared mutable state) are turned
-  down in
-  [technical/rejected.md](technical/rejected.md#references-interior-mutability-shared-mutable-state).
-  Best landed once the language is settled and the interpreter doesn't churn
-  under it.
+

@@ -1974,59 +1974,83 @@ stream fails catchably; `http` / `websocket` already had it); **`amqp`** gained
 `SecureString` type, and treating `fs` / `net` / `os` / `meta` host access as
 vulnerabilities.
 
-### M21.10 - interpreter throughput ceiling
+### M21.10 - byte-oriented throughput (bulk-byte primitives)
 
-**Planned.** The tree-walker's per-operation overhead is the current throughput
-ceiling: it shows up wherever a `.j` program touches data byte by byte, because
-every byte advances a cursor through several interpreted expression evaluations
-(index read, compare, append, loop step), each paying the evaluator's dispatch
-and Value-copy cost. Measured on the reference machine: `mime` part scanning runs
-on the order of **8 s / MiB**, and `http`'s `readToEOF` (which appends one byte
-at a time) on the order of **a minute / 64 MiB**. That is invisible at the
-kilobyte-to-low-megabyte scale these modules target, but it puts megabyte-scale
-byte processing (a lifted `http` body cap, a `bucket.get` of a large object, bulk
-transcoding) out of reach in pure Jennifer. The peephole passes already shipped
-(slot resolution, frame pooling, namespaced-call / comparison fast paths,
-constant folding, the map hash index) took the easy wins; the next gain needs a
-structural step. Graduated from the horizon draft (throughput ceiling); scoped
-here into measured, cheap-wins-first sub-milestones, with the big execution-model
-rewrite gated behind the benchmark and allowed to defer past 1.0.0 if it does not
-fit.
+**Planned.** The tree-walker's per-byte cost caps byte-oriented `.j`:
+`http.readToEOF` accumulates a body one byte at a time (~1 min / 64 MiB on a
+small virtual machine) and `mime` scans for boundaries byte by byte (~8 s / MiB).
+Everything else on the per-byte path is already in Go - the `encoding` codecs
+(hex / base64 / base32 / quoted-printable) and the `json` / `toml` / `xml` /
+`yaml` parsers - and the peephole passes (slot resolution, frame pooling, call /
+comparison fast paths, constant folding, the map hash index) already took the
+micro-optimization wins. So the remaining interpreted per-byte work is two
+shapes, both closed by a small set of Go-backed bulk operations: byte
+**accumulation** (the `http` body and the `redis` / `pop` / `imap` / `mqtt` read
+loops) and byte **scanning** (`mime` boundaries). This milestone is that
+concrete, shippable throughput win; the general execution-speed lever for
+CPU-bound `.j` that is *not* byte-crunching is the separate `DRAFT#17` bytecode
+model.
 
-- **M21.10.1 - throughput benchmark harness (prerequisite).** A repeatable,
-  honest throughput benchmark so every later change is measured, not guessed: a
-  `mime`-part byte-scan fixture plus a raw byte-append microbench, with recorded
-  baseline numbers. Reference-machine only (per the benchmarking policy - no
-  cross-machine numbers). This lands first; nothing below ships without a
-  before/after delta against it.
-- **M21.10.2 - bulk `bytes` primitive.** The cheap, targeted fix for body
-  assembly: a whole-buffer append / concat (and a read-all on `net` / `fs` that
-  returns one `bytes`) so the inner copy runs once in Go instead of once per
-  interpreted byte. Rework `http.readToEOF` (and any other one-byte-at-a-time
-  accumulation surfaced by M21.10.1) onto it. TinyGo-clean, both binaries.
-  Deliverable: the primitive(s) + the reworked call sites + the benchmark delta.
-- **M21.10.3 - push one hot byte-crunching path into Go.** Move a workload that
-  is inherently per-byte (MIME / quoted-printable scanning, or base-N transcode)
-  into a Go system helper that does the inner loop at native speed and hands `.j`
-  the structured result - the same reasoning already applied to `json` / `toml`
-  (a char parser belongs in Go) and planned for `DRAFT#9` `asn1`. One concrete
-  path, chosen from M21.10.1's hot list, not a blanket rewrite; it narrows
-  *which* workloads still need the faster execution model.
-- **M21.10.4 - bytecode execution model (large; may defer past 1.0.0).** Compile
-  the resolved AST to a linear bytecode (or a register form) run by a tight
-  dispatch loop - a new pipeline stage between resolve and run - instead of
-  re-walking the tree and re-resolving shapes on every pass through a hot loop.
-  This is the big lever and the big effort. Held to the same TinyGo-clean,
-  reflect-free discipline as the current evaluator: value semantics and the
-  tagged-union `Value` stay; only how operations are sequenced and dispatched
-  changes. Justified only by an M21.10.1 measurement that shows the cheaper steps
-  did not close the gap for a real workload; if it cannot land cleanly before
-  1.0.0 it splits back out to `horizon.md` as its own draft. Relates to `DRAFT#1`
-  (a compiled core is an easier stable embedding surface than a tree-walker).
+- **M21.10.1 - throughput benchmark harness (prerequisite).** Formalize the
+  existing `examples/benchmark.j` suite (fib / primes / newton / monte-carlo /
+  list-copy / struct-list / string-join / map-churn) into a repeatable harness
+  and add the missing byte fixtures: a `mime`-part boundary scan and a
+  **large-object `bucket.get` download** - the concrete S3 case, whose body flows
+  straight through `http.readToEOF`'s per-byte accumulation loop, so it isolates
+  the read-all win from everything else (and confirms `M21.11` / `M21.12` flatline
+  on it, i.e. they are not S3-throughput work). Baselines recorded on the
+  reference machine (no cross-machine numbers, per the benchmarking policy). Lands
+  first; nothing below merges without a before/after delta against it.
+- **M21.10.2 - bulk-byte primitives + module rework.** A read-all-to-`bytes` (so
+  `http.readToEOF` and a lifted body cap become one Go call, not a per-byte loop)
+  plus byte `concat` / `slice` / `find` (so `mime` scans boundaries and the read
+  loops accumulate in Go) - the concrete "push byte-crunching into Go" for this
+  class, the same reasoning applied to `json` / `toml`. Home is an implementation
+  decision (a small letters-only library such as `binary`, or targeted builtins;
+  `bytes` itself is a reserved type keyword, so it cannot be a namespace). Rework
+  `http`, `mime`, and the M21.9 read loops onto them, each reworked path showing
+  its M21.10.1 delta. TinyGo-clean, both binaries.
+
+Size ceiling (follow-on, out of scope here): read-all buys Go *speed* but still
+materializes the whole object in memory (`http.Response.body` is one string), so
+a genuinely large (multi-GiB) `bucket.get` additionally needs a **streaming body
+API** - successive `.j` chunks, or a read-straight-to-`fs`-file path - a
+separate, larger design that gives unbounded *size* where read-all gives speed.
 
 Discipline: every step measured against M21.10.1's baseline on the reference
-machine; both toolchains stay green; a per-byte primitive that lands in Go keeps
+machine; both toolchains stay green; the per-byte inner loops land in Go, keeping
 the language TinyGo-clean.
+
+### M21.11 - per-frame arena allocation
+
+**Planned.** A strictly-internal interpreter memory optimization extending
+today's `Environment` frame pool (`borrowBlockEnv` / `releaseBlockEnv`): recycle
+a frame's slot / binding storage through a per-frame arena instead of letting
+each call churn fresh heap allocations, cutting GC pressure on allocation-heavy
+programs (the `--allocs` profiler plus M21.10.1's harness measure it). No
+user-visible change - value semantics and the tagged-union `Value` are untouched;
+this is about how the evaluator allocates, not what a program can observe. Best
+landed once the language surface has settled so the interpreter does not churn
+under it. It is **not** copy-on-write for compound Values: that was tried
+(shared-marker COW, reverted as inert) and its write-through variant is rejected
+for reintroducing shared mutable state (see
+[technical/rejected.md](technical/rejected.md)). Composes with the `DRAFT#17`
+bytecode model (which restructures allocation anyway) but does not depend on it.
+
+### M21.12 - read-only slice views
+
+**Planned.** A slice expression - `$xs[a..b]` (final syntax settled at
+implementation) - that yields a **non-owning, read-only window** over a list,
+`bytes`, or string instead of copying the range: reads pass through to the
+backing value, and an assignment through a view is a positioned error. It saves
+the copy `lists.slice($xs, a, b)` makes today on the read path and reads as a
+slice literal rather than a call - without exposing shared mutable state, since
+the view is read-only by construction (consistent with the value-semantics
+stance; the mutable-reference variants stay rejected in
+[technical/rejected.md](technical/rejected.md#references-interior-mutability-shared-mutable-state)).
+A language-surface addition, so it needs a grammar slot and the no-aliasing story
+spelled out (the EBNF in `docs/technical/` updates in the same change).
+Independent of M21.10 / M21.11.
 
 ---
 
