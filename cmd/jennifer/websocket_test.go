@@ -169,6 +169,83 @@ func serveWSFragmentedWithPong(ln net.Listener) {
 	}
 }
 
+// serveWSOversized does the handshake, then sends a single frame header that
+// *declares* a 2^40-byte payload (opcode 127 + an 8-byte length) without sending
+// it - the DoS vector guarded here. A correct client must reject the declared
+// length before it tries to allocate / read it.
+func serveWSOversized(ln net.Listener) {
+	conn, err := ln.Accept()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	r := bufio.NewReader(conn)
+	var key string
+	for {
+		line, err := r.ReadString('\n')
+		if err != nil {
+			return
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			break
+		}
+		if strings.HasPrefix(strings.ToLower(line), "sec-websocket-key:") {
+			key = strings.TrimSpace(line[len("sec-websocket-key:"):])
+		}
+	}
+	fmt.Fprint(conn, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"+
+		"Connection: Upgrade\r\nSec-WebSocket-Accept: "+wsAccept(key)+"\r\n\r\n")
+	if _, _, err := readClientFrame(r); err != nil {
+		return
+	}
+	// A binary frame (FIN=1, opcode=2) declaring 2^40 bytes via the 64-bit
+	// length form - no payload follows.
+	hdr := []byte{0x82, 127, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00}
+	conn.Write(hdr)
+	for {
+		if _, _, err := readClientFrame(r); err != nil {
+			return
+		}
+	}
+}
+
+// TestWebsocketOversizedFrameRejected proves a peer declaring an enormous frame
+// length is refused with a catchable error, not an OOM allocation.
+func TestWebsocketOversizedFrameRejected(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go serveWSOversized(ln)
+
+	wsMod, err := filepath.Abs(filepath.Join("..", "..", "modules", "websocket.j"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "ws://" + ln.Addr().String() + "/"
+	dir := t.TempDir()
+	prog := fmt.Sprintf(`use testing;
+import %q as websocket;
+def ws as websocket.Conn init websocket.connect(%q);
+websocket.send($ws, "go");
+def rejected as bool init false;
+try {
+    websocket.receive($ws);
+} catch (e) {
+    $rejected = true;
+}
+testing.assertTrue($rejected);`, wsMod, url)
+	progPath := filepath.Join(dir, "ws.j")
+	if err := os.WriteFile(progPath, []byte(prog), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := loadForTest(progPath); code != testExitPass {
+		t.Fatalf("websocket oversized-frame program failed with code %d", code)
+	}
+}
+
 // TestWebsocketFragmentedWithInterleavedPong proves a PONG arriving between the
 // fragments of a text message does not discard the partial reassembly: the
 // client must still receive the whole "Hello, World".

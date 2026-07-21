@@ -243,3 +243,25 @@ func testCorsRegisters() {
     # Registration is immutable: the original app is unchanged.
     testing.assertFalse(corsEnabled($app));
 }
+
+
+# ---- CRLF injection in cookie Path / Domain ----
+
+func injectCookiePath() {
+    def o as CookieOptions init CookieOptions{path: "/a\r\nSet-Cookie: evil=1", domain: "", maxAge: 0, httpOnly: false, secure: false, sameSite: ""};
+    formatSetCookie("sid", "abc", $o);
+}
+func injectCookieDomain() {
+    def o as CookieOptions init CookieOptions{path: "", domain: "x\r\nSet-Cookie: evil=1", maxAge: 0, httpOnly: false, secure: false, sameSite: ""};
+    formatSetCookie("sid", "abc", $o);
+}
+func testCookiePathRejectsCrlf() {
+    testing.assertThrows("injectCookiePath", "web");
+}
+func testCookieDomainRejectsCrlf() {
+    testing.assertThrows("injectCookieDomain", "web");
+}
+func testCleanCookieAccepted() {
+    def o as CookieOptions init CookieOptions{path: "/", domain: "example.com", maxAge: 0, httpOnly: true, secure: true, sameSite: "Lax"};
+    testing.assertContains(formatSetCookie("sid", "abc", $o), "Path=/; Domain=example.com");
+}

@@ -86,3 +86,16 @@ func testMakeKeyLength() {
     testing.assertEqual(len($key), 24);
     testing.assertTrue(strings.endsWith($key, "=="));
 }
+
+
+# ---- CRLF injection in the handshake URL ----
+
+func injectUrl() { parseUrl("ws://example.com/path\r\nX-Injected: 1"); }
+func testUrlRejectsCrlf() {
+    testing.assertThrows("injectUrl", "websocket");
+}
+func testCleanUrlParsed() {
+    def t as Target init parseUrl("ws://example.com/chat");
+    testing.assertEqual($t.host, "example.com");
+    testing.assertEqual($t.path, "/chat");
+}

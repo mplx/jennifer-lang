@@ -35,6 +35,12 @@ def const HANDSHAKE_TIMEOUT_MS as int init 10000;
 # Default per-receive read timeout in milliseconds.
 def const DEFAULT_TIMEOUT_MS as int init 30000;
 
+# MAX_MESSAGE_BYTES caps a received message. A malicious peer can declare a
+# 64-bit frame length (opcode 127) or stream unbounded continuation fragments
+# (fin = 0); without a cap either drives the interpreter to OOM. A frame or a
+# reassembled message larger than this is refused (a 1009 close where possible).
+def const MAX_MESSAGE_BYTES as int init 67108864;
+
 # Frame opcodes.
 def const OP_CONT as int init 0;
 def const OP_TEXT as int init 1;
@@ -130,6 +136,12 @@ func randomBytes(n as int) {
 
 # parseUrl splits a ws:// or wss:// URL into a Target.
 func parseUrl(url as string) {
+    # The host and path are written verbatim into the GET / Host lines of the
+    # upgrade request, so a CR / LF / NUL in the URL would smuggle arbitrary HTTP
+    # headers (request splitting) into the handshake.
+    if (strings.contains($url, "\r") or strings.contains($url, "\n") or strings.contains($url, "\0")) {
+        fail("URL contains a control character (CR/LF/NUL)");
+    }
     def secure as bool init false;
     def rest as string init $url;
     if (strings.startsWith($url, "wss://")) {
@@ -311,6 +323,9 @@ func readFrame(socket as net.Conn) {
     if ($masked == 1) {
         $mkey = readN($socket, 4);
     }
+    if ($n > MAX_MESSAGE_BYTES) {
+        throw Error{kind: "websocket", message: "websocket: frame declares " + convert.toString($n) + " bytes, over the " + convert.toString(MAX_MESSAGE_BYTES) + "-byte limit", file: "", line: 0, col: 0};
+    }
     def payload as bytes;
     if ($n > 0) {
         $payload = readN($socket, $n);
@@ -444,6 +459,15 @@ export func receive(c as Conn) {
             while ($bi < len($f.payload)) {
                 $acc[] = $f.payload[$bi];
                 $bi = $bi + 1;
+            }
+            if (len($acc) > MAX_MESSAGE_BYTES) {
+                # Refuse the oversized message: send a 1009 (message too big)
+                # close and abort, rather than growing memory unbounded.
+                def code as bytes;
+                $code[] = 3;
+                $code[] = 241;
+                net.writeBytes($c.socket, encodeFrame(OP_CLOSE, $code));
+                throw Error{kind: "websocket", message: "websocket: reassembled message exceeds the " + convert.toString(MAX_MESSAGE_BYTES) + "-byte limit", file: "", line: 0, col: 0};
             }
             if ($f.fin == 1) {
                 $done = true;

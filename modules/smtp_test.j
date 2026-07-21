@@ -68,3 +68,19 @@ func testClientNameDefault() {
         clientName: "me.example", user: "", pass: "", auth: ""};
     testing.assertEqual(clientName($named), "me.example");
 }
+
+
+# ---- CRLF / control-character injection in addresses + EHLO name ----
+
+func injectAddress() { asciiEnvelope("alice@example.com\r\nRCPT TO:<evil@x>"); }
+func injectHelper() { rejectControl("host\r\nDATA", "test"); }
+
+func testEnvelopeRejectsCrlf() {
+    testing.assertThrows("injectAddress", "smtp");
+}
+func testRejectControlHelper() {
+    testing.assertThrows("injectHelper", "smtp");
+}
+func testCleanEnvelopeAccepted() {
+    testing.assertEqual(asciiEnvelope("alice@example.com"), "alice@example.com");
+}

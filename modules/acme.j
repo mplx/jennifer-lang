@@ -108,9 +108,46 @@ func encodeSeg(b as bytes) {
     return strings.replace(encoding.toText($b, "base64-url"), "=", "");
 }
 # jsonEsc escapes a string for embedding in a hand-built JSON literal.
+# hexQuad renders n as four lowercase hex digits (for a \uXXXX JSON escape).
+func hexQuad(n as int) {
+    def digits as string init "0123456789abcdef";
+    def out as string init "";
+    for (def shift as int init 12; $shift >= 0; $shift = $shift - 4) {
+        def nibble as int init ($n >> $shift) & 15;
+        $out = $out + strings.substring($digits, $nibble, $nibble + 1);
+    }
+    return $out;
+}
+
+# jsonEsc escapes a string for embedding in a hand-built JSON literal, per
+# RFC 8259: the two structural characters plus every control character
+# (< 0x20), which are otherwise invalid in a JSON string and could break the
+# JWS protected-header JSON (e.g. a hostile CA nonce carrying a quote or newline).
 func jsonEsc(s as string) {
-    def out as string init strings.replace($s, "\\", "\\\\");
-    return strings.replace($out, "\"", "\\\"");
+    def out as string init "";
+    for (def c in strings.chars($s)) {
+        def cp as int init convert.toCodepoint($c);
+        if ($c == "\\") {
+            $out = $out + "\\\\";
+        } elseif ($c == "\"") {
+            $out = $out + "\\\"";
+        } elseif ($cp == 10) {
+            $out = $out + "\\n";
+        } elseif ($cp == 13) {
+            $out = $out + "\\r";
+        } elseif ($cp == 9) {
+            $out = $out + "\\t";
+        } elseif ($cp == 8) {
+            $out = $out + "\\b";
+        } elseif ($cp == 12) {
+            $out = $out + "\\f";
+        } elseif ($cp < 32) {
+            $out = $out + "\\u" + hexQuad($cp);
+        } else {
+            $out = $out + $c;
+        }
+    }
+    return $out;
 }
 
 # ---- JWS request signing ----
@@ -122,7 +159,28 @@ func fetchNonce(client as Client) {
     if (len($nonce) == 0) {
         throw Error{kind: "acme", message: "acme: no Replay-Nonce from " + $client.newNonce, file: "", line: 0, col: 0};
     }
+    # RFC 8555 nonces are base64url tokens. Reject anything else outright, so a
+    # hostile or buggy CA cannot feed a crafted value toward the JWS header (the
+    # header also JSON-escapes it - defence in depth).
+    if (not isNonceSafe($nonce)) {
+        throw Error{kind: "acme", message: "acme: malformed Replay-Nonce (not base64url)", file: "", line: 0, col: 0};
+    }
     return $nonce;
+}
+
+# isNonceSafe reports whether every character of s is in the base64url alphabet
+# (A-Z a-z 0-9 - _), i.e. the shape of an ACME nonce / JOSE token.
+func isNonceSafe(s as string) {
+    if (len($s) == 0) {
+        return false;
+    }
+    def alphabet as string init "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    for (def c in strings.chars($s)) {
+        if (strings.indexOf($alphabet, $c) < 0) {
+            return false;
+        }
+    }
+    return true;
 }
 
 # algHash maps a JOSE alg to the digest its signature uses. The suffix is the
@@ -149,7 +207,7 @@ func signInput(client as Client, input as bytes) {
 # otherwise the account `kid` is used. Returns the http.Response.
 func jws(client as Client, url as string, payload as string, useJwk as bool) {
     def nonce as string init fetchNonce($client);
-    def protected as string init "{\"alg\":\"" + $client.alg + "\",\"nonce\":\"" + $nonce +
+    def protected as string init "{\"alg\":\"" + $client.alg + "\",\"nonce\":\"" + jsonEsc($nonce) +
         "\",\"url\":\"" + jsonEsc($url) + "\"";
     if ($useJwk) {
         $protected = $protected + ",\"jwk\":" + crypto.jwkPublic($client.accountKey);

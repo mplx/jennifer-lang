@@ -1910,48 +1910,27 @@ lookups), `docs/modules/font.md`, a catalog row, a `SUMMARY.md` entry, a
 
 ### M21.7 - module injection + DoS hardening
 
-A security-review pass over the network / protocol `.j` modules, fixing the
-genuine injection and denial-of-service bugs - the cases where **user-controlled
-data reaches a protocol wire without sanitization**. These are real defects even
-under Jennifer's trusted-script model, because a program that uses a module
-*correctly* (an email form calling `smtp.send`, a route parameter reaching a
-cookie) is exploitable through the data. Distinct from the language's by-design
-host access (a sandboxing concern - see [horizon](horizon.md) DRAFT#11 - not a
-bug). Each fix ships with a regression test.
-
-- **CRLF injection (control-character rejection at the wire boundary).** Several
-  modules concatenate untrusted values into protocol commands, so a `\r\n` in the
-  value injects an arbitrary command / header. The shared fix rejects control
-  characters (`< 0x20`) where the value is placed on the wire:
-  - `smtp`: envelope addresses (`MAIL FROM` / `RCPT TO`) and the EHLO
-    `clientName`. `asciiOnly` today rejects only non-ASCII, and CR / LF are ASCII,
-    so they pass. The flagship case (addresses are commonly user data).
-  - `http`: the request `method` in `buildRequest`. `rejectInjection` covers the
-    URL and headers but not the method.
-  - `websocket`: the URL path / host in `parseUrl`, before the handshake request.
-  - `web`: cookie `Path` / `Domain` in `setCookie`. `rejectCookieInjection` runs
-    on the cookie name and value but not these attributes.
-- **JWT `crit` header (RFC 7515 §4.1.11).** `jwt.verify` checks `alg` but ignores
-  a `crit` (critical-extensions) member; a conformant verifier must reject a
-  token carrying a `crit` it does not understand. Reject any token whose header
-  has a `crit`.
-- **JSON escaping in hand-built JWS.** `acme.jsonEsc` escapes only `\` and `"`;
-  control characters produce invalid JSON (RFC 8259). Complete it (`\uXXXX` for
-  `< 0x20`), and validate the CA-supplied `Replay-Nonce` is base64url before
-  embedding it in the JWS protected header.
-- **WebSocket message-size DoS.** The fragment reassembler appends continuation
-  payloads with no cap, and `readFrame` honours a 64-bit declared length -
-  unbounded memory. Add a configurable maximum message size (~16-64 MiB) and
-  reject an oversized frame with a `1009` close.
-
-Plus the cross-cutting documentation the review surfaced: an explicit
-**security-model** statement (`SECURITY.md` + `docs/technical/security-model.md`)
-that a Jennifer script has full host access **by design** - the stdlib's file /
-network / process surface is a language capability, not a vulnerability - and
-that running *untrusted* scripts wants the planned capability sandbox (DRAFT#11)
-or an OS container. This closes the framing gap that makes "the language can read
-a file" look like a finding. Discipline: overlay + Go regression tests per module
-fix.
+**Done.** Fixed the genuine injection / DoS bugs across the protocol modules,
+each with a regression test. CRLF / control-character rejection at the wire
+boundary: `smtp` (envelope addresses + EHLO `clientName`, via a new
+`rejectControl` - `asciiOnly` passed CR / LF since they are ASCII), `http` (the
+request `method` in `buildRequest`), `websocket` (the handshake URL in
+`parseUrl`), `web` (cookie `Path` / `Domain` in `setCookie`). `jwt.verify` now
+rejects a token carrying an unsupported `crit` header (RFC 7515). `acme`'s
+`jsonEsc` is completed to escape all control characters (`\uXXXX`), the CA
+`Replay-Nonce` is JSON-escaped *and* validated base64url, closing the JWS-header
+injection. `websocket` gained a `MAX_MESSAGE_BYTES` (64 MiB) cap - a frame
+declaring an over-limit 64-bit length is refused before allocation, and an
+over-limit reassembled message sends a `1009` close. Shipped the security-model
+documentation: `SECURITY.md` + `docs/technical/security-model.md` state that a
+Jennifer script has full host access **by design** (the stdlib's file / network /
+process surface is a language capability, not a vulnerability - the in-process
+sandbox for untrusted code is DRAFT#11), define what *does* count as a bug
+(untrusted *data* on a wire), and advise programs facing untrusted input (don't
+echo raw error text, bound inputs, use owner-only secret files). Tests: the six
+module overlays gained CRLF / crit / escaping regressions; a
+`cmd/jennifer/websocket_test.go` case drives an oversized-frame declaration
+against an in-process server and asserts a catchable refusal, not an OOM.
 
 ### M21.8 - interpreter call-depth limit + profiler depth metric
 

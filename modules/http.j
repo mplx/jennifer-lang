@@ -259,6 +259,11 @@ func hasHeaderCI(headers as map of string to string, lname as string) {
 
 func buildRequest(method as string, u as Url, headers as map of string to string, body as string) {
     rejectInjection($u, $headers);
+    # The method goes onto the request line verbatim, so a CR / LF / NUL in it
+    # would smuggle extra headers or a second request just like the target does.
+    if (hasControlChar($method)) {
+        throw Error{kind: "http", message: "request method contains a control character (CR/LF/NUL)", file: "", line: 0, col: 0};
+    }
     def out as string init $method + " " + $u.path + " HTTP/1.1\r\n";
     $out = $out + "Host: " + hostHeader($u) + "\r\n";
     $out = $out + "Connection: close\r\n";

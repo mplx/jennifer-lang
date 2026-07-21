@@ -184,6 +184,12 @@ export func verify(token as string, key as bytes, alg as string) {
     if (not json.has($head, "/alg") or json.asString($head, "/alg") != $alg) {
         throw Error{kind: "value", message: "jwt.verify: token algorithm does not match the expected " + $alg, file: "", line: 0, col: 0};
     }
+    # RFC 7515 4.1.11: a verifier must reject a token carrying a `crit` (critical
+    # header extensions) member it does not understand. This module understands
+    # none, so any `crit` is a refusal - never silently ignore a critical header.
+    if (json.has($head, "/crit")) {
+        throw Error{kind: "value", message: "jwt.verify: token has an unsupported \"crit\" header", file: "", line: 0, col: 0};
+    }
     def signingInput as string init $parts[0] + "." + $parts[1];
     def sig as bytes init decodeSegment($parts[2]);
     if (not checkSig($alg, convert.bytesFromString($signingInput, "utf-8"), $sig, $key)) {

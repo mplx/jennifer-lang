@@ -90,3 +90,21 @@ func testParseOrderReadsFields() {
     testing.assertEqual($o.authorizations[1], "https://ca/authz/2");
     testing.assertEqual($o.certificate, "");        # not issued yet
 }
+
+
+# ---- complete JSON escaping + nonce validation ----
+
+func testJsonEscControlChars() {
+    testing.assertEqual(jsonEsc("line1\nline2"), "line1\\nline2");
+    testing.assertEqual(jsonEsc("t\tab"), "t\\tab");
+    def nul as bytes;
+    $nul[] = 0;
+    testing.assertEqual(jsonEsc(convert.stringFromBytes($nul, "utf-8")), "\\u0000");
+    testing.assertEqual(jsonEsc("plain"), "plain");
+}
+func testIsNonceSafe() {
+    testing.assertTrue(isNonceSafe("abcXYZ012-_"));
+    testing.assertFalse(isNonceSafe("has space"));
+    testing.assertFalse(isNonceSafe("has\rcr"));
+    testing.assertFalse(isNonceSafe(""));
+}

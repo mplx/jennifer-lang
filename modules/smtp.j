@@ -129,6 +129,20 @@ func expect(reply as Reply, lo as int, hi as int, ctx as string) {
     }
 }
 
+# rejectControl throws when `s` carries a control character (codepoint < 0x20, or
+# DEL). CR (0x0D) and LF (0x0A) are ASCII, so `asciiOnly` lets them through - but
+# on the SMTP wire a CR/LF in an address or the EHLO name injects arbitrary
+# commands (a second RCPT TO, a DATA, ...). This is the guard that stops it.
+func rejectControl(s as string, what as string) {
+    for (def c in strings.chars($s)) {
+        def cp as int init convert.toCodepoint($c);
+        if ($cp < 32 or $cp == 127) {
+            throw Error{kind: "smtp", message: $what + " contains a control character (SMTP command injection)", file: "", line: 0, col: 0};
+        }
+    }
+    return;
+}
+
 # asciiOnly returns `s` unchanged when it is ASCII, else throws: a non-ASCII
 # local part (or a bare address with no domain) cannot be sent without SMTPUTF8,
 # which is not yet supported.
@@ -143,6 +157,7 @@ func asciiOnly(s as string, what as string) {
 # asciiEnvelope makes an envelope address wire-safe: the domain is IDNA-encoded
 # to its `xn--` form, the local part must already be ASCII.
 func asciiEnvelope(addr as string) {
+    rejectControl($addr, "envelope address");
     # Split at the LAST '@': a quoted local part may itself contain '@', so
     # splitting at the first one would truncate the local part and mangle the
     # domain.
@@ -195,6 +210,7 @@ func clientName(opts as Options) {
     if (len($opts.clientName) == 0) {
         return "localhost";
     }
+    rejectControl($opts.clientName, "EHLO client name");
     return $opts.clientName;
 }
 

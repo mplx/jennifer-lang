@@ -184,3 +184,15 @@ func verifyPaddedSignature() {
     def tok as string init sign(sampleClaims(), secret(), "HS256");
     verify($tok + "=", secret(), "HS256");
 }
+
+
+# ---- reject a token carrying an unsupported crit header (RFC 7515) ----
+
+func verifyCritToken() {
+    def head as string init encodeSegment(convert.bytesFromString("{\"alg\":\"HS256\",\"typ\":\"JWT\",\"crit\":[\"exp\"]}", "utf-8"));
+    def payload as string init encodeSegment(convert.bytesFromString("{\"sub\":\"x\"}", "utf-8"));
+    verify($head + "." + $payload + ".AAAA", secret(), "HS256");
+}
+func testCritHeaderRejected() {
+    testing.assertThrows("verifyCritToken", "value");
+}

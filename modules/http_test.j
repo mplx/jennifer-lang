@@ -157,3 +157,18 @@ func testRejectsHeaderInjection() {
     testing.assertThrows("injectViaHeaderName", "http");
     testing.assertThrows("injectViaPath", "http");
 }
+
+
+# ---- CRLF injection via the HTTP method ----
+
+func injectMethod() {
+    def u as Url init parseUrl("http://example.com/");
+    buildRequest("GET\r\nX-Injected: 1", $u, {}, "");
+}
+func testMethodRejectsCrlf() {
+    testing.assertThrows("injectMethod", "http");
+}
+func testCleanMethodAccepted() {
+    def u as Url init parseUrl("http://example.com/");
+    testing.assertContains(buildRequest("GET", $u, {}, ""), "GET / HTTP/1.1");
+}

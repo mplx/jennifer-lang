@@ -562,9 +562,11 @@ func formatSetCookie(name as string, value as string, opts as CookieOptions) {
     rejectCookieInjection($value, "value");
     def out as string init $name + "=" + $value;
     if (len($opts.path) > 0) {
+        rejectCookieInjection($opts.path, "path");
         $out = $out + "; Path=" + $opts.path;
     }
     if (len($opts.domain) > 0) {
+        rejectCookieInjection($opts.domain, "domain");
         $out = $out + "; Domain=" + $opts.domain;
     }
     if (not ($opts.maxAge == 0)) {
