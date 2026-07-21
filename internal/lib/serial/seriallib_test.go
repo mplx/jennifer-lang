@@ -67,7 +67,18 @@ func TestSerialPTYLoopback(t *testing.T) {
 	}
 	out, err := runSerial(t, fmt.Sprintf(`use serial; use io; use convert;
 def p as serial.Port init serial.open(%q, 115200);
-def got as bytes init serial.read($p, 5);
+# serial.read is up-to-n (one blocking read syscall), so a fixed-length frame is
+# accumulated in a loop until all 5 bytes arrive - a single read can return a
+# partial chunk when the PTY splits the write (the source of the old flake).
+def got as bytes;
+while (len($got) < 5) {
+    def chunk as bytes init serial.read($p, 5 - len($got));
+    def i as int init 0;
+    while ($i < len($chunk)) {
+        $got[] = $chunk[$i];
+        $i = $i + 1;
+    }
+}
 io.printf("[%%s]", convert.stringFromBytes($got, "utf-8"));
 def n as int init serial.write($p, convert.bytesFromString("PONG", "utf-8"));
 io.printf("wrote=%%d", $n);
@@ -78,12 +89,23 @@ serial.close($p);`, slave))
 	if out != "[PING\n]wrote=4" {
 		t.Errorf("got %q, want [PING\\n]wrote=4", out)
 	}
-	// The port's PONG must reach the master side.
+	// The port's PONG must reach the master side. Read until it appears rather
+	// than assuming the first chunk holds it: the PTY echoes the pre-open master
+	// write ("PING\n", still under the default canonical+echo line discipline
+	// before serial.open switched the port to raw) back to the master, so that
+	// echo has to be drained first. Bounded by the read deadline.
 	_ = master.SetReadDeadline(time.Now().Add(2 * time.Second))
-	buf := make([]byte, 32)
-	n, _ := master.Read(buf)
-	if !bytes.Contains(buf[:n], []byte("PONG")) {
-		t.Errorf("master read %q, want it to contain PONG", buf[:n])
+	var acc []byte
+	for !bytes.Contains(acc, []byte("PONG")) {
+		buf := make([]byte, 32)
+		n, rerr := master.Read(buf)
+		acc = append(acc, buf[:n]...)
+		if rerr != nil {
+			break
+		}
+	}
+	if !bytes.Contains(acc, []byte("PONG")) {
+		t.Errorf("master read %q, want it to contain PONG", acc)
 	}
 }
 
