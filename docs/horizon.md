@@ -8,36 +8,436 @@ them, none committed to a timeline.
 
 Two kinds:
 
-- **[Drafts](#drafts)** - concrete, already-shaped
-  directions (embedding, WASM, specialised-domain libraries). Each has a
-  design; it just has no schedule.
+- **[Drafts](#drafts)** - concrete, already-shaped directions, grouped by theme
+  and ordered roughly easiest-first. Each has a design; it just has no schedule.
 - **[Loose ideas](#loose-ideas)** - a grab-bag of smaller or vaguer
-  possibilities, jotted down when they come up so they are not lost.
+  possibilities, loosely grouped, jotted down when they come up so they are not
+  lost.
 
 Nothing here is a commitment. An idea graduates into
 [milestones.md](milestones.md) if and when it earns a slot.
 
 ## Drafts
 
-Embedding, WASM, and specialised domains. Recorded so the design doesn't
-foreclose them, roughly ordered by the size of the structural change each
-is: the embedding restructure is a single-repo refactor; the WASM runtime
-brings in a whole new dependency; the specialised-domain libraries are
-indefinite-in-count families.
+Shaped directions, **grouped by theme** and ordered roughly **easiest to
+implement first** - language tweaks and additive libraries near the top, the big
+runtime and ecosystem restructures near the bottom. Each has a design; it just
+has no schedule.
 
 Each carries a stable **`DRAFT#`** handle so it can be referenced and later
-graduated into a numbered milestone (e.g. "shift `DRAFT#9` to `M21.9`").
-Handles are assigned once and **retired on graduation** - never reused, and
-never renumbered when the list is reordered - so a reference stays valid for
-the life of the idea. `DRAFT#` is deliberately *not* a milestone number; an
-idea only gets an `M`-number when it graduates into
-[milestones.md](milestones.md).
+graduated into a numbered milestone (e.g. "shift `DRAFT#9` to `M21.9`"). Handles
+are **assigned once and retired on graduation** - never reused, and **never
+renumbered when the list is reordered** - so a reference stays valid for the life
+of the idea (which is why the numbers below run out of sequence). `DRAFT#` is
+deliberately *not* a milestone number; an idea only gets an `M`-number when it
+graduates into [milestones.md](milestones.md).
 
-Each draft also states its **Requires** - the `DRAFT#` handles and/or
-milestones (`M`-numbers) that must land first, or *none* - so its blockers
-are explicit before it is scheduled.
+Each draft also states its **Requires** - the `DRAFT#` handles and/or milestones
+(`M`-numbers) that must land first, or *none* - so its blockers are explicit
+before it is scheduled.
 
-### DRAFT#1 - Public interpreter API for third-party embedding
+### Language
+
+#### DRAFT#20 - Relax the letters-only identifier rule
+
+Not a feature - revisiting a deliberate constraint that keeps costing.
+Identifiers are `[A-Za-z]` only (no digits), which forces recurring gymnastics:
+`uuid.generate("v4")` because `v4()` is unspellable, the I2C library named `iic`,
+`pbkdf` dropping its "2", `binary` because `bytes` is reserved, and the `hash` /
+`crc` naming dance. Each is a workaround for the same rule.
+
+**Changes:** Allow **interior / trailing digits**, keeping the
+letter-initial rule: `[A-Za-z][A-Za-z0-9]*` (still up to 64 chars; constants keep
+their interior `_`). Letter-initial preserves clean lexing - a token starting
+with a digit is always a number, one starting with a letter is always an
+identifier - so `1..5` (range), the `0x` / `0o` / `0b` literal forms, and float
+mantissas stay unambiguous. This makes `md5`, `sha256`, `v4`, `utf8`, `i2c`,
+`base64` real identifiers and lets the stdlib drop its euphemisms (`uuid.v4()`,
+`use i2c;`, ...).
+
+**Cost.** Mechanically **tiny** - one character class in the lexer's identifier
+scanner, plus a re-verification that no number / identifier ambiguity opens. The
+weight is entirely in it being a **language-identity decision** and a **pre-1.0
+breaking change**: the "letters-only" look is documented and intentional, so
+reversing it touches the spec, `JENNIFER.md`, the grammar EBNF / PEG, the
+naming-convention guidance, and every editor highlighter; and the follow-on
+renames (`iic` -> `i2c`, the `"v4"` string argument -> `v4()`, ...) are each
+semver-breaking, so they must be batched **before 1.0.0**. The honest
+counter-argument to weigh, not just the upside: letters-only gives a uniform look
+and sidesteps confusable / typo-vs-name questions (`sha256` - name or mistake?).
+This draft is as much "should we" as "how," and its value is that the call is
+cheap to make now and expensive to make after 1.0.
+
+**Requires:** none (mechanical), but best decided **early** - renames after 1.0.0
+need a major bump.
+
+#### DRAFT#19 - Sum types (enums) + `match`
+
+Structs model a *record*; there is no way to model "one of N variants," and
+control flow is `if` / `elseif` chains with no multi-way dispatch. Ironically the
+interpreter's own `Value` is a tagged union - the language just does not expose
+that shape.
+
+- **`def enum` at top level**, hoisted like structs:
+  `def enum Shape { Circle { r as float }, Rect { w as float, h as float }, Empty };`
+  Each variant is payload-less or carries named fields (a mini-struct).
+  Construction mirrors struct literals: `Shape.Circle{ r: 2.0 }`, `Shape.Empty`.
+- **`match` / `case`** for exhaustive dispatch, binding a variant's payload into a
+  fresh per-arm scope:
+  `match ($s) { case Circle(c) { ...$c.r... } case Rect(rc) { ... } case Empty { ... } }`
+  Exhaustiveness is checked at **resolve time** (every variant covered, or an
+  `else` arm) - the strict, positioned-error stance applied to control flow, so a
+  forgotten variant is a parse error, not a silent fall-through.
+
+**Cost.** A new `Value` kind `KindEnum` that mirrors `KindStruct` almost exactly
+- `(namespace, name)` discriminant plus a `Fields` payload - so it inherits value
+semantics, deep `const`, `Copy` / `DeepCopy`, and `MatchesDeclared` with little
+new machinery. Parser: the `def enum` declaration, `Enum.Variant{...}`
+construction, and `match` / `case` grammar with payload binding (payload slots
+resolved into the arm's block scope, reusing `borrowBlockEnv`). Interpreter: an
+`execMatch` that finds the active variant and runs the arm. Grammar EBNF / PEG,
+spec, docs. No frame-pool or TinyGo concern - it is all tagged-union,
+reflect-free, exactly like structs. Well-contained and high-ergonomic for the
+value; a light scalar `switch` could follow as sugar over an `if`-chain.
+
+**Requires:** none. Pairs naturally with `DRAFT#18` (a `match` result and
+function values together give the functional-core idioms).
+
+#### DRAFT#18 - First-class functions
+
+Today a function cannot be held in a value: the `Value` kinds run `KindBool` ...
+`KindTask` with nothing callable, so every callback is **string-name dispatch**
+(`web` routes handlers by name via `meta.callMain`, `testing.run(name)`,
+`meta.call`) and `lists` ships no `map` / `filter` / `reduce` because there is
+nothing to pass. This is the single largest expressiveness gap.
+
+**A function value is immutable, not a pointer.** Holding a function in a value
+aliases nothing and can never become a write-through handle, so it does *not*
+touch the value-semantics stance. That has to show in the *syntax*: the obvious
+`&NAME` instinct is out, because `&` is exactly the mutable-reference sigil
+rejected under "References, interior mutability, shared mutable state"
+([rejected.md](technical/rejected.md)) and would read as a pointer this language
+does not have. Instead reuse the shape the language already uses to tell a call
+from a name: a **bare method name** in expression position *is* the function
+value; a name followed by `(` is a call (Go's `f := greet` vs `greet()`). The
+parser already peeks for `(` after an IDENT to separate a call from a constant
+reference; extend that so a bare IDENT naming a `func` resolves to a function
+value - and since a def / func name can't collide, the name picks out exactly one.
+
+- **Tier 1 - function values without capture.** A new `Value` kind `KindFunc`
+  wraps the `*parser.MethodDef`. It is immutable and value-semantic: a copy
+  shares the (immutable) `*MethodDef` the same way an immutable scalar copies -
+  no aliasing, no deep copy, nothing to mutate. `def f as func init greet;` binds
+  one; call-through-a-variable `$f(args)` is new call syntax that dispatches
+  through **`CallMethodWith`** - the pre-resolved-`*MethodDef` entry point that
+  already exists (built for module-method stamping) - with arity / kind checked
+  at the call site exactly as user-method calls already are. Frame-pool safe (no
+  captured environment, so implementation-note 14's invariant holds). This tier
+  alone unlocks the higher-order layer - `lists.map` / `filter` / `reduce` /
+  `sort(by)` / `find` / `any` / `all`, typed comparators, and function-valued
+  callbacks that *replace* the stringly-typed dispatch in `web` / `testing` /
+  `meta`.
+- **Tier 2 - closures with *by-value* capture.** Anonymous `func(x){...}` that
+  close over their environment - but the capture is **by copy**, deep-copying the
+  captured bindings at closure creation exactly the way the `spawn` snapshot
+  already detaches a goroutine's scope. That is the value-semantic answer to the
+  "closures break the model" worry, twice over: (1) a closure carries its own
+  copy, so it can never be a backdoor to aliased mutation - the no-aliasing
+  guarantee holds (capture-*by-reference* stays rejected, since it is the `&xs`
+  shape); and (2) because it owns a detached copy rather than pointing at the
+  frame it was created in, it does **not** extend that frame's lifetime, so the
+  `sync.Pool` frame recycling (which "no closures" currently guarantees) keeps
+  working - the pooled frame is still returned normally. The cost just moves to a
+  deep copy at closure creation, the same cost model as `spawn`.
+
+**Cost.** Tier 1: a `Value` kind + `MatchesDeclared` / `Copy` / `DeepCopy` cases
+(cheap - immutable, shares the pointer), the bare-name-as-value resolution and
+`$var(args)` grammar, a `func` type keyword, the `evalCall` path (reusing
+`CallMethodWith`), the higher-order library layer, and grammar / spec / docs.
+Tier 2 adds the closure literal and a `snapshotForSpawn`-style by-value capture at
+creation (the machinery exists - it is the spawn snapshot, re-pointed). Ship
+Tier 1 first; Tier 2 is additive and, framed as by-value capture, needs no retreat
+from the allocation model `M21.12` tightened.
+
+**Requires:** none hard. Relates to `DRAFT#17` (a bytecode VM changes how calls
+and closures are represented) and `DRAFT#1` (a function-value surface is part of a
+clean embedding API).
+
+### Concurrency
+
+#### DRAFT#21 - Concurrency coordination: cancellation, timeouts, channels
+
+`spawn` / `task` is elegant and race-free by construction (value-semantics
+capture removes shared state), but there is no way to **cancel** a task,
+**bound** a wait, or **coordinate** producers and consumers - and an unobserved
+non-terminating `spawn` *hangs the program at exit* (documented, but a sharp
+edge). Two tiers.
+
+**Tier 1 - cancellation + timeouts (cheap, high-value).** `task.cancel($t)` sets
+a cancel flag on the shared `TaskState` (already a pointer shared across
+handles); the spawned body observes it cooperatively at the eval loop's existing
+safe points - the same checkpoint shape as the `i.diagReq.Load()` diagnostic poll
+and the signal poll, so it is near-free and needs no preemption (which a
+tree-walker cannot do anyway). A body reads `task.cancelled()` or the runtime
+raises a catchable "cancelled" at the next checkpoint. `task.waitTimeout($t, ms)`
+and a timeout on `waitAny` give bounded waits, backed by Go `select` +
+`time.After`; this is also the escape hatch for the exit-time hang. TinyGo-clean
+(its cooperative scheduler already yields at these points). Ship this first.
+
+**Tier 2 - channels (larger).** A `channel of T` type + a `channel` library
+(`make(cap)` / `send` / `recv` / `close`) using the integer-handle-into-a-registry
+pattern the other shared resources use (`task` / `fs` / `net`), wrapping a Go
+`chan Value`. Crucially, a **send copies the value in** (value-semantic, exactly
+like the spawn snapshot), so channels carry copies and the "no shared mutable
+state" guarantee is preserved - which is why channels, not mutexes / atomics, are
+the right coordination primitive for this language (shared locks would violate
+the invariant and stay rejected). A `select` multi-wait generalizes today's
+`task.waitAny`, which **already uses `reflect.Select`** (verified TinyGo-clean),
+so the core machinery exists; `select` can be a language construct or a
+`channel.select` library form to avoid new grammar.
+
+**Cost.** Tier 1: a flag on `TaskState`, one checkpoint in `evalCall` / the loop
+headers (reusing the diag-poll shape), and timeout wait variants - small, and it
+directly retires the documented exit-hang footgun. Tier 2: a `KindChannel` Value
++ registry, the `channel` library, the copy-on-send path, and `select` (grammar
+or library) over the existing `reflect.Select` - plus spec / docs. No
+shared-memory primitives; that stance stays.
+
+**Requires:** none hard (builds on the shipped `spawn` / `task`). Tier 1 is
+independent and small; Tier 2 is the follow-on. Relates to `DRAFT#17` (a VM
+relocates the cooperative checkpoints Tier 1 rides on).
+
+### Libraries (specialised domains)
+
+Each domain its own effort with sub-pieces as needed:
+
+- **ML.**
+  - **`DRAFT#5` `stats`** - descriptive statistics over `list of
+    int|float`: mean, median, mode, variance, stddev, percentile, min / max
+    / sum, correlation. Pure-value, TinyGo-clean; the highest-value,
+    simplest piece, so first. **Requires:** none.
+  - **`DRAFT#6` `linalg`** - vectors as `list of float` (dot, norm, cross,
+    scale, add / sub) and matrices as `list of list of float` (matmul,
+    transpose, determinant, inverse, solve, identity). Algorithms
+    implemented directly - no `gonum`, too large a dependency. Matrices stay
+    `list of list of float` for v1 (idiomatic and value-semantic); a
+    Go-backed matrix handle is the noted future escape hatch when big-matrix
+    performance demands it. **Requires:** none.
+  - **`DRAFT#7` ML primitives** - atop `stats` / `linalg`, when demand
+    surfaces. **Requires:** `DRAFT#5` + `DRAFT#6`.
+- **`DRAFT#8` Bioinformatics.** Sequence alignment (Smith-Waterman,
+  Needleman-Wunsch), FASTA/FASTQ parsers, molecule structures.
+  **Requires:** none.
+- **Encoding / binary protocols.**
+  - **`DRAFT#9` `asn1`** - ASN.1 BER/DER encode/decode, as a **Go system
+    library**.
+    Byte-level binary parsing belongs in Go, not `.j` (the `json` lesson: a
+    char-by-char parser in the interpreter pays overhead per byte). This is
+    the *enabler* for a family of binary protocols and PKI formats - LDAP,
+    SNMP, X.509, PKCS. Go's stdlib `encoding/asn1` is DER-only, so the full
+    BER that LDAP / SNMP use (indefinite lengths, alternative encodings)
+    needs either a BER dependency (e.g. `go-asn1-ber`) or a hand-rolled BER
+    codec in Go. **Requires:** none (it is the enabler for the rest of this
+    group).
+  - **`DRAFT#10` `ldap` / `snmp` (layered on `asn1` + `net`).** With `asn1` doing the
+    byte crunching in Go and `net` providing TCP/UDP + TLS (`connectTLS` /
+    `startTLS` already cover LDAPS / StartTLS), the protocol orchestration
+    (bind, build request, iterate results) is not per-byte hot and can live
+    in a `.j` module or a thin Go library. SNMP is the natural first client
+    (simpler PDUs, UDP, no SASL); LDAP adds controls + SASL (SCRAM builds on
+    the `crypto` library). A pure-`.j` implementation of the BER layer
+    itself is explicitly *not* the plan. Existing pure implementations (e.g.
+    PHP FreeDSx) are a protocol reference, not a port target - their heavy
+    OO shape does not map to Jennifer's value-semantic structs.
+    **Requires:** `DRAFT#9` (`asn1`) and the shipped `net` library; LDAP's
+    SASL / SCRAM path additionally needs `crypto` (`M20.1`).
+
+Ordered when demand surfaces. The WASM libraries idea (`DRAFT#3`) may cover
+some of this space first.
+
+### Higher-level modules
+
+#### DRAFT#13 - Higher-level PDF: font metrics, layout, and Markdown -> PDF
+
+A three-phase build on top of the shipped `pdfwriter` module (M18.35), taking it
+from "place text and shapes at coordinates" to "flow a document". The phases are
+strictly ordered because each depends on the one before; they land as separate
+milestones when graduated, but share one draft handle because they are one arc.
+
+**Phase 1 - font metrics (the keystone).** Today `pdfwriter` can place text but
+cannot **measure** it, so there is no way to wrap a paragraph, auto-size a table
+column, or align text - all of which need the rendered width of a string. Add
+the **standard-14 AFM width tables** (public Adobe Font Metrics: per-glyph
+advance widths, in 1/1000 em, for WinAnsiEncoding) and a
+`pdfwriter.stringWidth(font, size, text) -> int` that sums them. Courier is
+monospace (600 units/glyph, trivial); Helvetica and Times need the real
+per-character tables, generated into an included `.j` data file the way the
+`encoding` codecs were generated from the Unicode mapping files
+(`gen_*.go` -> `*_gen.j`). First payoff: `textAligned(pg, x, y, font, size,
+align, str)` for left / center / right placement. Nothing in the later phases is
+expressible without this.
+
+**Phase 2 - table and flow layout.** The layer that removes the manual
+cell-positioning pain (the ergonomic win people reach for TCPDF's `writeHTML`
+tables to get - but as a typed API, not an HTML subset). On top of `stringWidth`:
+`table(columns, rows, options)` (auto column sizing, in-cell word wrap, borders,
+a header row, page-break across rows); `paragraph(pg, text, x, y, width, font,
+size) -> int` (wrapped flowing text that returns the y it ended at, so callers
+stack blocks); and `heading` / list helpers.
+
+**Phase 3 - Markdown -> PDF.** The markup-driven document story, and the reason
+it is Markdown rather than HTML: Jennifer ships a `markdown` parser (GFM tables,
+headings, lists, emphasis) but no HTML *parser* (`htmlwriter` only builds HTML),
+so the cheap, ergonomic path to "write markup, get a PDF" is to drive the Phase-2
+layout layer from the existing Markdown parse rather than write a quirky
+HTML-subset parser (Markdown tables are also easier to author than HTML tables).
+A prerequisite to verify first: whether the `markdown` module exposes a reusable
+parse tree or only renders straight to a string - if the latter, it needs a small
+refactor to surface the intermediate document model. An HTML-subset front-end
+(TCPDF-style) stays a *later* option, only worth it for consuming pre-existing
+HTML, and it would sit on the same layout foundation.
+
+Stays pure `.j` (static data + lookups + layout math), both binaries.
+**Requires:** none hard for Phase 1 (builds on the shipped `pdfwriter` module,
+M18.35); Phase 2 requires Phase 1; Phase 3 requires Phase 2 and the shipped
+`markdown` module (plus possibly a parse-tree surface on it).
+
+### Platform and distribution
+
+#### DRAFT#22 - Promote Windows to a supported platform
+
+Windows ships today as a best-effort **unsupported** build (a cross-compiled
+`jennifer.exe`, plus the `M21.13` installer that wraps it). Promoting it to
+*supported* is the concrete instance of `DRAFT#16`'s general "cross-platform
+support" bullet, and it graduates the "Cross-build for macOS / Windows" 1.0.0
+distribution requirement. A portability audit found the surface small - most of
+the OS-touching code is already `runtime.GOOS`-derived or cleanly build-tag
+stubbed - so this is a handful of concrete gaps, not a rewrite.
+
+**What's already fine.** Separators / EOL / `$HOME` / temp are
+`runtime.GOOS`-derived (`internal/lib/os/oslib.go`), `os/exec` is enabled on
+Windows (the exec gate keys on `runtime.Compiler != "tinygo"`, not GOOS), and
+signals plus the four Linux-only hardware libs (`serial` / `spi` / `iic` / `gpio`)
+already stub cleanly on non-Linux (`*_other.go`).
+
+**Fixes:**
+
+- **Windows-native module default.** `compileDefaultSysmoddir` is the one
+  hardcoded POSIX path baked into a Windows binary
+  (`/usr/share/jennifer/modules`, `internal/module/sysmoddir.go`). Give it a
+  Windows-native, **exe-relative** default
+  (`<dir(os.Executable())>\share\jennifer\modules`) via a build-tag split
+  (`sysmoddir_windows.go` / `_unix.go`), so a portable-zip user's
+  `import "name.j";` resolves with no env var. The `M21.13` installer's
+  `JENNIFER_SYSMODDIR` stays the explicit override; precedence is unchanged.
+- **Per-OS golden strategy.** `examples/expected/osinfo.txt` pins
+  `linux` / `amd64` / `/` / `:`, and `cmd/jennifer/examples_test.go` compares
+  byte-exact with no GOOS handling - the sole platform-pinned golden. Add a
+  per-OS expected-file selection (or a `runtime.GOOS`-gated skip for the osinfo
+  canary; the source already flags this at `examples/osinfo.j`).
+- **`fs.chmod` / `fs.chown` on Windows.** Currently Unix-oriented; define the
+  Windows behaviour (a friendly catchable error is acceptable - the `chown` test
+  is already Linux-gated). Document that signal-based graceful shutdown is limited
+  on Windows (`signal_other.go` stubs `os.catchSignal`).
+- **A real Windows CI test job.** `windows-latest` running `go test ./...` so
+  Windows correctness is actually verified (the exec suite self-skips off Linux;
+  the osinfo golden is the known failure the item above resolves). Once green,
+  move windows/amd64 out of the `build-unsupported` matrix into the supported set
+  and drop the "unsupported" labelling for that arch.
+
+**macOS** is the parallel case (same "already ships unsupported, promote it"
+shape) but out of scope here - a separate effort, and it lacks even the
+module-path blocker Windows has.
+
+**Requires:** none hard (all in-tree). Relates to `DRAFT#16` (the umbrella
+multiplatform idea - this is its concrete Windows track) and builds on the shipped
+`M21.13` installer.
+#### DRAFT#16 - Multiplatform
+
+- **Extra distribution packaging.** Beyond the Linux `.deb` (shipped in
+  M15.8) and the two distribution *requirements* for 1.0.0 stable
+  (cross-build for macOS / Windows, a real apt repository), the additional
+  package formats are nice-to-haves, each shipped only when a user asks and a
+  maintainer will keep it green: a **Homebrew tap** (macOS), a **Snap**
+  package, a **Nix flake** / Nix package, and **Flatpak** / **AppImage** or
+  any other Linux distribution format. None blocks a release; none is a 1.0.0
+  requirement.
+- **Cross-platform support.** Linux is the only *supported* platform, but
+  best-effort **unsupported** macOS and Windows binaries (the standard-Go
+  `jennifer`, via cross-compile) already ship with each release - so the work
+  here is not "add the ports" but *promoting them to supported* (real CI
+  coverage, per-OS golden strategy, the platform-specific edge cases). When
+  touching filesystem, paths, line endings, or process behavior, prefer
+  portable stdlib helpers (`path/filepath`, not hardcoded `/`); avoid
+  Linux-only assumptions so those binaries stay genuinely portable, not just
+  compile-clean. The concrete Windows track, with the exact remaining gaps, is
+  `DRAFT#22`.
+
+#### DRAFT#12 - `jvc` package manager (decks)
+
+A package manager for Jennifer, in the shape of PHP's Composer (or Rust's
+Cargo): declare dependencies in a manifest, `jvc install` resolves and
+fetches them, and the app imports what it pulled. Installing an app becomes
+`git clone` + `jvc install`, and `jvc update` advances within the declared
+constraints.
+
+- **Packages are "decks".** A deck is a distributable, versioned bundle of
+  `.j` modules, published to a public **deck repository / registry**
+  (provided later) that `jvc` resolves and fetches from - packagist-style; a
+  deck can also come straight from a git URL.
+- **Installed into the `vendor/` tree M19.7 resolves.** `jvc` writes decks into
+  the project-local `vendor/` tree that the interpreter already addresses through
+  the `@scope/package` import form and vendor-root discovery shipped in
+  [M19.7](milestones.md) - so a hand-populated `vendor/` imports before `jvc`
+  exists, and `jvc` is just the manager layered over that resolver. Nothing is
+  global; each app owns its decks beside it.
+- **The one remaining language-surface question: inline version selectors.**
+  M19.7 resolves `import "@jennifer/supercms/" as cms;` (the trailing `/` expands to
+  the package-named entry `supercms/supercms.j`) against whatever is installed.
+  `jvc` supplies the *default* - plain `import @jennifer/supercms;` takes
+  the version `jvc` resolved (declared in `deck.toml`, pinned in the lockfile),
+  version-transparent, which is what almost every script wants. The opt-in for
+  side-by-side versions is a **per-import selector** matched against the installed
+  set (never triggering a fetch): `@jennifer/supercms=1.2.3` (exact), `>=1.2.3` / `~`
+  / `^` (a `semver` constraint over what is installed), or `#cefa234` (a git
+  commit); one script can pin `=1.x` while another pins `=2.x`, and two versions
+  in one file take distinct `as` aliases. An unsatisfiable selector errors
+  pointing at `jvc install`, not a silent download. **Cost:** the selector is
+  **new grammar** (the lexer reads `@vendor/deck` + `semver` op + `#commit` as one
+  token up to `;`); the plain M19.7 string-path form is the no-new-grammar
+  fallback that loses only the inline selector.
+- **`deck.toml` manifest + lockfile.** `deck.toml` (TOML, so it needs the `toml`
+  library) declares required decks and constraints (`bitcoin = ">=1.2.0"`), and
+  `jvc` produces a **`camcorder.lock`** pinning exact resolved versions (content
+  hash per deck) so `git clone` + `jvc install` is reproducible. Dependency sets
+  split by section (`[prod]` / `[dev]`, `jvc install --prod`), with a **taxative**
+  (the section is the exact set) vs **additive** (base plus the section's extras)
+  mode still to design.
+- **`jvc` owns the lifecycle:** dependency resolution (semver constraint
+  solving across the graph), downloading, `jvc update` (advance to the
+  newest constraint-satisfying versions, rewrite `camcorder.lock`), integrity
+  pinning, and the publish flow to the registry.
+
+**Migrating bundled modules out to decks.** Once decks exist, niche or
+product-specific modules that ship bundled today should graduate *out* into
+decks (the archetype is `gotify` - a single-product push integration every
+install need not carry); language-fundamental modules stay bundled. Moving one
+changes its import, so it is a breaking change under semver: within 1.x ship it
+**both ways** (bundled + `@`-deck) with the bundled copy marked `@deprecated` so
+imports re-point at their own pace, let the two drift without breaking, and
+**remove the bundled copy in 2.0.0**.
+
+A whole track of its own. **Requires:** [M19.7](milestones.md) (the
+`@scope/package` resolver + vendor root the scheme rests on); the `toml` library
+(M18.8, for `deck.toml`); the shipped module system and the `semver` module
+(constraint solving - its `satisfies` / `maxSatisfying` / `minSatisfying` /
+`validRange` range surface is the resolver primitive); and `http` / git
+(fetching). The public deck **registry** is separate infrastructure, provided
+later.
+
+### Embedding, WASM, and sandboxing
+
+#### DRAFT#1 - Public interpreter API for third-party embedding
 
 Extract the interpreter core out from under `internal/` and expose a
 documented Go-side surface so external programs can embed Jennifer. Today
@@ -137,14 +537,14 @@ package-level test vars.
 Best sequenced once the core library / module surface has settled, so the
 `pkg/` facade is stable, but nothing blocks it.
 
-### DRAFT#2 - WASM runtime embedding
+#### DRAFT#2 - WASM runtime embedding
 
 Wazero or similar inside the interpreter binary. TinyGo-size cost evaluated
 honestly before commitment. Without it, no WASM libraries (`DRAFT#3`).
 
 **Requires:** none (embeds Wazero directly).
 
-### DRAFT#3 - WASM libraries
+#### DRAFT#3 - WASM libraries
 
 If the WASM runtime (`DRAFT#2`) ships, sandboxed plugins via
 `use wasm:libname;`. Each library its own piece.
@@ -152,165 +552,51 @@ If the WASM runtime (`DRAFT#2`) ships, sandboxed plugins via
 **Requires:** `DRAFT#2` (the runtime) and `DRAFT#1` (the plugin surface
 layers on its `pkg/` facade).
 
-### Specialised domains
+#### DRAFT#11 - Sandbox
 
-Each domain its own effort with sub-pieces as needed:
+Restricted-capability execution.
 
-- **ML.**
-  - **`DRAFT#5` `stats`** - descriptive statistics over `list of
-    int|float`: mean, median, mode, variance, stddev, percentile, min / max
-    / sum, correlation. Pure-value, TinyGo-clean; the highest-value,
-    simplest piece, so first. **Requires:** none.
-  - **`DRAFT#6` `linalg`** - vectors as `list of float` (dot, norm, cross,
-    scale, add / sub) and matrices as `list of list of float` (matmul,
-    transpose, determinant, inverse, solve, identity). Algorithms
-    implemented directly - no `gonum`, too large a dependency. Matrices stay
-    `list of list of float` for v1 (idiomatic and value-semantic); a
-    Go-backed matrix handle is the noted future escape hatch when big-matrix
-    performance demands it. **Requires:** none.
-  - **`DRAFT#7` ML primitives** - atop `stats` / `linalg`, when demand
-    surfaces. **Requires:** `DRAFT#5` + `DRAFT#6`.
-- **`DRAFT#8` Bioinformatics.** Sequence alignment (Smith-Waterman,
-  Needleman-Wunsch), FASTA/FASTQ parsers, molecule structures.
-  **Requires:** none.
-- **Encoding / binary protocols.**
-  - **`DRAFT#9` `asn1`** - ASN.1 BER/DER encode/decode, as a **Go system
-    library**.
-    Byte-level binary parsing belongs in Go, not `.j` (the `json` lesson: a
-    char-by-char parser in the interpreter pays overhead per byte). This is
-    the *enabler* for a family of binary protocols and PKI formats - LDAP,
-    SNMP, X.509, PKCS. Go's stdlib `encoding/asn1` is DER-only, so the full
-    BER that LDAP / SNMP use (indefinite lengths, alternative encodings)
-    needs either a BER dependency (e.g. `go-asn1-ber`) or a hand-rolled BER
-    codec in Go. **Requires:** none (it is the enabler for the rest of this
-    group).
-  - **`DRAFT#10` `ldap` / `snmp` (layered on `asn1` + `net`).** With `asn1` doing the
-    byte crunching in Go and `net` providing TCP/UDP + TLS (`connectTLS` /
-    `startTLS` already cover LDAPS / StartTLS), the protocol orchestration
-    (bind, build request, iterate results) is not per-byte hot and can live
-    in a `.j` module or a thin Go library. SNMP is the natural first client
-    (simpler PDUs, UDP, no SASL); LDAP adds controls + SASL (SCRAM builds on
-    the `crypto` library). A pure-`.j` implementation of the BER layer
-    itself is explicitly *not* the plan. Existing pure implementations (e.g.
-    PHP FreeDSx) are a protocol reference, not a port target - their heavy
-    OO shape does not map to Jennifer's value-semantic structs.
-    **Requires:** `DRAFT#9` (`asn1`) and the shipped `net` library; LDAP's
-    SASL / SCRAM path additionally needs `crypto` (`M20.1`).
-- **`DRAFT#11` Sandbox.** Restricted-capability execution.
-  **Requires:** none hard; relates to `DRAFT#1` (embedding) and `DRAFT#3`
-  (WASM isolation).
+**Requires:** none hard; relates to `DRAFT#1` (embedding) and `DRAFT#3` (WASM
+isolation).
 
-Ordered when demand surfaces. The WASM libraries idea (`DRAFT#3`) may cover
-some of this space first.
+### Interpreter internals
 
-### DRAFT#12 - `jvc` package manager (decks)
+#### DRAFT#17 - Bytecode execution model
 
-A package manager for Jennifer, in the shape of PHP's Composer (or Rust's
-Cargo): declare dependencies in a manifest, `jvc install` resolves and
-fetches them, and the app imports what it pulled. Installing an app becomes
-`git clone` + `jvc install`, and `jvc update` advances within the declared
-constraints.
+The tree-walker re-walks the AST and re-resolves shapes on every pass through a
+hot loop; that per-operation dispatch + Value-copy overhead is the throughput
+ceiling for CPU-bound `.j`. Compile the resolved AST to a linear **bytecode** (or
+a register form) executed by a tight dispatch loop - a new pipeline stage between
+resolve and run - so a loop body is decoded once and then dispatched without
+re-walking the tree. This is the big structural lever, and the big effort.
 
-- **Packages are "decks".** A deck is a distributable, versioned bundle of
-  `.j` modules, published to a public **deck repository / registry**
-  (provided later) that `jvc` resolves and fetches from - packagist-style; a
-  deck can also come straight from a git URL.
-- **Installed into the `vendor/` tree M19.7 resolves.** `jvc` writes decks into
-  the project-local `vendor/` tree that the interpreter already addresses through
-  the `@scope/package` import form and vendor-root discovery shipped in
-  [M19.7](milestones.md) - so a hand-populated `vendor/` imports before `jvc`
-  exists, and `jvc` is just the manager layered over that resolver. Nothing is
-  global; each app owns its decks beside it.
-- **The one remaining language-surface question: inline version selectors.**
-  M19.7 resolves `import "@jennifer/supercms/" as cms;` (the trailing `/` expands to
-  the package-named entry `supercms/supercms.j`) against whatever is installed.
-  `jvc` supplies the *default* - plain `import @jennifer/supercms;` takes
-  the version `jvc` resolved (declared in `deck.toml`, pinned in the lockfile),
-  version-transparent, which is what almost every script wants. The opt-in for
-  side-by-side versions is a **per-import selector** matched against the installed
-  set (never triggering a fetch): `@jennifer/supercms=1.2.3` (exact), `>=1.2.3` / `~`
-  / `^` (a `semver` constraint over what is installed), or `#cefa234` (a git
-  commit); one script can pin `=1.x` while another pins `=2.x`, and two versions
-  in one file take distinct `as` aliases. An unsatisfiable selector errors
-  pointing at `jvc install`, not a silent download. **Cost:** the selector is
-  **new grammar** (the lexer reads `@vendor/deck` + `semver` op + `#commit` as one
-  token up to `;`); the plain M19.7 string-path form is the no-new-grammar
-  fallback that loses only the inline selector.
-- **`deck.toml` manifest + lockfile.** `deck.toml` (TOML, so it needs the `toml`
-  library) declares required decks and constraints (`bitcoin = ">=1.2.0"`), and
-  `jvc` produces a **`camcorder.lock`** pinning exact resolved versions (content
-  hash per deck) so `git clone` + `jvc install` is reproducible. Dependency sets
-  split by section (`[prod]` / `[dev]`, `jvc install --prod`), with a **taxative**
-  (the section is the exact set) vs **additive** (base plus the section's extras)
-  mode still to design.
-- **`jvc` owns the lifecycle:** dependency resolution (semver constraint
-  solving across the graph), downloading, `jvc update` (advance to the
-  newest constraint-satisfying versions, rewrite `camcorder.lock`), integrity
-  pinning, and the publish flow to the registry.
+- **Same semantics, same discipline.** Value semantics and the tagged-union
+  `Value` stay exactly as they are; only how operations are sequenced and
+  dispatched changes. Held to the same TinyGo-clean, reflect-free rule as the
+  current evaluator, and to strict behaviour parity: the `spawn` snapshot,
+  `defer` order, positioned errors, and the call-depth guard must all survive the
+  rewrite, with the existing test suite as the conformance oracle.
+- **Sequenced after the cheap win.** `M21.10`'s bulk-byte primitives take byte
+  accumulation / scanning off the interpreted path first; what remains for a VM
+  is the residual CPU-bound `.j` (recursion, business-logic loops) no Go
+  primitive covers. Pursued only when `M21.10`'s benchmark shows that residual is
+  a real workload's bottleneck - not on spec.
+- **Composes with M21.12's arena.** The per-frame arena allocator (`M21.12`) is
+  an independent memory-side optimization that pairs naturally here, since a
+  bytecode VM restructures allocation anyway - but neither depends on the other.
 
-**Migrating bundled modules out to decks.** Once decks exist, niche or
-product-specific modules that ship bundled today should graduate *out* into
-decks (the archetype is `gotify` - a single-product push integration every
-install need not carry); language-fundamental modules stay bundled. Moving one
-changes its import, so it is a breaking change under semver: within 1.x ship it
-**both ways** (bundled + `@`-deck) with the bundled copy marked `@deprecated` so
-imports re-point at their own pace, let the two drift without breaking, and
-**remove the bundled copy in 2.0.0**.
+Copy-on-write for compound Values is **not** part of this: it was tried
+(shared-marker COW, reverted as inert) and the write-through variant is rejected
+for reintroducing shared mutable state - see
+[technical/rejected.md](technical/rejected.md).
 
-A whole track of its own. **Requires:** [M19.7](milestones.md) (the
-`@scope/package` resolver + vendor root the scheme rests on); the `toml` library
-(M18.8, for `deck.toml`); the shipped module system and the `semver` module
-(constraint solving - its `satisfies` / `maxSatisfying` / `minSatisfying` /
-`validRange` range surface is the resolver primitive); and `http` / git
-(fetching). The public deck **registry** is separate infrastructure, provided
-later.
+**Requires:** `M21.10` (its throughput benchmark, to justify the effort and
+measure parity + speedup). Relates to `DRAFT#1` - a compiled core is an easier
+stable embedding surface than a tree-walker.
 
-### DRAFT#13 - Higher-level PDF: font metrics, layout, and Markdown -> PDF
+### Project and governance
 
-A three-phase build on top of the shipped `pdfwriter` module (M18.35), taking it
-from "place text and shapes at coordinates" to "flow a document". The phases are
-strictly ordered because each depends on the one before; they land as separate
-milestones when graduated, but share one draft handle because they are one arc.
-
-**Phase 1 - font metrics (the keystone).** Today `pdfwriter` can place text but
-cannot **measure** it, so there is no way to wrap a paragraph, auto-size a table
-column, or align text - all of which need the rendered width of a string. Add
-the **standard-14 AFM width tables** (public Adobe Font Metrics: per-glyph
-advance widths, in 1/1000 em, for WinAnsiEncoding) and a
-`pdfwriter.stringWidth(font, size, text) -> int` that sums them. Courier is
-monospace (600 units/glyph, trivial); Helvetica and Times need the real
-per-character tables, generated into an included `.j` data file the way the
-`encoding` codecs were generated from the Unicode mapping files
-(`gen_*.go` -> `*_gen.j`). First payoff: `textAligned(pg, x, y, font, size,
-align, str)` for left / center / right placement. Nothing in the later phases is
-expressible without this.
-
-**Phase 2 - table and flow layout.** The layer that removes the manual
-cell-positioning pain (the ergonomic win people reach for TCPDF's `writeHTML`
-tables to get - but as a typed API, not an HTML subset). On top of `stringWidth`:
-`table(columns, rows, options)` (auto column sizing, in-cell word wrap, borders,
-a header row, page-break across rows); `paragraph(pg, text, x, y, width, font,
-size) -> int` (wrapped flowing text that returns the y it ended at, so callers
-stack blocks); and `heading` / list helpers.
-
-**Phase 3 - Markdown -> PDF.** The markup-driven document story, and the reason
-it is Markdown rather than HTML: Jennifer ships a `markdown` parser (GFM tables,
-headings, lists, emphasis) but no HTML *parser* (`htmlwriter` only builds HTML),
-so the cheap, ergonomic path to "write markup, get a PDF" is to drive the Phase-2
-layout layer from the existing Markdown parse rather than write a quirky
-HTML-subset parser (Markdown tables are also easier to author than HTML tables).
-A prerequisite to verify first: whether the `markdown` module exposes a reusable
-parse tree or only renders straight to a string - if the latter, it needs a small
-refactor to surface the intermediate document model. An HTML-subset front-end
-(TCPDF-style) stays a *later* option, only worth it for consuming pre-existing
-HTML, and it would sit on the same layout foundation.
-
-Stays pure `.j` (static data + lookups + layout math), both binaries.
-**Requires:** none hard for Phase 1 (builds on the shipped `pdfwriter` module,
-M18.35); Phase 2 requires Phase 1; Phase 3 requires Phase 2 and the shipped
-`markdown` module (plus possibly a parse-tree surface on it).
-
-### DRAFT#14 - Project governance, licensing, and contribution policy
+#### DRAFT#14 - Project governance, licensing, and contribution policy
 
 The rules for *how the project is run and how outside contributions are taken* -
 organizational, not code. Untouched while the project is solo (one author,
@@ -365,290 +651,65 @@ paired with the M19.8 org move and triggered by the first external contribution,
 but no code prerequisite. Not legal advice - the chosen model should get a real
 legal review before it is published.
 
-### DRAFT#16 - Multiplatform
-
-- **Extra distribution packaging.** Beyond the Linux `.deb` (shipped in
-  M15.8) and the two distribution *requirements* for 1.0.0 stable
-  (cross-build for macOS / Windows, a real apt repository), the additional
-  package formats are nice-to-haves, each shipped only when a user asks and a
-  maintainer will keep it green: a **Homebrew tap** (macOS), a **Snap**
-  package, a **Nix flake** / Nix package, and **Flatpak** / **AppImage** or
-  any other Linux distribution format. None blocks a release; none is a 1.0.0
-  requirement.
-- **Cross-platform support.** Linux is the only *supported* platform, but
-  best-effort **unsupported** macOS and Windows binaries (the standard-Go
-  `jennifer`, via cross-compile) already ship with each release - so the work
-  here is not "add the ports" but *promoting them to supported* (real CI
-  coverage, per-OS golden strategy, the platform-specific edge cases). When
-  touching filesystem, paths, line endings, or process behavior, prefer
-  portable stdlib helpers (`path/filepath`, not hardcoded `/`); avoid
-  Linux-only assumptions so those binaries stay genuinely portable, not just
-  compile-clean. The concrete Windows track, with the exact remaining gaps, is
-  `DRAFT#22`.
-
-### DRAFT#17 - Bytecode execution model
-
-The tree-walker re-walks the AST and re-resolves shapes on every pass through a
-hot loop; that per-operation dispatch + Value-copy overhead is the throughput
-ceiling for CPU-bound `.j`. Compile the resolved AST to a linear **bytecode** (or
-a register form) executed by a tight dispatch loop - a new pipeline stage between
-resolve and run - so a loop body is decoded once and then dispatched without
-re-walking the tree. This is the big structural lever, and the big effort.
-
-- **Same semantics, same discipline.** Value semantics and the tagged-union
-  `Value` stay exactly as they are; only how operations are sequenced and
-  dispatched changes. Held to the same TinyGo-clean, reflect-free rule as the
-  current evaluator, and to strict behaviour parity: the `spawn` snapshot,
-  `defer` order, positioned errors, and the call-depth guard must all survive the
-  rewrite, with the existing test suite as the conformance oracle.
-- **Sequenced after the cheap win.** `M21.10`'s bulk-byte primitives take byte
-  accumulation / scanning off the interpreted path first; what remains for a VM
-  is the residual CPU-bound `.j` (recursion, business-logic loops) no Go
-  primitive covers. Pursued only when `M21.10`'s benchmark shows that residual is
-  a real workload's bottleneck - not on spec.
-- **Composes with M21.12's arena.** The per-frame arena allocator (`M21.12`) is
-  an independent memory-side optimization that pairs naturally here, since a
-  bytecode VM restructures allocation anyway - but neither depends on the other.
-
-Copy-on-write for compound Values is **not** part of this: it was tried
-(shared-marker COW, reverted as inert) and the write-through variant is rejected
-for reintroducing shared mutable state - see
-[technical/rejected.md](technical/rejected.md).
-
-**Requires:** `M21.10` (its throughput benchmark, to justify the effort and
-measure parity + speedup). Relates to `DRAFT#1` - a compiled core is an easier
-stable embedding surface than a tree-walker.
-
-### DRAFT#18 - First-class functions
-
-Today a function cannot be held in a value: the `Value` kinds run `KindBool` ...
-`KindTask` with nothing callable, so every callback is **string-name dispatch**
-(`web` routes handlers by name via `meta.callMain`, `testing.run(name)`,
-`meta.call`) and `lists` ships no `map` / `filter` / `reduce` because there is
-nothing to pass. This is the single largest expressiveness gap.
-
-**A function value is immutable, not a pointer.** Holding a function in a value
-aliases nothing and can never become a write-through handle, so it does *not*
-touch the value-semantics stance. That has to show in the *syntax*: the obvious
-`&NAME` instinct is out, because `&` is exactly the mutable-reference sigil
-rejected under "References, interior mutability, shared mutable state"
-([rejected.md](technical/rejected.md)) and would read as a pointer this language
-does not have. Instead reuse the shape the language already uses to tell a call
-from a name: a **bare method name** in expression position *is* the function
-value; a name followed by `(` is a call (Go's `f := greet` vs `greet()`). The
-parser already peeks for `(` after an IDENT to separate a call from a constant
-reference; extend that so a bare IDENT naming a `func` resolves to a function
-value - and since a def / func name can't collide, the name picks out exactly one.
-
-- **Tier 1 - function values without capture.** A new `Value` kind `KindFunc`
-  wraps the `*parser.MethodDef`. It is immutable and value-semantic: a copy
-  shares the (immutable) `*MethodDef` the same way an immutable scalar copies -
-  no aliasing, no deep copy, nothing to mutate. `def f as func init greet;` binds
-  one; call-through-a-variable `$f(args)` is new call syntax that dispatches
-  through **`CallMethodWith`** - the pre-resolved-`*MethodDef` entry point that
-  already exists (built for module-method stamping) - with arity / kind checked
-  at the call site exactly as user-method calls already are. Frame-pool safe (no
-  captured environment, so implementation-note 14's invariant holds). This tier
-  alone unlocks the higher-order layer - `lists.map` / `filter` / `reduce` /
-  `sort(by)` / `find` / `any` / `all`, typed comparators, and function-valued
-  callbacks that *replace* the stringly-typed dispatch in `web` / `testing` /
-  `meta`.
-- **Tier 2 - closures with *by-value* capture.** Anonymous `func(x){...}` that
-  close over their environment - but the capture is **by copy**, deep-copying the
-  captured bindings at closure creation exactly the way the `spawn` snapshot
-  already detaches a goroutine's scope. That is the value-semantic answer to the
-  "closures break the model" worry, twice over: (1) a closure carries its own
-  copy, so it can never be a backdoor to aliased mutation - the no-aliasing
-  guarantee holds (capture-*by-reference* stays rejected, since it is the `&xs`
-  shape); and (2) because it owns a detached copy rather than pointing at the
-  frame it was created in, it does **not** extend that frame's lifetime, so the
-  `sync.Pool` frame recycling (which "no closures" currently guarantees) keeps
-  working - the pooled frame is still returned normally. The cost just moves to a
-  deep copy at closure creation, the same cost model as `spawn`.
-
-**Cost.** Tier 1: a `Value` kind + `MatchesDeclared` / `Copy` / `DeepCopy` cases
-(cheap - immutable, shares the pointer), the bare-name-as-value resolution and
-`$var(args)` grammar, a `func` type keyword, the `evalCall` path (reusing
-`CallMethodWith`), the higher-order library layer, and grammar / spec / docs.
-Tier 2 adds the closure literal and a `snapshotForSpawn`-style by-value capture at
-creation (the machinery exists - it is the spawn snapshot, re-pointed). Ship
-Tier 1 first; Tier 2 is additive and, framed as by-value capture, needs no retreat
-from the allocation model `M21.12` tightened.
-
-**Requires:** none hard. Relates to `DRAFT#17` (a bytecode VM changes how calls
-and closures are represented) and `DRAFT#1` (a function-value surface is part of a
-clean embedding API).
-
-### DRAFT#19 - Sum types (enums) + `match`
-
-Structs model a *record*; there is no way to model "one of N variants," and
-control flow is `if` / `elseif` chains with no multi-way dispatch. Ironically the
-interpreter's own `Value` is a tagged union - the language just does not expose
-that shape.
-
-- **`def enum` at top level**, hoisted like structs:
-  `def enum Shape { Circle { r as float }, Rect { w as float, h as float }, Empty };`
-  Each variant is payload-less or carries named fields (a mini-struct).
-  Construction mirrors struct literals: `Shape.Circle{ r: 2.0 }`, `Shape.Empty`.
-- **`match` / `case`** for exhaustive dispatch, binding a variant's payload into a
-  fresh per-arm scope:
-  `match ($s) { case Circle(c) { ...$c.r... } case Rect(rc) { ... } case Empty { ... } }`
-  Exhaustiveness is checked at **resolve time** (every variant covered, or an
-  `else` arm) - the strict, positioned-error stance applied to control flow, so a
-  forgotten variant is a parse error, not a silent fall-through.
-
-**Cost.** A new `Value` kind `KindEnum` that mirrors `KindStruct` almost exactly
-- `(namespace, name)` discriminant plus a `Fields` payload - so it inherits value
-semantics, deep `const`, `Copy` / `DeepCopy`, and `MatchesDeclared` with little
-new machinery. Parser: the `def enum` declaration, `Enum.Variant{...}`
-construction, and `match` / `case` grammar with payload binding (payload slots
-resolved into the arm's block scope, reusing `borrowBlockEnv`). Interpreter: an
-`execMatch` that finds the active variant and runs the arm. Grammar EBNF / PEG,
-spec, docs. No frame-pool or TinyGo concern - it is all tagged-union,
-reflect-free, exactly like structs. Well-contained and high-ergonomic for the
-value; a light scalar `switch` could follow as sugar over an `if`-chain.
-
-**Requires:** none. Pairs naturally with `DRAFT#18` (a `match` result and
-function values together give the functional-core idioms).
-
-### DRAFT#20 - Relax the letters-only identifier rule
-
-Not a feature - revisiting a deliberate constraint that keeps costing.
-Identifiers are `[A-Za-z]` only (no digits), which forces recurring gymnastics:
-`uuid.generate("v4")` because `v4()` is unspellable, the I2C library named `iic`,
-`pbkdf` dropping its "2", `binary` because `bytes` is reserved, and the `hash` /
-`crc` naming dance. Each is a workaround for the same rule.
-
-**Changes:** Allow **interior / trailing digits**, keeping the
-letter-initial rule: `[A-Za-z][A-Za-z0-9]*` (still up to 64 chars; constants keep
-their interior `_`). Letter-initial preserves clean lexing - a token starting
-with a digit is always a number, one starting with a letter is always an
-identifier - so `1..5` (range), the `0x` / `0o` / `0b` literal forms, and float
-mantissas stay unambiguous. This makes `md5`, `sha256`, `v4`, `utf8`, `i2c`,
-`base64` real identifiers and lets the stdlib drop its euphemisms (`uuid.v4()`,
-`use i2c;`, ...).
-
-**Cost.** Mechanically **tiny** - one character class in the lexer's identifier
-scanner, plus a re-verification that no number / identifier ambiguity opens. The
-weight is entirely in it being a **language-identity decision** and a **pre-1.0
-breaking change**: the "letters-only" look is documented and intentional, so
-reversing it touches the spec, `JENNIFER.md`, the grammar EBNF / PEG, the
-naming-convention guidance, and every editor highlighter; and the follow-on
-renames (`iic` -> `i2c`, the `"v4"` string argument -> `v4()`, ...) are each
-semver-breaking, so they must be batched **before 1.0.0**. The honest
-counter-argument to weigh, not just the upside: letters-only gives a uniform look
-and sidesteps confusable / typo-vs-name questions (`sha256` - name or mistake?).
-This draft is as much "should we" as "how," and its value is that the call is
-cheap to make now and expensive to make after 1.0.
-
-**Requires:** none (mechanical), but best decided **early** - renames after 1.0.0
-need a major bump.
-
-### DRAFT#21 - Concurrency coordination: cancellation, timeouts, channels
-
-`spawn` / `task` is elegant and race-free by construction (value-semantics
-capture removes shared state), but there is no way to **cancel** a task,
-**bound** a wait, or **coordinate** producers and consumers - and an unobserved
-non-terminating `spawn` *hangs the program at exit* (documented, but a sharp
-edge). Two tiers.
-
-**Tier 1 - cancellation + timeouts (cheap, high-value).** `task.cancel($t)` sets
-a cancel flag on the shared `TaskState` (already a pointer shared across
-handles); the spawned body observes it cooperatively at the eval loop's existing
-safe points - the same checkpoint shape as the `i.diagReq.Load()` diagnostic poll
-and the signal poll, so it is near-free and needs no preemption (which a
-tree-walker cannot do anyway). A body reads `task.cancelled()` or the runtime
-raises a catchable "cancelled" at the next checkpoint. `task.waitTimeout($t, ms)`
-and a timeout on `waitAny` give bounded waits, backed by Go `select` +
-`time.After`; this is also the escape hatch for the exit-time hang. TinyGo-clean
-(its cooperative scheduler already yields at these points). Ship this first.
-
-**Tier 2 - channels (larger).** A `channel of T` type + a `channel` library
-(`make(cap)` / `send` / `recv` / `close`) using the integer-handle-into-a-registry
-pattern the other shared resources use (`task` / `fs` / `net`), wrapping a Go
-`chan Value`. Crucially, a **send copies the value in** (value-semantic, exactly
-like the spawn snapshot), so channels carry copies and the "no shared mutable
-state" guarantee is preserved - which is why channels, not mutexes / atomics, are
-the right coordination primitive for this language (shared locks would violate
-the invariant and stay rejected). A `select` multi-wait generalizes today's
-`task.waitAny`, which **already uses `reflect.Select`** (verified TinyGo-clean),
-so the core machinery exists; `select` can be a language construct or a
-`channel.select` library form to avoid new grammar.
-
-**Cost.** Tier 1: a flag on `TaskState`, one checkpoint in `evalCall` / the loop
-headers (reusing the diag-poll shape), and timeout wait variants - small, and it
-directly retires the documented exit-hang footgun. Tier 2: a `KindChannel` Value
-+ registry, the `channel` library, the copy-on-send path, and `select` (grammar
-or library) over the existing `reflect.Select` - plus spec / docs. No
-shared-memory primitives; that stance stays.
-
-**Requires:** none hard (builds on the shipped `spawn` / `task`). Tier 1 is
-independent and small; Tier 2 is the follow-on. Relates to `DRAFT#17` (a VM
-relocates the cooperative checkpoints Tier 1 rides on).
-
-### DRAFT#22 - Promote Windows to a supported platform
-
-Windows ships today as a best-effort **unsupported** build (a cross-compiled
-`jennifer.exe`, plus the `M21.13` installer that wraps it). Promoting it to
-*supported* is the concrete instance of `DRAFT#16`'s general "cross-platform
-support" bullet, and it graduates the "Cross-build for macOS / Windows" 1.0.0
-distribution requirement. A portability audit found the surface small - most of
-the OS-touching code is already `runtime.GOOS`-derived or cleanly build-tag
-stubbed - so this is a handful of concrete gaps, not a rewrite.
-
-**What's already fine.** Separators / EOL / `$HOME` / temp are
-`runtime.GOOS`-derived (`internal/lib/os/oslib.go`), `os/exec` is enabled on
-Windows (the exec gate keys on `runtime.Compiler != "tinygo"`, not GOOS), and
-signals plus the four Linux-only hardware libs (`serial` / `spi` / `iic` / `gpio`)
-already stub cleanly on non-Linux (`*_other.go`).
-
-**Fixes:**
-
-- **Windows-native module default.** `compileDefaultSysmoddir` is the one
-  hardcoded POSIX path baked into a Windows binary
-  (`/usr/share/jennifer/modules`, `internal/module/sysmoddir.go`). Give it a
-  Windows-native, **exe-relative** default
-  (`<dir(os.Executable())>\share\jennifer\modules`) via a build-tag split
-  (`sysmoddir_windows.go` / `_unix.go`), so a portable-zip user's
-  `import "name.j";` resolves with no env var. The `M21.13` installer's
-  `JENNIFER_SYSMODDIR` stays the explicit override; precedence is unchanged.
-- **Per-OS golden strategy.** `examples/expected/osinfo.txt` pins
-  `linux` / `amd64` / `/` / `:`, and `cmd/jennifer/examples_test.go` compares
-  byte-exact with no GOOS handling - the sole platform-pinned golden. Add a
-  per-OS expected-file selection (or a `runtime.GOOS`-gated skip for the osinfo
-  canary; the source already flags this at `examples/osinfo.j`).
-- **`fs.chmod` / `fs.chown` on Windows.** Currently Unix-oriented; define the
-  Windows behaviour (a friendly catchable error is acceptable - the `chown` test
-  is already Linux-gated). Document that signal-based graceful shutdown is limited
-  on Windows (`signal_other.go` stubs `os.catchSignal`).
-- **A real Windows CI test job.** `windows-latest` running `go test ./...` so
-  Windows correctness is actually verified (the exec suite self-skips off Linux;
-  the osinfo golden is the known failure the item above resolves). Once green,
-  move windows/amd64 out of the `build-unsupported` matrix into the supported set
-  and drop the "unsupported" labelling for that arch.
-
-**macOS** is the parallel case (same "already ships unsupported, promote it"
-shape) but out of scope here - a separate effort, and it lacks even the
-module-path blocker Windows has.
-
-**Requires:** none hard (all in-tree). Relates to `DRAFT#16` (the umbrella
-multiplatform idea - this is its concrete Windows track) and builds on the shipped
-`M21.13` installer.
-
 ## Loose ideas
 
-A grab-bag, recorded when it comes up.
+A grab-bag, loosely grouped and recorded when it comes up.
 
-- **`label`: embed a bitmap image in the job.** Today `label.image` references
-  an image already stored on the printer (by name). The heavier alternative is
-  to embed the bitmap in the rendered job so a logo travels with the label and
-  needs no pre-loading: convert a source image (PNG / mono bitmap) to each
-  dialect's raster - cab embedded-ASCII image data, ZPL `^GF` graphic field -
-  which needs image decoding plus 1-bit dithering / thresholding. That is a real
-  raster-conversion capability (a Go-side helper or an `image` library), not the
-  pure-text `.j` the rest of the module is, so it is a separate piece of work
-  rather than another encoder branch. Until then, `label.image` (by reference)
-  covers the stored-logo case.
+### Language sugar
+
+- **Multiple returns / destructuring.** Let a method return several values
+  (`return $a, $b;`) and a `def` bind them positionally
+  (`def x, y as int init swap($a, $b);`), extended to struct / list
+  destructuring. Cheapest as a parse-time desugaring to a hidden carrier (a small
+  internal tuple / multi-slot bind) since the interpreter already returns exactly
+  one `Value` - no new `Value` kind strictly required.
+- **String interpolation.** A `"...{expr}..."` interpolating string (with `{{` /
+  `}}` escapes, reusing `intl.tr`'s existing `{name}` grammar) that lexes into
+  literal chunks + embedded expressions, so `"hi {$name}, next is {$n + 1}"`
+  drops the `sprintf` ceremony. Pure lex / parse-time sugar over string
+  concatenation + `convert.toString`, no runtime or `Value` change.
+
+- **Explicit map-to-struct conversion.** A spelled-out, validating way to
+  turn a `json.Value` object (or a homogeneous `map of string to T`) into a
+  typed struct - the sanctioned counterpart to the *rejected* implicit
+  coercion (see [technical/rejected.md](technical/rejected.md)). Deferred:
+  once JSON is destructured through `json.Value` accessors, the by-hand
+  rebuild covers the need, so a one-call form is a convenience, not a
+  blocker. Two candidate shapes, decided on consistency not brevity - a
+  `convert.toStruct($map, "Point")` library call (a two-arg, stringly-typed
+  outlier in the otherwise one-arg `convert.toX` family, or else not
+  self-contained if it reads the binding's declared type) versus a
+  `Point{ ..$map }` struct-literal spread (names its type statically, at the
+  cost of new literal syntax). Either way strict: every declared field
+  present with a matching type, recursing into nested structs / lists /
+  maps, value-semantic, no partial fills or defaults.
+- **Decimal / bignum / money math.** A Go-backed arbitrary-precision base-10
+  `decimal` library (over `math/big`) with `from` / `add` / `sub` / `mul` /
+  `div` / `round` / `compare` and an opaque `Decimal` value (the `KindObject`
+  shape `json.Value` uses) - exact money arithmetic with no float rounding, kept
+  a **library handle** rather than a new primitive so the core `int` / `float`
+  model is untouched.
+### Library completions
+
+- **`io.lines() -> list of string`.** Slurp the whole stdin into a list.
+  Additive on top of the streaming `readLine()` + `eof()` idiom; nice-to-have
+  for tiny scripts, not blocking.
+- **`encoding` - the harder codecs.** The single-byte character codecs and
+  binary-to-text formats all shipped; the deferred remainder, picked up only
+  when a real program needs one: variable-width Asian encodings
+  (`Shift-JIS`, `Big5`, `GB2312`, `GBK`, `GB18030`, `EUC-JP`, `EUC-KR`) -
+  each a state machine with variant / ambiguity edge cases, a whole piece
+  apiece; `UTF-16` / `UTF-16LE` / `UTF-16BE` / `UTF-32` (BOM, surrogate
+  pairs, endianness); and `UTF-7` (mail-transport - though
+  `quoted-printable` already shipped as a general codec).
+- **Password hashing (Argon2id / bcrypt / scrypt).** The modern default for
+  password *storage*, deferred out of the `crypto` library because it lives
+  in `golang.org/x/crypto` (a dependency, unlike the stdlib KDFs `crypto`
+  ships) and wants its own surface distinct from the KDFs: a self-describing
+  `crypto.hashPassword(pw) -> string` (`$argon2id$...`) plus a constant-time
+  `crypto.verifyPassword(pw, hash) -> bool`. Added when password storage is
+  a concrete need, taking the `x/crypto` dependency then - crypto is the one
+  place the dependency-free stance bends, since you never hand-roll it.
 - **`time`: IANA / DST zones.** Real zone names (`Europe/Berlin`) with
   historically-correct daylight-saving resolution, added to the `time`
   **system library** - not a hand-maintained `.j` data map. A `.j` map is
@@ -666,69 +727,16 @@ A grab-bag, recorded when it comes up.
   DST-crossing arithmetic must re-resolve); Level 2 - a zone-carrying
   `time.Time` with DST-correct arithmetic - is a larger, optional follow-up
   needing a Go-backed zone handle.
-- **Password hashing (Argon2id / bcrypt / scrypt).** The modern default for
-  password *storage*, deferred out of the `crypto` library because it lives
-  in `golang.org/x/crypto` (a dependency, unlike the stdlib KDFs `crypto`
-  ships) and wants its own surface distinct from the KDFs: a self-describing
-  `crypto.hashPassword(pw) -> string` (`$argon2id$...`) plus a constant-time
-  `crypto.verifyPassword(pw, hash) -> bool`. Added when password storage is
-  a concrete need, taking the `x/crypto` dependency then - crypto is the one
-  place the dependency-free stance bends, since you never hand-roll it.
-- **`encoding` - the harder codecs.** The single-byte character codecs and
-  binary-to-text formats all shipped; the deferred remainder, picked up only
-  when a real program needs one: variable-width Asian encodings
-  (`Shift-JIS`, `Big5`, `GB2312`, `GBK`, `GB18030`, `EUC-JP`, `EUC-KR`) -
-  each a state machine with variant / ambiguity edge cases, a whole piece
-  apiece; `UTF-16` / `UTF-16LE` / `UTF-16BE` / `UTF-32` (BOM, surrogate
-  pairs, endianness); and `UTF-7` (mail-transport - though
-  `quoted-printable` already shipped as a general codec).
-- **FCGI.** `use FCGI as web;` library when `net` and `httpd` mature. Lets
-  Jennifer host CGI / FastCGI workloads end-to-end.
-- **Inline assembler.**
-- **Binary AST cache (`.jc` files).** Pre-parsed loading for big programs
-  and embedded scripting hosts. Its own effort when it lands - file-format
-  design, versioning, and TinyGo-safe serialization are enough work to merit
-  dedicated treatment. The text JSON form via `jennifer ast` is the
-  placeholder until then.
-- **Profiler: max-call-depth metric.** Graduated to `milestones.md` M21.8
-  (paired with the interpreter's catchable call-depth limit, since both ride the
-  same `evalCall` depth counter).
-  Heap-per-position stays out of scope (`--allocs` already proxies copy
-  churn; true RSS needs `runtime.ReadMemStats` sampling, coarse under
-  TinyGo).
-- **`tinygo_devtools` build tag.** The dev subcommands (`tokens` / `ast` /
-  `fmt` / `lint` / `profile` / `test`) are `!tinygo` for binary *size*, not
-  compatibility - they are TinyGo-clean Go. A
-  `//go:build !tinygo || tinygo_devtools` constraint (stub as
-  `tinygo && !tinygo_devtools`) plus a `make build-tinygo-dev` target would
-  let them run under the actual TinyGo runtime - e.g. to `profile` a
-  TinyGo-specific perf or stack issue in situ. Pairs with the depth metric
-  above: together they are "TinyGo runtime introspection." Deferred -
-  build-tag complexity across ~6 files and a larger dev-tiny binary, for a
-  diagnostic reached for only occasionally.
-- **Build-time library selection.** Choose which system (Go) libraries are
-  baked into a binary at compile time. Motivated by `jennifer-tiny` size (an
-  embedded target needing only `io` + `math` shouldn't carry `net` / `regex`
-  / `hash`) and by opt-in niche Go libraries that don't merit defaulting.
-  The install point is already consolidated - every entry path (`run` /
-  `repl` / `profile` / `test` and the test harnesses) calls
-  `internal/stdlib.InstallAll`, so a library is one line there - and that is
-  the seam a build-tag scheme would cut along: gate each entry behind
-  `//go:build lib_net` (or a `minimal` / `full` profile) and grow
-  `make build-minimal` / `make build TAGS=...`, exactly like the existing
-  `!tinygo` dev-tool split. **Compile-time only** - Go's `plugin` package is
-  Linux/macOS-only and unsupported by TinyGo, and dynamic linking
-  contradicts `jennifer-tiny`'s no-hosted-runtime goal, so PHP-style
-  loadable `.so` extensions are out. Two caveats to design for: (1) a
-  trimmed build breaks the "any `.j` runs on any binary" portability promise
-  (`use net;` becomes a runtime error), so the default build stays full and
-  trimmed builds are an explicit opt-out - ideally with a `meta`-level "is
-  library X present?" query for graceful degradation; (2) CI grows a couple
-  of profiles (default / minimal), not 2^N. Complementary to, not a
-  substitute for, the module system: `.j`-level extensibility (community /
-  uncommon libraries writable in Jennifer) is the module system's job with
-  zero binary cost; build-time selection is only for the curated Go-level
-  core.
+- **`label`: embed a bitmap image in the job.** Today `label.image` references
+  an image already stored on the printer (by name). The heavier alternative is
+  to embed the bitmap in the rendered job so a logo travels with the label and
+  needs no pre-loading: convert a source image (PNG / mono bitmap) to each
+  dialect's raster - cab embedded-ASCII image data, ZPL `^GF` graphic field -
+  which needs image decoding plus 1-bit dithering / thresholding. That is a real
+  raster-conversion capability (a Go-side helper or an `image` library), not the
+  pure-text `.j` the rest of the module is, so it is a separate piece of work
+  rather than another encoder branch. Until then, `label.image` (by reference)
+  covers the stored-logo case.
 - **SQLite (`sql` engine backend).** The client-server half of relational
   support - MySQL / MariaDB + PostgreSQL - is committed as
   [M20.9](milestones.md) (a `sql` system library over Go's `database/sql`,
@@ -768,47 +776,80 @@ A grab-bag, recorded when it comes up.
   until the `jennifer-full` variant earns its place in the release / CI /
   packaging matrix. Contrast the text-protocol stores `redis` / `memcache`,
   pure Jennifer over `net`, which need none of this.
-- **Explicit map-to-struct conversion.** A spelled-out, validating way to
-  turn a `json.Value` object (or a homogeneous `map of string to T`) into a
-  typed struct - the sanctioned counterpart to the *rejected* implicit
-  coercion (see [technical/rejected.md](technical/rejected.md)). Deferred:
-  once JSON is destructured through `json.Value` accessors, the by-hand
-  rebuild covers the need, so a one-call form is a convenience, not a
-  blocker. Two candidate shapes, decided on consistency not brevity - a
-  `convert.toStruct($map, "Point")` library call (a two-arg, stringly-typed
-  outlier in the otherwise one-arg `convert.toX` family, or else not
-  self-contained if it reads the binding's declared type) versus a
-  `Point{ ..$map }` struct-literal spread (names its type statically, at the
-  cost of new literal syntax). Either way strict: every declared field
-  present with a matching type, recursing into nested structs / lists /
-  maps, value-semantic, no partial fills or defaults.
-- **`io.lines() -> list of string`.** Slurp the whole stdin into a list.
-  Additive on top of the streaming `readLine()` + `eof()` idiom; nice-to-have
-  for tiny scripts, not blocking.
-- **i18n.** Locale-aware case folding, collation, number / date formatting,
-  BiDi. Gated on the CLDR-data binary-size question (likely an optional
-  library shipped after the WASM runtime, so locale tables aren't baked into
+- **FCGI.** `use FCGI as web;` library when `net` and `httpd` mature. Lets
+  Jennifer host CGI / FastCGI workloads end-to-end.
+- **i18n (CLDR formatting).** Locale-aware case folding, collation, number /
+  date formatting, and BiDi - the CLDR-data-backed half of i18n, distinct from
+  the message catalogs + `{name}` interpolation already shipped as the `intl`
+  library (`M20.4`). Gated on the CLDR-data binary-size question (likely an
+  optional library after the WASM runtime, so locale tables aren't baked into
   every build).
+### Runtime and tooling
+
+- **`tinygo_devtools` build tag.** The dev subcommands (`tokens` / `ast` /
+  `fmt` / `lint` / `profile` / `test`) are `!tinygo` for binary *size*, not
+  compatibility - they are TinyGo-clean Go. A
+  `//go:build !tinygo || tinygo_devtools` constraint (stub as
+  `tinygo && !tinygo_devtools`) plus a `make build-tinygo-dev` target would
+  let them run under the actual TinyGo runtime - e.g. to `profile` a
+  TinyGo-specific perf or stack issue in situ. Pairs with the depth metric
+  above: together they are "TinyGo runtime introspection." Deferred -
+  build-tag complexity across ~6 files and a larger dev-tiny binary, for a
+  diagnostic reached for only occasionally.
+- **Build-time library selection.** Choose which system (Go) libraries are
+  baked into a binary at compile time. Motivated by `jennifer-tiny` size (an
+  embedded target needing only `io` + `math` shouldn't carry `net` / `regex`
+  / `hash`) and by opt-in niche Go libraries that don't merit defaulting.
+  The install point is already consolidated - every entry path (`run` /
+  `repl` / `profile` / `test` and the test harnesses) calls
+  `internal/stdlib.InstallAll`, so a library is one line there - and that is
+  the seam a build-tag scheme would cut along: gate each entry behind
+  `//go:build lib_net` (or a `minimal` / `full` profile) and grow
+  `make build-minimal` / `make build TAGS=...`, exactly like the existing
+  `!tinygo` dev-tool split. **Compile-time only** - Go's `plugin` package is
+  Linux/macOS-only and unsupported by TinyGo, and dynamic linking
+  contradicts `jennifer-tiny`'s no-hosted-runtime goal, so PHP-style
+  loadable `.so` extensions are out. Two caveats to design for: (1) a
+  trimmed build breaks the "any `.j` runs on any binary" portability promise
+  (`use net;` becomes a runtime error), so the default build stays full and
+  trimmed builds are an explicit opt-out - ideally with a `meta`-level "is
+  library X present?" query for graceful degradation; (2) CI grows a couple
+  of profiles (default / minimal), not 2^N. Complementary to, not a
+  substitute for, the module system: `.j`-level extensibility (community /
+  uncommon libraries writable in Jennifer) is the module system's job with
+  zero binary cost; build-time selection is only for the curated Go-level
+  core.
+- **Binary AST cache (`.jc` files).** Pre-parsed loading for big programs
+  and embedded scripting hosts. Its own effort when it lands - file-format
+  design, versioning, and TinyGo-safe serialization are enough work to merit
+  dedicated treatment. The text JSON form via `jennifer ast` is the
+  placeholder until then.
+- **Compile to Go (AOT).** Transpile the resolved AST to Go source and let the
+  Go toolchain build a native binary - the pragmatic ahead-of-time path, reusing
+  the existing lexer / parser / resolver front-end. It wins where a from-scratch
+  native backend (an LLVM one, say) loses: Go's GC, goroutine scheduler, and the
+  **entire Go-hosted stdlib** come for free, so the huge re-hosting cost (`net` /
+  TLS / `crypto` / `sql` / `regex` / ...) never appears. The mappings are natural
+  - value semantics to struct copies, `spawn` to a goroutine over a snapshot,
+  `defer` to `defer`, `throw` to error returns. The catch is the language's
+  dynamism (untyped method returns, `meta.call` by name, opaque `json.Value`): a
+  naive transpile keeps boxed tagged-union values, so it beats the tree-walker
+  but is not C-speed without type-specialisation work. Relates to `DRAFT#17` (the
+  in-process bytecode VM is the cheaper dispatch win) and `DRAFT#2` (WASM, the
+  other compiled target); a hand-rolled LLVM backend is the most expensive, least
+  differentiated version of this idea and stays a non-goal. Aside:
+  `jennifer-tiny` already reaches native through LLVM transitively - TinyGo is an
+  LLVM-based Go compiler.
 - **Advanced scheduling knobs.** CPU affinity, work-stealing pool sizing,
   NUMA awareness, `GOMAXPROCS`-equivalent runtime tuning. Runtime-config
   surface for the spawn scheduler, not new language features. Ships when a
   real use case forces it (the default - "let Go's scheduler decide" -
   handles every workload we've imagined so far).
-- **Multiple returns / destructuring.** Let a method return several values
-  (`return $a, $b;`) and a `def` bind them positionally
-  (`def x, y as int init swap($a, $b);`), extended to struct / list
-  destructuring. Cheapest as a parse-time desugaring to a hidden carrier (a small
-  internal tuple / multi-slot bind) since the interpreter already returns exactly
-  one `Value` - no new `Value` kind strictly required.
-- **Decimal / bignum / money math.** A Go-backed arbitrary-precision base-10
-  `decimal` library (over `math/big`) with `from` / `add` / `sub` / `mul` /
-  `div` / `round` / `compare` and an opaque `Decimal` value (the `KindObject`
-  shape `json.Value` uses) - exact money arithmetic with no float rounding, kept
-  a **library handle** rather than a new primitive so the core `int` / `float`
-  model is untouched.
-- **String interpolation.** A `"...{expr}..."` interpolating string (with `{{` /
-  `}}` escapes, reusing `intl.tr`'s existing `{name}` grammar) that lexes into
-  literal chunks + embedded expressions, so `"hi {$name}, next is {$n + 1}"`
-  drops the `sprintf` ceremony. Pure lex / parse-time sugar over string
-  concatenation + `convert.toString`, no runtime or `Value` change.
+- **Profiler: heap-per-position metric.** Out of scope for now: `--allocs`
+  already proxies value-copy churn, and true per-position RSS needs
+  `runtime.ReadMemStats` sampling, which is coarse under TinyGo. (Its paired
+  idea, the max-call-depth metric, graduated to `M21.8`.)
 
+### Wild ideas
+
+- **Inline assembler.**

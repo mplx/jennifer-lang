@@ -27,8 +27,19 @@ The icon is the repo's existing multi-size `docs/favicon.ico`.
 
 ## Building locally
 
-Needs Inno Setup 6.3+ (`iscc` / `ISCC.exe`). Build `jennifer.exe` at the repo
-root first (the script references `..\..\jennifer.exe`):
+**On Linux, one command** (Wine + Inno Setup, auto-provisioned and cached):
+
+```
+scripts/build-windows-installer.sh
+```
+
+It cross-compiles `jennifer.exe`, downloads Inno Setup into a Wine prefix the
+first time (then reuses it), compiles this `.iss`, and writes
+`dist/jennifer-<version>-setup.exe` + a `.sha256`. See the script header for the
+`APP_VERSION` / `WINEPREFIX` / `ISCC` / `INNO_VERSION` overrides.
+
+**Manually, or on Windows** - needs Inno Setup 6.3+ (`iscc` / `ISCC.exe`). Build
+`jennifer.exe` at the repo root first (the `.iss` references `..\..\jennifer.exe`):
 
 ```
 go build -trimpath -ldflags="-s -w" -o jennifer.exe ./cmd/jennifer
