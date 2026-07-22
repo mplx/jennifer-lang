@@ -5,11 +5,12 @@
  * An IMAP4rev1 receive client (RFC 3501): tagged commands and untagged "*"
  * responses over the `net` system library, with plaintext / implicit TLS /
  * STARTTLS and auth by LOGIN, XOAUTH2, CRAM-MD5, or SCRAM-SHA-1 / SCRAM-SHA-256.
- * A useful reading subset - SELECT, SEARCH, FETCH the
- * whole message - not the full protocol. Retrieved messages come back as
- * strings for the `mime` module to parse. Uses `net`, so it needs the default
- * `jennifer` binary. A session is stateful: `connect`, `selectMailbox`,
- * `search` / `fetch`, `logout`. A "NO" / "BAD" completion throws a catchable
+ * A useful reading-plus-flagging subset - SELECT, SEARCH, FETCH the whole
+ * message or named headers, STORE flags, EXPUNGE - not the full protocol.
+ * Retrieved messages come back as strings for the `mime` module to parse. Uses
+ * `net`, so it needs the default `jennifer` binary. A session is stateful:
+ * `connect`, `selectMailbox`, `search` / `fetch` / `fetchHeaders`, optional
+ * `addFlags` / `expunge`, `logout`. A "NO" / "BAD" completion throws a catchable
  * `Error` (kind "imap"). One fixed command tag is used, which is safe for this
  * synchronous client (one command in flight at a time). Message literals
  * (`{N}`) are framed over bytes by their byte count, so an 8-bit / multi-byte
@@ -481,6 +482,82 @@ export func search(session as Session) {
 export func fetch(session as Session, n as int) {
     def cmd as string init "FETCH " + convert.toString($n) + " BODY.PEEK[]";
     return extractLiteral(command($session.conn, $cmd));
+}
+
+/**
+ * Retrieve only the named header fields of message `n` (space-separated, e.g.
+ * "SUBJECT DATE") as a raw header block for `mime.parse` - far cheaper than
+ * fetching the whole body when you only need a few headers.
+ * @param session {Session} the open session
+ * @param n {int} the message sequence number
+ * @param fields {string} the space-separated header names, e.g. "SUBJECT DATE"
+ * @return {string} the raw header block (the fields plus the terminating blank line)
+ * @throws {Error} on a "NO" / "BAD" completion (kind "imap")
+ */
+export func fetchHeaders(session as Session, n as int, fields as string) {
+    def cmd as string init "FETCH " + convert.toString($n) + " BODY.PEEK[HEADER.FIELDS (" + $fields + ")]";
+    return extractLiteral(command($session.conn, $cmd));
+}
+
+/**
+ * Return the flags currently set on message `n` as a space-separated string
+ * (e.g. "\\Seen $label1"), or "" when none. Useful to confirm a STORE actually
+ * persisted: a server that does not allow a custom keyword answers OK but drops
+ * it, so the keyword will be absent here.
+ * @param session {Session} the open session
+ * @param n {int} the message sequence number
+ * @return {string} the flags, space-separated (no surrounding parentheses)
+ * @throws {Error} on a "NO" / "BAD" completion (kind "imap")
+ */
+export func flags(session as Session, n as int) {
+    def resp as string init command($session.conn, "FETCH " + convert.toString($n) + " (FLAGS)");
+    def m as regex.Match init regex.find("FLAGS \\(([^)]*)\\)", $resp);
+    if ($m.start < 0) {
+        return "";
+    }
+    return strings.trim($m.groups[0]);
+}
+
+/**
+ * Add IMAP flags / keywords to message `n` (STORE +FLAGS.SILENT). Use a keyword
+ * like "$label1" to colour the message in Thunderbird, or the system flag
+ * "\\Deleted" to mark it for `expunge`. The mailbox is selected read-write by
+ * `selectMailbox`, so the store is permitted.
+ * @param session {Session} the open session
+ * @param n {int} the message sequence number
+ * @param flags {string} the space-separated flags, e.g. "$label1" or "\\Deleted"
+ * @throws {Error} on a "NO" / "BAD" completion (kind "imap")
+ */
+export func addFlags(session as Session, n as int, flags as string) {
+    command($session.conn, "STORE " + convert.toString($n) + " +FLAGS.SILENT (" + $flags + ")");
+    return;
+}
+
+/**
+ * Remove IMAP flags / keywords from message `n` (STORE -FLAGS.SILENT), the
+ * inverse of addFlags. Removing a flag that is not set is a harmless no-op, e.g.
+ * removeFlags(session, n, "$label1") clears that tag, "\\Deleted" un-marks a
+ * pending delete.
+ * @param session {Session} the open session
+ * @param n {int} the message sequence number
+ * @param flags {string} the space-separated flags to clear, e.g. "$label1"
+ * @throws {Error} on a "NO" / "BAD" completion (kind "imap")
+ */
+export func removeFlags(session as Session, n as int, flags as string) {
+    command($session.conn, "STORE " + convert.toString($n) + " -FLAGS.SILENT (" + $flags + ")");
+    return;
+}
+
+/**
+ * Permanently remove every message flagged "\\Deleted" in the selected mailbox
+ * (EXPUNGE). Sequence numbers shift as messages are removed, so mark all the
+ * target messages with `addFlags(..., "\\Deleted")` first and call this once.
+ * @param session {Session} the open session
+ * @throws {Error} on a "NO" / "BAD" completion (kind "imap")
+ */
+export func expunge(session as Session) {
+    command($session.conn, "EXPUNGE");
+    return;
 }
 
 /**

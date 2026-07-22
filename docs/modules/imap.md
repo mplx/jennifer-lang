@@ -4,9 +4,10 @@ Import with `import "imap.j" as imap;`. An **IMAP4rev1** receive client (RFC
 3501): tagged commands and untagged `*` responses over the `net` system
 library, with plaintext / implicit-TLS / STARTTLS transport and auth by `LOGIN`,
 XOAUTH2, CRAM-MD5, or SCRAM-SHA-1 / SCRAM-SHA-256.
-A useful **reading subset** - select a mailbox, search it, fetch whole
-messages - not the full protocol. Retrieved messages come back as strings for
-the [`mime`](mime.md) module to parse. Because it uses `net`, this module needs
+A useful **reading-plus-flagging subset** - select a mailbox, search it, fetch
+whole messages or named headers, and flag / expunge them - not the full
+protocol. Retrieved messages come back as strings for the [`mime`](mime.md)
+module to parse. Because it uses `net`, this module needs
 the default **`jennifer`** binary.
 
 > **On `jennifer-tiny`:** "needs the default `jennifer` binary" refers to the
@@ -31,19 +32,25 @@ Runnable: [`examples/modules/imap_demo.j`](https://github.com/jennifer-language/
 
 ## Surface
 
-A session is stateful: `connect`, `selectMailbox`, `search` / `fetch`,
-`logout`. `fetchAll` wraps the common "read every message in a mailbox" case.
+A session is stateful: `connect`, `selectMailbox`, `search` / `fetch` /
+`fetchHeaders`, optional `addFlags` / `expunge`, `logout`. `fetchAll` wraps the
+common "read every message in a mailbox" case.
 
-| Call / type                        | Notes                                                            |
-| ---------------------------------- | ---------------------------------------------------------------- |
-| `imap.Options`                     | `host`, `port`, `security`, `user`, `pass`.                      |
-| `imap.Session`                     | A live session over one connection (from `connect`).             |
-| `imap.connect(opts)`               | Open a session: greeting, optional STARTTLS, `LOGIN`.            |
-| `imap.selectMailbox(session, name)`| `SELECT` a mailbox (e.g. `"INBOX"`); returns its message count.  |
-| `imap.search(session)`             | `SEARCH ALL` - the sequence numbers in the selected mailbox (`list of int`). |
-| `imap.fetch(session, n)`           | `FETCH n BODY.PEEK[]` - message `n` as a raw string, for `mime.parse`. |
-| `imap.logout(session)`             | `LOGOUT` and close.                                              |
-| `imap.fetchAll(opts, mailbox)`     | Connect, select, retrieve every message, log out; `list of string`. |
+| Call / type                          | Notes                                                            |
+| ------------------------------------ | ---------------------------------------------------------------- |
+| `imap.Options`                       | `host`, `port`, `security`, `user`, `pass`, `auth`.              |
+| `imap.Session`                       | A live session over one connection (from `connect`).             |
+| `imap.connect(opts)`                 | Open a session: greeting, optional STARTTLS, `LOGIN` / SASL.     |
+| `imap.selectMailbox(session, name)`  | `SELECT` a mailbox (e.g. `"INBOX"`); returns its message count.  |
+| `imap.search(session)`               | `SEARCH ALL` - the sequence numbers in the selected mailbox (`list of int`). |
+| `imap.fetch(session, n)`             | `FETCH n BODY.PEEK[]` - message `n` as a raw string, for `mime.parse`. |
+| `imap.fetchHeaders(session, n, flds)`| `FETCH n BODY.PEEK[HEADER.FIELDS (flds)]` - only the named headers (e.g. `"SUBJECT DATE"`), cheaper than the whole body. |
+| `imap.flags(session, n)`             | `FETCH n (FLAGS)` - the flags set on message `n` as a space-separated string (confirm a `STORE` persisted). |
+| `imap.addFlags(session, n, flags)`   | `STORE n +FLAGS.SILENT (flags)` - add keywords / flags, e.g. `"$cl_1"` (Thunderbird tag colour) or `"\Deleted"`. A server that disallows a keyword answers OK but drops it - verify with `flags`. |
+| `imap.removeFlags(session, n, flags)`| `STORE n -FLAGS.SILENT (flags)` - clear keywords / flags (inverse of `addFlags`); removing an unset flag is a no-op. |
+| `imap.expunge(session)`              | `EXPUNGE` - permanently remove all `\Deleted` messages in the selected mailbox. |
+| `imap.logout(session)`               | `LOGOUT` and close.                                              |
+| `imap.fetchAll(opts, mailbox)`       | Connect, select, retrieve every message, log out; `list of string`. |
 
 `Options.security` is `"none"` (143), `"tls"` (implicit TLS on connect, 993),
 or `"starttls"`. `fetch` uses `BODY.PEEK[]`, so retrieving does **not** set the
@@ -77,9 +84,10 @@ runs in CI without an external server.
 
 This is a reading subset, not full IMAP4rev1:
 
-- **Commands.** `LOGIN` / `SELECT` / `SEARCH ALL` / `FETCH BODY.PEEK[]` /
-  `LOGOUT`. No partial fetch, `STORE` (flag changes), `COPY`, `APPEND`,
-  `EXPUNGE`, mailbox management, or `IDLE`.
+- **Commands.** `LOGIN` / `SELECT` / `SEARCH ALL` / `FETCH BODY.PEEK[]` and
+  `BODY.PEEK[HEADER.FIELDS (...)]` / `STORE +FLAGS.SILENT` / `EXPUNGE` /
+  `LOGOUT`. No `COPY`, `APPEND`, mailbox management, or `IDLE`; `SEARCH` is
+  `ALL`-only (no criteria).
 - **Auth.** `LOGIN` (default), or `AUTHENTICATE` with XOAUTH2 (`auth:
   "xoauth2"`, for Google / Microsoft 365), CRAM-MD5 (`"cram"`), or SCRAM-SHA-1 /
   SCRAM-SHA-256 (`"scram-sha-1"` / `"scram-sha-256"`), via [`sasl`](sasl.md).
