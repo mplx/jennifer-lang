@@ -5,8 +5,8 @@ Import with `import "imap.j" as imap;`. An **IMAP4rev1** receive client (RFC
 library, with plaintext / implicit-TLS / STARTTLS transport and auth by `LOGIN`,
 XOAUTH2, CRAM-MD5, or SCRAM-SHA-1 / SCRAM-SHA-256.
 A useful **reading-plus-flagging subset** - select a mailbox, search it, fetch
-whole messages or named headers, and flag / expunge them - not the full
-protocol. Retrieved messages come back as strings for the [`mime`](mime.md)
+whole messages or named headers, and flag / copy / expunge them (so, also move) -
+not the full protocol. Retrieved messages come back as strings for the [`mime`](mime.md)
 module to parse. Because it uses `net`, this module needs
 the default **`jennifer`** binary.
 
@@ -48,6 +48,8 @@ common "read every message in a mailbox" case.
 | `imap.flags(session, n)`             | `FETCH n (FLAGS)` - the flags set on message `n` as a space-separated string (confirm a `STORE` persisted). |
 | `imap.addFlags(session, n, flags)`   | `STORE n +FLAGS.SILENT (flags)` - add keywords / flags, e.g. `"$cl_1"` (Thunderbird tag colour) or `"\Deleted"`. A server that disallows a keyword answers OK but drops it - verify with `flags`. |
 | `imap.removeFlags(session, n, flags)`| `STORE n -FLAGS.SILENT (flags)` - clear keywords / flags (inverse of `addFlags`); removing an unset flag is a no-op. |
+| `imap.createMailbox(session, name)`  | `CREATE name` - make a mailbox; errors if it already exists, so `try`/`catch` for a create-if-missing. |
+| `imap.copy(session, n, mailbox)`     | `COPY n mailbox` - copy message `n` into another (existing) mailbox. A "move" is `copy` + `addFlags(..., "\Deleted")` + `expunge`. |
 | `imap.expunge(session)`              | `EXPUNGE` - permanently remove all `\Deleted` messages in the selected mailbox. |
 | `imap.logout(session)`               | `LOGOUT` and close.                                              |
 | `imap.fetchAll(opts, mailbox)`       | Connect, select, retrieve every message, log out; `list of string`. |
@@ -85,9 +87,10 @@ runs in CI without an external server.
 This is a reading subset, not full IMAP4rev1:
 
 - **Commands.** `LOGIN` / `SELECT` / `SEARCH ALL` / `FETCH BODY.PEEK[]` and
-  `BODY.PEEK[HEADER.FIELDS (...)]` / `STORE +FLAGS.SILENT` / `EXPUNGE` /
-  `LOGOUT`. No `COPY`, `APPEND`, mailbox management, or `IDLE`; `SEARCH` is
-  `ALL`-only (no criteria).
+  `BODY.PEEK[HEADER.FIELDS (...)]` / `STORE +/-FLAGS.SILENT` / `COPY` / `CREATE` /
+  `EXPUNGE` / `LOGOUT`. No `APPEND`, `RENAME` / `DELETE` mailbox management,
+  `MOVE` (use `COPY` + `\Deleted` + `EXPUNGE`), or `IDLE`; `SEARCH` is `ALL`-only
+  (no criteria).
 - **Auth.** `LOGIN` (default), or `AUTHENTICATE` with XOAUTH2 (`auth:
   "xoauth2"`, for Google / Microsoft 365), CRAM-MD5 (`"cram"`), or SCRAM-SHA-1 /
   SCRAM-SHA-256 (`"scram-sha-1"` / `"scram-sha-256"`), via [`sasl`](sasl.md).

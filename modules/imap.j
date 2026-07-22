@@ -6,7 +6,7 @@
  * responses over the `net` system library, with plaintext / implicit TLS /
  * STARTTLS and auth by LOGIN, XOAUTH2, CRAM-MD5, or SCRAM-SHA-1 / SCRAM-SHA-256.
  * A useful reading-plus-flagging subset - SELECT, SEARCH, FETCH the whole
- * message or named headers, STORE flags, EXPUNGE - not the full protocol.
+ * message or named headers, STORE flags, COPY, EXPUNGE - not the full protocol.
  * Retrieved messages come back as strings for the `mime` module to parse. Uses
  * `net`, so it needs the default `jennifer` binary. A session is stateful:
  * `connect`, `selectMailbox`, `search` / `fetch` / `fetchHeaders`, optional
@@ -545,6 +545,34 @@ export func addFlags(session as Session, n as int, flags as string) {
  */
 export func removeFlags(session as Session, n as int, flags as string) {
     command($session.conn, "STORE " + convert.toString($n) + " -FLAGS.SILENT (" + $flags + ")");
+    return;
+}
+
+/**
+ * Create a mailbox (CREATE). A server answers "NO" if it already exists (often
+ * with an "[ALREADYEXISTS]" response code), so wrap this in try / catch for a
+ * create-if-missing.
+ * @param session {Session} the open session
+ * @param mailbox {string} the mailbox name to create
+ * @throws {Error} on a "NO" / "BAD" completion (kind "imap"), including when the mailbox already exists
+ */
+export func createMailbox(session as Session, mailbox as string) {
+    command($session.conn, "CREATE " + quoteArg($mailbox));
+    return;
+}
+
+/**
+ * Copy message `n` into another mailbox (COPY). The source copy stays until it is
+ * deleted, so the standard "move" is copy + addFlags(..., "\\Deleted") + expunge.
+ * The destination mailbox must already exist - COPY to a missing one is a
+ * "NO [TRYCREATE]" error.
+ * @param session {Session} the open session
+ * @param n {int} the message sequence number
+ * @param mailbox {string} the destination mailbox name
+ * @throws {Error} on a "NO" / "BAD" completion (kind "imap")
+ */
+export func copy(session as Session, n as int, mailbox as string) {
+    command($session.conn, "COPY " + convert.toString($n) + " " + quoteArg($mailbox));
     return;
 }
 
