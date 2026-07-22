@@ -338,12 +338,35 @@ func findImpostorStruct(v Value, m *loadedModule) (Value, bool) {
 // propagates unchanged so `try`/`catch` and exit codes keep working.
 func (i *Interpreter) callModuleMethod(m *loadedModule, c *parser.QualifiedCallExpr, env *Environment) (Value, error) {
 	file, line, col := posFor(c)
-	if _, ok := m.interp.methods[c.Callee]; !ok {
+	md, ok := m.interp.methods[c.Callee]
+	if !ok {
 		return Value{}, &runtimeError{Msg: fmt.Sprintf("module %q has no method %q", c.Prefix, c.Callee), File: file, Line: line, Col: col}
 	}
 	if !m.exports[c.Callee] {
 		return Value{}, &runtimeError{Msg: fmt.Sprintf("%s.%s: %q is not exported from module %q", c.Prefix, c.Callee, c.Callee, c.Prefix), File: file, Line: line, Col: col}
 	}
+	return i.dispatchModuleMethod(m, md, c, env)
+}
+
+// moduleMethodTarget is the pre-resolved descriptor resolveQualifiedRefs stamps
+// onto a `QualifiedCallExpr.Fn` for an exported module-alias method call, so
+// evalQualifiedCall dispatches straight through dispatchModuleMethod - skipping
+// the moduleAliases prefix lookup, the method-existence check, and the export
+// check that callModuleMethod performs on the unstamped (REPL / missing /
+// private) fallback path. The pointers are stable for the interpreter's life;
+// stamping is single-threaded (before any spawn), so concurrent reads are safe.
+type moduleMethodTarget struct {
+	mod    *loadedModule
+	method *parser.MethodDef
+}
+
+// dispatchModuleMethod is the shared dispatch core for `alias.method(args)`,
+// reached from both the checked callModuleMethod path and the stamped fast path.
+// Arguments are evaluated in the consumer's env, checked for module-struct
+// impostors, retagged inward across the boundary, run against the module's own
+// interpreter via CallMethodWith, and the result retagged outward.
+func (i *Interpreter) dispatchModuleMethod(m *loadedModule, md *parser.MethodDef, c *parser.QualifiedCallExpr, env *Environment) (Value, error) {
+	file, line, col := posFor(c)
 	args := make([]Value, len(c.Args))
 	for idx, a := range c.Args {
 		v, err := i.evalExpr(a, env)
@@ -364,7 +387,7 @@ func (i *Interpreter) callModuleMethod(m *loadedModule, c *parser.QualifiedCallE
 		// tagged `(module-stem, name)`; inside the module it is bare.
 		args[idx] = retagStructs(v, m.ns, "", m.path, "", m.isOwnStruct)
 	}
-	v, err := m.interp.CallByNameWith(c.Callee, args...)
+	v, err := m.interp.CallMethodWith(md, args...)
 	if err != nil {
 		switch err.(type) {
 		case *runtimeError, *ExitSignal, *ErrorSignal:

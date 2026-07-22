@@ -434,9 +434,12 @@ Two moves close out the optimization pass:
    imported module is fully initialised before the importer's body runs.
    Then `resolveQualifiedRefs(prog)` walks the AST once and pre-fills
    every `QualifiedCallExpr.Fn` / `QualifiedConstRefExpr.Const` against
-   the now-populated namespace AND module-alias tables, so a library const
-   and a module-alias const (`m.CONST` - its boundary-retagged, deep-const
-   value cached on the node) both resolve to an O(1) return instead of a
+   the now-populated namespace AND module-alias tables. A library builtin,
+   a library const, a module-alias const (`m.CONST` - its
+   boundary-retagged, deep-const value cached on the node), and a
+   module-alias method (`m.fn(...)` - a `moduleMethodTarget{mod,
+   *MethodDef}` cached in `Fn`, dispatched through `dispatchModuleMethod`
+   -> `CallMethodWith`) all resolve to a direct dispatch instead of a
    per-access lookup (an unexported / missing name stays unstamped, so its
    runtime error is unchanged). This pass runs after BOTH import
    mechanisms (the tables didn't exist during Resolve) and is skipped by

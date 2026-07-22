@@ -677,8 +677,17 @@ func (i *Interpreter) CallByNameWith(name string, args ...Value) (Value, error) 
 	if !ok {
 		return Value{}, fmt.Errorf("method %q is not defined", name)
 	}
+	return i.CallMethodWith(m, args...)
+}
+
+// CallMethodWith dispatches an already-resolved *MethodDef with the given args,
+// skipping the name-map lookup CallByNameWith does. It is the shared dispatch
+// core: CallByNameWith delegates here after its lookup, and the stamped
+// module-method fast path (dispatchModuleMethod) calls it with the *MethodDef
+// resolveQualifiedRefs cached on the call node.
+func (i *Interpreter) CallMethodWith(m *parser.MethodDef, args ...Value) (Value, error) {
 	if len(args) != len(m.Params) {
-		return Value{}, fmt.Errorf("method %q takes %d parameter(s), got %d", name, len(m.Params), len(args))
+		return Value{}, fmt.Errorf("method %q takes %d parameter(s), got %d", m.Name, len(m.Params), len(args))
 	}
 	if i.global == nil {
 		i.global = NewEnvironment(nil)
@@ -687,7 +696,7 @@ func (i *Interpreter) CallByNameWith(name string, args ...Value) (Value, error) 
 	for idx, p := range m.Params {
 		if !args[idx].MatchesDeclared(p.Type) {
 			releaseBlockEnv(callFrame)
-			return Value{}, fmt.Errorf("argument %d to %q must be %s, got %s", idx+1, name, p.Type, args[idx].Kind)
+			return Value{}, fmt.Errorf("argument %d to %q must be %s, got %s", idx+1, m.Name, p.Type, args[idx].Kind)
 		}
 		bound := bindParamValue(args[idx], p.Type)
 		if err := callFrame.DefineAt(idx, p.Name, bound, p.Type, false); err != nil {
@@ -4003,6 +4012,13 @@ func (i *Interpreter) resolveNamespacePrefix(prefix string) (string, error) {
 // resolved to a namespace (alias-aware), then the (namespace, callee)
 // pair is looked up in the namespaced-builtin registry.
 func (i *Interpreter) evalQualifiedCall(c *parser.QualifiedCallExpr, env *Environment) (Value, error) {
+	// Pre-resolved module-alias method stamped by resolveQualifiedRefs: dispatch
+	// straight through, skipping the moduleAliases lookup + existence / export
+	// checks (already done at stamp time). The Builtin fast path below handles
+	// the library case; both fall back to the slow paths when unstamped.
+	if mt, ok := c.Fn.(moduleMethodTarget); ok {
+		return i.dispatchModuleMethod(mt.mod, mt.method, c, env)
+	}
 	// A module alias resolves into a loaded module's own interpreter, not a
 	// library namespace. Aliases are collision-checked against library
 	// prefixes at bind time, so a prefix is one or the other, never both.
@@ -4192,6 +4208,15 @@ func (i *Interpreter) walkExprForQualifiedRefs(e parser.Expr) {
 		if ns, ok := i.nsPrefixes[ex.Prefix]; ok {
 			if fn, hit := i.NSBuiltins[nsKey{NS: ns, Name: ex.Callee}]; hit {
 				ex.Fn = fn
+			}
+		} else if m, ok := i.moduleAliases[ex.Prefix]; ok {
+			// Module-alias method: stamp the resolved (module, *MethodDef) so
+			// evalQualifiedCall dispatches straight through dispatchModuleMethod,
+			// skipping the per-call prefix / method-existence / export lookups.
+			// Left unstamped when the name is missing or private, so the runtime
+			// path still raises the proper "no method" / "not exported" error.
+			if md, found := m.interp.methods[ex.Callee]; found && m.exports[ex.Callee] {
+				ex.Fn = moduleMethodTarget{mod: m, method: md}
 			}
 		}
 		for _, a := range ex.Args {
