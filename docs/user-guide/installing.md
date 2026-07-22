@@ -145,9 +145,11 @@ best-effort **unsupported** build wrapped in an [Inno Setup](https://jrsoftware.
 installer. It is still unsigned (SmartScreen: "More info" -> "Run anyway") and
 still unsupported, but it saves the manual setup:
 
-- Installs `jennifer.exe` per-user (no admin) to
-  `%LOCALAPPDATA%\Programs\Jennifer` and adds it to your `PATH`, so `jennifer`
-  works in a fresh terminal.
+- Offers a choice at startup: **Install for all users** (elevates, installs to
+  `C:\Program Files\Jennifer`, system-wide `PATH` / env) or **Install for me
+  only** (no admin, `%LOCALAPPDATA%\Programs\Jennifer`, per-user). Running the
+  setup as administrator gets the all-users / Program Files install. Either way
+  it adds `jennifer.exe` to `PATH`, so `jennifer` works in a fresh terminal.
 - Bundles the Jennifer-coded system modules and sets `JENNIFER_SYSMODDIR`, so a
   bare `import "name.j";` resolves (on Windows the built-in module path is a
   Unix path that does not exist, so the plain `.zip` cannot import modules

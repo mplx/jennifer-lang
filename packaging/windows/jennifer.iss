@@ -2,12 +2,15 @@
 ; Copyright (C) 2026 mplx <jennifer@mplx.dev>
 ;
 ; Inno Setup script for the Windows installer (best-effort, UNSUPPORTED build).
-; Produces jennifer-<version>-setup.exe: a per-user, no-admin installer that
-; drops the standard-Go jennifer.exe under %LOCALAPPDATA%\Programs\Jennifer,
-; adds it to the user PATH, bundles the Jennifer-coded system modules and points
-; JENNIFER_SYSMODDIR at them (so a bare `import "name.j";` resolves - the Unix
-; compile-time module dir does not exist on Windows), and optionally associates
-; .j files. Compile with:  ISCC.exe /DAppVersion=<tag> packaging\windows\jennifer.iss
+; Produces jennifer-<version>-setup.exe. At runtime it offers "Install for all
+; users" (elevates -> Program Files, system-wide PATH / env / association) or
+; "Install for me only" (no admin -> %LOCALAPPDATA%\Programs, per-user); running
+; the setup as administrator, or picking all-users, gets Program Files. Either
+; way it drops the standard-Go jennifer.exe, adds it to PATH, bundles the
+; Jennifer-coded system modules and points JENNIFER_SYSMODDIR at them (so a bare
+; `import "name.j";` resolves - the Unix compile-time module dir does not exist on
+; Windows), and optionally associates .j files. Compile with:
+; ISCC.exe /DAppVersion=<tag> packaging\windows\jennifer.iss
 ; (see packaging/windows/README.md). Requires Inno Setup 6.3+.
 
 #define AppName "Jennifer"
@@ -31,11 +34,15 @@ AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
 AppPublisherURL={#AppURL}
 AppSupportURL={#AppURL}
-; Per-user install, no elevation. {autopf} resolves to %LOCALAPPDATA%\Programs
-; when PrivilegesRequired=lowest.
+; Install mode is chosen at runtime. {autopf} resolves to Program Files in an
+; all-users (admin) install and to %LOCALAPPDATA%\Programs in a per-user one; the
+; HKLM-vs-HKCU registry writes follow the same choice. Default is per-user
+; (lowest, no elevation); "Install for all users" - or running the setup as
+; administrator - elevates and installs to Program Files.
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog commandline
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#RepoRoot}\dist
@@ -76,39 +83,76 @@ Name: "{group}\Uninstall Jennifer"; Filename: "{uninstallexe}"
 [Registry]
 ; Point the module search path at the bundled system modules (auto-removed on
 ; uninstall). Precedence is --sysmoddir > JENNIFER_SYSMODDIR > compile default,
-; and the compile default is a POSIX path that never exists on Windows.
-Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "JENNIFER_SYSMODDIR"; ValueData: "{app}\share\jennifer\modules"; Flags: preservestringtype uninsdeletevalue
+; and the compile default is a POSIX path that never exists on Windows. An
+; all-users install writes the system-wide environment (HKLM Session Manager); a
+; per-user install writes HKCU\Environment.
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "JENNIFER_SYSMODDIR"; ValueData: "{app}\share\jennifer\modules"; Flags: preservestringtype uninsdeletevalue; Check: IsAdminInstallMode
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "JENNIFER_SYSMODDIR"; ValueData: "{app}\share\jennifer\modules"; Flags: preservestringtype uninsdeletevalue; Check: not IsAdminInstallMode
 
-; Prepend the install dir to the user PATH, but only if it is not already there
-; (idempotent reinstall). Removed surgically on uninstall by CurUninstallStepChanged.
-Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{app};{olddata}"; Flags: preservestringtype; Tasks: addtopath; Check: NeedsAddPath(ExpandConstant('{app}'))
+; Prepend the install dir to PATH (system PATH for all-users, user PATH
+; otherwise), but only if it is not already there (idempotent reinstall). Removed
+; surgically on uninstall by CurUninstallStepChanged.
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{app};{olddata}"; Flags: preservestringtype; Tasks: addtopath; Check: AddPathAdmin
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{app};{olddata}"; Flags: preservestringtype; Tasks: addtopath; Check: AddPathUser
 
-; .j association (opt-in). The default double-click action opens the source in
-; Notepad - safe; running is an explicit "Run with Jennifer" verb, so a
-; double-click never silently executes code.
-Root: HKCU; Subkey: "Software\Classes\.j"; ValueType: string; ValueName: ""; ValueData: "Jennifer.Source"; Flags: uninsdeletevalue; Tasks: associatej
-Root: HKCU; Subkey: "Software\Classes\Jennifer.Source"; ValueType: string; ValueName: ""; ValueData: "Jennifer source file"; Flags: uninsdeletekey; Tasks: associatej
-Root: HKCU; Subkey: "Software\Classes\Jennifer.Source\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\jennifer.ico"; Tasks: associatej
-Root: HKCU; Subkey: "Software\Classes\Jennifer.Source\shell\open\command"; ValueType: string; ValueName: ""; ValueData: "notepad.exe ""%1"""; Tasks: associatej
-Root: HKCU; Subkey: "Software\Classes\Jennifer.Source\shell\run"; ValueType: string; ValueName: ""; ValueData: "Run with Jennifer"; Tasks: associatej
-Root: HKCU; Subkey: "Software\Classes\Jennifer.Source\shell\run\command"; ValueType: string; ValueName: ""; ValueData: """{app}\jennifer.exe"" run ""%1"""; Tasks: associatej
+; .j association (opt-in). HKA resolves to HKLM\Software\Classes for an all-users
+; install and HKCU\Software\Classes for a per-user one. The default double-click
+; action opens the source in Notepad - safe; running is an explicit "Run with
+; Jennifer" verb, so a double-click never silently executes code.
+Root: HKA; Subkey: "Software\Classes\.j"; ValueType: string; ValueName: ""; ValueData: "Jennifer.Source"; Flags: uninsdeletevalue; Tasks: associatej
+Root: HKA; Subkey: "Software\Classes\Jennifer.Source"; ValueType: string; ValueName: ""; ValueData: "Jennifer source file"; Flags: uninsdeletekey; Tasks: associatej
+Root: HKA; Subkey: "Software\Classes\Jennifer.Source\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\jennifer.ico"; Tasks: associatej
+Root: HKA; Subkey: "Software\Classes\Jennifer.Source\shell\open\command"; ValueType: string; ValueName: ""; ValueData: "notepad.exe ""%1"""; Tasks: associatej
+Root: HKA; Subkey: "Software\Classes\Jennifer.Source\shell\run"; ValueType: string; ValueName: ""; ValueData: "Run with Jennifer"; Tasks: associatej
+Root: HKA; Subkey: "Software\Classes\Jennifer.Source\shell\run\command"; ValueType: string; ValueName: ""; ValueData: """{app}\jennifer.exe"" run ""%1"""; Tasks: associatej
 
 [Code]
 function SendMessageTimeout(hWnd: HWND; Msg: UINT; wParam: Longint;
   lParam: AnsiString; fuFlags, uTimeout: UINT; var lpdwResult: DWORD): Longint;
   external 'SendMessageTimeoutA@user32.dll stdcall';
 
-{ True when Dir is not already a ;-delimited entry of the user PATH. }
+{ The environment lives in HKLM's Session Manager for an all-users install and in
+  HKCU\Environment for a per-user one, so PATH / JENNIFER_SYSMODDIR follow the
+  chosen mode. IsAdminInstallMode() reflects the same mode at uninstall. }
+function EnvRootKey(): Integer;
+begin
+  if IsAdminInstallMode() then
+    Result := HKLM
+  else
+    Result := HKCU;
+end;
+
+function EnvSubkey(): string;
+begin
+  if IsAdminInstallMode() then
+    Result := 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+  else
+    Result := 'Environment';
+end;
+
+{ True when Dir is not already a ;-delimited entry of the (mode-appropriate) PATH. }
 function NeedsAddPath(Param: string): Boolean;
 var
   OrigPath: string;
 begin
-  if not RegQueryStringValue(HKCU, 'Environment', 'Path', OrigPath) then
+  if not RegQueryStringValue(EnvRootKey(), EnvSubkey(), 'Path', OrigPath) then
   begin
     Result := True;
     exit;
   end;
   Result := Pos(';' + Lowercase(Param) + ';', ';' + Lowercase(OrigPath) + ';') = 0;
+end;
+
+{ [Registry] Check gates for the two mode-specific PATH entries. NeedsAddPath
+  reads the current mode's location, so each gate is exactly its mode + not-present. }
+function AddPathAdmin(): Boolean;
+begin
+  Result := IsAdminInstallMode() and NeedsAddPath(ExpandConstant('{app}'));
+end;
+
+function AddPathUser(): Boolean;
+begin
+  Result := (not IsAdminInstallMode()) and NeedsAddPath(ExpandConstant('{app}'));
 end;
 
 { Tell already-running processes (Explorer, shells) to reload the environment
@@ -128,14 +172,14 @@ begin
     BroadcastEnvChange;
 end;
 
-{ Rebuild the user PATH without the install dir (the [Registry] add cannot be
-  auto-reverted because it merged into an existing multi-value string). }
+{ Rebuild PATH without the install dir (the [Registry] add cannot be auto-reverted
+  because it merged into an existing multi-value string). Same mode as the install. }
 procedure RemovePathEntry(const Dir: string);
 var
   Path, NewPath, Part: string;
   P: Integer;
 begin
-  if not RegQueryStringValue(HKCU, 'Environment', 'Path', Path) then
+  if not RegQueryStringValue(EnvRootKey(), EnvSubkey(), 'Path', Path) then
     exit;
   NewPath := '';
   while Length(Path) > 0 do
@@ -158,7 +202,7 @@ begin
       NewPath := NewPath + Part;
     end;
   end;
-  RegWriteExpandStringValue(HKCU, 'Environment', 'Path', NewPath);
+  RegWriteExpandStringValue(EnvRootKey(), EnvSubkey(), 'Path', NewPath);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

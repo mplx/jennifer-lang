@@ -1,22 +1,38 @@
 # Windows installer (best-effort, unsupported)
 
 `jennifer.iss` is an [Inno Setup](https://jrsoftware.org/isinfo.php) script that
-produces `jennifer-<version>-setup.exe` - a per-user, no-admin installer for the
-standard-Go `jennifer.exe`. Linux stays the only supported platform; this is the
-same best-effort, **unsupported** build as the `-UNSUPPORTED.zip`, just wrapped
-in an installer. Unsigned, so Windows SmartScreen warns ("More info -> Run
-anyway").
+produces `jennifer-<version>-setup.exe` for the standard-Go `jennifer.exe`. Linux
+stays the only supported platform; this is the same best-effort, **unsupported**
+build as the `-UNSUPPORTED.zip`, just wrapped in an installer. Unsigned, so
+Windows SmartScreen warns ("More info -> Run anyway").
+
+## Install mode (per-user vs all-users)
+
+The installer offers a choice at startup (`PrivilegesRequiredOverridesAllowed`):
+
+- **Install for all users** (or running the setup as administrator) elevates and
+  installs to `C:\Program Files\Jennifer`, writing the **system-wide** `PATH` /
+  `JENNIFER_SYSMODDIR` (HKLM Session Manager) and an all-users `.j` association
+  (`HKLM\Software\Classes`).
+- **Install for me only** (the no-admin default) installs to
+  `%LOCALAPPDATA%\Programs\Jennifer` and writes the **per-user** environment and
+  association (`HKCU`).
+
+Everything below applies to whichever mode is chosen; `{app}` is the install dir
+and the registry root follows the mode.
 
 ## What it does
 
 - Installs `jennifer.exe` (plus `README.md`, `JENNIFER.md`, `LICENSE.txt`,
-  `UNSUPPORTED.txt`) to `%LOCALAPPDATA%\Programs\Jennifer`.
+  `UNSUPPORTED.txt`) to `{app}` (Program Files for all-users,
+  `%LOCALAPPDATA%\Programs\Jennifer` per-user).
 - Bundles the Jennifer-coded system modules (`modules/*.j`, minus `*_test.j`)
-  under `share\jennifer\modules\` and sets `JENNIFER_SYSMODDIR` to that path, so
-  a bare `import "name.j";` resolves. This is required on Windows: the
+  under `{app}\share\jennifer\modules\` and sets `JENNIFER_SYSMODDIR` to that
+  path, so a bare `import "name.j";` resolves. This is required on Windows: the
   compile-time module dir (`ResolveSysmoddir`'s default in
   `internal/module/sysmoddir.go`) is a POSIX path that does not exist here.
-- Prepends the install dir to the user `PATH` (opt-out task).
+- Prepends the install dir to `PATH` (opt-out task; system PATH for all-users,
+  user PATH otherwise).
 - Optionally associates `.j` (opt-in task): a `Jennifer.Source` ProgId whose
   default double-click opens the source in Notepad (safe) with an explicit
   "Run with Jennifer" right-click verb.
