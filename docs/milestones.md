@@ -1652,6 +1652,13 @@ don't block any feature milestone:
   `:static` variant. The image bundles both binaries and the system
   modules under the compile-default module dir, so a bare
   `import "name.j";` resolves with no env var. See `packaging/docker/`.
+- **Homebrew tap (macOS, best-effort unsupported).** Available -
+  `packaging/homebrew/jennifer.rb` builds the standard `jennifer` from
+  source (so Intel + Apple Silicon work with no Gatekeeper friction) and
+  bakes the version and module path via `-ldflags -X`, so a bare
+  `import "name.j";` resolves with no env var. Published to the
+  `jennifer-language/tap` tap by a manual `publish.sh` (the AUR convention;
+  no CI secret). The `-UNSUPPORTED` macOS tarball stays alongside it.
 
 The extra Linux / macOS distribution formats (Homebrew, Snap,
 Nix, Flatpak, AppImage, ...) are not requirements; they live in

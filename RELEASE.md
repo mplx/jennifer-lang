@@ -137,6 +137,30 @@ plus QEMU smoke tests).
    ../jennifer-git/publish.sh
    ```
 
+4. **Publish the Homebrew tap** (best-effort, unsupported macOS). Same
+   shape as the AUR `-bin` publish: the canonical formula lives at
+   `packaging/homebrew/jennifer.rb`, copied nowhere - `publish.sh` is
+   copied into the `homebrew-tap` clone and run there. It resolves the
+   newest release, downloads the source tarball, computes its `sha256`,
+   renders `Formula/jennifer.rb`, and pushes. First time only, clone the
+   tap as a sibling and copy the script in:
+
+   ```sh
+   git clone git@github.com:jennifer-language/homebrew-tap.git ../homebrew-tap
+   cp packaging/homebrew/publish.sh ../homebrew-tap/publish.sh
+   chmod +x ../homebrew-tap/publish.sh
+   ```
+
+   Then, after each release:
+
+   ```sh
+   ../homebrew-tap/publish.sh
+   ```
+
+   A clean no-op if unchanged. Like AUR, this can't run from GitHub
+   Actions without a cross-repo PAT; the manual script needs no secret.
+   See `packaging/homebrew/README.md`.
+
 ### Post-release
 
 - Move the milestone log entry from "in progress" to "done" + the
@@ -171,8 +195,10 @@ cd jennifer-0.14.1-linux-amd64
 ## Known manual gaps (not currently CI-automated)
 
 - AUR push (see above).
-- Homebrew tap / Snap / Nix flake / `.pacman` standalone artefact -
-  on the "Path to 1.0.0 distribution" parallel track in
+- Homebrew tap push (see above) - a manual `publish.sh` like AUR, best-effort
+  unsupported macOS.
+- Snap / Nix flake / `.pacman` standalone artefact - on the "Path to 1.0.0
+  distribution" parallel track in
   [docs/milestones.md](docs/milestones.md), not gated on this
   release process.
 - macOS / Windows: the best-effort **unsupported** binaries and the

@@ -17,6 +17,9 @@ packaging/
   docker/               - multi-stage Dockerfile (slim + static variants) + README;
                           the CI docker workflow builds/pushes multi-arch images
                           to GHCR on each release tag
+  homebrew/             - Homebrew formula (jennifer.rb, builds from source) +
+                          publish.sh + README; best-effort unsupported macOS tap,
+                          published like the AUR packages (manual publish.sh)
   mime/jennifer.xml       - XDG shared-mime-info; both .deb and AUR install it
   man/jennifer.1          - man page for the default (standard-Go) binary
   man/jennifer-tiny.1     - man page for the constrained (TinyGo) binary
