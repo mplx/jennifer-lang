@@ -206,16 +206,21 @@ the first indexed write.
 ## Environment
 
 `Environment` is a parent-linked scope frame. Each frame carries two
-storage backends for the same set of bindings:
+storage backends, but a given binding lives in exactly one of them:
 
-- **`vars map[string]Binding`** - the name-keyed view. Present in
-  every frame; the only view the REPL exercises because each REPL
-  turn is a fresh parse with no resolver context linking it to
-  prior-turn globals.
-- **`slots []Binding`** - the slot-indexed view. Sized
-  from `Block.NumSlots` at frame construction (`NewEnvironmentSized`)
-  or grown on demand from `DefineAt`. Empty when the resolver
-  didn't run.
+- **`slots []Binding`** - the slot-indexed view and the primary
+  storage for **resolved** code. Sized from `Block.NumSlots` at frame
+  construction (`NewEnvironmentSized`) or grown on demand from
+  `DefineAt`. A resolved binding (`Slot >= 0`) is written here and
+  **only** here - not the name map - so a call / block frame does no
+  per-binding heap allocation (the M21.12 per-frame allocation work).
+  Each `Binding` carries its own `Name`, so the rare name-based readers
+  can find a slot binding by scanning this (small, pooled) slice.
+- **`vars map[string]Binding`** - the name-keyed view, now the
+  **fallback only**: it holds bindings the resolver did not stamp with a
+  slot (`Slot < 0`) - the REPL (each turn is a fresh parse with no
+  resolver context) and ad-hoc / hand-built ASTs. Resolved frames leave
+  it empty.
 - **`root *Environment`** - cached pointer to the
   outermost ancestor. Set at construction via `rootFor(parent,
   self)`; both `NewEnvironment*` and `borrowBlockEnv` populate it.
@@ -224,31 +229,41 @@ storage backends for the same set of bindings:
   clears it on release so pooled envs don't retain refs across
   borrow cycles.
 
-`Binding{Value, DeclType, IsConst, Slot}` carries an extra `Slot`
-field so name-based writes can mirror into slot storage. `Slot` is
-`-1` on bindings installed by name-only `Define` (REPL, ad-hoc AST);
-non-negative when the resolver's `DefineAt` created it.
+`Binding{Value, DeclType, IsConst, Slot, Name}` carries `Slot` (`-1`
+for name-only `Define`; non-negative for resolver-stamped `DefineAt`)
+and `Name` (the identifier, so a slot-backed binding is self-describing
+without a parallel name-map entry).
 
 Storing the declared type lets `Assign` reject type-mismatching writes (you
 cannot assign a string to a variable declared as int).
 
-**Name-based API** (fallback path):
+`lookupLocal(name)` is the shared per-frame lookup: it scans `slots` by
+`Name` first (the resolved common case), then falls back to `vars`. All
+the name-based readers below walk the parent chain calling it.
+
+**Name-based API** (fallback path - REPL, spawn snapshot, ad-hoc AST):
 
 - **`Define(name, val, declType, isConst)`** - adds to the current
-  frame; errors if the name exists *anywhere in the chain* (the spec
-  forbids shadowing). Sets `Binding.Slot = -1`.
-- **`Assign(name, val)`** - walks up the chain to find the binding;
-  errors if the binding is a constant, the value's kind doesn't match
-  its declared type, or the name is undefined. When the target's
-  `Binding.Slot >= 0`, the write also lands in `cur.slots[Slot]` so
-  the two views stay in sync.
-- **`Get(name)`** and **`GetBinding(name)`** - walks up the chain.
+  frame's `vars`; errors if the name exists *anywhere in the chain* (the
+  spec forbids shadowing). Sets `Binding.Slot = -1`.
+- **`Assign(name, val)`** - walks up the chain (`lookupLocal`) to find
+  the binding; errors if it is a constant, the value's kind doesn't match
+  its declared type, or the name is undefined. Writes back to the slot it
+  came from, or to `vars` for a name-only binding.
+- **`Get(name)`** and **`GetBinding(name)`** - walk up the chain via
+  `lookupLocal`.
+- **`copyBindingsInto(dst)`** - reconstructs a frame's name->value view
+  (slots by `Name`, then `vars`) as detached deep copies; the one place
+  `snapshotForSpawn` rebuilds captured scope from slot storage (globals
+  are slot-backed too).
 
 **Slot-based API** (fast path):
 
-- **`DefineAt(slot, name, val, declType, isConst)`** - installs the
-  binding at `slots[slot]` (growing the slice if needed) and mirrors
-  into `vars[name]` with `Binding.Slot = slot`.
+- **`DefineAt(slot, name, val, declType, isConst)`** - for `slot >= 0`
+  installs the binding at `slots[slot]` (growing the slice if needed)
+  with `Binding.Name = name` and does **not** touch `vars`; for
+  `slot < 0` it takes the name-map fallback (with the enclosing-scope
+  shadow check).
 - **`GetAt(depth, slot, name)`** - walks `depth` parents then indexes
   `slots[slot]`. Falls back to `vars[name]` at the same depth when
   the slot is out of range (covers execution paths added to a
@@ -256,8 +271,8 @@ cannot assign a string to a variable declared as int).
 - **`GetBindingAt(depth, slot, name)`** - metadata companion to
   `GetAt`.
 - **`AssignAt(depth, slot, name, val)`** - const / type-mismatch
-  checks match the name path; on success writes to both `slots[slot]`
-  and `vars[name]`.
+  checks match the name path; on success writes to `slots[slot]` (the
+  slot is authoritative for a slot-backed binding).
 
 `NewEnvironmentSized(parent, numSlots)` is the constructor
 that pre-sizes `slots` from the resolver's hint, avoiding a grow on

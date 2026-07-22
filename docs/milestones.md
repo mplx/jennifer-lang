@@ -2082,22 +2082,34 @@ allocation) an unbounded `make` would hit. The lazy for-each form allocates
 nothing and stays unbounded. `evalSlice` needs no such guard: a slice is always
 bounded by the already-allocated source length.
 
-### M21.12 - per-frame arena allocation
+### M21.12 - per-frame allocation elimination
 
-**Planned.** A strictly-internal interpreter memory optimization extending
-today's `Environment` frame pool (`borrowBlockEnv` / `releaseBlockEnv`): recycle
-a frame's slot / binding storage through a per-frame arena instead of letting
-each call churn fresh heap allocations, cutting GC pressure on allocation-heavy
-programs (the `--allocs` profiler plus M21.10.1's harness measure it). No
-user-visible change - value semantics and the tagged-union `Value` are untouched;
-this is about how the evaluator allocates, not what a program can observe. Best
-landed once the language surface has settled (after M21.11's range syntax) so the
-interpreter does not churn under it, and measured on the reference machine. It is
-**not** copy-on-write for compound Values: that was tried (shared-marker COW,
-reverted as inert) and its write-through variant is rejected for reintroducing
-shared mutable state (see [technical/rejected.md](technical/rejected.md)).
-Composes with the `DRAFT#17` bytecode model (which restructures allocation
-anyway) but does not depend on it.
+**Done.** A strictly-internal interpreter memory optimization on top of the
+`Environment` frame pool: a call / block frame now does **no per-binding or
+per-call heap allocation**, cutting GC pressure on allocation-heavy programs to
+near zero (no user-visible change - value semantics and the tagged-union `Value`
+untouched; this is how the evaluator allocates, not what a program observes). An
+allocation memprofile (allocs/op is machine-independent, unlike wall clock)
+pinned two hot sites, both removed: the `vars` name-map write in
+`Environment.DefineAt` (~75%, a map insert per bound name that allocated even on
+a pooled/cleared map) - a resolved binding (`Slot >= 0`) now writes only the
+pooled `slots` slice, carrying its identifier in `Binding.Name` so the rare
+name-based readers (`Get` / `Assign` / the `spawn` snapshot's `copyBindingsInto`,
+since globals are slot-backed too) scan the small slot slice via `lookupLocal`,
+with `vars` kept only for the resolver-less fallback (REPL, `Slot < 0`; the
+slots/vars dual view of implementation-note 13 stays intact); and the `args :=
+make([]Value, n)` slice in `evalCall` (~25%), removed by binding each argument
+straight into the pre-sized call frame as it is evaluated. Result (allocs/op):
+recursive fib ~300k -> ~59, method-call-in-loop ~800k / 307 MB -> ~60 / 12 KB,
+block-heavy loop ~200k -> ~54; the residual is one-time setup. **Not**
+copy-on-write for compound Values (that shared-marker COW was tried and reverted
+as inert, its write-through variant [rejected](technical/rejected.md)); composes
+with the `DRAFT#17` bytecode model but doesn't depend on it. Correctness held
+across the full suite under `-race` (spawn capture of slot-backed globals +
+locals is the load-bearing case); pinned by a hard CI guard
+(`TestFrameAllocationsStayLow`, which skips under `-race` where shadow-state
+allocations swamp the count) plus `arena_bench_test.go`. See
+implementation-note 14.
 
 ---
 

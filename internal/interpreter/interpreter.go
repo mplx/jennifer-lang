@@ -3810,26 +3810,15 @@ func (i *Interpreter) snapshotForSpawn(env *Environment) *Environment {
 	root := effectiveGlobal(env)
 	globalSnap := NewEnvironment(nil)
 	if root != nil {
-		for name, b := range root.vars {
-			globalSnap.vars[name] = Binding{
-				Value:    slotValue(root, b).Copy(),
-				DeclType: b.DeclType,
-				IsConst:  b.IsConst,
-			}
-		}
+		// Globals are slot-backed, so copyBindingsInto reconstructs their
+		// name->value view from root.slots (plus any name-map fallback bindings).
+		root.copyBindingsInto(globalSnap.vars)
 	}
 	localSnap := NewEnvironment(globalSnap)
 	for cur := env; cur != nil && cur != root; cur = cur.parent {
-		for name, b := range cur.vars {
-			if _, exists := localSnap.vars[name]; exists {
-				continue
-			}
-			localSnap.vars[name] = Binding{
-				Value:    slotValue(cur, b).Copy(),
-				DeclType: b.DeclType,
-				IsConst:  b.IsConst,
-			}
-		}
+		// Inner frames shadow outer ones: copyBindingsInto leaves a name already
+		// captured by a nearer frame untouched.
+		cur.copyBindingsInto(localSnap.vars)
 	}
 	return localSnap
 }
@@ -3866,34 +3855,37 @@ func (i *Interpreter) evalCall(c *parser.CallExpr, env *Environment) (Value, err
 		// frame is borrowed from the pool and pre-sized to hold the
 		// N parameter slots the resolver assigned (slots 0..N-1).
 		numParams := len(m.Params)
-		args := make([]Value, numParams)
-		for idx, a := range c.Args {
+		// Evaluate each argument in the caller's env and bind it straight into
+		// the fresh call frame, interleaved so no intermediate []Value is
+		// allocated per call. The arity was already checked above, so
+		// c.Args[idx] is in range for every parameter. Arg evaluation may nest
+		// further calls (which borrow their own frames); callFrame is held out
+		// of the pool meanwhile, and its parent is globals - not the caller env
+		// - so a partially-bound frame is never visible to arg evaluation.
+		callFrame := borrowBlockEnv(effectiveGlobal(env), numParams)
+		for idx, p := range m.Params {
+			a := c.Args[idx]
 			v, err := i.evalExpr(a, env)
 			if err != nil {
+				releaseBlockEnv(callFrame)
 				return Value{}, err
 			}
-			if !v.MatchesDeclared(m.Params[idx].Type) {
+			if !v.MatchesDeclared(p.Type) {
+				releaseBlockEnv(callFrame)
 				file, line, col := posFor(a)
 				return Value{}, &runtimeError{
-					Msg:  fmt.Sprintf("argument %d to %q must be %s, got %s", idx+1, c.Callee, m.Params[idx].Type, v.Kind),
+					Msg:  fmt.Sprintf("argument %d to %q must be %s, got %s", idx+1, c.Callee, p.Type, v.Kind),
 					File: file, Line: line, Col: col,
 				}
 			}
-			args[idx] = v
-		}
-		callFrame := borrowBlockEnv(effectiveGlobal(env), numParams)
-		for idx, p := range m.Params {
-			// Value semantics: arguments copy into the call frame, so
-			// callee mutations don't leak back to the caller. Stamp the
-			// declared parameter type so compound parameters know their
-			// element / key+value type for index-write checks.
-			// DefineAt writes straight to the pre-sized slot slice,
-			// avoiding the name-map hash per parameter.
-			// Scalar arg kinds skip Copy + stampDeclaredType (both are
-			// no-ops for immutable kinds) via bindParamValue.
-			bound := bindParamValue(args[idx], p.Type)
-			if i.prof != nil && i.profAllocs && isCompoundCopyKind(args[idx].Kind) {
-				pf, pl, pcol := posFor(c.Args[idx])
+			// Value semantics: arguments copy into the call frame, so callee
+			// mutations don't leak back to the caller. bindParamValue stamps the
+			// declared parameter type (so compound params know their element /
+			// key+value type for index-write checks) and skips Copy for scalar
+			// kinds, where it is a no-op.
+			bound := bindParamValue(v, p.Type)
+			if i.prof != nil && i.profAllocs && isCompoundCopyKind(v.Kind) {
+				pf, pl, pcol := posFor(a)
 				i.prof.RecordEagerCopy(pf, pl, pcol)
 			}
 			if err := callFrame.DefineAt(idx, p.Name, bound, p.Type, false); err != nil {

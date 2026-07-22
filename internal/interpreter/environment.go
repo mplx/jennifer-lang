@@ -91,6 +91,13 @@ type Binding struct {
 	DeclType parser.Type
 	IsConst  bool
 	Slot     int
+	// Name is the binding's identifier. For a slot-backed binding (Slot >= 0)
+	// it lives only in the slot - the name map is not written on the hot
+	// DefineAt path - so the name-based lookups (Get / Assign / spawn snapshot)
+	// scan the frame's small, pooled slot slice by Name instead of allocating a
+	// map entry per binding. Empty on an unused slot (borrowBlockEnv zeroes
+	// released slots to Binding{}), which never matches a real identifier.
+	Name string
 }
 
 // Environment is a lexically-scoped symbol table.
@@ -183,26 +190,47 @@ func NewEnvironmentSized(parent *Environment, numSlots int) *Environment {
 // though for resolver-generated slot writes that check has already
 // happened at parse time.
 func (e *Environment) DefineAt(slot int, name string, val Value, declType parser.Type, isConst bool) error {
-	// The resolver-verified slot path (slot >= 0) already rejected shadowing
-	// at parse time, so skip the O(depth) enclosing-scope walk here; only the
-	// name-based fallback (slot < 0: REPL, hand-built ASTs) still checks.
-	if slot < 0 && e.existsInChain(name) {
-		return fmt.Errorf("name %q is already defined in an enclosing scope", name)
-	}
-	b := Binding{Value: val, DeclType: declType, IsConst: isConst, Slot: slot}
-	e.vars[name] = b
-	if slot >= 0 {
-		if slot >= len(e.slots) {
-			// Grow to fit. NumSlots hint from the resolver should
-			// have made this unnecessary, but the safety net keeps
-			// resolver-less code paths (REPL, some tests) working.
-			grown := make([]Binding, slot+1)
-			copy(grown, e.slots)
-			e.slots = grown
+	b := Binding{Value: val, DeclType: declType, IsConst: isConst, Slot: slot, Name: name}
+	if slot < 0 {
+		// Name-based fallback (REPL, hand-built ASTs): the resolver did not
+		// stamp a slot, so this path keeps the enclosing-scope shadow check and
+		// records the binding in the name map.
+		if e.existsInChain(name) {
+			return fmt.Errorf("name %q is already defined in an enclosing scope", name)
 		}
-		e.slots[slot] = b
+		e.vars[name] = b
+		return nil
 	}
+	// Slot-backed (resolved) binding. The resolver already rejected shadowing at
+	// parse time. Write only the slot - not the name map - so the hot call /
+	// block path allocates nothing per binding; the name travels in the slot
+	// (b.Name) for the rare name-based readers.
+	if slot >= len(e.slots) {
+		// Grow to fit. The NumSlots hint from the resolver should have made this
+		// unnecessary, but the safety net keeps resolver-less paths working.
+		grown := make([]Binding, slot+1)
+		copy(grown, e.slots)
+		e.slots = grown
+	}
+	e.slots[slot] = b
 	return nil
+}
+
+// lookupLocal finds a binding by name in THIS frame only, returning the binding,
+// its slot index (or -1 for a name-map binding), and whether it was found.
+// Slot-backed bindings (scanned by Name) take precedence; the name map is the
+// fallback for resolver-less defines. Real identifiers are non-empty, so the
+// zeroed unused slots (Name == "") never match.
+func (e *Environment) lookupLocal(name string) (Binding, int, bool) {
+	for i := range e.slots {
+		if e.slots[i].Name == name {
+			return e.slots[i], i, true
+		}
+	}
+	if b, ok := e.vars[name]; ok {
+		return b, -1, true
+	}
+	return Binding{}, -1, false
 }
 
 // GetAt reads a binding by (depth, slot). Walks depth parent pointers
@@ -316,7 +344,7 @@ func (e *Environment) Define(name string, val Value, declType parser.Type, isCon
 // cur.slots[Slot] so a subsequent GetAt sees the update.
 func (e *Environment) Assign(name string, val Value) error {
 	for cur := e; cur != nil; cur = cur.parent {
-		if b, ok := cur.vars[name]; ok {
+		if b, si, ok := cur.lookupLocal(name); ok {
 			if b.IsConst {
 				return fmt.Errorf("cannot assign to constant %q", name)
 			}
@@ -324,9 +352,10 @@ func (e *Environment) Assign(name string, val Value) error {
 				return fmt.Errorf("cannot assign %s to %s variable %q", val.Kind, b.DeclType, name)
 			}
 			b.Value = val
-			cur.vars[name] = b
-			if b.Slot >= 0 && b.Slot < len(cur.slots) {
-				cur.slots[b.Slot] = b
+			if si >= 0 {
+				cur.slots[si] = b
+			} else {
+				cur.vars[name] = b
 			}
 			return nil
 		}
@@ -334,15 +363,11 @@ func (e *Environment) Assign(name string, val Value) error {
 	return fmt.Errorf("undefined variable %q", name)
 }
 
-// Get looks up a name, walking outward.
+// Get looks up a name, walking outward. For a slot-backed binding the value
+// returned by lookupLocal comes straight from the (authoritative) slot.
 func (e *Environment) Get(name string) (Value, error) {
 	for cur := e; cur != nil; cur = cur.parent {
-		if b, ok := cur.vars[name]; ok {
-			// The slot is authoritative for a slot-backed binding (AssignAt no
-			// longer mirrors writes into vars).
-			if b.Slot >= 0 && b.Slot < len(cur.slots) {
-				return cur.slots[b.Slot].Value, nil
-			}
+		if b, _, ok := cur.lookupLocal(name); ok {
 			return b.Value, nil
 		}
 	}
@@ -353,32 +378,42 @@ func (e *Environment) Get(name string) (Value, error) {
 // Used by callers that need to distinguish constants from variables.
 func (e *Environment) GetBinding(name string) (Binding, error) {
 	for cur := e; cur != nil; cur = cur.parent {
-		if b, ok := cur.vars[name]; ok {
-			// Fill the current value from the authoritative slot when this is a
-			// slot-backed binding (the vars copy's Value may be stale).
-			if b.Slot >= 0 && b.Slot < len(cur.slots) {
-				b.Value = cur.slots[b.Slot].Value
-			}
+		if b, _, ok := cur.lookupLocal(name); ok {
 			return b, nil
 		}
 	}
 	return Binding{}, fmt.Errorf("undefined %q", name)
 }
 
-// slotValue returns the authoritative current value of a binding taken from a
-// frame's vars map: the slot value when it is slot-backed (AssignAt writes only
-// the slot), otherwise the vars copy. Used where a name-based iteration of vars
-// needs live values (the spawn snapshot).
-func slotValue(frame *Environment, b Binding) Value {
-	if b.Slot >= 0 && b.Slot < len(frame.slots) {
-		return frame.slots[b.Slot].Value
+// copyBindingsInto copies this frame's live bindings into dst as detached,
+// name-based (Slot -1) deep copies - the slot-backed bindings (scanned by Name,
+// the common case now that DefineAt no longer mirrors them into the name map)
+// followed by the name-map fallback. A name already present in dst (an inner
+// binding shadowing an outer one during snapshotForSpawn's local walk) is left
+// untouched. This is the one place a spawn snapshot reconstructs a frame's
+// name->value view from its slots.
+func (e *Environment) copyBindingsInto(dst map[string]Binding) {
+	for i := range e.slots {
+		b := e.slots[i]
+		if b.Name == "" {
+			continue
+		}
+		if _, exists := dst[b.Name]; exists {
+			continue
+		}
+		dst[b.Name] = Binding{Value: b.Value.Copy(), DeclType: b.DeclType, IsConst: b.IsConst, Slot: -1, Name: b.Name}
 	}
-	return b.Value
+	for name, b := range e.vars {
+		if _, exists := dst[name]; exists {
+			continue
+		}
+		dst[name] = Binding{Value: b.Value.Copy(), DeclType: b.DeclType, IsConst: b.IsConst, Slot: -1, Name: name}
+	}
 }
 
 func (e *Environment) existsInChain(name string) bool {
 	for cur := e; cur != nil; cur = cur.parent {
-		if _, ok := cur.vars[name]; ok {
+		if _, _, ok := cur.lookupLocal(name); ok {
 			return true
 		}
 	}
