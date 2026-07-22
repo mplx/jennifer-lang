@@ -383,7 +383,8 @@ legal review before it is published.
   touching filesystem, paths, line endings, or process behavior, prefer
   portable stdlib helpers (`path/filepath`, not hardcoded `/`); avoid
   Linux-only assumptions so those binaries stay genuinely portable, not just
-  compile-clean.
+  compile-clean. The concrete Windows track, with the exact remaining gaps, is
+  `DRAFT#22`.
 
 ### DRAFT#17 - Bytecode execution model
 
@@ -417,6 +418,222 @@ for reintroducing shared mutable state - see
 **Requires:** `M21.10` (its throughput benchmark, to justify the effort and
 measure parity + speedup). Relates to `DRAFT#1` - a compiled core is an easier
 stable embedding surface than a tree-walker.
+
+### DRAFT#18 - First-class functions
+
+Today a function cannot be held in a value: the `Value` kinds run `KindBool` ...
+`KindTask` with nothing callable, so every callback is **string-name dispatch**
+(`web` routes handlers by name via `meta.callMain`, `testing.run(name)`,
+`meta.call`) and `lists` ships no `map` / `filter` / `reduce` because there is
+nothing to pass. This is the single largest expressiveness gap.
+
+**A function value is immutable, not a pointer.** Holding a function in a value
+aliases nothing and can never become a write-through handle, so it does *not*
+touch the value-semantics stance. That has to show in the *syntax*: the obvious
+`&NAME` instinct is out, because `&` is exactly the mutable-reference sigil
+rejected under "References, interior mutability, shared mutable state"
+([rejected.md](technical/rejected.md)) and would read as a pointer this language
+does not have. Instead reuse the shape the language already uses to tell a call
+from a name: a **bare method name** in expression position *is* the function
+value; a name followed by `(` is a call (Go's `f := greet` vs `greet()`). The
+parser already peeks for `(` after an IDENT to separate a call from a constant
+reference; extend that so a bare IDENT naming a `func` resolves to a function
+value - and since a def / func name can't collide, the name picks out exactly one.
+
+- **Tier 1 - function values without capture.** A new `Value` kind `KindFunc`
+  wraps the `*parser.MethodDef`. It is immutable and value-semantic: a copy
+  shares the (immutable) `*MethodDef` the same way an immutable scalar copies -
+  no aliasing, no deep copy, nothing to mutate. `def f as func init greet;` binds
+  one; call-through-a-variable `$f(args)` is new call syntax that dispatches
+  through **`CallMethodWith`** - the pre-resolved-`*MethodDef` entry point that
+  already exists (built for module-method stamping) - with arity / kind checked
+  at the call site exactly as user-method calls already are. Frame-pool safe (no
+  captured environment, so implementation-note 14's invariant holds). This tier
+  alone unlocks the higher-order layer - `lists.map` / `filter` / `reduce` /
+  `sort(by)` / `find` / `any` / `all`, typed comparators, and function-valued
+  callbacks that *replace* the stringly-typed dispatch in `web` / `testing` /
+  `meta`.
+- **Tier 2 - closures with *by-value* capture.** Anonymous `func(x){...}` that
+  close over their environment - but the capture is **by copy**, deep-copying the
+  captured bindings at closure creation exactly the way the `spawn` snapshot
+  already detaches a goroutine's scope. That is the value-semantic answer to the
+  "closures break the model" worry, twice over: (1) a closure carries its own
+  copy, so it can never be a backdoor to aliased mutation - the no-aliasing
+  guarantee holds (capture-*by-reference* stays rejected, since it is the `&xs`
+  shape); and (2) because it owns a detached copy rather than pointing at the
+  frame it was created in, it does **not** extend that frame's lifetime, so the
+  `sync.Pool` frame recycling (which "no closures" currently guarantees) keeps
+  working - the pooled frame is still returned normally. The cost just moves to a
+  deep copy at closure creation, the same cost model as `spawn`.
+
+**Cost.** Tier 1: a `Value` kind + `MatchesDeclared` / `Copy` / `DeepCopy` cases
+(cheap - immutable, shares the pointer), the bare-name-as-value resolution and
+`$var(args)` grammar, a `func` type keyword, the `evalCall` path (reusing
+`CallMethodWith`), the higher-order library layer, and grammar / spec / docs.
+Tier 2 adds the closure literal and a `snapshotForSpawn`-style by-value capture at
+creation (the machinery exists - it is the spawn snapshot, re-pointed). Ship
+Tier 1 first; Tier 2 is additive and, framed as by-value capture, needs no retreat
+from the allocation model `M21.12` tightened.
+
+**Requires:** none hard. Relates to `DRAFT#17` (a bytecode VM changes how calls
+and closures are represented) and `DRAFT#1` (a function-value surface is part of a
+clean embedding API).
+
+### DRAFT#19 - Sum types (enums) + `match`
+
+Structs model a *record*; there is no way to model "one of N variants," and
+control flow is `if` / `elseif` chains with no multi-way dispatch. Ironically the
+interpreter's own `Value` is a tagged union - the language just does not expose
+that shape.
+
+- **`def enum` at top level**, hoisted like structs:
+  `def enum Shape { Circle { r as float }, Rect { w as float, h as float }, Empty };`
+  Each variant is payload-less or carries named fields (a mini-struct).
+  Construction mirrors struct literals: `Shape.Circle{ r: 2.0 }`, `Shape.Empty`.
+- **`match` / `case`** for exhaustive dispatch, binding a variant's payload into a
+  fresh per-arm scope:
+  `match ($s) { case Circle(c) { ...$c.r... } case Rect(rc) { ... } case Empty { ... } }`
+  Exhaustiveness is checked at **resolve time** (every variant covered, or an
+  `else` arm) - the strict, positioned-error stance applied to control flow, so a
+  forgotten variant is a parse error, not a silent fall-through.
+
+**Cost.** A new `Value` kind `KindEnum` that mirrors `KindStruct` almost exactly
+- `(namespace, name)` discriminant plus a `Fields` payload - so it inherits value
+semantics, deep `const`, `Copy` / `DeepCopy`, and `MatchesDeclared` with little
+new machinery. Parser: the `def enum` declaration, `Enum.Variant{...}`
+construction, and `match` / `case` grammar with payload binding (payload slots
+resolved into the arm's block scope, reusing `borrowBlockEnv`). Interpreter: an
+`execMatch` that finds the active variant and runs the arm. Grammar EBNF / PEG,
+spec, docs. No frame-pool or TinyGo concern - it is all tagged-union,
+reflect-free, exactly like structs. Well-contained and high-ergonomic for the
+value; a light scalar `switch` could follow as sugar over an `if`-chain.
+
+**Requires:** none. Pairs naturally with `DRAFT#18` (a `match` result and
+function values together give the functional-core idioms).
+
+### DRAFT#20 - Relax the letters-only identifier rule
+
+Not a feature - revisiting a deliberate constraint that keeps costing.
+Identifiers are `[A-Za-z]` only (no digits), which forces recurring gymnastics:
+`uuid.generate("v4")` because `v4()` is unspellable, the I2C library named `iic`,
+`pbkdf` dropping its "2", `binary` because `bytes` is reserved, and the `hash` /
+`crc` naming dance. Each is a workaround for the same rule.
+
+**Changes:** Allow **interior / trailing digits**, keeping the
+letter-initial rule: `[A-Za-z][A-Za-z0-9]*` (still up to 64 chars; constants keep
+their interior `_`). Letter-initial preserves clean lexing - a token starting
+with a digit is always a number, one starting with a letter is always an
+identifier - so `1..5` (range), the `0x` / `0o` / `0b` literal forms, and float
+mantissas stay unambiguous. This makes `md5`, `sha256`, `v4`, `utf8`, `i2c`,
+`base64` real identifiers and lets the stdlib drop its euphemisms (`uuid.v4()`,
+`use i2c;`, ...).
+
+**Cost.** Mechanically **tiny** - one character class in the lexer's identifier
+scanner, plus a re-verification that no number / identifier ambiguity opens. The
+weight is entirely in it being a **language-identity decision** and a **pre-1.0
+breaking change**: the "letters-only" look is documented and intentional, so
+reversing it touches the spec, `JENNIFER.md`, the grammar EBNF / PEG, the
+naming-convention guidance, and every editor highlighter; and the follow-on
+renames (`iic` -> `i2c`, the `"v4"` string argument -> `v4()`, ...) are each
+semver-breaking, so they must be batched **before 1.0.0**. The honest
+counter-argument to weigh, not just the upside: letters-only gives a uniform look
+and sidesteps confusable / typo-vs-name questions (`sha256` - name or mistake?).
+This draft is as much "should we" as "how," and its value is that the call is
+cheap to make now and expensive to make after 1.0.
+
+**Requires:** none (mechanical), but best decided **early** - renames after 1.0.0
+need a major bump.
+
+### DRAFT#21 - Concurrency coordination: cancellation, timeouts, channels
+
+`spawn` / `task` is elegant and race-free by construction (value-semantics
+capture removes shared state), but there is no way to **cancel** a task,
+**bound** a wait, or **coordinate** producers and consumers - and an unobserved
+non-terminating `spawn` *hangs the program at exit* (documented, but a sharp
+edge). Two tiers.
+
+**Tier 1 - cancellation + timeouts (cheap, high-value).** `task.cancel($t)` sets
+a cancel flag on the shared `TaskState` (already a pointer shared across
+handles); the spawned body observes it cooperatively at the eval loop's existing
+safe points - the same checkpoint shape as the `i.diagReq.Load()` diagnostic poll
+and the signal poll, so it is near-free and needs no preemption (which a
+tree-walker cannot do anyway). A body reads `task.cancelled()` or the runtime
+raises a catchable "cancelled" at the next checkpoint. `task.waitTimeout($t, ms)`
+and a timeout on `waitAny` give bounded waits, backed by Go `select` +
+`time.After`; this is also the escape hatch for the exit-time hang. TinyGo-clean
+(its cooperative scheduler already yields at these points). Ship this first.
+
+**Tier 2 - channels (larger).** A `channel of T` type + a `channel` library
+(`make(cap)` / `send` / `recv` / `close`) using the integer-handle-into-a-registry
+pattern the other shared resources use (`task` / `fs` / `net`), wrapping a Go
+`chan Value`. Crucially, a **send copies the value in** (value-semantic, exactly
+like the spawn snapshot), so channels carry copies and the "no shared mutable
+state" guarantee is preserved - which is why channels, not mutexes / atomics, are
+the right coordination primitive for this language (shared locks would violate
+the invariant and stay rejected). A `select` multi-wait generalizes today's
+`task.waitAny`, which **already uses `reflect.Select`** (verified TinyGo-clean),
+so the core machinery exists; `select` can be a language construct or a
+`channel.select` library form to avoid new grammar.
+
+**Cost.** Tier 1: a flag on `TaskState`, one checkpoint in `evalCall` / the loop
+headers (reusing the diag-poll shape), and timeout wait variants - small, and it
+directly retires the documented exit-hang footgun. Tier 2: a `KindChannel` Value
++ registry, the `channel` library, the copy-on-send path, and `select` (grammar
+or library) over the existing `reflect.Select` - plus spec / docs. No
+shared-memory primitives; that stance stays.
+
+**Requires:** none hard (builds on the shipped `spawn` / `task`). Tier 1 is
+independent and small; Tier 2 is the follow-on. Relates to `DRAFT#17` (a VM
+relocates the cooperative checkpoints Tier 1 rides on).
+
+### DRAFT#22 - Promote Windows to a supported platform
+
+Windows ships today as a best-effort **unsupported** build (a cross-compiled
+`jennifer.exe`, plus the `M21.13` installer that wraps it). Promoting it to
+*supported* is the concrete instance of `DRAFT#16`'s general "cross-platform
+support" bullet, and it graduates the "Cross-build for macOS / Windows" 1.0.0
+distribution requirement. A portability audit found the surface small - most of
+the OS-touching code is already `runtime.GOOS`-derived or cleanly build-tag
+stubbed - so this is a handful of concrete gaps, not a rewrite.
+
+**What's already fine.** Separators / EOL / `$HOME` / temp are
+`runtime.GOOS`-derived (`internal/lib/os/oslib.go`), `os/exec` is enabled on
+Windows (the exec gate keys on `runtime.Compiler != "tinygo"`, not GOOS), and
+signals plus the four Linux-only hardware libs (`serial` / `spi` / `iic` / `gpio`)
+already stub cleanly on non-Linux (`*_other.go`).
+
+**Fixes:**
+
+- **Windows-native module default.** `compileDefaultSysmoddir` is the one
+  hardcoded POSIX path baked into a Windows binary
+  (`/usr/share/jennifer/modules`, `internal/module/sysmoddir.go`). Give it a
+  Windows-native, **exe-relative** default
+  (`<dir(os.Executable())>\share\jennifer\modules`) via a build-tag split
+  (`sysmoddir_windows.go` / `_unix.go`), so a portable-zip user's
+  `import "name.j";` resolves with no env var. The `M21.13` installer's
+  `JENNIFER_SYSMODDIR` stays the explicit override; precedence is unchanged.
+- **Per-OS golden strategy.** `examples/expected/osinfo.txt` pins
+  `linux` / `amd64` / `/` / `:`, and `cmd/jennifer/examples_test.go` compares
+  byte-exact with no GOOS handling - the sole platform-pinned golden. Add a
+  per-OS expected-file selection (or a `runtime.GOOS`-gated skip for the osinfo
+  canary; the source already flags this at `examples/osinfo.j`).
+- **`fs.chmod` / `fs.chown` on Windows.** Currently Unix-oriented; define the
+  Windows behaviour (a friendly catchable error is acceptable - the `chown` test
+  is already Linux-gated). Document that signal-based graceful shutdown is limited
+  on Windows (`signal_other.go` stubs `os.catchSignal`).
+- **A real Windows CI test job.** `windows-latest` running `go test ./...` so
+  Windows correctness is actually verified (the exec suite self-skips off Linux;
+  the osinfo golden is the known failure the item above resolves). Once green,
+  move windows/amd64 out of the `build-unsupported` matrix into the supported set
+  and drop the "unsupported" labelling for that arch.
+
+**macOS** is the parallel case (same "already ships unsupported, promote it"
+shape) but out of scope here - a separate effort, and it lacks even the
+module-path blocker Windows has.
+
+**Requires:** none hard (all in-tree). Relates to `DRAFT#16` (the umbrella
+multiplatform idea - this is its concrete Windows track) and builds on the shipped
+`M21.13` installer.
 
 ## Loose ideas
 
@@ -577,4 +794,21 @@ A grab-bag, recorded when it comes up.
   surface for the spawn scheduler, not new language features. Ships when a
   real use case forces it (the default - "let Go's scheduler decide" -
   handles every workload we've imagined so far).
+- **Multiple returns / destructuring.** Let a method return several values
+  (`return $a, $b;`) and a `def` bind them positionally
+  (`def x, y as int init swap($a, $b);`), extended to struct / list
+  destructuring. Cheapest as a parse-time desugaring to a hidden carrier (a small
+  internal tuple / multi-slot bind) since the interpreter already returns exactly
+  one `Value` - no new `Value` kind strictly required.
+- **Decimal / bignum / money math.** A Go-backed arbitrary-precision base-10
+  `decimal` library (over `math/big`) with `from` / `add` / `sub` / `mul` /
+  `div` / `round` / `compare` and an opaque `Decimal` value (the `KindObject`
+  shape `json.Value` uses) - exact money arithmetic with no float rounding, kept
+  a **library handle** rather than a new primitive so the core `int` / `float`
+  model is untouched.
+- **String interpolation.** A `"...{expr}..."` interpolating string (with `{{` /
+  `}}` escapes, reusing `intl.tr`'s existing `{name}` grammar) that lexes into
+  literal chunks + embedded expressions, so `"hi {$name}, next is {$n + 1}"`
+  drops the `sprintf` ceremony. Pure lex / parse-time sugar over string
+  concatenation + `convert.toString`, no runtime or `Value` change.
 

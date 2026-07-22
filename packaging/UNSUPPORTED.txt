@@ -16,8 +16,10 @@ best-effort and provided as-is, with no guarantees:
   - No support. Bugs specific to macOS / Windows may not be fixed;
     supported development and testing happen on Linux.
 
-  - Just the binary. No installer, man pages, MIME registration, or
-    shell completion off Linux.
+  - Just the binary in this archive. No man pages, MIME registration, or
+    shell completion off Linux. Windows releases also offer a separate
+    setup.exe installer (PATH, .j association, bundled modules via
+    JENNIFER_SYSMODDIR); this zip is the portable, no-registry alternative.
 
   - Windows XP and earlier cannot run this binary: the Go toolchain
     targets Windows 10 or newer.

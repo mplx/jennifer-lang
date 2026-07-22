@@ -271,12 +271,68 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # Best-effort, UNSUPPORTED Windows installer. Runs on a real Windows runner
+  # (Inno Setup's iscc needs Windows) - which also gives us the first native
+  # Windows smoke test. `continue-on-error` + no hard `needs` mean it never
+  # blocks the Linux release; the `release` job publishes whatever it produced.
+  build-windows-installer:
+    name: Build Windows installer (unsupported)
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Regenerate version stamp
+        shell: bash
+        run: ./scripts/gen-version.sh
+
+      - name: Build jennifer.exe (native amd64)
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -ldflags="-s -w" -o jennifer.exe ./cmd/jennifer
+
+      - name: Native smoke test
+        run: ./jennifer.exe run examples/hello.j
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & "$iscc" "/DAppVersion=${env:GITHUB_REF_NAME}" packaging\windows\jennifer.iss
+
+      - name: Checksum
+        run: |
+          $f = Get-ChildItem dist\*.exe | Select-Object -First 1
+          $hash = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($f.Name)" | Out-File -Encoding ascii "$($f.FullName).sha256"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: jennifer-windows-installer
+          path: |
+            dist/*.exe
+            dist/*.exe.sha256
+          if-no-files-found: ignore
+          retention-days: 7
+
   release:
     name: Publish GitHub Release
     # Wait for both build jobs, but publish as long as the SUPPORTED Linux
     # build passed; the unsupported job's outcome (pass / fail / partial)
     # never gates the release.
-    needs: [build, build-unsupported]
+    needs: [build, build-unsupported, build-windows-installer]
     if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
@@ -292,7 +348,7 @@ jobs:
         run: |
           mkdir -p release
           find artifacts -type f \
-              \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.deb' -o -name '*.sha256' \) \
+              \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.deb' -o -name '*.sha256' -o -name '*.exe' \) \
               -exec cp {} release/ \;
           # Test + coverage reports (produced by the amd64 build row).
           if [ -d artifacts/test-reports ]; then
@@ -386,13 +442,13 @@ jobs:
             fi
             echo "### Artifacts"
             echo
-            for f in release/*.tar.gz release/*.zip; do
+            for f in release/*.tar.gz release/*.zip release/*.exe; do
               [ -e "$f" ] || continue
               echo "- \`$(basename "$f")\`"
             done
             [ -e release/jennifer-manual.pdf ] && echo "- \`jennifer-manual.pdf\` - the full documentation as a single PDF."
             echo
-            echo "Artifacts named \`-UNSUPPORTED\` are best-effort macOS / Windows builds (standard \`jennifer\` only, no TinyGo, unsigned, no support); see \`docs/user-guide/installing.md\`. They may be missing if that build failed - it does not block the Linux release."
+            echo "Artifacts named \`-UNSUPPORTED\` are best-effort macOS / Windows builds (standard \`jennifer\` only, no TinyGo, unsigned, no support); see \`docs/user-guide/installing.md\`. The \`*-setup.exe\` is the same unsupported Windows build wrapped in an installer (PATH, \`.j\` association, bundled modules). Any of these may be missing if that build failed - it does not block the Linux release."
           } > release_notes.md
           cat release_notes.md
 
@@ -419,6 +475,7 @@ jobs:
           files: |
             release/*.tar.gz
             release/*.zip
+            release/*.exe
             release/*.deb
             release/*.sha256
             release/PKGBUILD-bin

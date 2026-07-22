@@ -134,9 +134,32 @@ sudo install -m 0644 share/jennifer/modules/*.j /usr/share/jennifer/modules/
   supported development and testing happen on Linux. Fully supported
   builds for these platforms are separate future work (see
   [milestones.md](../milestones.md)).
-- **Just the binary.** No installer, man pages, MIME registration, or
-  shell completion off Linux - the archive holds the executable plus
-  `JENNIFER.md`, `README.md`, and the licence.
+- **Just the binary (macOS).** No installer, man pages, MIME registration,
+  or shell completion - the archive holds the executable plus `JENNIFER.md`,
+  `README.md`, and the licence. Windows additionally gets an installer (below).
+
+#### Windows installer
+
+Windows releases also ship a `jennifer-<version>-setup.exe` - the same
+best-effort **unsupported** build wrapped in an [Inno Setup](https://jrsoftware.org/isinfo.php)
+installer. It is still unsigned (SmartScreen: "More info" -> "Run anyway") and
+still unsupported, but it saves the manual setup:
+
+- Installs `jennifer.exe` per-user (no admin) to
+  `%LOCALAPPDATA%\Programs\Jennifer` and adds it to your `PATH`, so `jennifer`
+  works in a fresh terminal.
+- Bundles the Jennifer-coded system modules and sets `JENNIFER_SYSMODDIR`, so a
+  bare `import "name.j";` resolves (on Windows the built-in module path is a
+  Unix path that does not exist, so the plain `.zip` cannot import modules
+  without setting this yourself).
+- Optionally associates `.j` files (opt-in): double-click opens the source in
+  Notepad; a "Run with Jennifer" right-click action runs it.
+- Uninstall from **Apps & Features**, which reverses the `PATH`, the
+  environment variable, and the association.
+
+Prefer the plain `-UNSUPPORTED.zip` if you want a portable, no-registry copy (or
+you are on 32-bit Windows - the installer is 64-bit only); set
+`JENNIFER_SYSMODDIR` yourself to use modules from the zip.
 
 Windows 8.1 and earlier are not possible: this project's Go toolchain
 (Go 1.21+) produces binaries that require **Windows 10 or newer** (or

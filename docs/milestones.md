@@ -2111,6 +2111,27 @@ locals is the load-bearing case); pinned by a hard CI guard
 allocations swamp the count) plus `arena_bench_test.go`. See
 implementation-note 14.
 
+### M21.13 - Windows installer
+
+**Done.** An Inno Setup script (`packaging/windows/jennifer.iss`) built by a
+`build-windows-installer` CI job (`windows-latest`) into
+`jennifer-<ver>-setup.exe`: a per-user, no-admin installer that puts
+`jennifer.exe` on `PATH`, bundles the Jennifer-coded system modules and sets
+`JENNIFER_SYSMODDIR` (required because the compile-time module dir is a POSIX path
+that does not exist on Windows - `internal/module/sysmoddir.go`), optionally
+associates `.j` (opt-in; default double-click opens Notepad, an explicit "Run with
+Jennifer" verb runs it), and registers an Apps & Features uninstaller that
+reverses all three. Reuses the existing `docs/favicon.ico`. Unsigned (SmartScreen
+"More info -> Run anyway" documented); still the best-effort **unsupported**
+build, just wrapped in an installer. The CI job builds `jennifer.exe` natively (a
+first native-Windows smoke test) and is non-blocking like the `build-unsupported`
+job; the installer attaches to the GitHub Release.
+
+The follow-on - promoting Windows from unsupported to *supported* (the
+portability work: the exe-relative module default, a per-OS golden strategy,
+`fs.chmod` / `fs.chown` on Windows, a `windows-latest` test job) - is post-1.0 and
+not committed, so it lives in [horizon `DRAFT#22`](horizon.md), not here.
+
 ---
 
 ## Requirements for 1.0.0 stable

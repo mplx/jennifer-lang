@@ -168,5 +168,8 @@ cd jennifer-0.14.1-linux-amd64
   on the "Path to 1.0.0 distribution" parallel track in
   [docs/milestones.md](docs/milestones.md), not gated on this
   release process.
-- macOS / Windows builds - waits on the platform-portability
-  work tracked separately.
+- macOS / Windows: the best-effort **unsupported** binaries and the
+  Windows `setup.exe` installer (the `build-unsupported` and
+  `build-windows-installer` jobs) are CI-automated and attach to the
+  Release automatically. Promoting either platform to **supported**
+  waits on the platform-portability work tracked separately.

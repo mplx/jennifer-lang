@@ -11,6 +11,9 @@ packaging/
   arch/                 - AUR PKGBUILDs (-bin downloads release, -git builds from source),
                           the shared jennifer.install hook, and publish-bin.sh /
                           publish-git.sh (copied into the AUR clones to publish)
+  windows/              - Inno Setup script (jennifer.iss) + README; the CI
+                          build-windows-installer job compiles it to
+                          jennifer-<ver>-setup.exe (best-effort, unsupported)
   mime/jennifer.xml       - XDG shared-mime-info; both .deb and AUR install it
   man/jennifer.1          - man page for the default (standard-Go) binary
   man/jennifer-tiny.1     - man page for the constrained (TinyGo) binary
