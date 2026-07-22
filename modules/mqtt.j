@@ -21,6 +21,7 @@
  * mqtt.disconnect($c);
  */
 use net;
+use binary;
 use convert;
 use strings;
 
@@ -93,13 +94,7 @@ func appendBytes(dst as bytes, src as bytes) {
 
 # sliceBytes returns src[start:end] as a fresh bytes value.
 func sliceBytes(src as bytes, start as int, end as int) {
-    def out as bytes;
-    def i as int init $start;
-    while ($i < $end) {
-        $out[] = $src[$i];
-        $i = $i + 1;
-    }
-    return $out;
+    return binary.slice($src, $start, $end);
 }
 
 # putString appends an MQTT UTF-8 string (2-byte big-endian length prefix, then

@@ -26,6 +26,7 @@
  * amqp.close($c);
  */
 use net;
+use binary;
 use convert;
 
 # Frame types and the frame-end sentinel.
@@ -199,13 +200,7 @@ func appendBytes(dst as bytes, src as bytes) {
 }
 
 func sliceBytes(src as bytes, start as int, end as int) {
-    def out as bytes;
-    def i as int init $start;
-    while ($i < $end) {
-        $out[] = $src[$i];
-        $i = $i + 1;
-    }
-    return $out;
+    return binary.slice($src, $start, $end);
 }
 
 func putOctet(b as bytes, v as int) {

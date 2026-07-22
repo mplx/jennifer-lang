@@ -20,6 +20,7 @@
  *     "application/json", "{\"name\":\"ada\"}", {"Authorization": "Bearer xyz"});
  */
 use net;
+use binary;
 use strings;
 use convert;
 use maps;
@@ -51,13 +52,7 @@ export def struct Response {
 
 # sliceBytes copies buf[start:end] into a new bytes value.
 func sliceBytes(buf as bytes, start as int, end as int) {
-    def out as bytes;
-    def i as int init $start;
-    while ($i < $end) {
-        $out[] = $buf[$i];
-        $i = $i + 1;
-    }
-    return $out;
+    return binary.slice($buf, $start, $end);
 }
 
 # bytesToStr decodes buf[start:end] as UTF-8 text.

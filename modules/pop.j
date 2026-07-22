@@ -21,6 +21,7 @@
  * }
  */
 use net;
+use binary;
 use strings;
 use convert;
 use hash;
@@ -173,13 +174,7 @@ func emptyBytes() {
 
 # byteSlice returns buf[start:end] as a fresh bytes value.
 func byteSlice(buf as bytes, start as int, end as int) {
-    def out as bytes;
-    def i as int init $start;
-    while ($i < $end) {
-        $out[] = $buf[$i];
-        $i = $i + 1;
-    }
-    return $out;
+    return binary.slice($buf, $start, $end);
 }
 
 # lfIndex returns the index of the first LF at or after `from`, or -1.

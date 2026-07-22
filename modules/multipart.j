@@ -22,6 +22,7 @@
  * def back as list of multipart.Part init multipart.parse($form.contentType, $form.body);
  */
 use strings;
+use binary;
 use convert;
 use lists;
 use crypto;
@@ -98,41 +99,6 @@ export func isFile(p as Part) {
 }
 
 # --- byte helpers (private) -------------------------------------------------
-
-func sliceBytes(src as bytes, start as int, end as int) {
-    def out as bytes;
-    def i as int init $start;
-    while ($i < $end) {
-        $out[] = $src[$i];
-        $i = $i + 1;
-    }
-    return $out;
-}
-
-# indexOfBytes finds needle in hay at or after `from`, or -1.
-func indexOfBytes(hay as bytes, needle as bytes, from as int) {
-    def n as int init len($needle);
-    if ($n == 0) {
-        return $from;
-    }
-    def limit as int init len($hay) - $n;
-    def i as int init $from;
-    while ($i <= $limit) {
-        def match as bool init true;
-        def j as int init 0;
-        while ($j < $n and $match) {
-            if (not ($hay[$i + $j] == $needle[$j])) {
-                $match = false;
-            }
-            $j = $j + 1;
-        }
-        if ($match) {
-            return $i;
-        }
-        $i = $i + 1;
-    }
-    return -1;
-}
 
 # --- build (exported) -------------------------------------------------------
 
@@ -300,12 +266,12 @@ func extractHeader(headers as string, name as string) {
 # parsePart decodes one part's bytes (headers + CRLFCRLF + data) into a Part.
 func parsePart(pb as bytes) {
     def sep as bytes init convert.bytesFromString("\r\n\r\n", "utf-8");
-    def hEnd as int init indexOfBytes($pb, $sep, 0);
+    def hEnd as int init binary.indexOf($pb, $sep);
     if ($hEnd < 0) {
         fail("malformed part: no header terminator");
     }
-    def headerStr as string init convert.stringFromBytes(sliceBytes($pb, 0, $hEnd), "utf-8");
-    def data as bytes init sliceBytes($pb, $hEnd + 4, len($pb));
+    def headerStr as string init convert.stringFromBytes(binary.slice($pb, 0, $hEnd), "utf-8");
+    def data as bytes init binary.slice($pb, $hEnd + 4, len($pb));
     return Part{
         name: extractParam($headerStr, "name"),
         filename: extractParam($headerStr, "filename"),
@@ -326,62 +292,30 @@ export func parse(contentType as string, body as bytes) {
     if (len($boundary) == 0) {
         fail("no boundary in Content-Type");
     }
-    # Normalise by prepending CRLF so every delimiter is "\r\n--boundary"
-    # (this avoids matching the token inside a part body). Build the buffer by
-    # reading $body directly - passing the whole body into a helper would
-    # deep-copy it under Jennifer's value semantics.
-    def delimStr as string init "\r\n--" + $boundary;
-    def work as bytes init convert.bytesFromString("\r\n", "utf-8");
-    def bi as int init 0;
-    while ($bi < len($body)) {
-        $work[] = $body[$bi];
-        $bi = $bi + 1;
-    }
-    def delim as bytes init convert.bytesFromString($delimStr, "utf-8");
-    def dlen as int init len($delim);
-    def wlen as int init len($work);
-
-    # Locate every delimiter in one left-to-right pass. Indexing $work directly
-    # (O(1) per read) instead of handing it to indexOfBytes/sliceBytes per part
-    # keeps this O(body) rather than O(parts * body) - the latter copied the
-    # whole buffer on every call, so many small parts were quadratic.
-    def bounds as list of int init [];
-    def s as int init 0;
-    while ($s + $dlen <= $wlen) {
-        def match as bool init true;
-        def j as int init 0;
-        while ($j < $dlen and $match) {
-            if (not ($work[$s + $j] == $delim[$j])) {
-                $match = false;
-            }
-            $j = $j + 1;
-        }
-        if ($match) {
-            $bounds[] = $s;
-            $s = $s + $dlen;   # delimiters can't overlap; skip past this one
-        } else {
-            $s = $s + 1;
-        }
-    }
-
+    # Split the body on the delimiter "\r\n--boundary" (the leading CRLF avoids
+    # matching the token inside a part body). binary.split runs the whole scan in
+    # one Go pass - O(body), not the O(parts * body) a slice-per-part loop costs.
+    def delim as bytes init convert.bytesFromString("\r\n--" + $boundary, "utf-8");
+    def work as bytes init binary.concat(convert.bytesFromString("\r\n", "utf-8"), $body);
+    def dashes as bytes init convert.bytesFromString("--", "utf-8");
     def parts as list of Part init [];
-    def k as int init 0;
-    while ($k + 1 < len($bounds)) {
-        def after as int init $bounds[$k] + $dlen;
-        if ($after + 2 <= $wlen and $work[$after] == 45 and $work[$after + 1] == 45) {
-            $k = len($bounds);   # closing "--boundary--"; stop
+    def segs as list of bytes init binary.split($work, $delim);
+    # seg[0] is the (empty) preamble before the first delimiter; skip it. Each
+    # real segment is "\r\n" + part; the closing "--boundary--" leaves a segment
+    # that starts with "--".
+    def si as int init 1;
+    while ($si < len($segs)) {
+        def seg as bytes init $segs[$si];
+        if (binary.startsWith($seg, $dashes)) {
+            $si = len($segs);   # closing delimiter; stop
             continue;
         }
-        def partStart as int init $after + 2;   # skip the CRLF after the delimiter
-        def partEnd as int init $bounds[$k + 1];
         def pb as bytes;
-        def p as int init $partStart;
-        while ($p < $partEnd) {
-            $pb[] = $work[$p];
-            $p = $p + 1;
+        if (len($seg) >= 2) {
+            $pb = binary.slice($seg, 2, len($seg));   # strip the leading CRLF
         }
         $parts[] = parsePart($pb);
-        $k = $k + 1;
+        $si = $si + 1;
     }
     return $parts;
 }

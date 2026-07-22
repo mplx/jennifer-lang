@@ -19,6 +19,7 @@
  * redis.quit($db);
  */
 use net;
+use binary;
 use strings;
 use convert;
 
@@ -118,13 +119,7 @@ func done(reply as Reply, pos as int) {
 
 # byteSlice returns buf[start:end] as a fresh bytes value.
 func byteSlice(buf as bytes, start as int, end as int) {
-    def out as bytes;
-    def i as int init $start;
-    while ($i < $end) {
-        $out[] = $buf[$i];
-        $i = $i + 1;
-    }
-    return $out;
+    return binary.slice($buf, $start, $end);
 }
 
 # crlfIndex returns the index of the CR of the first CRLF at or after `from`,
