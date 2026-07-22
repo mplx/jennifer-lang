@@ -14,6 +14,9 @@ packaging/
   windows/              - Inno Setup script (jennifer.iss) + README; the CI
                           build-windows-installer job compiles it to
                           jennifer-<ver>-setup.exe (best-effort, unsupported)
+  docker/               - multi-stage Dockerfile (slim + static variants) + README;
+                          the CI docker workflow builds/pushes multi-arch images
+                          to GHCR on each release tag
   mime/jennifer.xml       - XDG shared-mime-info; both .deb and AUR install it
   man/jennifer.1          - man page for the default (standard-Go) binary
   man/jennifer-tiny.1     - man page for the constrained (TinyGo) binary

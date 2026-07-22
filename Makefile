@@ -24,7 +24,7 @@
 # We use codegen rather than `-ldflags -X` because TinyGo 0.41 silently
 # ignores -X. Codegen works identically on both toolchains.
 
-.PHONY: build build-tinygo build-go test clean version gen-version
+.PHONY: build build-tinygo build-go test clean version gen-version docker
 
 # Default: build both binaries so the user always has both variants
 # side by side for local A/B comparison.
@@ -80,3 +80,16 @@ gen-version:
 # Print the version string that the next build would embed.
 version:
 	@sh scripts/version.sh
+
+# Build the container image locally (host arch) via Buildx / BuildKit, which the
+# packaging/docker/Dockerfile needs for the $BUILDPLATFORM cross-compile. Builds
+# the `slim` variant by default and tags it jennifer:<version>; override with
+# `make docker DOCKER_TARGET=static DOCKER_TAG=my/jennifer:dev`. Multi-arch
+# publishing is CI's job (.github/workflows/docker.yml).
+DOCKER_TARGET ?= slim
+DOCKER_TAG ?= jennifer:$(shell sh scripts/version.sh)
+docker:
+	docker buildx build --load -f packaging/docker/Dockerfile \
+		--target $(DOCKER_TARGET) \
+		--build-arg VERSION=$$(sh scripts/version.sh) \
+		-t $(DOCKER_TAG) .

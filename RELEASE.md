@@ -28,6 +28,13 @@ prefix per project convention), `.github/workflows/release.yml`:
 
 The release goes live only after a human reviews and clicks Publish.
 
+Separately, `.github/workflows/docker.yml` (same bare-semver tag trigger)
+builds and pushes the multi-arch (`linux/amd64` + `linux/arm64`) container
+images to GHCR - `ghcr.io/<owner>/jennifer` `:latest` / `:<ver>` /
+`:<major>.<minor>` (Debian-slim) and `:static` / `:<ver>-static` (distroless).
+It is independent of `release.yml` and needs no secrets beyond the built-in
+`GITHUB_TOKEN`.
+
 ## What you still have to do
 
 ### Before tagging

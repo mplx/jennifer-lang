@@ -1645,6 +1645,13 @@ don't block any feature milestone:
 - **Real apt repository** (replacing the "GitHub Release
   artifact" install of the M15.8 `.deb`) if user demand
   warrants the maintenance.
+- **Container image (OCI).** Done - `.github/workflows/docker.yml`
+  builds and pushes multi-arch (`linux/amd64` + `linux/arm64`)
+  `ghcr.io/<owner>/jennifer` images on each release tag: a Debian-slim
+  default (`:latest` / `:<ver>`, full host features) and a distroless
+  `:static` variant. The image bundles both binaries and the system
+  modules under the compile-default module dir, so a bare
+  `import "name.j";` resolves with no env var. See `packaging/docker/`.
 
 The extra Linux / macOS distribution formats (Homebrew, Snap,
 Nix, Flatpak, AppImage, ...) are not requirements; they live in

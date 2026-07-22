@@ -111,6 +111,33 @@ sudo mkdir -p /usr/share/jennifer/modules
 sudo install -m 0644 share/jennifer/modules/*.j /usr/share/jennifer/modules/
 ```
 
+### Docker (container image)
+
+Each release publishes multi-arch (`linux/amd64` + `linux/arm64`) images to GHCR.
+The image bundles both binaries and the system modules, so a bare
+`import "name.j";` resolves with no setup:
+
+```sh
+# Run a script from the current directory (mounted at /work).
+docker run --rm -v "$PWD:/work" ghcr.io/jennifer-language/jennifer run app.j
+
+# Pipe a program on stdin.
+echo 'use io; io.printf("hi\n");' | docker run --rm -i ghcr.io/jennifer-language/jennifer run -
+
+# Interactive REPL (the default command).
+docker run --rm -it ghcr.io/jennifer-language/jennifer
+
+# Serve a web app (port is whatever the program passes to web.run / httpd).
+docker run --rm -p 8080:8080 -v "$PWD:/work" ghcr.io/jennifer-language/jennifer run server.j
+```
+
+Two variants: `:latest` / `:<version>` is the Debian-slim default (full host
+features - `os.run`, TLS); `:static` / `:<version>-static` is a minimal
+distroless build (~15-25MB, no `/bin/sh`, so `os.run` of external programs is
+unavailable - use it for pure-interpreter or web-serving workloads). Build
+details and local-build recipes are in
+[`packaging/docker/README.md`](https://github.com/jennifer-language/jennifer/blob/main/packaging/docker/README.md).
+
 ### macOS / Windows (unsupported)
 
 **Linux is the only supported platform.** As a convenience, best-effort
