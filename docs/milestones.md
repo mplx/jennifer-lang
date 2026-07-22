@@ -1631,6 +1631,37 @@ Cross-cutting threads:
 
 ---
 
+## M22
+
+### M22.1 - `path` (filesystem path manipulation)
+
+**Done.** OS-aware path manipulation over Go's `path/filepath`, the pure-string
+counterpart to what `fs` does for I/O - so `.j` code stops hand-rolling
+separator splits and stops hardcoding `/`. `use path;` enables eight functions:
+`path.base` / `dir` / `ext` / `stem` / `join` (variadic) / `clean` / `isAbs` /
+`split` (`-> [dir, file]`).
+
+- **Category, not `fs`.** Path manipulation is string work that never touches the
+  disk; folding a lone `basename` into `fs` (I/O) would be a category error, and
+  path manipulation has 5+ natural functions, so per the library-organization
+  principle it earns its own library. Mirrors Go's `path/filepath` vs `os`/`io`
+  split.
+- **Manipulation subset only** (`Base` / `Dir` / `Ext` / `Join` / `Clean` /
+  `IsAbs` / `Split`): the I/O-touching parts of `path/filepath` (`Abs`, `Glob`,
+  `Walk`, `EvalSymlinks`) are deliberately excluded - those need the disk and
+  belong with `fs`. Because the subset does no I/O, `path` needs **no build-tag
+  split** and is TinyGo-clean; it ships in both binaries (unlike `fs` / `net`).
+- **Portable by construction.** Uses the host separator (`/` on Linux, `\` on the
+  best-effort Windows build), so `path.join(a, b)` builds paths that are correct
+  on each platform - the `.j` analogue of the "use `path/filepath`, never
+  hardcode `/`" rule the Go side already follows. Pairs with `os.DIRSEP`.
+- **Explicitly not a sanitizer.** `path.base` is OS-aware, so on Linux it does
+  not strip a `\` (a legal Unix filename byte); it is path logic, not a way to
+  neutralize an untrusted filename. Callers sanitizing attacker-controlled names
+  (e.g. an email attachment's filename) still strip both separators themselves.
+
+---
+
 ## Requirements for 1.0.0 stable
 
 The core CI + release + packaging items that used to live here

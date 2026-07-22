@@ -318,6 +318,11 @@ Call as `LIB.name(...)`. Enable with `use LIB;` first. Highlights:
   (`"int"`/`"term"`/`"hup"`/`"usr2"`; cooperative, opt-in, for graceful shutdown;
   `"usr1"` reserved for `kill -USR1` interpreter diagnostics). Constants
   `PLATFORM ARCH EOL DIRSEP PATHSEP ARGS`.
+- **`path`** - OS-aware filesystem path manipulation (the string layer paired
+  with `fs`; no I/O): `path.base(p)`, `dir(p)`, `ext(p)`, `stem(p)`,
+  `join(a, b, ...)`, `clean(p)`, `isAbs(p)`, `split(p)` -> `[dir, file]`. Uses
+  the host separator, so `path.join` builds portable paths instead of hardcoding
+  `/`. Not a filename sanitizer (OS-aware `base` does not strip a foreign `\`).
 - **`json`** - `encode`/`encodePretty`/`decode`. `decode` returns an opaque
   `json.Value` walked by JSON Pointer accessors (`get`/`asInt`/`asString`/
   `typeOf`/`has`/`keys`/`length`/...) and edited by non-mutating writers
@@ -581,13 +586,17 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
   on its own. **Default `jennifer` binary only** (`net`).
 - **`mime`** - build and parse MIME messages (RFC 5322 headers, multipart,
   quoted-printable / base64 transfer encodings): `mime.text(contentType, body)` /
-  `attachment` / `multipart(subtype, boundary, parts)` / `withHeader` build a
-  `Part` tree, `mime.encode(part)` serializes it, `mime.parse(text)` reads it
-  back, and `mime.headerValue` / `body` / `parts` / `contentType` / `address`
-  read it. A non-ASCII `Subject` / display name is auto-encoded as an RFC 2047
-  encoded-word on `encode` and decoded on `parse` (primitives `mime.encodeWord`
-  / `decodeWord`). Bodies are text (UTF-8); no networking. The foundation the
-  mail clients build on.
+  `attachment` / `attachmentBytes(filename, contentType, data)` (binary) /
+  `multipart(subtype, boundary, parts)` / `withHeader` build a `Part` tree,
+  `mime.encode(part)` serializes it, `mime.parse(text)` reads it back, and
+  `mime.headerValue` / `body` / `parts` / `contentType` / `address` read it. To
+  pull a received message apart, `mime.walk` / `attachments` / `textBodies` /
+  `findParts(part, mediaType)` flatten the tree, with `mime.data(part)` (raw
+  `bytes`, so binary attachments round-trip), `mime.filename` / `disposition` /
+  `isAttachment` per part. A non-ASCII `Subject` / display name is auto-encoded
+  as an RFC 2047 encoded-word on `encode` and decoded on `parse` (primitives
+  `mime.encodeWord` / `decodeWord`). No networking. The foundation the mail
+  clients build on (`imap.fetchMessage` returns a parsed `mime.Part`).
 - **`sasl`** - SASL auth mechanisms shared by the mail clients: base64 encoders
   `sasl.plain(user, pass)`, `sasl.loginUser` / `loginPass`, `sasl.bearer(user,
   token)` (SASL XOAUTH2 - the "use a token" half of OAuth2, for Google /
@@ -622,8 +631,9 @@ to the system module dir, so `import "NAME.j";` resolves with no path (or
 - **`imap`** - receive mail (IMAP4rev1, RFC 3501) over `net`, a reading subset:
   `imap.connect(opts)` -> `imap.Session`, then `selectMailbox(session, name)`
   (count), `search(session)` (sequence numbers), `fetch(session, n)` (a whole
-  message), `logout(session)`, plus `imap.fetchAll(opts, mailbox)`. Handles
-  tagged responses and `{N}` literals; messages are strings for `mime.parse`.
+  message as a string) or `fetchMessage(session, n)` (parsed to a `mime.Part`,
+  ready for `mime.attachments` / `textBodies`), `logout(session)`, plus
+  `imap.fetchAll(opts, mailbox)`. Handles tagged responses and `{N}` literals.
   Throws `Error` (kind `"imap"`) on `NO` / `BAD`. **Default `jennifer` binary
   only** (`net`).
 - **`idna`** - internationalized domain names: `idna.toAscii(domain)` /

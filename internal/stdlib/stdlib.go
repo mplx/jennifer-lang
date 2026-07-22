@@ -34,6 +34,7 @@ import (
 	"jennifer-lang.dev/jennifer/internal/lib/meta"
 	"jennifer-lang.dev/jennifer/internal/lib/net"
 	"jennifer-lang.dev/jennifer/internal/lib/os"
+	pathlib "jennifer-lang.dev/jennifer/internal/lib/path"
 	"jennifer-lang.dev/jennifer/internal/lib/regex"
 	seriallib "jennifer-lang.dev/jennifer/internal/lib/serial"
 	spilib "jennifer-lang.dev/jennifer/internal/lib/spi"
@@ -61,6 +62,7 @@ func InstallAll(in *interpreter.Interpreter) {
 	binarylib.Install(in)
 	mapslib.Install(in)
 	oslib.Install(in)
+	pathlib.Install(in)
 	metalib.Install(in)
 	timelib.Install(in)
 	hashlib.Install(in)

@@ -213,6 +213,14 @@ flat lookup view, not authoritative.
 | [`os`](os.md)`.run(argv)`                             | Blocking: run `argv` to completion, return `os.Result{exitCode, stdout, stderr}`.                                                   |
 | [`os`](os.md)`.spawn(argv)`                           | Non-blocking: start `argv`, return `os.Process{pid}` handle.                                                                        |
 | [`os`](os.md)`.wait(p)`                               | Block until spawned process `$p` exits; return `os.Result`. Idempotent.                                                             |
+| [`path`](path.md)`.base(p)`                           | Last element of `p`. `""` -> `"."`, `"/"` -> `"/"`. OS-aware; not a filename sanitizer.                                             |
+| [`path`](path.md)`.dir(p)`                            | All but the last element of `p`, cleaned. `"c.txt"` -> `"."`.                                                                       |
+| [`path`](path.md)`.ext(p)`                            | File extension incl. the leading dot (`".txt"`), or `""`.                                                                           |
+| [`path`](path.md)`.stem(p)`                           | Base name of `p` without its extension.                                                                                             |
+| [`path`](path.md)`.join(a, b, ...)`                   | Join >= 1 elements with the separator and clean; empty elements dropped. Portable alternative to hardcoding `"/"`.                  |
+| [`path`](path.md)`.clean(p)`                          | Shortest path equivalent to `p` (collapses `.`, `..`, repeated separators). `""` -> `"."`.                                          |
+| [`path`](path.md)`.isAbs(p)`                          | Whether `p` is absolute (`bool`).                                                                                                   |
+| [`path`](path.md)`.split(p)`                          | `[dir, file]` where `dir` keeps its trailing separator, so `dir + file == p`.                                                       |
 | [`strings`](strings.md)`.chars(s)`                    | Split `s` into a `list of string`, one entry per Unicode code point.                                                                |
 | [`term`](term.md)`.makeRaw(stream)` / `.restore(state)` | Enter / leave raw mode (unbuffered, no-echo) on a terminal (`"stdin"`); `makeRaw` returns a single-use `term.State`. Non-terminal errors. |
 | [`term`](term.md)`.size(stream)`                      | The terminal's `term.Size{rows, cols}` (query `"stdout"`).                                                                          |

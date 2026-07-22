@@ -7,12 +7,14 @@
  * module does well. The transfer codecs (base64, quoted-printable) are delegated
  * to the `encoding` system library. This is the message-structure foundation the
  * mail clients (SMTP / POP3 / IMAP) build on; it does no networking itself. A
- * `Part` is a leaf (headers + a decoded-text `body` with a transfer `encoding`)
+ * `Part` is a leaf (headers + a decoded `body`/`data` with a transfer `encoding`)
  * or a multipart container (headers + child `parts` + a `boundary`); bodies are
  * held decoded as text, encode applies the transfer encoding and parse removes
  * it. RFC 2047 encoded-words are applied automatically on encode and decoded on
- * parse, with `encodeWord` / `decodeWord` exposed for manual use. Content is
- * text (UTF-8); binary attachments (a `bytes` body) are not yet handled.
+ * parse, with `encodeWord` / `decodeWord` exposed for manual use. Every leaf
+ * carries its raw decoded `data` (`bytes`), so binary attachments round-trip;
+ * `body` is the text view, populated for text parts (UTF-8). Use `walk` /
+ * `attachments` / `textBodies` to pull parts out of a received message.
  * @module mime
  * @example
  * import "mime.j" as mime;
@@ -38,20 +40,22 @@ export def struct Header {
 };
 
 /**
- * A MIME part: a leaf (`body` + `encoding`, `parts` empty) or a multipart
- * container (`parts` + `boundary`, `body` empty).
+ * A MIME part: a leaf (`data`/`body` + `encoding`, `parts` empty) or a multipart
+ * container (`parts` + `boundary`, `body`/`data` empty).
  * @field headers {list of Header} the part's header fields
- * @field body {string} the decoded text body of a leaf part
+ * @field body {string} the decoded text body of a text part ("" for a binary part)
  * @field encoding {string} the transfer encoding ("7bit", "base64", "quoted-printable")
  * @field parts {list of Part} the child parts of a multipart container
  * @field boundary {string} the multipart boundary delimiter
+ * @field data {bytes} the raw decoded content of a leaf (any type, incl. binary)
  */
 export def struct Part {
     headers as list of Header,
     body as string,
     encoding as string,
     parts as list of Part,
-    boundary as string
+    boundary as string,
+    data as bytes
 };
 
 # --- small text helpers (private) ----------------------------------
@@ -121,6 +125,25 @@ func decodeBody(raw as string, enc as string) {
         return convert.stringFromBytes(encoding.fromText($raw, "quoted-printable"), "utf-8");
     }
     return $raw;
+}
+
+# emptyBytes returns an empty `bytes` value (for the `data:` slot of a container
+# part, which has no leaf content).
+func emptyBytes() {
+    def b as bytes;
+    return $b;
+}
+
+# decodeBytes reverses the transfer encoding to the raw content bytes. Unlike
+# decodeBody it never forces UTF-8, so a binary attachment survives intact.
+func decodeBytes(raw as string, enc as string) {
+    if ($enc == "base64") {
+        return encoding.fromText(stripWS($raw), "base64");
+    }
+    if ($enc == "quoted-printable") {
+        return encoding.fromText($raw, "quoted-printable");
+    }
+    return convert.bytesFromString($raw, "utf-8");
 }
 
 # --- header lookup (private) ---------------------------------------
@@ -520,7 +543,8 @@ export func text(contentType as string, body as string) {
     def hs as list of Header init [];
     $hs[] = mkHeader("Content-Type", $contentType + "; charset=utf-8");
     $hs[] = mkHeader("Content-Transfer-Encoding", $enc);
-    return Part{headers: $hs, body: $body, encoding: $enc, parts: [], boundary: ""};
+    return Part{headers: $hs, body: $body, encoding: $enc, parts: [], boundary: "",
+        data: convert.bytesFromString($body, "utf-8")};
 }
 
 /**
@@ -539,7 +563,27 @@ export func attachment(filename as string, contentType as string, body as string
     # quoted-string parameter.
     def safeName as string init strings.replace(strings.replace($filename, "\\", "\\\\"), "\"", "\\\"");
     $hs[] = mkHeader("Content-Disposition", "attachment; filename=\"" + $safeName + "\"");
-    return Part{headers: $hs, body: $body, encoding: "base64", parts: [], boundary: ""};
+    return Part{headers: $hs, body: $body, encoding: "base64", parts: [], boundary: "",
+        data: convert.bytesFromString($body, "utf-8")};
+}
+
+/**
+ * Build a base64 attachment part from raw `bytes` (images, PDFs, any binary).
+ * The binary counterpart to `attachment`; `encode` base64-wraps the data and
+ * `parse` restores it, so it round-trips intact.
+ * @param filename {string} the attachment filename
+ * @param contentType {string} the media type (e.g. "image/png")
+ * @param data {bytes} the raw file content
+ * @return {Part} the attachment part
+ */
+export func attachmentBytes(filename as string, contentType as string, data as bytes) {
+    def hs as list of Header init [];
+    $hs[] = mkHeader("Content-Type", $contentType);
+    $hs[] = mkHeader("Content-Transfer-Encoding", "base64");
+    def safeName as string init strings.replace(strings.replace($filename, "\\", "\\\\"), "\"", "\\\"");
+    $hs[] = mkHeader("Content-Disposition", "attachment; filename=\"" + $safeName + "\"");
+    return Part{headers: $hs, body: "", encoding: "base64", parts: [], boundary: "",
+        data: $data};
 }
 
 /**
@@ -552,7 +596,8 @@ export func attachment(filename as string, contentType as string, body as string
 export func multipart(subtype as string, boundary as string, parts as list of Part) {
     def hs as list of Header init [];
     $hs[] = mkHeader("Content-Type", "multipart/" + $subtype + "; boundary=\"" + $boundary + "\"");
-    return Part{headers: $hs, body: "", encoding: "", parts: $parts, boundary: $boundary};
+    return Part{headers: $hs, body: "", encoding: "", parts: $parts, boundary: $boundary,
+        data: emptyBytes()};
 }
 
 /**
@@ -593,6 +638,12 @@ export func encode(part as Part) {
     if (len($part.boundary) > 0) {
         return $out + encodeMultipart($part);
     }
+    # A binary leaf (no text body, raw bytes present) is base64-wrapped from its
+    # `data`; a text leaf keeps the string path so ASCII / RFC 2047 bodies are
+    # byte-identical to before.
+    if (len($part.body) == 0 and len($part.data) > 0) {
+        return $out + wrapLines(encoding.toText($part.data, "base64"));
+    }
     return $out + encodeBody($part.body, $part.encoding);
 }
 
@@ -618,14 +669,24 @@ export func parse(text as string) {
     def boundary as string init extractBoundary(findHeader($hs, "Content-Type"));
     if (len($boundary) > 0) {
         def kids as list of Part init parseMultipart($bodyText, $boundary);
-        return Part{headers: $hs, body: "", encoding: "", parts: $kids, boundary: $boundary};
+        return Part{headers: $hs, body: "", encoding: "", parts: $kids,
+            boundary: $boundary, data: emptyBytes()};
     }
     def enc as string init findHeader($hs, "Content-Transfer-Encoding");
     if (len($enc) == 0) {
         $enc = "7bit";
     }
-    return Part{headers: $hs, body: decodeBody($bodyText, $enc), encoding: $enc,
-        parts: [], boundary: ""};
+    # Always keep the raw decoded bytes; produce the text `body` only for a
+    # text/* (or type-less) part, so a binary attachment is never forced through
+    # a lossy UTF-8 decode.
+    def data as bytes init decodeBytes($bodyText, $enc);
+    def ct as string init strings.lower(typeOnly(findHeader($hs, "Content-Type")));
+    def bodyStr as string init "";
+    if (len($ct) == 0 or strings.startsWith($ct, "text/")) {
+        $bodyStr = decodeBody($bodyText, $enc);
+    }
+    return Part{headers: $hs, body: $bodyStr, encoding: $enc,
+        parts: [], boundary: "", data: $data};
 }
 
 # --- accessors + helpers (exported) --------------------------------
@@ -665,6 +726,142 @@ export func parts(part as Part) {
  */
 export func contentType(part as Part) {
     return typeOnly(findHeader($part.headers, "Content-Type"));
+}
+
+# paramValue reads a `key=` parameter from a header value (quoted or bare, case-
+# insensitive key), or "" when absent. Generalises extractBoundary.
+func paramValue(header as string, key as string) {
+    def idx as int init strings.indexOf(strings.lower($header), strings.lower($key) + "=");
+    if ($idx < 0) {
+        return "";
+    }
+    def rest as string init strings.trim(strings.substring($header, $idx + len($key) + 1, len($header)));
+    if (strings.startsWith($rest, "\"")) {
+        def tail as string init strings.substring($rest, 1, len($rest));
+        def end as int init strings.indexOf($tail, "\"");
+        if ($end >= 0) {
+            return strings.substring($tail, 0, $end);
+        }
+        return "";
+    }
+    def semi as int init strings.indexOf($rest, ";");
+    if ($semi >= 0) {
+        return strings.trim(strings.substring($rest, 0, $semi));
+    }
+    return $rest;
+}
+
+/**
+ * Return a leaf part's raw decoded content bytes (any type, including binary
+ * attachments). This is the byte-accurate counterpart to `body`.
+ * @param part {Part} the leaf part
+ * @return {bytes} the raw decoded content
+ */
+export func data(part as Part) {
+    return $part.data;
+}
+
+/**
+ * Return a part's Content-Disposition (lowercased, without parameters):
+ * "attachment", "inline", or "" when the header is absent.
+ * @param part {Part} the part to read
+ * @return {string} the disposition
+ */
+export func disposition(part as Part) {
+    return strings.lower(typeOnly(findHeader($part.headers, "Content-Disposition")));
+}
+
+/**
+ * Return a part's filename: the Content-Disposition `filename=`, else the
+ * Content-Type `name=` parameter, RFC 2047-decoded; "" when neither is present.
+ * @param part {Part} the part to read
+ * @return {string} the filename
+ */
+export func filename(part as Part) {
+    def name as string init paramValue(findHeader($part.headers, "Content-Disposition"), "filename");
+    if (len($name) == 0) {
+        $name = paramValue(findHeader($part.headers, "Content-Type"), "name");
+    }
+    return decodeWord($name);
+}
+
+/**
+ * Report whether a part is an attachment: Content-Disposition is "attachment",
+ * or a filename is set.
+ * @param part {Part} the part to read
+ * @return {bool} true when the part is an attachment
+ */
+export func isAttachment(part as Part) {
+    return disposition($part) == "attachment" or len(filename($part)) > 0;
+}
+
+/**
+ * Flatten a part tree to its leaf parts (depth-first). A leaf is a part with no
+ * child `parts`; the building block for `attachments` / `textBodies`.
+ * @param part {Part} the part (leaf or container) to walk
+ * @return {list of Part} every leaf part, in document order
+ */
+export func walk(part as Part) {
+    def out as list of Part init [];
+    if (len($part.parts) == 0) {
+        $out[] = $part;
+        return $out;
+    }
+    for (def child in $part.parts) {
+        for (def leaf in walk($child)) {
+            $out[] = $leaf;
+        }
+    }
+    return $out;
+}
+
+/**
+ * Return every attachment leaf in the message (see `isAttachment`). Each part's
+ * bytes are `data($part)` and its name `filename($part)`.
+ * @param part {Part} the parsed message (or any subtree)
+ * @return {list of Part} the attachment parts
+ */
+export func attachments(part as Part) {
+    def out as list of Part init [];
+    for (def leaf in walk($part)) {
+        if (isAttachment($leaf)) {
+            $out[] = $leaf;
+        }
+    }
+    return $out;
+}
+
+/**
+ * Return the readable text bodies: text parts (any `text/` subtype) that are not
+ * attachments (so both the text/plain and text/html alternatives of a message).
+ * @param part {Part} the parsed message (or any subtree)
+ * @return {list of Part} the text body parts
+ */
+export func textBodies(part as Part) {
+    def out as list of Part init [];
+    for (def leaf in walk($part)) {
+        if (strings.startsWith(strings.lower(contentType($leaf)), "text/") and not isAttachment($leaf)) {
+            $out[] = $leaf;
+        }
+    }
+    return $out;
+}
+
+/**
+ * Return every leaf whose media type equals `mediaType` (e.g. "text/html").
+ * @param part {Part} the parsed message (or any subtree)
+ * @param mediaType {string} the exact media type to match (case-insensitive)
+ * @return {list of Part} the matching leaf parts
+ */
+export func findParts(part as Part, mediaType as string) {
+    def want as string init strings.lower($mediaType);
+    def out as list of Part init [];
+    for (def leaf in walk($part)) {
+        if (strings.lower(contentType($leaf)) == $want) {
+            $out[] = $leaf;
+        }
+    }
+    return $out;
 }
 
 # needsQuoting reports whether a display name must be a quoted-string. RFC 5322

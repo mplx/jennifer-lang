@@ -230,3 +230,61 @@ func testEncodeWordFoldsLong() {
     testing.assertContains($e, "\r\n ");        # folded
     testing.assertEqual(decodeWord($e), $long); # and reversible
 }
+
+# --- multipart bodies + attachments (public) ---
+
+func testBinaryAttachmentRoundTrip() {
+    # Bytes that are NOT valid UTF-8, so a text decode would have corrupted them.
+    def raw as bytes;
+    $raw[] = 0xff; $raw[] = 0x00; $raw[] = 0xC3; $raw[] = 0x28; $raw[] = 0x89;
+    def att as Part init attachmentBytes("logo.png", "image/png", $raw);
+    def msg as Part init multipart("mixed", "B1", [text("text/plain", "see attached"), $att]);
+    def back as Part init parse(encode($msg));
+
+    testing.assertEqual(len(walk($back)), 2);       # two leaves
+
+    def atts as list of Part init attachments($back);
+    testing.assertEqual(len($atts), 1);
+    testing.assertEqual(filename($atts[0]), "logo.png");
+    testing.assertEqual(contentType($atts[0]), "image/png");
+    testing.assertTrue(isAttachment($atts[0]));
+    # Byte-for-byte survival is the whole point of the bytes path.
+    testing.assertEqual(encoding.toText(data($atts[0]), "hex"), encoding.toText($raw, "hex"));
+
+    def tbs as list of Part init textBodies($back);
+    testing.assertEqual(len($tbs), 1);
+    testing.assertEqual(body($tbs[0]), "see attached");
+    testing.assertFalse(isAttachment($tbs[0]));
+}
+
+func testTextBodiesAlternative() {
+    def kids as list of Part init [];
+    $kids[] = text("text/plain", "plain view");
+    $kids[] = text("text/html", "<p>html view</p>");
+    def msg as Part init parse(encode(multipart("alternative", "B2", $kids)));
+    testing.assertEqual(len(textBodies($msg)), 2);  # both alternatives are readable bodies
+    def html as list of Part init findParts($msg, "text/html");
+    testing.assertEqual(len($html), 1);
+    testing.assertEqual(body($html[0]), "<p>html view</p>");
+    testing.assertEqual(len(attachments($msg)), 0); # nothing is an attachment here
+}
+
+func testWalkSingleText() {
+    def p as Part init parse("Content-Type: text/plain\r\n\r\njust text");
+    testing.assertEqual(len(walk($p)), 1);          # a leaf walks to itself
+    testing.assertEqual(len(attachments($p)), 0);
+    testing.assertEqual(len(textBodies($p)), 1);
+    testing.assertEqual(body($p), "just text");
+    testing.assertEqual(convert.stringFromBytes(data($p), "utf-8"), "just text");
+}
+
+func testFilenameNameFallback() {
+    # No Content-Disposition; filename falls back to the Content-Type name= param,
+    # and a name= alone still marks the part as an attachment.
+    def p as Part init parse("Content-Type: image/png; name=\"pic.png\"\r\nContent-Transfer-Encoding: base64\r\n\r\naGk=");
+    testing.assertEqual(filename($p), "pic.png");
+    testing.assertTrue(isAttachment($p));
+    testing.assertEqual(disposition($p), "");
+    testing.assertEqual(body($p), "");              # binary part: no text view
+    testing.assertEqual(convert.stringFromBytes(data($p), "utf-8"), "hi");
+}

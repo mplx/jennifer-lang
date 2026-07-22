@@ -33,6 +33,7 @@ use regex;
 use binary;
 import "./sasl.j" as sasl;
 import "./idna.j" as idna;
+import "./mime.j" as mime;
 
 /**
  * The parameters for opening an IMAP session.
@@ -476,6 +477,20 @@ export func search(session as Session) {
 export func fetch(session as Session, n as int) {
     def cmd as string init "FETCH " + convert.toString($n) + " BODY.PEEK[]";
     return extractLiteral(command($session.conn, $cmd));
+}
+
+/**
+ * Fetch message `n` and parse it into a `mime.Part` tree, ready for
+ * `mime.attachments` / `mime.textBodies` / `mime.data`. Convenience for the
+ * common `mime.parse(imap.fetch(...))` pattern; import `mime` too to walk the
+ * result.
+ * @param session {Session} the open session
+ * @param n {int} the message sequence number
+ * @return {mime.Part} the parsed message tree
+ * @throws {Error} on a "NO" / "BAD" completion (kind "imap")
+ */
+export func fetchMessage(session as Session, n as int) {
+    return mime.parse(fetch($session, $n));
 }
 
 /**

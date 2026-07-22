@@ -44,6 +44,7 @@
 - [`meta`](libraries/meta.md)
 - [`net`](libraries/net.md)
 - [`os`](libraries/os.md)
+- [`path`](libraries/path.md)
 - [`regex`](libraries/regex.md)
 - [`strings`](libraries/strings.md)
 - [`task`](libraries/task.md)

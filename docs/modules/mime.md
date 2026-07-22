@@ -23,35 +23,47 @@ Runnable: [`examples/modules/mime_demo.j`](https://github.com/jennifer-language/
 
 ## The `Part` model
 
-A message is a `Part` tree. A part is either a **leaf** (headers plus a
-decoded-text `body` with a transfer `encoding`) or a **multipart container**
-(headers plus child `parts` under a `boundary`):
+A message is a `Part` tree. A part is either a **leaf** (headers plus decoded
+content) or a **multipart container** (headers plus child `parts` under a
+`boundary`):
 
 ```jennifer
 export def struct Part {
     headers as list of Header, body as string, encoding as string,
-    parts as list of Part, boundary as string
+    parts as list of Part, boundary as string, data as bytes
 };
 export def struct Header { name as string, value as string };
 ```
 
-Bodies are held **decoded, as text**: `encode` applies the transfer encoding
-and `parse` removes it, so you always read plain content.
+Every leaf carries its raw decoded content as `data` (`bytes`), so **binary
+attachments round-trip intact**. `body` is the text view: `parse` fills it for
+text parts (`text/...`, UTF-8) and leaves it `""` for binary; `data` always
+holds the exact bytes. `encode` applies the transfer encoding and `parse`
+removes it, so you always read plain content.
 
 ## Surface
 
 | Call                                    | Returns  | Notes                                                              |
 | --------------------------------------- | -------- | ------------------------------------------------------------------ |
 | `mime.text(contentType, body)`          | `Part`   | Leaf text part; 7bit if ASCII, else quoted-printable. Adds `charset=utf-8`. |
-| `mime.attachment(filename, contentType, body)` | `Part` | Base64 leaf with a `Content-Disposition` filename.               |
+| `mime.attachment(filename, contentType, body)` | `Part` | Base64 leaf with a `Content-Disposition` filename (text `body`).  |
+| `mime.attachmentBytes(filename, contentType, data)` | `Part` | Base64 attachment from raw `bytes` (images, PDFs, any binary). |
 | `mime.multipart(subtype, boundary, parts)` | `Part` | Container (`multipart/subtype`) over one boundary.                 |
 | `mime.withHeader(part, name, value)`    | `Part`   | Copy with a header set (case-insensitive replace, else append).    |
 | `mime.encode(part)`                     | `string` | Serialize to a CRLF MIME message with transfer encodings applied.  |
 | `mime.parse(text)`                      | `Part`   | Parse a message: unfold headers, split multipart, transfer-decode. |
 | `mime.headerValue(part, name)`          | `string` | Header value (case-insensitive) or `""`.                           |
-| `mime.body(part)`                       | `string` | A leaf's decoded text body.                                        |
-| `mime.parts(part)`                      | `list of Part` | A container's child parts.                                   |
+| `mime.body(part)`                       | `string` | A leaf's decoded text body (`""` for a binary part).               |
+| `mime.data(part)`                       | `bytes`  | A leaf's raw decoded content (any type, incl. binary).             |
+| `mime.parts(part)`                      | `list of Part` | A container's direct child parts.                           |
 | `mime.contentType(part)`                | `string` | Media type without parameters (e.g. `text/plain`).                 |
+| `mime.disposition(part)`                | `string` | `"attachment"` / `"inline"` / `""` (Content-Disposition).          |
+| `mime.filename(part)`                   | `string` | `filename=` (else Content-Type `name=`), RFC 2047-decoded, or `""`. |
+| `mime.isAttachment(part)`               | `bool`   | Disposition is `attachment`, or a filename is set.                 |
+| `mime.walk(part)`                       | `list of Part` | Every leaf part in the subtree, depth-first.                 |
+| `mime.attachments(part)`                | `list of Part` | The attachment leaves (see `isAttachment`).                 |
+| `mime.textBodies(part)`                 | `list of Part` | The `text/...` leaves that are not attachments (plain + html). |
+| `mime.findParts(part, mediaType)`       | `list of Part` | Leaves whose media type equals `mediaType` (e.g. `text/html`). |
 | `mime.address(name, email)`             | `string` | RFC 5322 mailbox: `email`, or `Name <email>` (name quoted, or RFC 2047-encoded when non-ASCII). |
 | `mime.encodeWord(text)`                 | `string` | RFC 2047 UTF-8 base64 encoded-word(s), `=?UTF-8?B?...?=`, folded when long. |
 | `mime.decodeWord(value)`                | `string` | Decode every encoded-word in a header value back to text (B and Q). |
@@ -97,6 +109,32 @@ for (def part in mime.parts($back)) {
 }
 ```
 
+## Extracting attachments and bodies
+
+A received message is usually a `multipart/mixed` (bodies + attachments) whose
+first child may itself be a `multipart/alternative` (the `text/plain` and
+`text/html` views). Rather than walk that tree by hand, use the accessors: they
+flatten it for you.
+
+```jennifer
+def msg as mime.Part init mime.parse(raw);   # or imap.fetchMessage(session, n)
+
+# Every readable body (both the plain and html alternatives).
+for (def part in mime.textBodies($msg)) {
+    io.printf("[%s]\n%s\n", mime.contentType($part), mime.body($part));
+}
+
+# Save each attachment. data() is the raw bytes, filename() its name.
+use fs;
+for (def att in mime.attachments($msg)) {
+    fs.write("/downloads/" + mime.filename($att), mime.data($att));
+}
+```
+
+`walk` returns every leaf if you want to filter yourself; `findParts($msg,
+"text/html")` picks a specific media type. `data` works on any leaf (text or
+binary); `body` is the text convenience.
+
 ## Non-ASCII headers (RFC 2047 encoded-words)
 
 Header values must be ASCII on the wire, so a non-ASCII `Subject` or display
@@ -129,9 +167,10 @@ B. `us-ascii` / `iso-8859-*` / `windows-*` charsets decode through
 
 Deliberately a foundation, not a full mail stack:
 
-- **Binary bodies.** A `Part` body is text (UTF-8); an `attachment` takes text
-  content. True binary attachments (a `bytes` body, e.g. an image) are not yet
-  supported - that needs a `bytes`-typed body field.
+- **Non-UTF-8 text charsets.** A text part is decoded to `body` as UTF-8; a
+  `text/*` part in another charset stays reachable as raw bytes via `data`, but
+  is not transcoded (the `convert` codec is UTF-8 only). Binary attachments are
+  fully supported via `data` / `attachmentBytes`.
 - **Multi-address name encoding.** A comma-separated address list is left raw
   on `encode`; encode each mailbox's name with `mime.address` when building it.
 - **Networking.** This module only shapes messages; sending / fetching them is

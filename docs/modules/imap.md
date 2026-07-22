@@ -44,6 +44,7 @@ common "read every message in a mailbox" case.
 | `imap.selectMailbox(session, name)`  | `SELECT` a mailbox (e.g. `"INBOX"`); returns its message count.  |
 | `imap.search(session)`               | `SEARCH ALL` - the sequence numbers in the selected mailbox (`list of int`). |
 | `imap.fetch(session, n)`             | `FETCH n BODY.PEEK[]` - message `n` as a raw string, for `mime.parse`. |
+| `imap.fetchMessage(session, n)`      | Fetch message `n` and parse it into a `mime.Part` tree (import `mime` too, then use `mime.attachments` / `mime.textBodies`). |
 | `imap.fetchHeaders(session, n, flds)`| `FETCH n BODY.PEEK[HEADER.FIELDS (flds)]` - only the named headers (e.g. `"SUBJECT DATE"`), cheaper than the whole body. |
 | `imap.flags(session, n)`             | `FETCH n (FLAGS)` - the flags set on message `n` as a space-separated string (confirm a `STORE` persisted). |
 | `imap.addFlags(session, n, flags)`   | `STORE n +FLAGS.SILENT (flags)` - add keywords / flags, e.g. `"$cl_1"` (Thunderbird tag colour) or `"\Deleted"`. A server that disallows a keyword answers OK but drops it - verify with `flags`. |
@@ -116,7 +117,9 @@ than an unbounded allocation.
 
 ## See also
 
-- [mime.md](mime.md) - parse a fetched message (`mime.parse`).
+- [mime.md](mime.md) - parse a fetched message (`imap.fetchMessage` /
+  `mime.parse`) and pull out attachments (`mime.attachments` / `mime.data`) and
+  text bodies (`mime.textBodies`).
 - [pop.md](pop.md) - the simpler POP3 receive client; [smtp.md](smtp.md) - send.
 - [net.md](../libraries/net.md) - the transport `imap` builds on.
 - [modules/index.md](index.md) - the module catalog and import rules.
